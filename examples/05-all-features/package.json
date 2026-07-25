@@ -1,0 +1,23 @@
+{
+  "name": "05-all-features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "test": "exisjs test",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "exisjs": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "eslint": "^8.0.0",
+    "@eslint/js": "^8.0.0",
+    "typescript-eslint": "^7.0.0"
+  }
+}

@@ -1,0 +1,123 @@
+---
+nextUrl: "/docs/websockets"
+nextTitle: "WebSockets"
+---
+
+# Server-Sent Events (SSE)
+
+Server-Sent Events (SSE) is a server push technology enabling a client to receive automatic updates from a server via HTTP connection. Unlike WebSockets, SSE is unidirectional (server to client) and works flawlessly over standard HTTP without requiring complex handshake protocols or specialized load balancer configurations.
+
+SSE is the industry standard for LLM streaming (e.g. OpenAI, Anthropic) and real-time dashboard updates.
+
+ExisJS provides native, highly-optimized SSE support right out of the box.
+
+---
+
+## 1. Creating an SSE Stream
+
+When you declare a route as an SSE endpoint, ExisJS automatically configures the correct headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`) and provides an `ExisSSE` stream object.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/chat/route.ts"
+import { controller, route } from 'exisjs/router'
+import Groq from 'groq-sdk'
+
+export default controller({
+  chat: route.sse('/api/chat', {
+    async handle({ stream: sse, req }) {
+      const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+      const message = req.query.message as string
+      
+      if (!message) {
+        sse.send({ error: 'Message is required' }, 'error')
+        sse.close()
+        return
+      }
+
+      try {
+        const aiStream = await groq.chat.completions.create({
+          messages: [{ role: 'user', content: message }],
+          model: 'llama-3.1-8b-instant',
+          stream: true,
+        })
+
+        for await (const chunk of aiStream) {
+          // Prevent writing to a closed socket if the client disconnects!
+          if (!sse.connected) break
+          
+          const content = chunk.choices[0]?.delta?.content || ''
+          if (content) {
+            sse.send({ text: content }, 'chunk')
+          }
+        }
+        sse.send({ text: '' }, 'done')
+      } finally {
+        sse.close()
+      }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/chat/route.ts"
+import { Controller, Sse, Stream, Req } from 'exisjs/decorators'
+import type { ExisSSE } from 'exisjs/router'
+import Groq from 'groq-sdk'
+
+@Controller()
+export default class AIChatController {
+  @Sse('/api/chat')
+  async handleChat(@Stream() sse: ExisSSE, @Req() req: any) {
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+    const message = req.query.message as string
+    
+    if (!message) {
+      sse.send({ error: 'Message is required' }, 'error')
+      sse.close()
+      return
+    }
+
+    try {
+      const aiStream = await groq.chat.completions.create({
+        messages: [{ role: 'user', content: message }],
+        model: 'llama-3.1-8b-instant',
+        stream: true,
+      })
+
+      for await (const chunk of aiStream) {
+        // Prevent writing to a closed socket if the client disconnects!
+        if (!sse.connected) break
+        
+        const content = chunk.choices[0]?.delta?.content || ''
+        if (content) {
+          sse.send({ text: content }, 'chunk')
+        }
+      }
+      sse.send({ text: '' }, 'done')
+    } finally {
+      sse.close()
+    }
+  }
+}
+```
+
+---
+
+## 2. The `ExisSSE` API
+
+The injected `sse` object gives you full control over the stream:
+
+- **`sse.send(data: any, event?: string, id?: string)`**: Serializes `data` to JSON and sends it down the wire. You can optionally tag it with an `event` type or an `id`.
+- **`sse.connected`**: A boolean that is `true` while the connection is alive. You should always check this inside long-running `for await` loops to prevent throwing "Socket Closed" errors.
+- **`sse.close()`**: Safely closes the stream and terminates the HTTP connection.
+
+```typescript
+// Sending a plain message
+sse.send("Hello World")
+
+// Sending a specific event type (e.g., 'error', 'chunk', 'ping')
+sse.send({ cpu_usage: 95 }, 'metrics')
+```

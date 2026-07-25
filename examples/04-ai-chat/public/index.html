@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exis AI Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        
+        .glass-header {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .message-enter {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .typing-indicator span {
+            animation: blink 1.4s infinite both;
+            height: 6px;
+            width: 6px;
+            background: #94a3b8;
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 1px;
+        }
+        
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes blink {
+            0% { opacity: 0.2; transform: scale(0.8); }
+            20% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.2; transform: scale(0.8); }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+    <!-- Header -->
+    <header class="glass-header z-10 sticky top-0 px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                <i data-lucide="bot" class="w-6 h-6 text-white"></i>
+            </div>
+            <div>
+                <h1 class="font-semibold text-lg">Exis AI Assistant</h1>
+                <p class="text-xs text-indigo-300 font-medium tracking-wide uppercase flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span> Online
+                </p>
+            </div>
+        </div>
+        <div class="flex gap-2">
+            <button class="p-2 hover:bg-slate-800 rounded-full transition-colors">
+                <i data-lucide="settings" class="w-5 h-5 text-slate-400"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Chat Area -->
+    <main id="chat-container" class="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col">
+        <!-- Welcome Message -->
+        <div class="flex justify-start message-enter">
+            <div class="max-w-[80%] rounded-2xl p-4 bg-slate-800 text-slate-200 shadow-sm border border-slate-700/50 rounded-tl-sm">
+                Hello! I am powered by ExisJS SSE stream. How can I help you today?
+            </div>
+        </div>
+    </main>
+
+    <!-- Typing Indicator (Hidden by default) -->
+    <div id="typing-indicator" class="hidden px-6 pb-2">
+        <div class="flex items-center gap-2 text-sm text-slate-400">
+            <i data-lucide="bot" class="w-4 h-4"></i>
+            <span>AI is typing</span>
+            <div class="typing-indicator flex items-center h-full">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <footer class="p-4 bg-slate-900 border-t border-slate-800">
+        <div class="max-w-4xl mx-auto relative flex items-end gap-2">
+            <textarea 
+                id="message-input"
+                class="w-full bg-slate-800 text-white rounded-2xl pl-4 pr-12 py-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none min-h-[52px] max-h-[120px]"
+                placeholder="Message AI..."
+                rows="1"
+            ></textarea>
+            <button 
+                id="send-button"
+                class="absolute right-2 bottom-2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all shadow-md shadow-indigo-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // Initialize Icons
+        lucide.createIcons();
+
+        const chatContainer = document.getElementById('chat-container');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        const typingIndicator = document.getElementById('typing-indicator');
+
+        // Auto-resize textarea
+        messageInput.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+            sendButton.disabled = this.value.trim().length === 0;
+        });
+
+        // Handle Enter key (Shift+Enter for new line)
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendButton.addEventListener('click', sendMessage);
+
+        function addMessage(text, isUser = false) {
+            const div = document.createElement('div');
+            div.className = `flex ${isUser ? 'justify-end' : 'justify-start'} message-enter`;
+            
+            const bubble = document.createElement('div');
+            bubble.className = `max-w-[80%] rounded-2xl p-4 shadow-sm ${
+                isUser 
+                    ? 'bg-indigo-600 text-white rounded-tr-sm' 
+                    : 'bg-slate-800 text-slate-200 border border-slate-700/50 rounded-tl-sm'
+            }`;
+            
+            // Render text with simple markdown-like newlines
+            bubble.innerHTML = text.replace(/\n/g, '<br>');
+            
+            div.appendChild(bubble);
+            chatContainer.appendChild(div);
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return bubble;
+        }
+
+        let currentEventSource = null;
+
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            // Clear input
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            sendButton.disabled = true;
+
+            // Add user message
+            addMessage(text, true);
+            
+            // Show typing indicator
+            typingIndicator.classList.remove('hidden');
+            
+            // Create empty AI message bubble to stream into
+            const aiBubble = addMessage('', false);
+            let fullResponse = '';
+
+            try {
+                // Connect to ExisJS SSE endpoint
+                const url = new URL('/api/chat', window.location.origin);
+                url.searchParams.append('message', text);
+                
+                currentEventSource = new EventSource(url);
+                
+                currentEventSource.addEventListener('chunk', (e) => {
+                    typingIndicator.classList.add('hidden');
+                    const data = JSON.parse(e.data);
+                    if (data.text) {
+                        fullResponse += data.text;
+                        aiBubble.innerHTML = fullResponse.replace(/\n/g, '<br>');
+                        chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                });
+
+                currentEventSource.addEventListener('done', () => {
+                    currentEventSource.close();
+                    currentEventSource = null;
+                });
+
+                currentEventSource.addEventListener('error', (e) => {
+                    const data = JSON.parse(e.data || '{}');
+                    if (data.error) {
+                        aiBubble.innerHTML = `<span class="text-red-400">Error: ${data.error}</span>`;
+                    }
+                    currentEventSource.close();
+                    currentEventSource = null;
+                    typingIndicator.classList.add('hidden');
+                });
+
+            } catch (error) {
+                console.error("Connection failed:", error);
+                aiBubble.innerHTML = `<span class="text-red-400">Connection failed.</span>`;
+                typingIndicator.classList.add('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

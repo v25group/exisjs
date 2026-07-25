@@ -1,0 +1,146 @@
+---
+nextUrl: "/docs/integrations/jwt"
+nextTitle: "JWT Auth"
+---
+
+# Redis Integration
+
+ExisJS provides a zero-config, native integration for **Redis** via the industry-standard `ioredis` package. Just like our database plugins, you do **NOT** need to register Redis in your `server.ts` file. The connection pool is lazily initialized the exact moment you execute your first command.
+
+---
+
+## Environment Variables
+
+The Redis plugin securely reads your connection string from your `.env` file. It automatically looks for either `REDIS_URL` or `KV_URL` (compatible with Vercel KV).
+
+Before using the plugin, ensure you have your Redis URI set:
+
+```bash filename=".env"
+# Your Redis connection string
+REDIS_URL="redis://default:password@localhost:6379"
+```
+
+---
+
+## Installation
+
+ExisJS wraps the blazing fast `ioredis` client.
+
+```bash
+npm install ioredis
+```
+
+---
+
+## Usage
+
+Simply import the `redis` proxy from `exisjs/redis`. ExisJS will instantly connect to your Redis instance behind the scenes.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/cache/route.ts"
+import { controller, route } from 'exisjs/router'
+import { redis } from 'exisjs/redis'
+
+export default controller({
+  getCache: route.get('/:key', {
+    async handle(req) {
+      const value = await redis.get(req.params.key)
+      return { key: req.params.key, value }
+    }
+  }),
+
+  setCache: route.post('/:key', {
+    async handle(req) {
+      // Set key with an expiration of 60 seconds
+      await redis.set(req.params.key, JSON.stringify(req.body), 'EX', 60)
+      return { success: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/cache/route.ts"
+import { Controller, Get, Post, Param, Body } from 'exisjs/decorators'
+import { redis } from 'exisjs/redis'
+
+@Controller('/cache')
+export default class CacheController {
+  @Get('/:key')
+  async getCache(@Param('key') key: string) {
+    const value = await redis.get(key)
+    return { key, value }
+  }
+
+  @Post('/:key')
+  async setCache(@Param('key') key: string, @Body() body: any) {
+    // Set key with an expiration of 60 seconds
+    await redis.set(key, JSON.stringify(body), 'EX', 60)
+    return { success: true }
+  }
+}
+```
+
+---
+
+## Redis as a Job Queue
+
+ExisJS's native distributed Job Queue seamlessly runs on top of Redis. This is the **recommended** approach for production environments to securely process thousands of background jobs across multiple server instances.
+
+To enable the Redis queue driver, you can configure it either in `server.ts` or centrally in your `exis.config.ts` file:
+
+<Tabs defaultValue="config" className="mt-6 mb-8">
+  <TabsList>
+    <TabsTrigger value="config">exis.config.ts</TabsTrigger>
+    <TabsTrigger value="server">src/http/server.ts</TabsTrigger>
+  </TabsList>
+  <TabsContent value="config">
+    ```typescript filename="exis.config.ts"
+    import { defineConfig } from 'exisjs/config'
+
+    export default defineConfig({
+      queue: {
+        driver: 'redis',
+        // ExisJS will automatically use process.env.REDIS_URL.
+        // If you need a custom URL just for the queue, you can specify it:
+        // redisUrl: process.env.CUSTOM_QUEUE_REDIS_URL
+      }
+    })
+    ```
+  </TabsContent>
+  <TabsContent value="server">
+    ```typescript filename="src/http/server.ts"
+    import { exis } from 'exisjs'
+
+    export default exis({
+      queue: {
+        driver: 'redis',
+      }
+    })
+    ```
+  </TabsContent>
+</Tabs>
+
+---
+
+## Customizing Connection Options
+
+If you need to pass custom options to the Redis connection pool (like custom retry strategies, lazy connections, or TLS settings), call `configureRedis(options)` inside your `server.ts` `onStart` hook.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configureRedis } from 'exisjs/redis'
+
+export default exis({
+  async onStart() {
+    // Initialize with custom connection options
+    configureRedis({
+      maxRetriesPerRequest: 3,
+      connectTimeout: 10000,
+      lazyConnect: true
+    })
+  }
+})
+```

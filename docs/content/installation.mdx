@@ -1,0 +1,145 @@
+---
+nextUrl: "/docs/structure"
+nextTitle: "Project Structure"
+---
+
+# Getting Started
+
+In this guide, you'll learn the core fundamentals of ExisJS. To get familiar with the essential building blocks, we'll scaffold a new project, explore the file structure, and create our very first API server.
+
+<Info title="Language Support">
+We highly recommend **TypeScript** for maximum type-safety and automatic frontend client generation. However, ExisJS perfectly supports vanilla JavaScript as well. ExisJS leverages ultra-fast bundlers under the hood, meaning you never have to manually run `tsc` to start your server.
+</Info>
+
+## Prerequisites
+
+Please make sure that **Node.js (version >= 20)** is installed on your operating system.
+
+## Setup
+
+Setting up a new project is incredibly simple using our CLI tool. Open your terminal and run the following command to scaffold a new ExisJS project:
+
+<div className="my-6 max-w-lg">
+  <CopyCommand command="npx @exisjs/create@latest my-app" />
+</div>
+
+The CLI will prompt you with a few simple questions to customize your project:
+
+```text filename="Terminal"
+√ Would you like to use TypeScript? ... No / Yes
+√ Would you like to use ESLint? ... No / Yes
+√ Would you like your code inside a `src/` directory? ... No / Yes
+√ Would you like to customize the import alias (`@/*` by default)? ... No / Yes
+
+Creating a new Exis JS app in my-app.
+```
+
+The CLI will then create the `my-app` directory, install all required dependencies, and populate the project with a conventional base structure.
+
+## Core Files
+
+Once the installation is complete, your project directory will look something like this:
+
+<div className="bg-muted/30 border border-border/50 rounded-md p-4 mb-6 font-mono text-sm">
+  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">exis.config.ts</span> <span>The root configuration for your application (CORS, Logger, Port).</span></div>
+  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">src/env.ts</span> <span>Environment variable validation and typing.</span></div>
+  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">src/http/</span> <span>The file-system routing directory.</span></div>
+  <div className="flex gap-4 mb-2 pl-4"><span className="text-muted-foreground w-36 shrink-0">server.ts</span> <span>The strict entry point of your application.</span></div>
+  <div className="flex gap-4 pl-4"><span className="text-muted-foreground w-36 shrink-0">route.ts</span> <span>A basic GET endpoint mapped to the root route.</span></div>
+</div>
+
+## Your First Server
+
+Let's look at the generated `src/http/server.ts`. This is the strict entry point of your application, where you can connect to databases and register global plugins.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+
+export default exis({
+  async onStart(app) {
+    // 1. Connect to your database
+    // await db.connect()
+
+    // 2. Register plugins
+    // app.plugin(authPlugin)
+
+    // The Exis CLI automatically boots the server and file-system routes
+  },
+  
+  async onClose(app) {
+    // Gracefully close database connections here
+    // await db.disconnect()
+  }
+})
+```
+
+With ExisJS, the framework automatically handles booting up your server and loading your routes based on the file system. You don't need to manually call `app.listen()`!
+
+## Your First Route
+
+ExisJS uses **folder-based routing**. Your API structure maps directly to your folders in `src/http/`.
+
+ExisJS supports two primary styles of writing routes: **Functional** and **OOP (Class-based)**. You are free to use whichever paradigm fits your team best.
+
+### Functional Routing
+
+Functional routing provides a lean, inference-heavy developer experience similar to modern frontend frameworks. Let's declare our first route in `src/http/route.ts`:
+
+```typescript filename="src/http/route.ts (Functional)"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  welcome: route.get('/', {
+    handle() {
+      return { message: 'Welcome to Exis JS!' }
+    }
+  })
+})
+```
+
+### OOP Routing
+
+If you prefer a highly-structured architecture heavily inspired by Angular and NestJS, ExisJS natively provides robust class-based routing using Decorators:
+
+```typescript filename="src/http/route.ts (OOP)"
+import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class RootController {
+  @Get('/')
+  welcome() {
+    return { message: 'Welcome to Exis JS!' }
+  }
+}
+```
+
+In both examples, because this file is named `route.ts` and is located at the root of the `http` folder, it automatically responds to `GET /` requests. Whatever you return is automatically serialized to JSON.
+
+## Running the Application
+
+Your generated `package.json` comes pre-configured with the Exis CLI commands. Start the development server with hot-reload by running:
+
+<div className="my-6 max-w-lg">
+  <CopyCommand command="npm run dev" />
+</div>
+
+You will see the ultra-fast ExisJS server boot up in your terminal:
+
+```text filename="Terminal"
+6:18:28 pm [exis] starting development server (v0.1.0)...
+
+ EXIS v0.1.0 ready in 125 ms
+
+ → Local:   http://localhost:4000/
+ → Network: http://10.19.244.227:4000/
+ → Environ: development
+ → press h + enter to show help
+```
+
+Open your browser and navigate to [http://localhost:4000/](http://localhost:4000/) (or the port defined in your `.env`). You will see:
+
+```json filename="Response"
+{
+  "message": "Welcome to Exis JS!"
+}
+```

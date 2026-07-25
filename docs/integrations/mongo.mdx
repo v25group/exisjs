@@ -1,0 +1,148 @@
+---
+nextUrl: "/docs/integrations/redis"
+nextTitle: "Redis"
+---
+
+# Database (NoSQL)
+
+ExisJS provides zero-config, native integrations for MongoDB. Just like our SQL plugins, you do **NOT** need to register the database in your `server.ts` file. The connection pools are lazily initialized the exact moment you first execute a query.
+
+The framework provides first-class plugins for **Mongoose** (the ODM) and the raw **MongoDB Node.js Driver** (`mongodb`).
+
+---
+
+## Environment Variables
+
+Both MongoDB plugins securely read your connection string from your `.env` file. 
+Before using any of the plugins below, ensure you have your MongoDB URI set:
+
+```bash filename=".env"
+# Your MongoDB connection string
+MONGODB_URI="mongodb://localhost:27017/my_database"
+```
+
+---
+
+## 1. Mongoose (Recommended)
+
+Mongoose provides a straight-forward, schema-based solution to model your application data. 
+
+### Installation
+
+```bash
+npm install mongoose
+```
+
+### Usage
+
+Simply import the `mongoose` proxy from `exisjs/mongoose`. ExisJS will instantly connect to your database behind the scenes (Mongoose natively buffers operations until connected, so you don't even need to wait).
+
+```typescript filename="src/models/user.ts"
+import { mongoose } from 'exisjs/mongoose'
+
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+})
+
+export const User = mongoose.model('User', userSchema)
+```
+
+Now you can use your `User` model in your routes:
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { User } from '../../models/user'
+
+export default controller({
+  getUsers: route.get('/', {
+    async handle() {
+      return await User.find({})
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { User } from '../../models/user'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async getUsers() {
+    return await User.find({})
+  }
+}
+```
+
+---
+
+## 2. Raw MongoDB (`mongodb`)
+
+If you don't want to use an ODM and prefer working with raw BSON documents for maximum performance, ExisJS bundles a zero-config integration for the native `mongodb` driver.
+
+### Installation
+
+```bash
+npm install mongodb
+```
+
+### Usage
+
+Import `mongo` from `exisjs/mongodb`. The first time you interact with it, ExisJS will instantly boot up a MongoClient connection pool using your `MONGODB_URI`.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { mongo } from 'exisjs/mongodb'
+
+export default controller({
+  getUsers: route.get('/', {
+    async handle() {
+      const db = mongo.db('my_database')
+      return await db.collection('users').find({}).toArray()
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { mongo } from 'exisjs/mongodb'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async getUsers() {
+    const db = mongo.db('my_database')
+    return await db.collection('users').find({}).toArray()
+  }
+}
+```
+
+### Customizing Connection Options
+
+If you need to pass custom options to the MongoDB connection pool (like replica set configs or pool sizes), call `configureMongo(options)` or `configureMongoose(options)` inside your `server.ts` `onStart` hook.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configureMongoose } from 'exisjs/mongoose'
+
+export default exis({
+  async onStart() {
+    // Initialize with custom connection options
+    configureMongoose({
+      maxPoolSize: 50,
+      wtimeoutMS: 2500,
+    })
+  }
+})
+```

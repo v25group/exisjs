@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true
+  },
+  "include": [
+    "packages/**/*.ts",
+    "packages/**/*.js",
+    "bench/**/*",
+    "eslint.config.mjs"
+  ],
+  "exclude": [
+    "packages/**/.tmp-*"
+  ]
+}

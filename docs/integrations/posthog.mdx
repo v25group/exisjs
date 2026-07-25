@@ -1,0 +1,122 @@
+---
+nextUrl: "/docs/integrations/observability"
+nextTitle: "Observability"
+---
+
+# PostHog Integration
+
+ExisJS provides a zero-config, native integration for **PostHog**, the powerful open-source product analytics platform. 
+
+This enables you to instantly capture server-side events, identify users, and evaluate feature flags directly inside your route handlers!
+
+---
+
+## Environment Variables
+
+The PostHog plugin securely reads your project API key directly from your `.env` file. 
+
+Before using the plugin, ensure you have your API key set. You can optionally define a custom host if you are self-hosting PostHog (it defaults to `https://app.posthog.com`).
+
+```bash filename=".env"
+POSTHOG_API_KEY="phc_123456789"
+POSTHOG_HOST="https://eu.posthog.com" # Optional (For EU Cloud or Self-Hosted)
+```
+
+---
+
+## Installation
+
+ExisJS wraps the official `posthog-node` SDK as an optional peer dependency.
+
+```bash
+npm install posthog-node
+```
+
+---
+
+## Usage
+
+Simply import the `posthog` proxy from `exisjs/posthog`. ExisJS will instantly boot the client behind the scenes the first time you track an event!
+
+#### Functional Paradigm
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
+import { posthog } from 'exisjs/posthog'
+
+export default controller({
+  login: route.post('/login', {
+    async handle(req) {
+      const { email, userId } = req.body
+
+      // Your auth logic here...
+
+      // The posthog client magically lazy-loads here!
+      posthog.identify({
+        distinctId: userId,
+        properties: { email }
+      })
+
+      posthog.capture({
+        distinctId: userId,
+        event: 'user_logged_in'
+      })
+
+      return { success: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/auth/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { posthog } from 'exisjs/posthog'
+
+@Controller('/auth')
+export default class AuthController {
+  
+  @Post('/login')
+  async login(@Body() body: any) {
+    const { email, userId } = body
+
+    // Your auth logic here...
+
+    // The posthog client magically lazy-loads here!
+    posthog.identify({
+      distinctId: userId,
+      properties: { email }
+    })
+
+    posthog.capture({
+      distinctId: userId,
+      event: 'user_logged_in'
+    })
+
+    return { success: true }
+  }
+}
+```
+
+---
+
+## Graceful Shutdown (Flushing)
+
+PostHog queues events in memory and sends them in batches for high performance. 
+
+When your application shuts down, you must ensure all pending events are successfully flushed to PostHog before the Node.js process exits so you don't lose analytics data.
+
+Simply await `posthog.shutdown()` in your `onStop` hook!
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { posthog } from 'exisjs/posthog'
+
+export default exis({
+  async onStop() {
+    // Ensures all pending events are flushed before the server exits!
+    await posthog.shutdown()
+  }
+})
+```

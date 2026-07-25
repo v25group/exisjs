@@ -1,0 +1,301 @@
+---
+nextUrl: "/docs/modules"
+nextTitle: "Modules & Plugins"
+---
+
+# Middleware
+
+ExisJS comes with a massive arsenal of highly optimized, built-in middleware out of the box. 
+
+Unlike Express or other minimalist frameworks where you have to stitch together dozens of unmaintained third-party packages, ExisJS provides first-party implementations for everything from CORS and Request Logging to Backpressure and Deduplication.
+
+All middleware can be imported directly from the `exisjs/middleware` package.
+
+---
+
+## Where to Apply Middleware
+
+ExisJS gives you granular control over where your middleware executes:
+
+1. **Globally (`server.ts`)**: Applies to every request hitting your server.
+2. **Folder-Scoped (`gateway.ts`)**: Applies only to routes inside that specific folder.
+3. **Route-Scoped (`route.ts`)**: Applies only to a specific endpoint.
+
+```typescript filename="src/http/admin/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { requestLogger } from 'exisjs/middleware'
+
+// This logger will ONLY run for requests to /admin/*
+export default defineGateway({
+  middlewares: [
+    requestLogger({ level: 'debug' })
+  ]
+})
+```
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+import { validate } from 'exisjs/middleware'
+
+export default controller({
+  // This middleware ONLY runs for this specific endpoint
+  create: route.post('/', {
+    middlewares: [validate(mySchema)],
+    handle(req, res) {
+      return { ok: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Post, Use } from 'exisjs/decorators'
+import { validate } from 'exisjs/middleware'
+
+@Controller()
+export default class MyController {
+  // This middleware ONLY runs for this specific endpoint
+  @Use(validate(mySchema))
+  @Post('/')
+  async create() {
+    return { ok: true }
+  }
+}
+```
+
+---
+
+## 1. CORS
+
+The `cors` middleware handles Cross-Origin Resource Sharing effortlessly. It is fully configurable and optimized for zero-overhead on preflight requests.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { cors } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
+    app.use(cors({
+      origin: ['https://myapp.com', /localhost:\d+/],
+      methods: ['GET', 'POST', 'OPTIONS'],
+      credentials: true,
+      maxAge: 86400
+    }))
+  }
+})
+```
+
+---
+
+## 2. Request Logger
+
+ExisJS uses **Pino** under the hood, arguably the fastest logger in the Node.js ecosystem. The `requestLogger` automatically injects a request-scoped logger instance (`req.log`) and times response cycles automatically without deoptimizing V8.
+
+```typescript filename="src/http/server.ts"
+import { requestLogger } from 'exisjs/middleware'
+
+app.use(requestLogger({
+  level: 'debug',
+  pretty: true // Enable beautiful CLI formatting
+}))
+```
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  index: route.get('/', {
+    handle(req, res) {
+      req.log.info({ userId: 123 }, "User hit the index route!")
+      return { ok: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+
+@Controller()
+export default class MyController {
+  @Get('/')
+  async index(@Req() req: any) {
+    req.log.info({ userId: 123 }, "User hit the index route!")
+    return { ok: true }
+  }
+}
+```
+
+---
+
+## 3. Request ID
+
+Injects a unique `X-Request-Id` into every incoming request and outgoing response header. It natively supports distributed tracing headers (`traceparent`, `x-b3-traceid`) making it perfect for microservices.
+
+```typescript filename="src/http/server.ts"
+import { requestId } from 'exisjs/middleware'
+
+app.use(requestId())
+```
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  index: route.get('/', {
+    handle(req, res) {
+      console.log("Trace ID:", req.requestId)
+      return { ok: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+
+@Controller()
+export default class MyController {
+  @Get('/')
+  async index(@Req() req: any) {
+    console.log("Trace ID:", req.requestId)
+    return { ok: true }
+  }
+}
+```
+
+---
+
+## 4. Static File Serving
+
+A blazing fast static file server that automatically resolves MIME types, streams files, and provides Cache-Control configuration out of the box.
+
+```typescript
+import { serveStatic } from 'exisjs/middleware'
+import path from 'node:path'
+
+app.use('/public', serveStatic(path.join(process.cwd(), 'public'), {
+  maxAge: 31536000 // Cache for 1 year
+}))
+```
+
+---
+
+## 5. Security Middlewares
+
+ExisJS bundles the most critical security middlewares directly. (We will cover these deeply in the Security documentation, but here is a quick preview):
+
+- **`helmet()`**: Automatically sets 14+ secure HTTP headers.
+- **`xss()`**: Sanitizes incoming user payloads to prevent Cross-Site Scripting.
+- **`hpp()`**: Prevents HTTP Parameter Pollution attacks.
+- **`dbSanitize()`**: A universal scraper that protects against both NoSQL (`$where`) and SQL injection patterns.
+- **`timeout(ms)`**: Kills requests that hang longer than a specified duration.
+- **`ipFilter()`**: Restricts access based on IP Whitelists/Blacklists.
+
+```typescript
+import { helmet, xss, timeout, dbSanitize } from 'exisjs/middleware'
+
+app.use(helmet())
+app.use(xss())
+app.use(dbSanitize({ sql: true, mongo: true }))
+app.use(timeout(5000)) // 5 second timeout
+```
+
+---
+
+## 6. Advanced Performance Middlewares
+
+These middlewares push ExisJS beyond traditional HTTP frameworks into the realm of enterprise-grade Edge Gateways.
+
+- **`cache()`**: An in-memory route caching engine.
+- **`dedupe()`**: Request deduplication (In-flight request collapsing). If 1,000 users hit a heavy `/stats` route at the exact same millisecond, ExisJS will only compute it **once**, and send the same response to all 1,000 users simultaneously.
+- **`backpressure()`**: Protects your server from traffic spikes by shedding load or queuing requests when the Node.js Event Loop lags.
+
+---
+
+## 7. Interceptors & Error Filters
+
+As covered in our [Error Handling](/docs/errors) guide, you can centrally mutate responses or catch specific Exception classes using `intercept()` and `catchError()`.
+
+```typescript
+import { intercept, catchError } from 'exisjs/middleware'
+
+// Wrap all responses in { data: ... }
+app.use(intercept((data) => ({ data })))
+
+// Catch specific errors
+app.use(catchError(DatabaseError, (err, req, res) => {
+  res.status(503).json({ error: 'Database Offline' })
+}))
+```
+
+---
+
+## 8. Schema Validation
+
+ExisJS ships with its own ultra-fast, zero-dependency validation engine. You can validate `body`, `query`, or `params` directly at the middleware layer. If validation fails, it automatically rejects the request with a structured HTTP 400 JSON response.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { validate } from 'exisjs/middleware'
+import { v } from 'exisjs/validator'
+
+const createUserSchema = {
+  body: v.object({
+    email: v.string().email(),
+    age: v.number().min(18)
+  })
+}
+
+export default controller({
+  // Automatically rejects invalid payloads with 400 Bad Request
+  create: route.post('/', {
+    middlewares: [validate(createUserSchema)],
+    handle(req, res) {
+      // req.body is fully validated, but we also type-cast it safely
+      const body = req.body as { email: string, age: number }
+      
+      return { success: true, email: body.email }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Use, Body } from 'exisjs/decorators'
+import { validate } from 'exisjs/middleware'
+import { v } from 'exisjs/validator'
+
+const createUserSchema = {
+  body: v.object({
+    email: v.string().email(),
+    age: v.number().min(18)
+  })
+}
+
+@Controller()
+export default class UsersController {
+  // Automatically rejects invalid payloads with 400 Bad Request
+  @Use(validate(createUserSchema))
+  @Post('/')
+  async create(@Body() body: { email: string, age: number }) {
+    return { success: true, email: body.email }
+  }
+}
+```

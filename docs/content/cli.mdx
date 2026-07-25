@@ -1,0 +1,196 @@
+---
+nextUrl: "/docs"
+nextTitle: "Introduction"
+---
+
+# CLI and scripts
+
+This section provides additional background on how the `exisjs` command interacts with compilers and scripts to help developers manage the development environment.
+
+An ExisJS application is a standard TypeScript application that needs to be compiled to JavaScript before it can be executed. There are various ways to accomplish the compilation step, and developers/teams are free to choose a way that works best for them. With that in mind, ExisJS provides a set of tools out-of-the-box that seek to do the following:
+
+- Provide a standard build/execute process, available at the command line, that "just works" with reasonable defaults.
+- Ensure that the build/execute process is open, so developers can directly access the underlying tools to customize them using native features and options.
+- Remain a completely standard TypeScript/Node.js framework, so that the entire compile/deploy/execute pipeline can be managed by any external tools that the development team chooses to use.
+
+This goal is accomplished through a combination of the `exisjs` command, a locally installed TypeScript compiler, and `package.json` scripts. We describe how these technologies work together below. This should help you understand what's happening at each step of the build/execute process, and how to customize that behavior if necessary.
+
+## The `exisjs` binary
+
+The `exisjs` command is an OS level binary (i.e., runs from the OS command line). This command actually encompasses 3 distinct areas, described below. We recommend that you run the build (`exisjs build`) and execution (`exisjs start`) sub-commands via the `package.json` scripts provided automatically when a project is scaffolded (instead of running `exisjs init`).
+
+### Build
+
+`exisjs build` is a wrapper on top of the standard `tsc` compiler. It handles compiling your source code efficiently. The reason it exists is that most developers, especially when starting out with ExisJS, do not need to adjust compiler options (e.g., `tsconfig.json` file) which can sometimes be tricky.
+
+### Execution
+
+`exisjs start` simply ensures the project has been built (same as `exisjs build`), then invokes the `node` command in a portable, easy way to execute the compiled application. As with builds, you are free to customize this process as needed, either using the `exisjs start` command and its options, or completely replacing it. The entire process is a standard TypeScript application build and execute pipeline, and you are free to manage the process as such.
+
+### Generation
+
+The `exisjs generate` commands, as the name implies, generate new ExisJS projects, or components within them.
+
+## Package scripts
+
+Running the `exisjs` commands at the OS command level requires that the `exisjs` binary be installed globally. This is a standard feature of npm, and outside of ExisJS's direct control. One consequence of this is that the globally installed `exisjs` binary is not managed as a project dependency in `package.json`. For example, two different developers can be running two different versions of the `exisjs` binary. The standard solution for this is to use package scripts so that you can treat the tools used in the build and execute steps as development dependencies.
+
+When you run `exisjs init`, ExisJS populates the new project's `package.json` scripts with commands like `build` and `start`. It also installs the underlying compiler tools (such as `typescript`) as dev dependencies.
+
+You run the build and execute scripts with commands like:
+
+```bash
+$ npm run build
+```
+
+and
+
+```bash
+$ npm run start
+```
+
+These commands use npm's script running capabilities to execute `exisjs build` or `exisjs start` using the locally installed `exisjs` binary. By using these built-in package scripts, you have full dependency management over the ExisJS CLI commands. This means that, by following this recommended usage, all members of your organization can be assured of running the same version of the commands.
+
+For most developers/teams, it is recommended to utilize the package scripts for building and executing their ExisJS projects.
+
+## CLI command reference
+
+### `exisjs init`
+
+Creates a new ExisJS project.
+
+```bash
+$ npx exisjs init
+```
+
+**Description**
+Creates and initializes a new ExisJS project. Prompts for configuration options (such as whether to include TypeScript, ESLint, Database integrations, etc.) and generates a boilerplate project structure for you.
+
+### `exisjs generate`
+
+Generates and/or modifies files based on a schematic.
+
+```bash
+$ npx exisjs generate <type> <name>
+$ npx exisjs g <type> <name>
+```
+
+**Arguments**
+
+| Argument | Description |
+| :--- | :--- |
+| `<type>` | The type of the feature to generate. See the table below for available types. |
+| `<name>` | The name of the generated component. |
+
+**Schematics**
+
+| Name | Alias | Description |
+| :--- | :--- | :--- |
+| `route` | `r` | Generates a new Route controller. |
+| `plugin` | `p` | Generates a new ExisJS Plugin module. |
+| `middleware` | `m` | Generates a new Middleware function. |
+| `test` | `t` | Generates a new test suite file. |
+
+### `exisjs build`
+
+Compiles an application or workspace into an output folder.
+
+```bash
+$ npx exisjs build
+```
+
+### `exisjs start`
+
+Compiles and runs an application from the compiled `dist` directory.
+
+```bash
+$ npx exisjs start [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-p, --port <port>` | Port to listen on (overrides `.env`). |
+| `-h, --host <host>` | Host to bind to. |
+| `-e, --entry <file>` | Custom compiled entry file path (default: `dist/http/server.js`). |
+
+### `exisjs dev`
+
+Starts the development server with Hot Module Replacement (HMR) and automatic restarts. It handles TypeScript compilation on the fly.
+
+```bash
+$ npx exisjs dev [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-p, --port <port>` | Port to listen on (overrides `.env`). |
+| `-h, --host <host>` | Host to bind to. |
+| `-e, --entry <file>` | Custom entry file path (default: `src/http/server.ts`). |
+
+### `exisjs test`
+
+Runs the native Node.js test runner (`node:test`) across your project. It automatically sets up the ExisJS environment and parses TypeScript natively.
+
+```bash
+$ npx exisjs test [files...] [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `--watch` | Watch for file changes and re-run tests. |
+| `-e, --entry <file>` | Custom entry file path to bootstrap before tests. |
+
+### `exisjs routes`
+
+Analyzes your application and prints a beautiful, tabular representation of your entire routing table to the terminal.
+
+```bash
+$ npx exisjs routes [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the app from. |
+
+### `exisjs repl`
+
+Starts an interactive Read-Eval-Print Loop (REPL) console loaded with your application's context.
+
+```bash
+$ npx exisjs repl [options]
+$ npx exisjs console [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the app from. |
+
+### `exisjs exports`
+
+Lists all the available framework exports and public APIs exposed by ExisJS.
+
+```bash
+$ npx exisjs exports
+```
+
+### `exisjs info`
+
+Displays critical environment and version information for debugging and bug reporting.
+
+```bash
+$ npx exisjs info
+```
+
+## Requirements
+
+ExisJS CLI requires a Node.js binary. We highly recommend Node.js v20+ to ensure compatibility with all modern native features (like the built-in test runner).

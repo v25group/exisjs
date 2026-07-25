@@ -1,0 +1,112 @@
+---
+nextUrl: "/docs/gateways"
+nextTitle: "Gateways"
+---
+
+# Providers
+
+Providers are a fundamental concept in ExisJS. Many of the basic classes may be treated as a provider – services, repositories, factories, helpers, and so on.
+
+The main idea of a provider is that it can be injected as a dependency; this means objects can create various relationships with each other, and the function of "wiring up" instances of objects can largely be delegated to the ExisJS runtime system.
+
+## Services
+
+Let's start by creating a simple `UsersService`. This service will be responsible for data storage and retrieval, and is designed to be used by the `UsersController`. 
+
+To mark a class as a provider that the ExisJS Inversion of Control (IoC) container can manage, we use the `@Injectable()` decorator.
+
+```typescript filename="src/http/users/service.ts"
+import { Injectable } from 'exisjs/decorators'
+
+export interface User {
+  id: string;
+  email: string;
+}
+
+@Injectable({ scope: 'singleton' })
+export class UsersService {
+  private readonly users: User[] = []
+
+  create(user: User) {
+    this.users.push(user)
+  }
+
+  findAll(): User[] {
+    return this.users
+  }
+}
+```
+
+Now that we have a service class to retrieve users, let's use it inside the `UsersController`:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post, Body } from 'exisjs/decorators'
+import { getContext } from 'exisjs/router'
+import { UsersService, User } from './service'
+
+@Controller('users')
+export default class UsersController {
+  
+  // Resolve dependencies manually or via context
+  private get usersService() {
+    return getContext<{ container: any }>().container.resolve(UsersService)
+  }
+
+  @Post()
+  async create(@Body() user: User) {
+    this.usersService.create(user)
+    return { success: true }
+  }
+
+  @Get()
+  async findAll() {
+    return this.usersService.findAll()
+  }
+}
+```
+
+<Info title="Note on Dependency Injection">
+ExisJS utilizes an ultra-fast runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a zero-overhead footprint. Dependencies can be smoothly resolved via the Context API or manually pulling from the app container.
+</Info>
+
+## Custom Providers
+
+ExisJS's DI container is extremely flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
+
+```typescript filename="src/http/server.ts"
+import exis from 'exisjs'
+import { UsersService } from './users/service'
+
+export default exis({
+  async onStart(app) {
+    // 1. Standard Class Provider
+    app.provide(UsersService, UsersService)
+
+    // 2. Value Provider
+    app.provide('DATABASE_URL', {
+      useValue: 'postgres://localhost:5432/mydb'
+    })
+
+    // 3. Factory Provider
+    app.provide('LoggerService', {
+      useFactory: () => {
+        return { log: (msg: string) => console.log(\`[Logger]: \${msg}\`) }
+      }
+    })
+
+    // 4. Aliased Class Provider
+    app.provide('AuthService', {
+      useClass: UsersService
+    })
+  }
+})
+```
+
+## Injection Scopes
+
+For people coming from different programming language backgrounds, it might be unexpected to learn that in ExisJS, almost everything is shared across incoming requests. We have a connection pool to the database, singleton services with global state, etc. This is because Node.js doesn't follow the request/response Multi-Threaded Stateless Model.
+
+However, there are edge-cases when request-based lifetime may be the desired behavior (e.g., per-request caching in GraphQL, request tracking, multi-tenancy). ExisJS supports scopes directly in the `@Injectable()` decorator:
+
+- **Singleton (Default)**: A single instance of the provider is shared across the entire application.
+- **Request**: A new instance of the provider is created exclusively for each incoming request, and garbage collected afterward.

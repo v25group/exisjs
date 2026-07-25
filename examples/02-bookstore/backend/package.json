@@ -1,0 +1,25 @@
+{
+  "name": "02-bookstore",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "test": "exisjs test",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "cloudinary": "^2.10.0",
+    "exisjs": "*",
+    "mongoose": "^8.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^8.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^7.0.0"
+  }
+}

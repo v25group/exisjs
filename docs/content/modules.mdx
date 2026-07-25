@@ -1,0 +1,125 @@
+---
+nextUrl: "/docs/cache"
+nextTitle: "Caching"
+---
+
+# Modules & Plugins
+
+ExisJS provides a robust, heavily modular architecture. The entire framework is built on a Plugin Engine that allows you to encapsulate functionality, inject dependencies, and distribute reusable packages across your organization.
+
+ExisJS offers two distinct primitives for extension:
+1. **Modules (`defineModule`)**: Used for grouping domain-level business logic (e.g., `AuthModule`, `UsersModule`).
+2. **Plugins (`definePlugin`)**: Used for building framework-level extensions that often require configuration options (e.g., `StripePlugin({ apiKey })`).
+
+---
+
+## 1. Domain Modules (`defineModule`)
+
+When building large-scale applications, you should avoid throwing all your logic into a single massive file. Modules allow you to encapsulate related dependencies (Providers), sub-modules (Imports), and Routes into a single, cohesive unit.
+
+### Defining a Module
+
+Let's build an `AuthModule` that encapsulates an authentication provider:
+
+```typescript filename="src/modules/auth.module.ts"
+import { defineModule } from 'exisjs/module'
+
+export const AuthModule = defineModule({
+  name: 'auth-module',
+  
+  // 1. Inject Dependencies
+  providers: [
+    ['AuthService', { useClass: class AuthService { login() {} } }]
+  ],
+
+  // 2. Import other modules
+  imports: [
+    DatabaseModule
+  ],
+
+  // 3. Register lifecycle hooks
+  async onStart(app) {
+    console.log("AuthModule has initialized!")
+  }
+})
+```
+
+### Registering Modules
+
+Once your module is defined, you can register it globally. The recommended place to register core modules is inside your `exis.config.ts` file, ensuring they boot up synchronously before your server starts accepting traffic.
+
+```typescript filename="exis.config.ts"
+import { defineExisConfig } from 'exisjs/config'
+import { AuthModule } from './src/modules/auth.module'
+
+export default defineExisConfig({
+  plugins: [
+    AuthModule
+  ]
+})
+```
+
+Alternatively, you can register it manually inside your `src/http/server.ts`:
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { AuthModule } from '../modules/auth.module'
+
+export default exis({
+  async onStart(app) {
+    await app.register(AuthModule)
+  }
+})
+```
+
+---
+
+## 2. Framework Plugins (`definePlugin`)
+
+While `defineModule` is great for internal business logic, `definePlugin` is designed for building distributable, third-party packages that require configuration options.
+
+When you use `definePlugin`, ExisJS returns a **Hybrid Object**. This means the plugin can be registered directly if it doesn't need options, or it can be called as a function if you need to pass a configuration object.
+
+### Building a Plugin
+
+Let's build a `StripePlugin` that requires an API key:
+
+```typescript filename="src/plugins/stripe.plugin.ts"
+import { definePlugin } from 'exisjs/plugin'
+
+interface StripeOptions {
+  apiKey: string
+}
+
+export const StripePlugin = definePlugin<StripeOptions>({
+  name: 'stripe-plugin',
+  
+  async register(app, options) {
+    if (!options?.apiKey) {
+      throw new Error("Stripe API Key is required!")
+    }
+
+    // Initialize Stripe client and inject it globally
+    const stripeClient = new Stripe(options.apiKey)
+    
+    app.provide('StripeClient', { useValue: stripeClient })
+  }
+})
+```
+
+### Using the Plugin
+
+Because we used `definePlugin`, the framework allows us to pass configuration options beautifully:
+
+```typescript filename="exis.config.ts"
+import { defineExisConfig } from 'exisjs/config'
+import { StripePlugin } from './src/plugins/stripe.plugin'
+import { env } from './src/env'
+
+export default defineExisConfig({
+  plugins: [
+    // We call the plugin as a function to pass options
+    StripePlugin({ apiKey: env.STRIPE_SECRET_KEY })
+  ]
+})
+```

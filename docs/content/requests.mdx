@@ -1,0 +1,186 @@
+---
+nextUrl: "/docs/responses"
+nextTitle: "Responses"
+---
+
+# Requests
+
+ExisJS wraps the native Node.js `IncomingMessage` object into a highly optimized, developer-friendly `ExisRequest` instance. It abstracts away the complexities of stream parsing, multipart form processing, and header normalization, giving you an ultra-fast and fully typed interface.
+
+---
+
+## 1. Body, Query, and Params
+
+The most common request properties are automatically parsed and strongly typed (especially when using the [Schema Validation](/docs/middleware#8-schema-validation) middleware).
+
+- **`req.body`**: The parsed body of the request (JSON, URL-encoded, or Multipart).
+- **`req.query`**: An object containing the URL query string parameters (e.g., `?id=123`).
+- **`req.params`**: An object containing route parameters (e.g., `/:id`).
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+export default controller({
+  updateUser: route.post('/users/:id', {
+    handle(req, res) {
+      const id = req.params.id          // "123"
+      const force = req.query.force     // "true"
+      const payload = req.body          // { email: "alice@exisjs.com" }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Post, Param, Query, Body } from 'exisjs/decorators'
+
+@Controller()
+export default class UsersController {
+  @Post('/users/:id')
+  async updateUser(
+    @Param('id') id: string,
+    @Query('force') force: string,
+    @Body() payload: any
+  ) {
+    // Variables are automatically injected!
+  }
+}
+```
+
+---
+
+## 2. On-Demand Parsing
+
+To maximize performance, ExisJS does not parse the request body immediately for every route. If you aren't using the Validation middleware, you can manually trigger parsing on-demand.
+
+#### Functional Paradigm
+
+```typescript
+export default controller({
+  processData: route.post('/process', {
+    async handle(req, res) {
+      // Parses application/json
+      const data = await req.json<{ key: string }>()
+      
+      // Parses raw text (text/plain)
+      const text = await req.text()
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Post, Req } from 'exisjs/decorators'
+
+@Controller()
+export default class ProcessController {
+  @Post('/process')
+  async processData(@Req() req: any) {
+    // Parses application/json
+    const data = await req.json<{ key: string }>()
+    
+    // Parses raw text (text/plain)
+    const text = await req.text()
+  }
+}
+```
+
+---
+
+## 3. File Uploads & Form Data
+
+Handling `multipart/form-data` in Node.js is traditionally a nightmare. ExisJS provides a native, highly secure stream parser out-of-the-box.
+
+Calling `req.formData()` returns both the standard text fields and the uploaded files. ExisJS also attaches a highly convenient `.saveToDisk()` helper to every uploaded file, which automatically handles writing the buffer and generating collision-free filenames!
+
+#### Functional Paradigm
+
+```typescript filename="src/http/upload/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  uploadAvatar: route.post('/avatar', {
+    async handle(req, res) {
+      // 1. Parse the multipart form data
+      const { fields, files } = await req.formData()
+      
+      // 2. Access the file (e.g., from an input named "profile_pic")
+      const uploadedFile = files['profile_pic']
+      
+      if (uploadedFile) {
+        // 3. Save it to disk safely! Returns the absolute saved path.
+        const savedPath = await uploadedFile.saveToDisk('./uploads/avatars')
+        return { success: true, path: savedPath }
+      }
+      
+      return { success: false, error: "No file uploaded" }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/upload/route.ts"
+import { Controller, Post, UploadedFile } from 'exisjs/decorators'
+
+@Controller()
+export default class UploadController {
+  @Post('/avatar')
+  async uploadAvatar(@UploadedFile('profile_pic') profilePic: any) {
+    if (profilePic) {
+      // Save it to disk safely! Returns the absolute saved path.
+      const savedPath = await profilePic.saveToDisk('./uploads/avatars')
+      return { success: true, path: savedPath }
+    }
+    
+    return { success: false, error: "No file uploaded" }
+  }
+}
+```
+
+---
+
+## 4. HTTP Headers & Content Negotiation
+
+```typescript
+// Get a specific header (case-insensitive)
+const authHeader = req.get('Authorization')
+// or
+const authHeader = req.header('authorization')
+
+// Check the Content-Type
+if (req.is('application/json')) { ... }
+
+// Content Negotiation (returns the best match)
+const format = req.accepts('html', 'json', 'text')
+const language = req.acceptsLanguages('en', 'es', 'fr')
+```
+
+---
+
+## 5. Network Information
+
+ExisJS handles trust-proxies gracefully. If you are behind Cloudflare, Nginx, or an AWS Load Balancer, simply set `trustProxy: true` in your `exis()` config, and these properties will automatically resolve the true client IP from `X-Forwarded-For`.
+
+- **`req.ip`**: The client's IP address.
+- **`req.ips`**: An array of IPs if multiple proxies were traversed.
+- **`req.hostname`**: The resolved hostname (from `Host` or `X-Forwarded-Host`).
+- **`req.protocol`**: Returns `'http'` or `'https'`.
+- **`req.secure`**: A boolean (true if `req.protocol === 'https'`).
+
+---
+
+## 6. Context & Metadata
+
+As your request moves through ExisJS Middlewares, various properties are attached to `req` for your convenience:
+
+- **`req.log`**: A request-scoped instance of the Pino logger (via `requestLogger`).
+- **`req.requestId`**: The unique Trace ID (via `requestId`).
+- **`req.user`**: The authenticated user payload (via `JWT` auth middleware).
+- **`req.session`**: The stateful session object (via `session` middleware).
+- **`req.fresh`**: Returns `true` if the client's cache is still valid (ETag match), meaning you can send a 304 response.

@@ -1,0 +1,162 @@
+# Decorators
+
+ExisJS provides a rich ecosystem of standard ES6 decorators for developers who prefer the Object-Oriented Programming (OOP) paradigm (heavily inspired by NestJS). 
+
+Because ExisJS does not rely on heavy reflection libraries like `reflect-metadata`, these decorators are incredibly fast and memory-efficient.
+
+All decorators can be imported directly from `exisjs/decorators`.
+
+---
+
+## 1. Controllers & Routing
+
+To map a class to a route prefix, use the `@Controller()` decorator. You can then use HTTP Method decorators to map class methods to specific endpoints.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post, Put, Delete } from 'exisjs/decorators'
+
+@Controller('/users')
+export default class UsersController {
+  
+  @Get('/')
+  async listUsers() {
+    return { users: [] }
+  }
+
+  @Post('/create')
+  async createUser() {
+    return { success: true }
+  }
+  
+  @Delete('/:id')
+  async deleteUser() {}
+}
+```
+
+### Available Method Decorators
+- `@Get(path?, schema?)`
+- `@Post(path?, schema?)`
+- `@Put(path?, schema?)`
+- `@Patch(path?, schema?)`
+- `@Delete(path?, schema?)`
+- `@Options(path?, schema?)`
+- `@Head(path?, schema?)`
+- `@All(path?, schema?)`
+- `@Ws(path?, schema?)` (For WebSockets)
+- `@Sse(path?, schema?)` (For Server-Sent Events)
+
+---
+
+## 2. Request Parameters
+
+Instead of manually digging through the `req` object, ExisJS allows you to cleanly inject request properties directly into your method parameters.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body, Param, Headers, Req, Res } from 'exisjs/decorators'
+
+@Controller('/users')
+export default class UsersController {
+  
+  @Post('/:id')
+  async update(
+    @Param('id') id: string,
+    @Body() payload: any,
+    @Headers('authorization') token: string,
+    @Req() req: any,
+    @Res() res: any
+  ) {
+    return { success: true, id, payload }
+  }
+}
+```
+
+### Available Parameter Decorators
+- `@Body(key?)` - Extracts `req.body` or a specific key.
+- `@Param(key?)` - Extracts `req.params` or a specific key.
+- `@Query(key?)` - Extracts `req.query` or a specific key.
+- `@Headers(key?)` - Extracts `req.headers` or a specific key.
+- `@Req()` - Injects the underlying `ExisRequest` object.
+- `@Res({ passthrough?: boolean })` - Injects the underlying `ExisResponse` object.
+- `@Ip()` - Extracts the client IP address.
+- `@Next()` - Injects the `next()` function for middleware bypass.
+- `@Session()` - Injects `req.session` (if a session plugin is active).
+- `@Socket()` - Injects the `ExisWebSocket` (only valid in `@Ws` routes).
+- `@Stream()` - Injects the `ExisSSE` stream (only valid in `@Sse` routes).
+- `@UploadedFile()` / `@UploadedFiles()` - Automatically extracts multipart form-data files!
+
+---
+
+## 3. Middleware & Lifecycles
+
+You can bind Middleware, Guards, Exception Filters, and Interceptors directly to your Controllers or individual methods using decorators!
+
+```typescript filename="src/http/admin/route.ts"
+import { Controller, Get, Use, UseGuards, UseFilters } from 'exisjs/decorators'
+import { requireAuth } from '../../middleware/auth'
+import { RoleGuard } from '../../guards/role'
+import { AdminErrorFilter } from '../../filters/admin'
+
+@Controller('/admin')
+@Use(requireAuth) // Applies to the entire class
+@UseFilters(AdminErrorFilter) // Applies to the entire class
+export default class AdminController {
+  
+  @Get('/dashboard')
+  @UseGuards(RoleGuard) // Applies ONLY to this method
+  async getDashboard() {
+    return { secret: 'data' }
+  }
+}
+```
+
+### Available Lifecycle Decorators
+- `@Use(...middlewares)` - Binds standard Express-style middleware.
+- `@UseGuards(...guards)` - Binds ExisJS authorization Guards.
+- `@UseInterceptors(...interceptors)` - Binds response Interceptors.
+- `@UseFilters(...filters)` - Binds Exception Filters.
+
+---
+
+## 4. Response Modifiers
+
+Sometimes you need to modify the HTTP Response (like changing the status code or adding a header) without injecting the raw `@Res()` object. 
+
+```typescript filename="src/http/api/route.ts"
+import { Controller, Post, HttpCode, Header, Redirect } from 'exisjs/decorators'
+
+@Controller('/api')
+export default class ApiController {
+  
+  @Post('/create')
+  @HttpCode(201) // Forces the response status to 201 Created
+  @Header('X-Custom-Version', '2.0') // Appends a custom header
+  async create() {
+    return { success: true }
+  }
+  
+  @Get('/legacy')
+  @Redirect('/new-api', 301) // Automatically redirects the client!
+  async legacy() {}
+}
+```
+
+### Available Response Decorators
+- `@HttpCode(code: number)`
+- `@Header(name: string, value: string)`
+- `@Redirect(url: string, statusCode?: number)`
+- `@Hosts(...hosts: string[])` - Restricts a route/controller to a specific Host header (e.g. `api.example.com`).
+
+---
+
+## 5. Dependency Injection
+
+To mark a class as a service that can be injected into your controllers, use the `@Injectable()` decorator.
+
+```typescript filename="src/services/db.ts"
+import { Injectable } from 'exisjs/decorators'
+
+@Injectable({ scope: 'singleton' })
+export class DatabaseService {
+  async findUser() { ... }
+}
+```

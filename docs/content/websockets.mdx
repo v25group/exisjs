@@ -1,0 +1,289 @@
+---
+nextUrl: "/docs/queues"
+nextTitle: "Job Queues"
+---
+
+# WebSockets
+
+ExisJS provides a first-class, built-in WebSocket engine that goes far beyond native `ws`. It includes an integrated Pub/Sub system (rooms), automatic JSON serialization, Socket.io-style event emitters, and built-in presence trackingall running blazingly fast on top of Node.js or uWebSockets.js.
+
+You can handle WebSockets using either the **Functional API** or the **Class-Based (OOP) API**.
+
+---
+
+## 1. Functional API
+
+For smaller applications or functional paradigms, you can define WebSocket routes directly on a router using `route.ws()`.
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  chatSocket: route.ws('/ws', {
+    handle({ socket }) {
+      console.log(`New connection: ${socket.id}`)
+
+      // Listen for incoming messages
+      socket.on('message', (rawData) => {
+        const data = JSON.parse(rawData.toString())
+
+        if (data.action === 'join') {
+          // Join a room (Pub/Sub)
+          socket.join(data.room)
+
+          // Emit a named event back to the socket
+          socket.emit('chat', {
+            type: 'system',
+            message: `You joined #${data.room}`,
+          })
+        } else if (data.action === 'message') {
+          // Publish a message to everyone in the room (excluding sender by default)
+          socket.publish(data.room, {
+            event: 'chat',
+            data: { message: data.message },
+          })
+        }
+      })
+
+      socket.on('close', () => {
+        console.log(`Disconnected: ${socket.id}`)
+        socket.leaveAll()
+      })
+    },
+  }),
+})
+```
+
+---
+
+## 2. Class-Based (OOP) API
+
+For enterprise applications, ExisJS provides the `@Ws()` decorator to cleanly map WebSocket endpoints inside your Controllers.
+
+```typescript filename="src/http/chat/controller.ts"
+import { Controller, Ws, Socket } from 'exisjs/decorators'
+import { ExisWebSocket } from 'exisjs/router'
+
+@Controller()
+export default class ChatController {
+  @Ws('/ws')
+  handleSocket(@Socket() socket: ExisWebSocket) {
+    // Enable auto-presence for this server
+    socket.server.enablePresence()
+
+    // Listen for custom JSON events seamlessly
+    socket.onEvent('join', (data) => {
+      // Attach custom state to the socket
+      socket.data.userId = data.userId
+
+      // Unsubscribe from previous rooms cleanly
+      socket.leaveAll()
+      socket.join(data.room)
+
+      // Fetch the roster of active users in the room
+      const roster = socket.server.getRoomRoster(data.room)
+      socket.emit('roster', { roster })
+    })
+
+    socket.onEvent('message', (data) => {
+      // Socket.io style broadcasting!
+      socket.to(data.room).emit('chat', {
+        userId: socket.data.userId,
+        message: data.message,
+      })
+    })
+  }
+}
+```
+
+---
+
+## The `ExisWebSocket` API
+
+ExisJS wraps the native WebSocket with a powerful `ExisWebSocket` instance that provides Socket.io-like ergonomics without the heavy client-side dependencies.
+
+### Emitting & Sending
+
+- **`socket.send(data)`**: Sends raw data. Objects are automatically stringified.
+- **`socket.emit(event, data)`**: Emits a named JSON event (`{ event: "name", data: ... }`).
+- **`socket.emitWithAck(event, data, timeoutMs?)`**: Emits an event and returns a Promise that resolves when the client sends back an acknowledgment with the matching `ackId`.
+- **`socket.volatile.emit(event, data)`**: Emits an event that will be safely dropped if the connection is experiencing backpressure (network saturation).
+
+#### Example: Emitting Events
+
+**Functional API:**
+
+```typescript
+route.ws('/ws', {
+  handle({ socket }) {
+    // Send a standard named event
+    socket.emit('ping', { timestamp: Date.now() })
+
+    // Send a volatile event that drops if network is busy
+    socket.volatile.emit('stock-tick', { price: 100 })
+  },
+})
+```
+
+**Class-Based (OOP) API:**
+
+```typescript
+@Ws('/ws')
+handleSocket(@Socket() socket: ExisWebSocket) {
+  // Await an acknowledgment from the client
+  socket.onEvent('request-data', async () => {
+    try {
+      const response = await socket.emitWithAck('data-ready', { id: 1 }, 5000)
+      console.log('Client acknowledged:', response)
+    } catch (err) {
+      console.error('Client failed to ack in 5s')
+    }
+  })
+}
+```
+
+### Rooms (Pub/Sub)
+
+ExisJS has a built-in Pub/Sub engine that allows sockets to subscribe to topics (rooms).
+
+- **`socket.join(room)`** / **`socket.subscribe(room)`**: Subscribes the socket to a room.
+- **`socket.leave(room)`** / **`socket.unsubscribe(room)`**: Unsubscribes from a room.
+- **`socket.leaveAll()`** / **`socket.unsubscribeAll()`**: Unsubscribes from all joined rooms.
+- **`socket.publish(room, data, excludeSelf?)`**: Publishes data to all sockets in a room. By default, it excludes the sender.
+
+#### Example: Managing Rooms
+
+**Functional API:**
+
+```typescript
+route.ws('/chat', {
+  handle({ socket }) {
+    socket.onEvent('join-room', (data) => {
+      // Leave old rooms before joining a new one
+      socket.leaveAll()
+      socket.join(data.roomId)
+
+      socket.publish(data.roomId, {
+        event: 'system',
+        data: 'A new user joined',
+      })
+    })
+  },
+})
+```
+
+**Class-Based (OOP) API:**
+
+```typescript
+@Ws('/chat')
+handleSocket(@Socket() socket: ExisWebSocket) {
+  socket.onEvent('leave-room', (data) => {
+    socket.leave(data.roomId)
+  })
+}
+```
+
+### Broadcasting (Socket.io Style)
+
+If you prefer Socket.io's chainable broadcasting syntax, ExisJS fully supports it:
+
+- **`socket.to(room).emit(event, data)`**: Emits an event to everyone in the specified room _except_ the sender.
+- **`socket.broadcast.emit(event, data)`**: Emits to every connected socket on the server _except_ the sender.
+- **`socket.broadcast.to(room).emit(event, data)`**: Same as `socket.to()`.
+
+#### Example: Broadcasting
+
+**Functional API:**
+
+```typescript
+route.ws('/game', {
+  handle({ socket }) {
+    socket.onEvent('player-move', (position) => {
+      // Tell everyone ELSE in 'game-1' that this player moved
+      socket.to('game-1').emit('player-moved', { id: socket.id, position })
+    })
+  },
+})
+```
+
+**Class-Based (OOP) API:**
+
+```typescript
+@Ws('/global')
+handleSocket(@Socket() socket: ExisWebSocket) {
+  socket.onEvent('global-alert', (alert) => {
+    // Broadcast to EVERYONE on the server except the sender
+    socket.broadcast.emit('alert', alert)
+  })
+}
+```
+
+### Listening for Events
+
+- **`socket.on('message', cb)`**: Listens for raw WebSocket messages.
+- **`socket.onEvent(eventName, cb)`**: Automatically parses incoming JSON and triggers the callback _only_ if the JSON payload matches `{ event: "eventName" }`.
+
+#### Example: Event Listeners
+
+**Functional API:**
+
+```typescript
+route.ws('/data', {
+  handle({ socket }) {
+    // Handle raw buffer/string messages manually
+    socket.on('message', (raw) => {
+      console.log('Raw data received:', raw.toString())
+    })
+  },
+})
+```
+
+**Class-Based (OOP) API:**
+
+```typescript
+@Ws('/api')
+handleSocket(@Socket() socket: ExisWebSocket) {
+  // Cleanly handle specific JSON events
+  socket.onEvent('auth', (credentials) => {
+    console.log('Auth attempt:', credentials.username)
+  })
+}
+```
+
+### State & Presence
+
+- **`socket.data`**: An empty object `Record<string, any>` where you can safely attach custom user data (like user IDs, roles, etc.) for the duration of the connection.
+- **`socket.server.enablePresence()`**: Turns on automatic presence tracking. When a socket joins or leaves a room, ExisJS will automatically broadcast `room:join` and `room:leave` events to the room.
+- **`socket.server.getRoomRoster(room)`**: Returns an array of all connected sockets currently in a specific room.
+
+#### Example: State & Roster Tracking
+
+**Functional API:**
+
+```typescript
+route.ws('/collaboration', {
+  handle({ socket }) {
+    socket.server.enablePresence()
+
+    socket.onEvent('identify', (user) => {
+      // Safely store state on the socket instance
+      socket.data.userId = user.id
+      socket.data.role = 'editor'
+    })
+  },
+})
+```
+
+**Class-Based (OOP) API:**
+
+```typescript
+@Ws('/collaboration')
+handleSocket(@Socket() socket: ExisWebSocket) {
+  socket.onEvent('get-users', (room) => {
+    // Fetch everyone currently in the room
+    const roster = socket.server.getRoomRoster(room)
+
+    socket.emit('users-list', roster.map(s => s.data.userId))
+  })
+}
+```

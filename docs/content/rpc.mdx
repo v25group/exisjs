@@ -1,0 +1,146 @@
+---
+nextUrl: "/docs/decorators"
+nextTitle: "Custom Decorators"
+---
+
+# RPC Client (End-to-End Type Safety)
+
+ExisJS comes with a native, blazingly fast RPC (Remote Procedure Call) client designed to give you **end-to-end type safety** without needing code generation (like OpenAPI/Swagger) or GraphQL. 
+
+Because ExisJS infers the types of your backend routes natively, you can share those types directly with your frontend (React, Vue, React Native) and get flawless autocomplete, payload validation, and response typing!
+
+---
+
+## 1. Exporting the AppRouter Type
+
+To use the strictly typed client, you simply need to export the inferred type of your ExisJS application from your main backend entry point.
+
+```typescript filename="backend/src/http/server.ts"
+import { exis } from 'exisjs'
+
+const app = exis({
+  async onStart(app) {
+    // Backend boot logic...
+  }
+})
+
+// Export the inferred router type for the frontend!
+export type AppRouter = typeof app
+
+export default app
+```
+
+*(Note: Because this is just a TypeScript `type` export, absolutely zero backend code gets compiled into your frontend bundle!)*
+
+---
+
+## 2. Initializing the Client
+
+On your frontend (React, Vue, Svelte, etc.), install the lightweight client package:
+
+```bash
+npm install @exisjs/client
+```
+
+Then, initialize the client using the `AppRouter` type from your backend:
+
+```typescript filename="frontend/src/api.ts"
+import { createClient } from '@exisjs/client'
+import type { AppRouter } from '../../backend/src/http/server'
+
+export const client = createClient<AppRouter>({
+  baseUrl: 'http://localhost:3000',
+  
+  // Optionally provide default headers (like Auth tokens)
+  headers: () => ({
+    'Authorization': `Bearer ${localStorage.getItem('token')}`
+  }),
+
+  // Global error handler
+  onError: (err) => {
+    if (err.status === 401) {
+      window.location.href = '/login'
+    }
+  }
+})
+```
+
+---
+
+## 3. Using the Client (The Magic)
+
+Because ExisJS uses a clever ES6 `Proxy` under the hood, the client dynamically maps your chained object calls into HTTP requests. It perfectly mirrors your backend's folder structure!
+
+If you have a backend route at `src/http/api/users/route.ts` with a `get` handler:
+
+```typescript filename="frontend/src/components/UserProfile.tsx"
+import { client } from '../api'
+
+async function fetchUser() {
+  // 1. Perfect autocomplete for .api.users.get
+  // 2. Strong typing for the payload (e.g. { id: string })
+  // 3. The `user` variable is strictly typed to whatever the backend returns!
+  const user = await client.api.users.get({
+    id: "123"
+  })
+  
+  console.log(user.name) 
+}
+```
+
+### Passing Query Parameters
+
+If you need to pass HTTP query parameters (like `?sort=desc`), you can use the `options` argument (the second parameter):
+
+```typescript filename="frontend/src/components/UserList.tsx"
+const users = await client.api.users.get(
+  // The first argument is the JSON payload (Body/Params)
+  {}, 
+  // The second argument configures the Request Options
+  { 
+    query: { sort: 'desc', limit: 10 },
+    headers: { 'X-Custom-Override': 'true' }
+  }
+)
+```
+
+---
+
+## 4. Advanced Configuration
+
+The `createClient` function accepts several powerful configuration options to intercept requests and responses globally.
+
+```typescript
+export interface ClientConfig {
+  // The base URL of your ExisJS backend
+  baseUrl: string
+  
+  // Static headers, or a dynamic function evaluated per-request
+  headers?: Record<string, string> | (() => Record<string, string>)
+  
+  // Provide a custom fetch implementation (useful for testing or Polyfills)
+  fetch?: typeof fetch
+  
+  // A global hook that runs BEFORE the request is dispatched
+  onRequest?: (req: RequestInit, url: string) => void | Promise<void>
+  
+  // A global hook that runs AFTER the request successfully completes
+  onResponse?: (res: Response, url: string) => void | Promise<void>
+  
+  // A global hook that catches any failed requests
+  onError?: (err: ExisClientError) => void | Promise<void>
+}
+```
+
+### ExisClientError
+
+If an HTTP request fails (e.g., the backend returns a `400 Bad Request` or `500 Internal Server Error`), the client throws an `ExisClientError`. This error conveniently attaches the status code and parsed JSON response!
+
+```typescript
+try {
+  await client.api.users.post({ email: "invalid-email" })
+} catch (err) {
+  console.log(err.status) // 400
+  console.log(err.data) // { success: false, error: "Validation Failed..." }
+}
+```

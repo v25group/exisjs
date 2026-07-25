@@ -1,0 +1,112 @@
+---
+nextUrl: "/docs/integrations/s3"
+nextTitle: "AWS S3"
+---
+
+# Swagger OpenAPI
+
+ExisJS comes with a native **Swagger UI & OpenAPI 3.0** generator built directly into the framework. It automatically parses all your routes, path parameters, and schema validations to instantly generate a beautiful API explorer!
+
+You do **not** need to maintain massive OpenAPI YAML files or write hundreds of decorators.
+
+---
+
+## Usage
+
+To enable Swagger UI, simply import `serveSwagger` and call it inside the `onStart` hook in your `server.ts`.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { serveSwagger } from 'exisjs/swagger'
+
+export default exis({
+  async onStart(app) {
+    // Instantly generate and mount Swagger UI
+    serveSwagger(app, {
+      path: '/api-docs', // Defaults to '/docs'
+      title: 'My Startup API',
+      version: '1.0.0',
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT'
+          }
+        }
+      }
+    })
+  }
+})
+```
+
+Once your server starts, navigate to `http://localhost:4000/api-docs` to see your beautiful, auto-generated Swagger UI! The raw OpenAPI JSON payload will be available at `/api-docs/json`.
+
+---
+
+## Automatic Schema Generation
+
+ExisJS seamlessly integrates with its internal `v` validator. Any validation schemas attached to your routes (whether Functional or OOP) are automatically translated into perfectly formatted OpenAPI specifications!
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route, v } from 'exisjs/router'
+
+export default controller({
+  createUser: route.post('/', {
+    // This schema is automatically translated to OpenAPI request body definitions!
+    body: {
+      name: v.string(),
+      age: v.number().optional()
+    },
+    async handle(req) {
+      return { success: true, name: req.body.name }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+
+const CreateUserSchema = v.object({
+  name: v.string(),
+  age: v.number().optional()
+})
+
+@Controller('/users')
+export default class UsersController {
+  @Post('/', { body: CreateUserSchema })
+  async createUser(@Body() body: any) {
+    return { success: true, name: body.name }
+  }
+}
+```
+
+When you view Swagger UI, the `POST /users` endpoint will automatically show the exact JSON body required, properly displaying the string/number types and required/optional flags!
+
+---
+
+## Gateway Cascading Metadata
+
+If you want to apply OpenAPI tags or security schemas to an entire folder of routes without decorating every single endpoint, you can elegantly use ExisJS Gateways!
+
+```typescript filename="src/http/admin/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+
+export default defineGateway({
+  // Every route in the /admin folder automatically inherits these OpenAPI tags!
+  metadata: {
+    openapi: { 
+      tags: ['Admin Management API'], 
+      security: ['bearerAuth'] 
+    }
+  }
+})
+```
+
+Now, every single route under `/admin/*` will be beautifully grouped under the "Admin Management API" section in your Swagger UI.

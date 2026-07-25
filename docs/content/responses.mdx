@@ -1,0 +1,271 @@
+---
+nextUrl: "/docs/prisma"
+nextTitle: "Prisma Integration"
+---
+
+# Responses
+
+Unlike standard Node.js `ServerResponse` objects which are notoriously low-level and cumbersome, ExisJS wraps every response in a highly optimized `ExisResponse` class. It provides an expressive, chainable API while maintaining the raw performance of native Node.
+
+While ExisJS routes allow you to simply `return { data: ... }` (which automatically serializes to JSON), the `res` object gives you granular control over headers, cookies, streams, and file downloads.
+
+---
+
+## 1. Returning Data vs Sending Data
+
+The most common way to respond to a request in ExisJS is to simply **return an object or array**. ExisJS intercepts the return value, automatically serializes it to JSON, sets the `Content-Type`, calculates the `Content-Length`, and sends it down the wire.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  getUsers: route.get('/', {
+    handle(req, res) {
+      // ExisJS automatically handles JSON serialization!
+      return [{ id: 1, name: "Alice" }] 
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async getUsers() {
+    // ExisJS automatically handles JSON serialization!
+    return [{ id: 1, name: "Alice" }] 
+  }
+}
+```
+
+However, you can completely bypass this and use the `res` object manually:
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+export default controller({
+  getUsers: route.get('/', {
+    handle(req, res) {
+      // Chainable response API
+      res.status(201).json([{ id: 1, name: "Alice" }])
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async getUsers(@Res() res: any) {
+    // Chainable response API
+    res.status(201).json([{ id: 1, name: "Alice" }])
+  }
+}
+```
+
+---
+
+## 2. Standardized JSON Responses (`exisjs/response`)
+
+To keep your APIs consistent, ExisJS exports standard `success()` and `error()` builders. 
+Using these ensures your entire application adheres to a unified `{ success: boolean, data?: any, error?: any }` structure, which frontend teams love.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+import { success, error } from 'exisjs/response'
+
+export default controller({
+  getUser: route.get('/:id', {
+    handle(req, res) {
+      const user = db.users.find(req.params.id)
+      
+      if (!user) {
+        res.status(404)
+        // Generates: { success: false, error: { message: "User not found", code: "NOT_FOUND" } }
+        return error("User not found", "NOT_FOUND")
+      }
+      
+      // Generates: { success: true, data: { id: 1, name: "Alice" }, message: "Found user" }
+      return success(user, "Found user")
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get, Param, Res } from 'exisjs/decorators'
+import { success, error } from 'exisjs/response'
+
+@Controller()
+export default class UsersController {
+  @Get('/:id')
+  async getUser(@Param('id') id: string, @Res() res: any) {
+    const user = db.users.find(id)
+    
+    if (!user) {
+      res.status(404)
+      // Generates: { success: false, error: { message: "User not found", code: "NOT_FOUND" } }
+      return error("User not found", "NOT_FOUND")
+    }
+    
+    // Generates: { success: true, data: { id: 1, name: "Alice" }, message: "Found user" }
+    return success(user, "Found user")
+  }
+}
+```
+
+---
+
+## 3. Setting Headers & Status
+
+The `ExisResponse` object implements a beautiful, chainable API for HTTP headers and status codes.
+
+```typescript
+res.status(404)
+   .set('X-Custom-Header', 'exis-is-awesome')
+   .append('Set-Cookie', 'foo=bar')
+   .json({ error: 'Not Found' })
+```
+
+### Supported Header Methods
+- `res.status(code)`: Sets the HTTP status code.
+- `res.set(key, value)` (or `res.header()`): Sets an HTTP header.
+- `res.append(key, value)`: Appends to an existing header (e.g., multiple `Set-Cookie` directives).
+- `res.removeHeader(key)`: Deletes a header.
+- `res.type(mimeType)`: A shorthand for setting the `Content-Type` header (e.g., `res.type('html')` becomes `text/html`).
+- `res.vary(field)`: Adds a field to the `Vary` header for caching.
+
+---
+
+## 3. Cookies
+
+ExisJS provides native helper methods for setting and clearing cookies safely.
+
+```typescript
+// Set a secure, HTTP-only cookie
+res.cookie('session_id', '123456', {
+  maxAge: 86400, // 1 day in seconds
+  httpOnly: true,
+  secure: true,
+  sameSite: 'Strict'
+})
+
+// Clear a cookie
+res.clearCookie('session_id')
+```
+
+---
+
+## 4. File Downloads & Streaming
+
+ExisJS makes streaming files incredibly simple and efficient, fully bypassing V8 memory bottlenecks by piping native Node streams directly to the socket.
+
+### `res.download()`
+Automatically reads a file from disk, sets the `Content-Disposition` header to force a download in the browser, and infers the correct MIME type based on the file extension.
+
+#### Functional Paradigm
+
+```typescript
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  downloadReport: route.get('/report', {
+    handle(req, res) {
+      res.download('/absolute/path/to/report.pdf', 'Q4-Report.pdf')
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript
+import { Controller, Get, Res } from 'exisjs/decorators'
+
+@Controller()
+export default class ReportController {
+  @Get('/report')
+  async downloadReport(@Res() res: any) {
+    res.download('/absolute/path/to/report.pdf', 'Q4-Report.pdf')
+  }
+}
+```
+
+### `res.sendStream()`
+If you are fetching data from an external source (like AWS S3) or generating data on the fly, you can pipe any `ReadableStream` directly to the client.
+
+#### Functional Paradigm
+
+```typescript
+import { controller, route } from 'exisjs/router'
+import fs from 'node:fs'
+
+export default controller({
+  streamVideo: route.get('/video', {
+    handle(req, res) {
+      const videoStream = fs.createReadStream('/path/to/video.mp4')
+      
+      res.type('video/mp4')
+      res.sendStream(videoStream)
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript
+import { Controller, Get, Res } from 'exisjs/decorators'
+import fs from 'node:fs'
+
+@Controller()
+export default class VideoController {
+  @Get('/video')
+  async streamVideo(@Res() res: any) {
+    const videoStream = fs.createReadStream('/path/to/video.mp4')
+    
+    res.type('video/mp4')
+    res.sendStream(videoStream)
+  }
+}
+```
+
+---
+
+## 5. Redirects
+
+You can instantly redirect users to another URL using `res.redirect()`. It defaults to a `302 Found` temporary redirect, but you can override the status code.
+
+```typescript
+// Temporary Redirect (302)
+res.redirect('/login')
+
+// Permanent Redirect (301)
+res.redirect('https://google.com', 301)
+```
+
+---
+
+## 6. ETags & Conditional Requests (304 Not Modified)
+
+ExisJS features native, automatic ETag generation. 
+
+If the client sends an `If-None-Match` header matching the ETag of the current response, ExisJS will immediately abort serialization and send a lightning-fast `304 Not Modified` header with an empty body, saving significant bandwidth and CPU cycles.
+
+*Note: ETag generation is disabled by default to maximize raw throughput, but can be enabled globally in your `exis()` config, or manually per-route via `res.etagEnabled = true`.*

@@ -1,0 +1,108 @@
+---
+nextUrl: "/docs/integrations/posthog"
+nextTitle: "PostHog"
+---
+
+# OpenAI Integration
+
+ExisJS provides a zero-config, native integration for **OpenAI** to instantly harness the power of LLMs.
+
+Following our framework philosophy, the `openai` SDK is an optional peer dependency. It remains completely invisible and uninstalled until you explicitly need it, ensuring your core application stays blazing fast and lightweight!
+
+---
+
+## Environment Variables
+
+The OpenAI plugin securely reads your API key directly from your `.env` file. 
+
+Before using the plugin, ensure you have your API key set:
+
+```bash filename=".env"
+OPENAI_API_KEY="sk-proj-123456789"
+```
+
+---
+
+## Installation
+
+ExisJS wraps the official `openai` Node.js SDK.
+
+```bash
+npm install openai
+```
+
+---
+
+## Usage
+
+Simply import the `openai` proxy from `exisjs/openai`. ExisJS will instantly boot and cache the client connection the very first time you generate a completion!
+
+#### Functional Paradigm
+
+```typescript filename="src/http/ai/route.ts"
+import { controller, route } from 'exisjs/router'
+import { openai } from 'exisjs/openai'
+
+export default controller({
+  generateJoke: route.post('/joke', {
+    async handle(req) {
+      // The openai client magically lazy-loads here!
+      const completion = await openai.chat.completions.create({
+        messages: [{ role: 'user', content: 'Tell me a programming joke.' }],
+        model: 'gpt-4o-mini',
+      })
+
+      return { 
+        success: true, 
+        joke: completion.choices[0].message.content 
+      }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/ai/route.ts"
+import { Controller, Post } from 'exisjs/decorators'
+import { openai } from 'exisjs/openai'
+
+@Controller('/ai')
+export default class AIController {
+  
+  @Post('/joke')
+  async generateJoke() {
+    // The openai client magically lazy-loads here!
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: 'Tell me a programming joke.' }],
+      model: 'gpt-4o-mini',
+    })
+
+    return { 
+      success: true, 
+      joke: completion.choices[0].message.content 
+    }
+  }
+}
+```
+
+---
+
+## Customizing Connection Options
+
+If you need to pass custom options to the OpenAI Client (e.g., overriding the `baseURL` to use an OpenAI-compatible open-source model via Ollama or vLLM), call `configureOpenAI(options)` inside your `server.ts` `onStart` hook!
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configureOpenAI } from 'exisjs/openai'
+
+export default exis({
+  async onStart() {
+    // Override the baseURL to point to a local Ollama instance!
+    configureOpenAI({
+      baseURL: 'http://localhost:11434/v1',
+      apiKey: 'ollama' // Local LLMs often just need a dummy key
+    })
+  }
+})
+```

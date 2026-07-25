@@ -1,0 +1,105 @@
+---
+nextUrl: "/docs/adapters"
+nextTitle: "Adapters"
+---
+
+# Testing
+
+ExisJS was built with testing as a first-class citizen. Instead of forcing you to configure bulky external test runners like Jest or Vitest, ExisJS natively wraps the ultra-fast, built-in **Node.js Test Runner** (`node:test`).
+
+This means you get blistering fast, zero-dependency testing out-of-the-box.
+
+---
+
+## The Testing Module
+
+ExisJS exports everything you need for testing directly from `exisjs/testing`. This includes the test runner functions (`test`, `describe`, `it`, `before`), assertions (`assert`), and the powerful ExisJS `createTestContext`!
+
+### Creating a Test Context
+
+When testing an API, you want to boot the app, run HTTP requests against it, and then gracefully shut it down (closing database connections so the test runner doesn't hang). `createTestContext` does exactly this for you automatically!
+
+```typescript filename="tests/users.test.ts"
+import { describe, it, assert, createTestContext } from 'exisjs/testing'
+import app from '../src/http/server' // Import your Exis instance
+
+describe('Users API', () => {
+  // Automatically boots the app, runs `onStart`, and gracefully shuts down databases after tests!
+  const client = createTestContext(app)
+
+  it('should create a new user', async () => {
+    // client acts as a super-fast in-memory HTTP client
+    const res = await client.post('/users', {
+      body: { name: 'Alice', email: 'alice@example.com' }
+    })
+
+    // Native Node.js assertions
+    assert.strictEqual(res.statusCode, 201)
+    assert.strictEqual(res.json.name, 'Alice')
+  })
+
+  it('should return 400 on invalid input', async () => {
+    const res = await client.post('/users', {
+      body: { name: 'Bob' } // Missing email
+    })
+
+    assert.strictEqual(res.statusCode, 400)
+    assert.strictEqual(res.json.success, false)
+  })
+})
+```
+
+### Running Tests
+
+Because ExisJS wraps the native Node.js test runner in its powerful CLI, you can run all your tests simply using the standard Exis command!
+
+```bash
+npx exisjs test
+```
+
+Or configure it in your `package.json`:
+
+```json
+{
+  "scripts": {
+    "test": "exisjs test"
+  }
+}
+```
+
+The `exisjs test` command automatically bootstraps your environment, loads your environment variables (`.env`), registers TypeScript (`tsx`), and recursively finds and executes all test files matching standard testing conventions (`*.test.ts`, `*.spec.ts`, etc.) regardless of where they are placed.
+
+### Test Configuration
+
+ExisJS allows you to configure your testing environment directly. By default, it will use your project's TypeScript configuration, but you can override this by creating a specific `tsconfig.test.json` file in your project root. The test runner will automatically detect and prioritize it when running tests!
+
+---
+
+## Mocking (Dependency Injection)
+
+If you are using ExisJS's built-in **Dependency Injection (DI)** or **Gateways**, mocking is incredibly easy. You don't need magic `jest.mock()` intercepts. You can simply override the providers in your test!
+
+```typescript filename="tests/billing.test.ts"
+import { describe, it, assert, createTestContext } from 'exisjs/testing'
+import app from '../src/http/server'
+import { BillingGateway } from '../src/http/billing/gateway'
+
+describe('Billing API', () => {
+  
+  // Override the StripeService strictly for testing!
+  BillingGateway.overrideProvider('StripeService', {
+    charge: async (amount: number) => ({ success: true, transactionId: 'test_123' })
+  })
+
+  const client = createTestContext(app)
+
+  it('should process payment', async () => {
+    const res = await client.post('/billing/charge', {
+      body: { amount: 500 }
+    })
+
+    assert.strictEqual(res.statusCode, 200)
+    assert.strictEqual(res.json.transactionId, 'test_123')
+  })
+})
+```

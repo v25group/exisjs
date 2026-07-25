@@ -1,0 +1,177 @@
+---
+nextUrl: "/docs/cron"
+nextTitle: "Cron Jobs"
+---
+
+# Job Queues
+
+ExisJS provides an incredibly robust, built-in Job Queue system designed to handle background processing, delayed tasks, and high-concurrency workloads. 
+
+Unlike other frameworks where queues feel bolted on, ExisJS integrates them deeply:
+- **Native Worker Threads**: File-based jobs are automatically processed in isolated Node.js Worker Threads (`ThreadPool`) so heavy tasks never block your main HTTP event loop.
+- **Type-Safe Payloads**: Built-in schema validation for queue payloads.
+- **Driver Agnostic**: Seamlessly swap between `memory` (for dev) and `redis` (for production) without changing a single line of business logic.
+
+---
+
+## 1. Configuration
+
+You can configure the Queue engine globally in your main `exis.config.ts` or directly in the `exis({ ... })` initializer.
+
+```typescript filename="exis.config.ts"
+export default {
+  queue: {
+    driver: process.env.NODE_ENV === 'production' ? 'redis' : 'memory',
+    redisUrl: process.env.REDIS_URL,
+    concurrency: 5,
+    maxQueue: 10000,
+    prefix: 'myapp:jobs'
+  }
+}
+```
+
+### Configuration Properties
+
+Here are all the properties you can pass to the `queue` configuration object:
+
+- **`driver`**: (`'redis' | 'memory'`) The backend storage engine for the queue. Defaults to `'memory'`.
+- **`redisUrl`**: (`string`) The connection string for your Redis instance if using the redis driver.
+- **`redis`**: (`Redis`) An already instantiated `ioredis` client instance.
+- **`concurrency`** (or **`maxConcurrent`**): (`number`) The maximum number of jobs the worker will process concurrently in the thread pool. Defaults to `1`.
+- **`maxQueue`**: (`number`) Maximum number of pending jobs allowed in the queue. If this limit is hit, `enqueue()` will throw a Backpressure error to protect the system.
+- **`prefix`**: (`string`) A namespace prefix for all queue keys in the backend store (e.g., in Redis). Defaults to `'exis:queue'`.
+- **`enableWorkers`**: (`boolean`) Explicitly enable or disable the background worker on this specific Node process (useful for splitting HTTP servers and Worker servers).
+
+---
+
+## 2. Defining Jobs (Two Approaches)
+
+ExisJS provides two distinctly different ways to define and process background jobs, depending on whether the task is CPU-intensive or just a quick asynchronous action.
+
+### Approach 1: Auto-Mounted File-Based Jobs (Multi-Threaded)
+If you place a job definition inside the `src/jobs/` directory, ExisJS automatically mounts it using **File-Based Routing**.
+
+**Crucially, ExisJS will run these files entirely off the main thread in a dedicated V8 isolate (`ThreadPool`).** You don't have to write any `worker_threads` boilerplate. Just define the job, and ExisJS magically protects your HTTP server from being blocked by heavy CPU tasks (like image processing or large calculations).
+
+```typescript filename="src/jobs/process-image.ts"
+import { defineJob } from 'exisjs/queue'
+import { v } from 'exisjs/validator'
+
+export default defineJob({
+  name: 'process-image',
+  
+  schema: v.object({
+    imageId: v.string(),
+    resize: v.boolean()
+  }),
+  
+  // ExisJS automatically runs this handler in a separate Worker Thread!
+  async handler({ data }) {
+    console.log(`[Worker Thread] Processing image ${data.imageId}...`)
+    const result = heavyImageProcessing(data);
+    return result;
+  }
+})
+```
+
+### Approach 2: Inline Handlers (Main Thread)
+If you have a quick, IO-bound task (like sending an email or hitting an external API) and you don't want to create a whole new file, you can use the global `queue()` helper. 
+
+Jobs defined this way run functionally in the **main thread** (alongside your HTTP server), making them extremely quick to set up anywhere in your app.
+
+```typescript filename="src/http/server.ts"
+import { queue } from 'exisjs/queue'
+
+// Define a job inline! Runs in the main event loop.
+queue<{ email: string }>('send-welcome-email', async ({ data }) => {
+  console.log(`Sending email to ${data.email}...`)
+}, { 
+  defaultOptions: { attempts: 3 }
+})
+```
+
+---
+
+## 3. Enqueuing Jobs
+
+Regardless of which approach you used to define the job, you dispatch them the exact same way using the global `enqueue` helper.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { enqueue } from 'exisjs/queue'
+
+export default controller({
+  register: route.post('/register', {
+    async handle({ req, res }) {
+      const user = await db.users.create(req.body)
+      
+      // Enqueue the job instantly!
+      await enqueue('send-welcome-email', {
+        email: user.email
+      }, {
+        // You can override job options at dispatch time
+        delay: 5000 // Wait 5 seconds before processing
+      })
+      
+      res.json({ success: true, user })
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { enqueue } from 'exisjs/queue'
+
+@Controller()
+export default class UsersController {
+  @Post('/register')
+  async register(@Body() body: any) {
+    const user = await db.users.create(body)
+    
+    // Enqueue the job instantly!
+    await enqueue('send-welcome-email', {
+      email: user.email
+    }, {
+      // You can override job options at dispatch time
+      delay: 5000 // Wait 5 seconds before processing
+    })
+    
+    return { success: true, user }
+  }
+}
+```
+
+## Advanced Options
+
+When enqueuing a job, or setting `defaultOptions` in your job definitions, you can configure:
+
+- **`attempts`**: How many times to retry a failed job.
+- **`delay`**: How many milliseconds to wait before the job is processing.
+- **`backoff`**: If a job fails, how to wait before retrying (e.g., `{ type: 'exponential', delay: 1000 }` waits 1s, 2s, 4s, etc.).
+- **`visibilityTimeout`**: How long a job stays in the "processing" state before it is considered stuck and gets re-queued by the Sweeper (default: `30000`ms).
+
+---
+
+## 4. Queue Drivers & Internals
+
+ExisJS comes with two heavily optimized native queue drivers. Both drivers implement atomic operations and strict visibility timeouts to ensure jobs are never processed twice and are safely retried if a worker crashes.
+
+### The Memory Driver (`memory`)
+The in-memory driver is perfect for development, testing, or simple single-node deployments. 
+- It uses high-performance ES6 `Map` and `Array.sort` to keep jobs sorted by their execution score (`Date.now() + delay`).
+- Does not require any external infrastructure.
+
+### The Redis Driver (`redis`)
+Designed for massive horizontal scale, the Redis driver seamlessly powers distributed clusters.
+- **Atomic Operations**: Uses pure Lua scripts (`EVAL`) to atomically pop jobs from a pending `ZSET` (sorted set) into a processing state.
+- **Zero-Dependency Core**: It dynamically requires `ioredis` only if used, keeping the core ExisJS framework perfectly lightweight.
+- **Cluster Safe**: All jobs for a specific topic map to consistent Redis hash slots.
+
+### The Sweeper
+Regardless of which driver you use, ExisJS runs a background **Sweeper** every 10 seconds.
+If a worker crashes mid-job, or a job takes longer than its `visibilityTimeout`, the Sweeper automatically detects the stalled job in the processing list and aggressively re-queues it back into the pending list so another worker can pick it up.

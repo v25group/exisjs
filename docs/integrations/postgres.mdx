@@ -1,0 +1,190 @@
+---
+nextUrl: "/docs/integrations/mongo"
+nextTitle: "Database (NoSQL)"
+---
+
+# Database (SQL)
+
+ExisJS provides zero-config, native integrations for the most popular SQL databases and ORMs in the Node.js ecosystem. Instead of writing boilerplate connection logic, ExisJS automatically manages your connection pools using the `DATABASE_URL` environment variable.
+
+Because these plugins are completely **zero-config**, you do **NOT** need to register them in your `server.ts` file! They lazily initialize their connection pools the exact moment you first query them.
+
+The framework provides first-class plugins for **Drizzle ORM**, **Prisma**, and raw **PostgreSQL** (`postgres.js`).
+
+---
+
+## Environment Variables
+
+All SQL plugins securely read your connection string from your `.env` file. 
+Before using any of the plugins below, ensure you have your Postgres connection string set:
+
+```bash filename=".env"
+# Your PostgreSQL connection string
+DATABASE_URL="postgres://user:password@localhost:5432/my_database"
+```
+
+---
+
+## 1. Drizzle ORM (Recommended)
+
+[Drizzle ORM](https://orm.drizzle.team/) is the recommended database solution for ExisJS. It provides maximum type safety, unparalleled performance, and zero overhead.
+
+### Installation
+
+```bash
+npm install drizzle-orm postgres
+npm install -D drizzle-kit
+```
+
+### Usage
+
+Simply define your schema and call the native `drizzle()` integration helper. ExisJS will automatically initialize a highly optimized `postgres.js` connection pool using your `DATABASE_URL` environment variable.
+
+```typescript filename="src/db/index.ts"
+import { drizzle } from 'exisjs/drizzle'
+import { pgTable, serial, text, varchar } from 'drizzle-orm/pg-core'
+
+// 1. Define your schema
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  fullName: text('full_name'),
+  phone: varchar('phone', { length: 256 }),
+})
+
+const schema = { users }
+
+// 2. Initialize the client (Zero Config!)
+// ExisJS automatically reads process.env.DATABASE_URL
+export const db = drizzle(schema)
+```
+
+Now you can use `db` in your routes:
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { db, users } from '../../db'
+
+export default controller({
+  listUsers: route.get('/', {
+    async handle() {
+      return await db.select().from(users)
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { db, users } from '../../db'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async listUsers() {
+    return await db.select().from(users)
+  }
+}
+```
+
+---
+
+## 2. Prisma ORM
+
+If you prefer a schema-first approach, ExisJS includes a zero-config wrapper for Prisma.
+
+### Installation
+
+```bash
+npm install @prisma/client
+npm install -D prisma
+```
+
+Initialize your schema:
+```bash
+npx prisma init
+```
+
+### Usage
+
+Use the native `prisma()` helper to instantiate a singleton `PrismaClient` that automatically suppresses excessive logging in edge environments and optimally manages the connection.
+
+```typescript filename="src/db/index.ts"
+import { prisma } from 'exisjs/prisma'
+
+// Zero config singleton initialization
+export const db = prisma()
+```
+
+---
+
+## 3. Raw PostgreSQL (`postgres.js`)
+
+If you don't want to use an ORM and prefer writing raw SQL for maximum performance, ExisJS bundles a zero-config integration for the blazing fast `postgres.js` driver.
+
+### Installation
+
+```bash
+npm install postgres
+```
+
+### Usage
+
+Import the tagged template literal `sql` from `exisjs/postgres`. The first time you use it, ExisJS will instantly boot up a connection pool using `DATABASE_URL`.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { sql } from 'exisjs/postgres'
+
+export default controller({
+  getUser: route.get('/:id', {
+    async handle(req) {
+      // Write raw SQL with native parameterization!
+      const users = await sql`SELECT * FROM users WHERE id = ${req.params.id}`
+      return users[0]
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { sql } from 'exisjs/postgres'
+
+@Controller()
+export default class UsersController {
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    // Write raw SQL with native parameterization!
+    const users = await sql`SELECT * FROM users WHERE id = ${id}`
+    return users[0]
+  }
+}
+```
+
+### Customizing Connection Options
+
+If you need to pass custom options to the Postgres connection pool (like SSL config or max pool sizes), call `configurePostgres(options)` before you run your first query (e.g. inside your `server.ts` `onStart` hook).
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configurePostgres } from 'exisjs/postgres'
+
+export default exis({
+  async onStart() {
+    // Initialize with custom connection limits
+    configurePostgres({
+      max: 20,
+      idle_timeout: 30000,
+      ssl: process.env.NODE_ENV === 'production' ? 'require' : false
+    })
+  }
+})
+```

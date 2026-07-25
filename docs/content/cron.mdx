@@ -1,0 +1,80 @@
+---
+nextUrl: "/docs/rpc"
+nextTitle: "RPC Client"
+---
+
+# Cron Jobs
+
+ExisJS ships with a highly accurate, distributed Cron Scheduler. Because the cron engine is deeply integrated with the [Job Queue](/docs/queues) system, you can turn any standard background job into a recurring cron task with a single line of code.
+
+---
+
+## 1. Defining a Cron Job
+
+To schedule a recurring task, simply add the `cron` property to any Job definition (`defineJob`) or inline `queue()` handler using standard 5-part cron syntax (`minute hour day month day-of-week`).
+
+### Using `defineJob`
+```typescript filename="src/jobs/cleanup.ts"
+import { defineJob } from 'exisjs/queue'
+
+export default defineJob({
+  name: 'database-cleanup',
+  // Run this job at exactly 2:00 AM every single day
+  cron: '0 2 * * *', 
+  
+  async handler(job) {
+    console.log("Running daily database cleanup...")
+    await db.users.deleteInactive()
+  }
+})
+```
+
+### Using Inline Handlers (`queue`)
+If you prefer functional programming, you can define recurring jobs right alongside your application setup:
+
+```typescript filename="src/http/server.ts"
+import { queue } from 'exisjs/queue'
+
+queue('sync-metrics', async () => {
+  console.log("Syncing metrics to data warehouse...")
+}, {
+  cron: '*/15 * * * *', // Run every 15 minutes
+  defaultOptions: { attempts: 3 }
+})
+```
+
+---
+
+## 2. Distributed Locking (Cluster Safe)
+
+In modern web architecture, you rarely run a single NodeJS process. If you run your application across 10 load-balanced servers, a traditional `setInterval` or standard node-cron library would execute your scheduled task 10 times simultaneously!
+
+ExisJS solves this natively through **Distributed Locking**.
+
+When you configure your Queue system to use the `redis` driver, the ExisJS Cron Scheduler automatically utilizes a highly optimized `SETNX` (Set if Not Exists) Redis lock.
+
+### How it works:
+1. Every 60 seconds, all 10 of your servers will attempt to trigger the cron job.
+2. The *very first* server to hit Redis acquires a 55-second lock for that specific minute.
+3. The other 9 servers see the lock and silently skip execution.
+4. The winning server instantly enqueues the job into the standard ExisJS Queue.
+
+This guarantees that **your cron job will only ever execute exactly once per minute**, regardless of how many servers or Docker containers you spin up!
+
+---
+
+## 3. Supported Cron Syntax
+
+ExisJS implements a powerful, zero-dependency cron parser that supports all standard operations:
+
+- `*` - Any value (e.g., run every minute)
+- `,` - Value list (e.g., `1,15,30` to run on the 1st, 15th, and 30th minute)
+- `-` - Value range (e.g., `1-5` to run from Monday to Friday)
+- `/` - Step values (e.g., `*/10` to run every 10 minutes)
+
+**Examples:**
+- `* * * * *`: Every minute
+- `*/5 * * * *`: Every 5 minutes
+- `0 0 * * *`: Every day at midnight
+- `0 9 * * 1-5`: At 9:00 AM on Monday through Friday
+- `0 12 1,15 * *`: At 12:00 PM on the 1st and 15th of every month

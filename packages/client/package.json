@@ -1,0 +1,41 @@
+{
+  "name": "@exisjs/client",
+  "version": "0.1.0",
+  "description": "End-to-End Type-Safe Client for ExisJS",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest"
+  },
+  "keywords": [
+    "exis",
+    "exisjs",
+    "framework",
+    "nodejs",
+    "typescript",
+    "backend",
+    "api",
+    "rpc",
+    "type-safe"
+  ],
+  "author": "V25 Group <support@v25group.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

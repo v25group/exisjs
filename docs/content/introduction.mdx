@@ -1,0 +1,40 @@
+---
+nextUrl: "/docs/installation"
+nextTitle: "Installation"
+---
+
+# Introduction
+
+Exis (ExisJS) is the ultimate batteries-included backend framework for Node.js. It brings the developer experience of modern frontend meta-frameworks directly to backend API development, combining enterprise ambition with zero-config simplicity.
+
+Under the hood, Exis makes use of a custom, highly-optimized zero-allocation Radix Tree router that natively rivals Fastify, completely bypassing the bottlenecks of traditional architectures.
+
+Exis provides a level of abstraction that completely eliminates the need for endless imperative `app.get()` statements. It natively supports both **Functional** paradigms and robust **OOP (Class-based)** architectures using decorators (inspired by Angular/NestJS), offering absolute freedom and maximum performance.
+
+## Philosophy
+
+In recent years, the JavaScript ecosystem has seen the rise of incredible frontend frameworks like Next.js, Remix, and Nuxt, which dramatically improve developer productivity through file-based routing and convention-over-configuration architectures. However, while plenty of superb libraries and tools exist for Node.js backends, the architectural boilerplate remains incredibly high.
+
+Exis provides an out-of-the-box application architecture that allows developers to create highly testable, scalable, loosely coupled, and easily maintainable APIs simply by creating folders and files. It seamlessly integrates essential tooling like Job Queues, WebSockets, Cron Jobs, and Schema Validation directly into the framework standard library.
+
+## Installation
+
+To get started, you can scaffold the project with the Exis CLI. This will create a new project directory, populate it with the initial core Exis files, and set up a conventional base structure for your API. Creating a new project with the Exis CLI is highly recommended for first-time users.
+
+<div className="my-6 max-w-lg">
+  <CopyCommand command="npx @exisjs/create@latest project-name" />
+</div>
+
+<Hint>
+The CLI will automatically prompt you to configure TypeScript, ESLint, and import aliases. It natively detects your active package manager (npm, yarn, pnpm, bun) for dependency installation.
+</Hint>
+
+## Alternatives
+
+Alternatively, if you'd like to integrate Exis into an existing project, you can start from scratch by installing the core packages. At a minimum, you'll need the `exisjs` dependency.
+
+<div className="my-6 max-w-lg">
+  <CopyCommand command="npm install exisjs" />
+</div>
+
+Keep in mind that you'll need to set up the project boilerplate files (like `exis.config.ts` and your `src/http` routing directory) on your own.

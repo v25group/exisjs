@@ -1,0 +1,152 @@
+---
+nextUrl: "/docs/security"
+nextTitle: "Security & Auth"
+---
+
+# Dataloader (N+1 Queries)
+
+The **N+1 problem** is one of the most notorious performance killers in backend development. It occurs when your code executes one query to fetch a list of items (e.g. 100 Posts), and then executes $N$ additional queries to fetch related data (e.g. 100 separate queries for each Post's Author).
+
+ExisJS ships with a native `Dataloader` implementation (heavily inspired by GraphQL/Facebook's DataLoader) built directly into the core framework. It automatically **batches** and **caches** requests over a single tick of the Node.js event loop.
+
+---
+
+## 1. Defining Loaders
+
+The best practice in ExisJS is to define a central registry of Dataloaders that are **securely scoped to the current HTTP Request** (to prevent data leaking between different users). 
+
+ExisJS provides `defineLoaders` to effortlessly create this context-aware registry.
+
+```typescript filename="src/loaders.ts"
+import { Dataloader, defineLoaders } from 'exisjs/dataloader'
+import { getRequest } from 'exisjs/router'
+import { db } from './db'
+
+export const { loaderMiddleware, getLoaders } = defineLoaders({
+  // 1. Author Loader
+  authorLoader: () => new Dataloader<number, any>(async (keys) => {
+    // You can access the current HTTP Request anywhere using getRequest()
+    const req = getRequest()
+    const authToken = req.headers.authorization
+    
+    // This function will only be called ONCE per event-loop tick,
+    // receiving an array of all requested Author IDs: e.g. [1, 2, 3]
+    const authors = await db.authors.findMany({
+      where: { id: { in: keys } }
+    })
+    
+    // You MUST return an array of results in the EXACT same order as the keys
+    return keys.map(key => authors.find(a => a.id === key) || new Error('Not found'))
+  }),
+
+  // 2. Comments Loader
+  commentsLoader: () => new Dataloader<number, any[]>(async (keys) => {
+    const comments = await db.comments.findMany({
+      where: { postId: { in: keys } }
+    })
+    
+    // Group comments by postId
+    return keys.map(key => comments.filter(c => c.postId === key))
+  })
+})
+```
+
+---
+
+## 2. Registering the Middleware
+
+`defineLoaders` returns a `loaderMiddleware`. You must register this middleware so that ExisJS can securely inject a fresh, isolated instance of your Dataloaders into every incoming request.
+
+Because ExisJS uses lazy-initialization, there is **zero performance penalty** for routes that don't actually use the loaders.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { loaderMiddleware } from '../loaders'
+
+export default exis({
+  async onStart(app) {
+    // Register globally for all routes
+    app.use(loaderMiddleware)
+  }
+})
+```
+
+---
+
+## 3. Using Dataloader in Routes
+
+Now for the magic. Anywhere in your application (Routes, Controllers, Services), you can call `getLoaders()` to retrieve the securely isolated loaders for the *current* request.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/posts/route.ts"
+import { controller, route } from 'exisjs/router'
+import { getLoaders } from '../../loaders'
+
+export default controller({
+  list: route.get('/', {
+    async handle() {
+      // 1. Fetch 100 posts (1 Query)
+      const posts = await db.posts.findMany()
+
+      const { authorLoader } = getLoaders()
+
+      // 2. Loop through 100 posts and call .load()
+      const postsWithAuthors = await Promise.all(
+        posts.map(async (post) => {
+          // MAGIC: Instead of firing 100 queries to the database,
+          // Dataloader queues them up and fires exactly ONE batched query!
+          const author = await authorLoader.load(post.authorId)
+          return { ...post, author }
+        })
+      )
+
+      return postsWithAuthors
+      // Total Queries: 2 (Not 101!)
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/posts/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { getLoaders } from '../../loaders'
+
+@Controller()
+export default class PostsController {
+  @Get('/')
+  async list() {
+    // 1. Fetch 100 posts (1 Query)
+    const posts = await db.posts.findMany()
+
+    const { authorLoader } = getLoaders()
+
+    // 2. Loop through 100 posts and call .load()
+    const postsWithAuthors = await Promise.all(
+      posts.map(async (post) => {
+        // MAGIC: Instead of firing 100 queries to the database,
+        // Dataloader queues them up and fires exactly ONE batched query!
+        const author = await authorLoader.load(post.authorId)
+        return { ...post, author }
+      })
+    )
+
+    return postsWithAuthors
+    // Total Queries: 2 (Not 101!)
+  }
+}
+```
+
+---
+
+## API Reference (`exisjs/dataloader`)
+
+The `Dataloader` class exposes the standard, battle-tested API:
+
+- **`load(key: K): Promise<V>`**: Queues a key to be fetched and returns a Promise.
+- **`loadMany(keys: K[]): Promise<V[]>`**: Equivalent to calling `Promise.all(keys.map(k => load(k)))`.
+- **`clear(key: K): this`**: Clears the cached result for a specific key.
+- **`clearAll(): this`**: Clears the entire cache for this dataloader instance.
+- **`prime(key: K, value: V): this`**: Primes the cache with a predefined value, preventing the batch function from being called for that key.

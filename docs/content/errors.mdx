@@ -1,0 +1,226 @@
+---
+nextUrl: "/docs/websockets"
+nextTitle: "WebSockets"
+---
+
+# Error Handling
+
+ExisJS implements a bulletproof error boundary and observability system. The framework is designed so that you never have to manually construct HTTP error responses again.
+
+## The `HttpError` System
+
+Never manually write `res.status(404).json({ error: '...' })` again. You can throw an `HttpError` absolutely anywhere in your application, and the ExisJS router will automatically intercept it, log it, and format it into a standardized JSON response for the client.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { HttpError } from 'exisjs/error'
+
+export default controller({
+  getUser: route.get('/:id', {
+    async handle({ params }) {
+      const user = db.findUser(params.id)
+      
+      if (!user) {
+        // This instantly breaks execution and returns a clean 404
+        throw HttpError.notFound('User') 
+      }
+      
+      if (user.isBanned) {
+        // This returns a clean 403 Forbidden
+        throw HttpError.forbidden('User is banned from the platform')
+      }
+
+      return { user }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { HttpError } from 'exisjs/error'
+
+@Controller()
+export default class UsersController {
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    const user = db.findUser(id)
+    
+    if (!user) {
+      // This instantly breaks execution and returns a clean 404
+      throw HttpError.notFound('User') 
+    }
+    
+    if (user.isBanned) {
+      // This returns a clean 403 Forbidden
+      throw HttpError.forbidden('User is banned from the platform')
+    }
+
+    return { user }
+  }
+}
+```
+
+### Common Error Factories
+
+The `HttpError` class provides static factory methods for standard HTTP status codes:
+
+- `HttpError.badRequest('Message')` - 400
+- `HttpError.unauthorized('Message')` - 401
+- `HttpError.forbidden('Message')` - 403
+- `HttpError.notFound('Resource')` - 404
+- `HttpError.conflict('Message')` - 409
+- `HttpError.unprocessable('Message', details)` - 422
+- `HttpError.internal('Message')` - 500
+
+### Direct Error Classes
+
+If you prefer an even more explicit, class-based approach, ExisJS exports every standard error as its own class! You can import and throw them directly:
+
+```typescript filename="example.ts"
+import { NotFoundError, UnauthorizedError } from 'exisjs/error'
+
+export const deleteBook = (req, res) => {
+  const book = db.findBook(req.params.id)
+  
+  if (!book) throw new NotFoundError('Book not found')
+  if (book.ownerId !== req.user.id) throw new UnauthorizedError('Unauthorized')
+    
+  // ...
+}
+```
+
+### The Standardized Response
+
+When an `HttpError` is thrown, the client will automatically receive a perfectly structured JSON payload.
+
+```json filename="Response"
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "User not found"
+  }
+}
+```
+
+If you throw an unhandled exception (like a database connection failure or a `TypeError`), ExisJS catches it and securely returns a `500 Internal Server Error`, hiding the stack trace from the client in production mode while logging the full trace to your internal logger.
+
+## Advanced Error Handling
+
+ExisJS provides incredibly powerful mechanisms for granular error handling, heavily inspired by the best features of NestJS (Exception Filters) and Fastify (Lifecycle Hooks).
+
+### 1. Exception Filters (`catchError`)
+
+Just like NestJS's `@Catch()` decorator, ExisJS allows you to create **Exception Filters** to globally intercept specific types of errors without cluttering your route logic. 
+
+Using the `catchError` middleware, you can map specific custom errors to custom responses globally:
+
+```typescript filename="src/http/server.ts"
+import { catchError } from 'exisjs/middleware'
+
+export class DatabaseConnectionError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DatabaseConnectionError'
+  }
+}
+
+export default exis({
+  async onStart(app) {
+    // Globally intercept ONLY DatabaseConnectionError specifically!
+    app.use(catchError(DatabaseConnectionError, (err, req, res) => {
+      res.status(503).json({
+        success: false,
+        error: { code: 'DB_OFFLINE', message: err.message }
+      })
+    }))
+  }
+})
+```
+
+This prevents you from having to write `try/catch` blocks in every single route just to handle standard database failures.
+
+### 2. Local Error Hooks (`onError`)
+
+If you want to catch errors only within a specific module or route grouping (similar to Fastify's encapsulated error handlers), you can use the `onError` hook directly in your controller definition.
+
+When a controller throws an error, the local `onError` hook will intercept it before it ever reaches the global error handler!
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  // This local hook catches ANY error thrown by the routes in this controller
+  onError: (err, req, res) => {
+    console.log('Users Controller Error Handler Caught:', err.message)
+    res.status(400).json({ success: false, localError: err.message })
+  },
+
+  crash: route.get('/crash', async () => {
+    // This error will be safely caught by the local onError hook!
+    throw new Error("Something went wrong specifically in the users module!")
+  })
+})
+```
+
+By combining Exception Filters and Local Error Hooks, ExisJS gives you maximum control over your error boundaries, keeping your application lean, safe, and incredibly robust.
+
+## Observability (BYOM/BYOT)
+
+ExisJS ships with completely dependency-free, high-performance tracing and metric adapters. Instead of forcing you into a specific telemetry ecosystem (like DataDog or NewRelic), ExisJS lets you **Bring Your Own Metrics** (BYOM) and **Bring Your Own Tracer** (BYOT).
+
+### Metrics
+
+You can use the `metrics` middleware to track request durations and counts without a massive performance hit.
+
+```typescript filename="src/http/gateway.ts"
+import { metrics } from 'exisjs/observability'
+
+const myPrometheusAdapter = {
+  onRequestStart: ({ method, path }) => {
+    // A request just started. Start a timer.
+    return ({ statusCode, durationMs }) => {
+      // The request just finished. Push to Prometheus!
+      console.log(`[Metrics] ${method} ${path} took ${durationMs}ms with status ${statusCode}`)
+    }
+  }
+}
+
+export default defineGateway({
+  middleware: [metrics(myPrometheusAdapter)]
+})
+```
+*Note: ExisJS natively normalizes dynamic paths (e.g., turning `/users/123` into `/users/:id`) so you don't suffer from metrics cardinality explosions!*
+
+### OpenTelemetry Tracing
+
+ExisJS seamlessly integrates with OpenTelemetry (OTel) via the `tracing` middleware.
+
+```typescript filename="src/http/gateway.ts"
+import { tracing } from 'exisjs/observability'
+
+const myOtelAdapter = {
+  startActiveSpan: (name, metadata, callback) => {
+    // Create an OTel span
+    const span = tracer.startSpan(name)
+    // Run the callback and pass the span proxy
+    callback({
+      setAttribute: (k, v) => span.setAttribute(k, v),
+      setStatus: (status) => span.setStatus(status),
+      recordException: (e) => span.recordException(e),
+      end: () => span.end()
+    })
+  }
+}
+
+export default defineGateway({
+  middleware: [tracing(myOtelAdapter)]
+})
+```
+
+By providing these standard interfaces natively, your application metrics and traces are flawlessly bound to the ExisJS router lifecycle!

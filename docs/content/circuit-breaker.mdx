@@ -1,0 +1,130 @@
+---
+nextUrl: "/docs/responses"
+nextTitle: "Responses"
+---
+
+# Circuit Breaker
+
+Microservices and external APIs fail. It is an inevitable reality of distributed systems. When an external service goes down, continuing to send it traffic can cause cascading failures across your entire infrastructure as requests queue up and connection pools are exhausted.
+
+ExisJS ships with a native **Circuit Breaker** pattern built into the core framework. It automatically detects failures and "trips" the circuit, instantly rejecting subsequent requests so your system can recover gracefully.
+
+---
+
+## 1. How It Works
+
+The ExisJS Circuit Breaker operates as a state machine with three states:
+
+1. **`CLOSED`** (Normal): The circuit is closed, and traffic flows normally.
+2. **`OPEN`** (Failing): The failure threshold has been reached. The circuit is tripped, and all requests are instantly rejected with a `CircuitBreakerError` to protect the system.
+3. **`HALF_OPEN`** (Testing Recovery): After a timeout period, the circuit allows exactly *one* request through. If it succeeds, the circuit resets to `CLOSED`. If it fails, it trips back to `OPEN`.
+
+---
+
+## 2. Basic Usage
+
+To protect a fragile external API or a heavy database query, wrap the call inside the `CircuitBreaker.fire()` method.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/payment/route.ts"
+import { controller, route } from 'exisjs/router'
+import { CircuitBreaker } from 'exisjs'
+
+// 1. Initialize the Circuit Breaker outside the route handler
+const stripeCircuit = new CircuitBreaker({
+  failureThreshold: 5,     // Trip after 5 consecutive failures
+  resetTimeoutMs: 10000,   // Wait 10 seconds before testing recovery
+})
+
+export default controller({
+  charge: route.post('/charge', {
+    async handle(req, res) {
+      try {
+        // 2. Wrap your fragile logic inside .fire()
+        const result = await stripeCircuit.fire(async () => {
+          // If this throws an error 5 times, the circuit trips!
+          return await fetch('https://api.stripe.com/v1/charges', {
+            method: 'POST',
+            body: JSON.stringify(req.body)
+          })
+        })
+
+        return { success: true, data: result }
+        
+      } catch (err) {
+        if (err.name === 'CircuitBreakerError') {
+          // Fast-fail response without hanging the server!
+          res.status(503).json({ error: "Payment gateway is currently overloaded. Please try again later." })
+        } else {
+          res.status(500).json({ error: "Payment failed" })
+        }
+      }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/payment/route.ts"
+import { Controller, Post, Body, Res } from 'exisjs/decorators'
+import { CircuitBreaker } from 'exisjs'
+
+// 1. Initialize the Circuit Breaker outside the controller
+const stripeCircuit = new CircuitBreaker({
+  failureThreshold: 5,     // Trip after 5 consecutive failures
+  resetTimeoutMs: 10000,   // Wait 10 seconds before testing recovery
+})
+
+@Controller()
+export default class PaymentController {
+  @Post('/charge')
+  async charge(@Body() body: any, @Res() res: any) {
+    try {
+      // 2. Wrap your fragile logic inside .fire()
+      const result = await stripeCircuit.fire(async () => {
+        // If this throws an error 5 times, the circuit trips!
+        return await fetch('https://api.stripe.com/v1/charges', {
+          method: 'POST',
+          body: JSON.stringify(body)
+        })
+      })
+
+      return { success: true, data: result }
+      
+    } catch (err: any) {
+      if (err.name === 'CircuitBreakerError') {
+        // Fast-fail response without hanging the server!
+        res.status(503).json({ error: "Payment gateway is currently overloaded. Please try again later." })
+      } else {
+        res.status(500).json({ error: "Payment failed" })
+      }
+    }
+  }
+}
+```
+
+---
+
+## 3. Configuration Options
+
+When instantiating `new CircuitBreaker(options)`, you can configure:
+
+- **`failureThreshold`** *(number)*: The number of consecutive failures before the circuit state transitions from `CLOSED` to `OPEN`. Default: `5`.
+- **`resetTimeoutMs`** *(number)*: The time in milliseconds to wait before transitioning from `OPEN` to `HALF_OPEN` to test recovery. Default: `10000` (10 seconds).
+
+---
+
+## API Reference (`exisjs`)
+
+You can import the following from the root `exisjs` package:
+
+### `CircuitBreaker`
+The main class. Use `new CircuitBreaker(options)` to instantiate a state machine.
+
+### `CircuitBreakerError`
+The native error class thrown when the circuit is `OPEN` or `HALF_OPEN` (while a probe is already in-flight). You can check `err.name === 'CircuitBreakerError'` or `err instanceof CircuitBreakerError`.
+
+### `CircuitState`
+An enum containing the exact states (`CLOSED`, `OPEN`, `HALF_OPEN`) if you need to manually inspect the breaker's current condition via `circuit.state`.

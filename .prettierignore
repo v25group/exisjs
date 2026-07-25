@@ -1,0 +1,24 @@
+# Build artifacts
+dist/
+target/
+compiled/
+
+# Dependencies
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Test & Coverage
+coverage/
+.nyc_output/
+test-timings.json
+test/tmp/
+
+# Logs
+*.log
+
+# Editors
+.idea/
+.vscode/
+.DS_Store

@@ -1,0 +1,233 @@
+---
+nextUrl: "/docs/validation"
+nextTitle: "Validation"
+---
+
+# Gateways (Middleware & Modules)
+
+Gateways act as the ultimate gatekeeper for specific folders in your File-Based Routing architecture.
+
+In traditional frameworks, you write spaghetti code like `app.use('/admin', requireAuth)`. ExisJS eliminates this completely. By placing a `gateway.ts` file inside a folder, you can flawlessly scope **Middleware**, **CORS**, and **Dependency Injection** to that exact domain.
+
+## Cascading Middleware
+
+The most common use-case for a gateway is applying middleware arrays to a group of routes.
+
+```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { requireAuth } from '../../middleware/auth'
+import { cors, helmet } from 'exisjs/middleware'
+
+export default defineGateway({
+  // This middleware array runs before ANY route in /admin/*
+  middleware: [
+    helmet(),
+    requireAuth
+  ],
+  
+  // Enforce strict CORS for this folder
+  cors: {
+    origin: 'https://admin.yourdomain.com',
+    methods: ['GET', 'POST', 'DELETE']
+  },
+
+  // Append custom default headers to all responses
+  headers: {
+    'X-Admin-Api-Version': '2.0'
+  }
+})
+```
+
+When a request comes in for `/admin/users`, ExisJS processes the Gateway's middleware sequentially before it ever reaches your `route.ts` file.
+
+## Folder-Scoped CORS
+
+Handling CORS across a monolithic API can get messy. You might want your `/public` folder to accept requests from anywhere, while restricting your `/billing` folder to your strict frontend domain. ExisJS solves this natively without needing the external NPM cors package. Just drop the cors property into your Gateway, and it overrides the global configuration!
+
+## File-Based Modules (Domain-Driven Design)
+
+In addition to serving as an interceptor for middleware, `gateway.ts` completely replaces the need for bloated `@Module()` class decorators found in frameworks like NestJS. It enables perfect **Domain-Driven Design (DDD)** directly via the file system.
+
+### Providers (Dependency Injection)
+
+If you have a database service unique to your `/users` domain, encapsulate it strictly inside the users gateway:
+
+```typescript className="language-typescript" filename="src/http/users/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { UsersRepository } from './repository'
+
+export default defineGateway({
+  // Provide the UsersRepository directly to this folder's DI container!
+  providers: [
+    ['UsersRepository', { useClass: UsersRepository }]
+  ]
+})
+```
+
+When ExisJS boots, it automatically discovers `gateway.ts`, parses the `providers`, and hydrates them into the internal Dependency Injection container *before* executing the routes. Inside your route handler, you simply inject it:
+
+#### Functional Paradigm
+
+```typescript className="language-typescript" filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { inject } from 'exisjs/di'
+import type { UsersRepository } from './repository'
+
+export default controller({
+  list: route.get('/', {
+    async handle() {
+      // Magically available without passing it from app.ts!
+      const usersRepo = inject<UsersRepository>('UsersRepository')
+      return await usersRepo.findAll()
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript className="language-typescript" filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { inject } from 'exisjs/di'
+import type { UsersRepository } from './repository'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  async list() {
+    // The functional inject() hook works perfectly inside OOP classes too!
+    const usersRepo = inject<UsersRepository>('UsersRepository')
+    return await usersRepo.findAll()
+  }
+}
+```
+
+### Imports & Plugins
+
+Gateways allow you to seamlessly bundle other modules and plugins into a domain.
+
+```typescript className="language-typescript" filename="src/http/orders/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import AuthModule from '../auth/module'
+import { stripePlugin } from '../../plugins/stripe'
+
+export default defineGateway({
+  // Pull in the entire Auth feature set
+  imports: [AuthModule],
+  
+  // Isolate Stripe setup just for the orders domain
+  plugins: [stripePlugin({ apiKey: process.env.STRIPE_KEY })]
+})
+```
+
+<Hint>
+- **Imports**: Automatically deduplicated. If 10 different gateways import `AuthModule`, its internal singletons are only initialized exactly once!
+- **Plugins**: Setup logic runs instantly, perfectly isolating their scope to the current folder.
+</Hint>
+
+## Gateway Inheritance (Cascading)
+
+Gateways inherently **cascade**. If you define a Gateway at the absolute root (`src/http/gateway.ts`), it applies globally.
+
+If you define another Gateway at `src/http/admin/gateway.ts`, requests to `/admin/dashboard` will sequentially pass through the Root Gateway, and *then* pass through the Admin Gateway!
+
+```text className="language-text"
+src/
+└── http/
+    ├── gateway.ts            <-- Runs first (Global Rate Limits)
+    └── admin/
+        ├── gateway.ts        <-- Runs second (JWT Validation)
+        └── users/
+            └── route.ts      <-- Runs last (Only if both gateways succeed!)
+```
+
+## Advanced Features
+
+Gateways in ExisJS go far beyond just middleware and dependencies. They are a complete architectural tool designed to solve problems that plague traditional frameworks (like applying Exception Filters or Guards to an entire folder without decorating every controller).
+
+### 1. Folder-Scoped Guards
+
+Apply Authorization Guards directly to a folder. If the guard returns `false`, the entire folder is protected.
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { RequireAdminRoleGuard } from '../../guards'
+
+export default defineGateway({
+  // Protects the entire /api folder
+  guards: [RequireAdminRoleGuard]
+})
+```
+
+### 2. Folder-Scoped Exception Filters
+
+Catch exceptions globally for a specific domain. For example, return HTML error pages for `/views`, but standardized JSON errors for `/api`.
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { ApiVersion2ErrorFilter } from '../../filters'
+
+export default defineGateway({
+  // Catches all exceptions thrown inside /api/*
+  filters: [ApiVersion2ErrorFilter]
+})
+```
+
+### 3. Folder-Scoped Interceptors
+
+Transform or wrap all responses exiting a specific folder.
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { StandardResponseInterceptor } from '../../interceptors'
+
+export default defineGateway({
+  // Wraps all responses from /api/* in a standard format
+  interceptors: [StandardResponseInterceptor]
+})
+```
+
+### 4. Bypassing Gateways (Exclude)
+
+Seamlessly bypass the Gateway's middleware, guards, and filters for specific sub-paths or methods without breaking your clean folder structure.
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+
+export default defineGateway({
+  // Seamlessly bypass middleware, guards, and filters
+  exclude: [
+    '/api/public/status', // Exact Match
+    '/api/webhooks/*',    // Wildcard Match
+    { path: '/api/users', methods: ['GET'] } // Method-specific bypass
+  ]
+})
+```
+
+### 5. Dynamic Request Timeouts
+
+Define dynamic, folder-scoped request timeouts! Give your `/reports` folder 60 seconds, but restrict `/api` to 5 seconds. You can even evaluate it dynamically per-request.
+
+```typescript className="language-typescript" filename="src/http/reports/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+
+export default defineGateway({
+  // Dynamic request timeouts evaluated per-request
+  timeout: (req) => req.headers['x-premium'] ? 30000 : 5000
+})
+```
+
+### 6. Cascading Metadata
+
+Define tags (like OpenAPI/Swagger tags or Role definitions) at the folder level that automatically cascade down to every single route inside!
+
+```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+
+export default defineGateway({
+  // Automatically cascades OpenAPI tags to every route in the folder
+  metadata: {
+    openapi: { tags: ['Admin API'], security: ['bearerAuth'] }
+  }
+})
+```

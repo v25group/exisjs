@@ -1,0 +1,125 @@
+---
+nextUrl: "/docs/integrations/drizzle"
+nextTitle: "Drizzle ORM"
+---
+
+# Observability (Health, Metrics, Tracing)
+
+ExisJS was built for enterprise scale, which means **Observability** is a first-class citizen. 
+
+Instead of locking you into a specific vendor, ExisJS uses a powerful "Bring Your Own Adapter" architecture. We provide highly optimized middlewares for **Health Checks**, **Metrics (Prometheus/StatsD)**, and **Tracing (OpenTelemetry)** that seamlessly integrate with your favorite vendor SDKs while shielding your application from heavy dependencies!
+
+---
+
+## 1. Advanced Health Checks
+
+ExisJS includes a robust, native `healthCheck` middleware that automatically exposes a `/health` endpoint for Kubernetes liveness/readiness probes or load balancers.
+
+It supports parallel asynchronous dependency checks with built-in race-condition timeouts!
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { healthCheck } from 'exisjs/observability'
+import { db } from 'exisjs/postgres'
+import { redis } from 'exisjs/redis'
+
+export default exis({
+  middlewares: [
+    healthCheck({
+      path: '/healthz', // Defaults to '/health'
+      checks: [
+        {
+          name: 'postgres',
+          timeoutMs: 3000,
+          check: async () => await db`SELECT 1` 
+        },
+        {
+          name: 'redis',
+          timeoutMs: 2000,
+          check: async () => await redis.ping()
+        }
+      ]
+    })
+  ]
+})
+```
+
+When you ping `GET /healthz`, ExisJS will run all checks in parallel. 
+- If all checks pass, it returns HTTP `200 OK` with `{ status: "pass", dependencies: { postgres: { status: "up" }, ... } }`.
+- If any check times out or fails, it returns HTTP `503 Service Unavailable` with `{ status: "fail", ... }`.
+
+---
+
+## 2. Metrics (Prometheus / StatsD)
+
+Tracking HTTP request durations is critical. However, installing massive Prometheus registries inside your web framework can cause severe memory bloat.
+
+ExisJS solves this by exposing a highly-optimized `metrics()` middleware adapter. It automatically handles high-performance timing calculations and **path normalization** (e.g., aggregating `/users/1` and `/users/2` into `/users/:id` to prevent Prometheus cardinality explosions!).
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { metrics } from 'exisjs/observability'
+import promClient from 'prom-client'
+
+// 1. Setup your external Prometheus registry
+const httpRequestDurationMicroseconds = new promClient.Histogram({
+  name: 'http_request_duration_ms',
+  help: 'Duration of HTTP requests in ms',
+  labelNames: ['method', 'route', 'code'],
+})
+
+export default exis({
+  middlewares: [
+    // 2. Plug it directly into the ExisJS adapter!
+    metrics({
+      onRequestEnd: ({ method, path, statusCode, durationMs }) => {
+        httpRequestDurationMicroseconds
+          .labels(method, path, String(statusCode))
+          .observe(durationMs)
+      }
+    })
+  ]
+})
+```
+
+---
+
+## 3. Distributed Tracing (OpenTelemetry)
+
+Distributed tracing allows you to follow a single request across multiple microservices. 
+
+ExisJS provides a first-class `tracing()` adapter designed specifically for OpenTelemetry. It automatically creates spans for every incoming request, injects HTTP statuses, and crucially, **scrubs sensitive headers** (like `authorization`, `cookie`, `session`) before they are sent to your observability platform (e.g., Datadog, New Relic, or Jaeger).
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { tracing } from 'exisjs/observability'
+import { trace } from '@opentelemetry/api'
+
+// Grab your global OpenTelemetry tracer
+const otelTracer = trace.getTracer('exis-app')
+
+export default exis({
+  middlewares: [
+    tracing({
+      // ExisJS calls this hook automatically for every incoming request!
+      startActiveSpan: (name, metadata, callback) => {
+        otelTracer.startActiveSpan(name, (span) => {
+          
+          // ExisJS automatically provides safe, scrubbed metadata!
+          span.setAttribute('http.method', metadata.method)
+          span.setAttribute('http.route', metadata.path)
+          
+          for (const [key, val] of Object.entries(metadata.headers)) {
+            span.setAttribute(`http.header.${key}`, String(val))
+          }
+
+          // Pass the span back to ExisJS so it can automatically end it and attach status codes!
+          callback(span)
+        })
+      }
+    })
+  ]
+})
+```
+
+With this single middleware, your entire application is instantly instrumented with perfectly compliant OpenTelemetry spans!

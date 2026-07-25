@@ -1,0 +1,247 @@
+---
+nextUrl: "/docs/providers"
+nextTitle: "Providers"
+---
+
+# Controllers
+
+Controllers are responsible for handling incoming requests and sending responses back to the client.
+
+A controller's purpose is to handle specific requests for the application. The routing mechanism determines which controller will handle each request. Often, a controller has multiple routes, and each route can perform a different action.
+
+While ExisJS natively supports Functional Routing, developers coming from enterprise backgrounds often prefer Object-Oriented patterns. To create a basic OOP controller, we use classes and decorators. Decorators link classes with the necessary metadata, allowing ExisJS to automatically route requests.
+
+## Routing & Prefixes
+
+In the following example, we’ll use the `@Controller()` decorator, which is required to define a basic OOP controller. We'll specify an optional route path prefix of `cats`. Using a path prefix helps us group related routes together and reduces repetitive code.
+
+```typescript filename="src/http/cats/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+
+@Controller('cats')
+export default class CatsController {
+  @Get()
+  findAll(): string {
+    return 'This action returns all cats'
+  }
+}
+```
+
+The `@Get()` HTTP request method decorator placed before the `findAll()` method tells ExisJS to create a handler for GET requests. Because the controller has a prefix of `cats`, this endpoint maps to `GET /cats`. If we used `@Get('breed')`, it would map to `GET /cats/breed`.
+
+## Request Object
+
+Handlers often need access to the client’s request details. You can access the request object by injecting it using the `@Req()` decorator.
+
+```typescript filename="src/http/cats/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
+
+@Controller('cats')
+export default class CatsController {
+  @Get()
+  findAll(@Req() request: Request): string {
+    console.log(request.ip, request.headers)
+    return 'This action returns all cats'
+  }
+}
+```
+
+In most cases, you don't need to manually access the entire request object. Instead, you can use dedicated decorators provided out of the box:
+
+<div className="overflow-x-auto mb-6">
+  <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
+    <thead className="bg-muted/50 text-foreground">
+      <tr>
+        <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Decorator</th>
+        <th className="px-4 py-3 border-b border-border/50 font-semibold">Represents</th>
+      </tr>
+    </thead>
+    <tbody className="divide-y divide-border/50">
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Req()</td>
+        <td className="px-4 py-3 text-muted-foreground">The raw HTTP Request object</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Res()</td>
+        <td className="px-4 py-3 text-muted-foreground">The raw HTTP Response object</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Param(key?)</td>
+        <td className="px-4 py-3 text-muted-foreground">URL Path Parameters (e.g. req.params.id)</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Body(key?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Parsed Request Body</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Query(key?)</td>
+        <td className="px-4 py-3 text-muted-foreground">URL Query Parameters</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Headers(name?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Specific HTTP Header</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>HostParam(name?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Subdomain / Host route parameter</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Session()</td>
+        <td className="px-4 py-3 text-muted-foreground">The request session object</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Next()</td>
+        <td className="px-4 py-3 text-muted-foreground">Next middleware function in pipeline</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Ip()</td>
+        <td className="px-4 py-3 text-muted-foreground">The client's IP address</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFile()</td>
+        <td className="px-4 py-3 text-muted-foreground">A single uploaded file (multipart/form-data)</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFiles()</td>
+        <td className="px-4 py-3 text-muted-foreground">Array of uploaded files</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+## Payloads & Validation
+
+For POST and PUT endpoints, you need to read the incoming JSON payload. Use the `@Body()` decorator to inject it.
+
+```typescript filename="src/http/cats/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+
+export class CreateCatDto {
+  name: string;
+  age: number;
+  breed: string;
+}
+
+@Controller('cats')
+export default class CatsController {
+  @Post()
+  async create(@Body() createCatDto: CreateCatDto) {
+    return \`Added new cat: \${createCatDto.name}\`
+  }
+}
+```
+
+## Status Codes & Headers
+
+By default, responses have a `200 OK` status (except POST which uses `201`). You can change this declaratively using the `@HttpCode()` and `@Header()` decorators.
+
+```typescript filename="src/http/cats/route.ts"
+import { Controller, Post, HttpCode, Header } from 'exisjs/decorators'
+
+@Controller('cats')
+export default class CatsController {
+  @Post()
+  @HttpCode(204)
+  @Header('Cache-Control', 'no-store')
+  create() {
+    return 'This action adds a new cat (No Content)'
+  }
+}
+```
+
+## Advanced Features
+
+ExisJS natively provides powerful routing enhancements baked deeply into the Radix tree engine without sacrificing performance. Features like Subdomain Routing, Redirects, and Passthrough Responses are fully supported across both paradigms.
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
+```typescript filename="src/http/advanced/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  // 1. Subdomain Routing
+  ping: route.get('/ping', {
+    host: ':sub.exis.local',
+    handle({ req }) {
+      return { subdomain: (req.params as any).sub }
+    }
+  }),
+  // 2. Redirect
+  redirect: route.get('/redirect', {
+    handle({ res }) {
+      res.redirect('https://google.com')
+    }
+  }),
+  // 3. Passthrough Response
+  manual: route.get('/manual', {
+    handle({ res }) {
+      res.setHeader('X-Custom', 'true')
+      return { msg: 'This is auto-serialized with custom headers!' }
+    }
+  })
+})
+```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/advanced/route.ts"
+import { Controller, Get, HostParam, Redirect, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+// 1. Subdomain Routing
+@Controller({ host: ':sub.exis.local' })
+export class SubdomainController {
+  @Get('/ping')
+  ping(@HostParam('sub') sub: string) {
+    return { subdomain: sub }
+  }
+}
+
+@Controller('users')
+export class AdvancedController {
+  // 2. Redirect
+  @Get('/redirect')
+  @Redirect('https://google.com')
+  redirect() {}
+
+  // 3. Passthrough Response
+  @Get('/manual')
+  manual(@Res({ passthrough: true }) res: Response) {
+    res.setHeader('X-Custom', 'true')
+    return { msg: 'This is auto-serialized with custom headers!' }
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
+
+## Registration & Library-Specific Response
+
+**The ExisJS Difference:** Unlike NestJS, where controllers must be registered manually in a `app.module.ts`, ExisJS uses Folder-Based Routing. To register a controller, you simply **export default** the class inside a `route.ts` file. The framework discovers it automatically!
+
+If you need complete low-level control over the response, you can inject the native `@Res()` object.
+
+```typescript filename="src/http/cats/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller('cats')
+export default class CatsController {
+  @Get()
+  findAll(@Res() res: Response) {
+    res.status(200).json({ data: [] })
+  }
+}
+```
+
+<Info title="Tip: Safely Returning with @Res">
+In traditional frameworks, injecting the `@Res()` object disables auto-serialization, causing the request to hang if you forget to call `res.send()`. **ExisJS is smarter!** If you return a value from your handler, ExisJS will still safely auto-serialize it to JSON even if you injected `@Res()` to set a custom header.
+</Info>

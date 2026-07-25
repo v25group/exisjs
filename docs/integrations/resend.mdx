@@ -1,0 +1,117 @@
+---
+nextUrl: "/docs/integrations/openai"
+nextTitle: "OpenAI"
+---
+
+# Resend (Email) Integration
+
+ExisJS provides a zero-config, native integration for **Resend** to send emails effortlessly. 
+
+Just like all our other integrations, ExisJS treats the `resend` SDK as an optional dependency. You only install it if you need it, keeping your core application blazing fast and extremely lightweight!
+
+---
+
+## Environment Variables
+
+The Resend plugin securely reads your API key directly from your `.env` file. 
+
+Before using the plugin, ensure you have your API key set:
+
+```bash filename=".env"
+RESEND_API_KEY="re_123456789"
+```
+
+---
+
+## Installation
+
+ExisJS wraps the official `resend` Node.js SDK.
+
+```bash
+npm install resend
+```
+
+---
+
+## Usage
+
+Simply import the `resend` proxy from `exisjs/resend`. ExisJS will instantly boot the client behind the scenes the first time you attempt to send an email!
+
+#### Functional Paradigm
+
+```typescript filename="src/http/emails/route.ts"
+import { controller, route } from 'exisjs/router'
+import { resend } from 'exisjs/resend'
+
+export default controller({
+  sendWelcomeEmail: route.post('/welcome', {
+    async handle(req) {
+      const { email, name } = req.body
+
+      // The resend client magically lazy-loads here!
+      const { data, error } = await resend.emails.send({
+        from: 'Acme <onboarding@resend.dev>',
+        to: [email],
+        subject: 'Welcome to Acme!',
+        html: `<strong>Hello ${name}, welcome aboard!</strong>`
+      })
+
+      if (error) {
+        return { success: false, error }
+      }
+
+      return { success: true, data }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/emails/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { resend } from 'exisjs/resend'
+
+@Controller('/emails')
+export default class EmailsController {
+  
+  @Post('/welcome')
+  async sendWelcomeEmail(@Body() body: any) {
+    // The resend client magically lazy-loads here!
+    const { data, error } = await resend.emails.send({
+      from: 'Acme <onboarding@resend.dev>',
+      to: [body.email],
+      subject: 'Welcome to Acme!',
+      html: `<strong>Hello ${body.name}, welcome aboard!</strong>`
+    })
+
+    if (error) {
+      return { success: false, error }
+    }
+
+    return { success: true, data }
+  }
+}
+```
+
+---
+
+## Customizing Connection Options
+
+If you need to pass custom options to the Resend Client, call `configureResend(options)` inside your `server.ts` `onStart` hook.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configureResend } from 'exisjs/resend'
+
+export default exis({
+  async onStart() {
+    // Inject custom fetch options or headers
+    configureResend({
+      headers: {
+        'X-Custom-Header': 'ExisJS'
+      }
+    })
+  }
+})
+```

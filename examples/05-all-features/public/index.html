@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExisJS | Kitchen Sink</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center py-12 px-4">
+  <header class="mb-12 text-center">
+    <div class="inline-flex items-center justify-center p-3 bg-blue-500/20 rounded-2xl mb-4">
+      <i data-lucide="layers" class="w-10 h-10 text-blue-400"></i>
+    </div>
+    <h1 class="text-4xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-cyan-300">
+      ExisJS Kitchen Sink
+    </h1>
+    <p class="text-slate-400 mt-2 max-w-lg">
+      A comprehensive showcase of Gateways, Plugins, Dataloaders, Jobs, and Routing methodologies.
+    </p>
+  </header>
+
+  <main class="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6">
+    
+    <!-- Functional Router -->
+    <div class="glass rounded-2xl p-6 shadow-xl">
+      <div class="flex items-center gap-3 mb-4 border-b border-slate-700 pb-3">
+        <i data-lucide="function-square" class="text-green-400"></i>
+        <h2 class="text-xl font-bold">Functional Routes</h2>
+      </div>
+      <div class="space-y-4">
+        <button onclick="fetchApi('/api/functional/users/1')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 transition rounded-lg text-sm font-medium border border-slate-700">
+          GET /api/functional/users/1
+        </button>
+        <button onclick="fetchApi('/api/functional/users/batch', 'POST', { ids: ['2', '3'] })" class="w-full py-2 bg-slate-800 hover:bg-slate-700 transition rounded-lg text-sm font-medium border border-slate-700">
+          POST /api/functional/users/batch
+        </button>
+      </div>
+    </div>
+
+    <!-- OOP Router -->
+    <div class="glass rounded-2xl p-6 shadow-xl">
+      <div class="flex items-center gap-3 mb-4 border-b border-slate-700 pb-3">
+        <i data-lucide="blocks" class="text-purple-400"></i>
+        <h2 class="text-xl font-bold">OOP Routes (Decorators)</h2>
+      </div>
+      <div class="space-y-4">
+        <button onclick="fetchApi('/api/oop/users/2')" class="w-full py-2 bg-slate-800 hover:bg-slate-700 transition rounded-lg text-sm font-medium border border-slate-700">
+          GET /api/oop/users/2
+        </button>
+        <button onclick="fetchApi('/api/oop/users/batch', 'POST', { ids: ['1', '3'] })" class="w-full py-2 bg-slate-800 hover:bg-slate-700 transition rounded-lg text-sm font-medium border border-slate-700">
+          POST /api/oop/users/batch
+        </button>
+      </div>
+    </div>
+
+    <!-- Plugins & Metrics -->
+    <div class="glass rounded-2xl p-6 shadow-xl md:col-span-2">
+      <div class="flex items-center gap-3 mb-4 border-b border-slate-700 pb-3">
+        <i data-lucide="activity" class="text-orange-400"></i>
+        <h2 class="text-xl font-bold">Metrics Plugin</h2>
+      </div>
+      <button onclick="fetchApi('/api/metrics')" class="px-6 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 transition rounded-lg text-sm font-bold border border-orange-500/30">
+        Fetch Metrics
+      </button>
+    </div>
+
+    <!-- Output Terminal -->
+    <div class="glass rounded-2xl p-6 shadow-xl md:col-span-2">
+      <div class="flex items-center gap-3 mb-4">
+        <i data-lucide="terminal" class="text-slate-400"></i>
+        <h2 class="text-xl font-bold">Response Output</h2>
+      </div>
+      <pre id="output" class="bg-slate-900 p-4 rounded-xl text-sm font-mono text-green-400 overflow-x-auto min-h-[150px]">Ready.</pre>
+    </div>
+
+  </main>
+
+  <script>
+    lucide.createIcons();
+    
+    const output = document.getElementById('output');
+
+    async function fetchApi(url, method = 'GET', body = null) {
+      output.innerText = `Fetching ${url}...`;
+      try {
+        const options = { method, headers: {} };
+        if (body) {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+        const res = await fetch(url, options);
+        const data = await res.json();
+        output.innerText = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.innerText = `Error: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>

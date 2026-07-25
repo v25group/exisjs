@@ -1,0 +1,445 @@
+---
+nextUrl: "/docs/controllers"
+nextTitle: "Controllers"
+---
+
+# Routing
+
+Routes are responsible for handling incoming requests and sending responses back to the client. The routing mechanism determines which handler will process each request.
+
+<Info title="Functional vs OOP">
+ExisJS natively supports both a highly optimized **Functional Paradigm** (fastest execution, minimal boilerplate) and a robust **Class-Based OOP Paradigm** (ideal for dependency injection and decorators). You can mix and match them effortlessly throughout your application!
+</Info>
+
+## Folder-Based Routing
+
+ExisJS takes a radically different approach to routing compared to traditional Node.js frameworks like Express or Fastify. Instead of declaring routes programmatically in a giant `server.ts` file, ExisJS utilizes **folder-based file-system routing** (heavily inspired by modern meta-frameworks like Next.js).
+
+For a folder to become an accessible API endpoint, it must contain a `route.ts` file that exports a route definition.
+
+### Routing Conventions
+
+The ExisJS file-system router natively supports advanced folder naming conventions to handle dynamic segments and logical grouping:
+
+- **Dynamic Parameters (`[param]`)**: A folder named `[id]` creates a dynamic route segment (e.g., `/:id`). The value is accessible in your handler via `ctx.params.id`.
+- **Catch-all Routes (`[...param]`)**: A folder named `[...slug]` catches all subsequent URL segments, matching anything that follows (e.g., `/*slug`).
+- **Route Groups (`(group)`)**: A folder wrapped in parentheses (e.g., `(admin)`) is entirely ignored in the final URL path. This is incredibly useful for grouping related routes or applying shared controller-level middleware without adding `/admin` to the URL.
+
+For example, to create a simple `/health` endpoint, you create the folder `src/http/health/` and place a `route.ts` file inside it:
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/health/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  check: route.get('/', {
+    handle() {
+      return { status: 'ok', timestamp: new Date().toISOString() }
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/health/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class HealthController {
+  @Get('/')
+  check() {
+    return { status: 'ok', timestamp: new Date().toISOString() }
+  }
+}
+```
+
+  
+
+## Supported Methods
+
+ExisJS natively exposes standard HTTP methods alongside advanced routing paradigms like WebSockets and Server-Sent Events. Choose your paradigm below to see the available methods.
+
+#### Functional Paradigm
+
+    <div className="overflow-x-auto mb-6">
+      <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
+        <thead className="bg-muted/50 text-foreground">
+          <tr>
+            <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Method</th>
+            <th className="px-4 py-3 border-b border-border/50 font-semibold">Description</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/50">
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">route.</span>get() / post() / put()</td>
+            <td className="px-4 py-3 text-muted-foreground">Standard HTTP methods. Also includes patch, delete, options, head, connect, and trace.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">route.</span>all()</td>
+            <td className="px-4 py-3 text-muted-foreground">Matches any HTTP request method for the given path.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">route.</span>query()</td>
+            <td className="px-4 py-3 text-muted-foreground">The new experimental HTTP QUERY method, solving complex idempotent fetches.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">route.</span>ws()</td>
+            <td className="px-4 py-3 text-muted-foreground">Exposes a native WebSocket endpoint with automatic pub/sub support.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">route.</span>sse()</td>
+            <td className="px-4 py-3 text-muted-foreground">Exposes a Server-Sent Events stream for one-way realtime data.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  list: route.get('/', {
+    handle() {
+      // Fetch all users
+      return []
+    }
+  }),
+  create: route.post('/', {
+    handle(ctx) {
+      // Create a new user
+      return { success: true }
+    }
+  })
+})
+```
+  
+#### Class-Based (OOP) Paradigm
+
+    <div className="overflow-x-auto mb-6">
+      <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
+        <thead className="bg-muted/50 text-foreground">
+          <tr>
+            <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Decorator</th>
+            <th className="px-4 py-3 border-b border-border/50 font-semibold">Description</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/50">
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Get() / <span className="text-primary">@</span>Post() / <span className="text-primary">@</span>Put()</td>
+            <td className="px-4 py-3 text-muted-foreground">Standard HTTP methods. Also includes @Patch, @Delete, @Options, @Head, @Connect, and @Trace.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>All()</td>
+            <td className="px-4 py-3 text-muted-foreground">Matches any HTTP request method for the given path.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Query()</td>
+            <td className="px-4 py-3 text-muted-foreground">The new experimental HTTP QUERY method, solving complex idempotent fetches.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Ws()</td>
+            <td className="px-4 py-3 text-muted-foreground">Exposes a native WebSocket endpoint with automatic pub/sub support.</td>
+          </tr>
+          <tr className="bg-background hover:bg-muted/30 transition-colors">
+            <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Sse()</td>
+            <td className="px-4 py-3 text-muted-foreground">Exposes a Server-Sent Events stream for one-way realtime data.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post } from 'exisjs/decorators'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  list() {
+    // Fetch all users
+    return []
+  }
+
+  @Post('/')
+  create() {
+    // Create a new user
+    return { success: true }
+  }
+}
+```
+  
+
+## Sub-Paths in a Single File
+
+While folder-based routing is powerful, you don't *have* to create a new folder for every single route variant. A single `route.ts` file can define multiple sub-paths. This is incredibly useful when you want to group related endpoints.
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  list: route.get('/', {
+    handle() {
+      return { message: 'Fetching all users' }
+    }
+  }),
+  getSingle: route.get('/:id', {
+    handle({ params }) {
+      const { id } = params
+      return { message: \`Fetching user \${id}\` }
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+
+@Controller()
+export default class UsersController {
+  @Get('/')
+  list() {
+    return { message: 'Fetching all users' }
+  }
+
+  @Get('/:id')
+  getSingle(@Param('id') id: string) {
+    return { message: \`Fetching user \${id}\` }
+  }
+}
+```
+
+  
+
+## Route Parameters (Dynamic Routing)
+
+Routes with static paths won’t work when you need to accept dynamic data as part of the request (e.g., `GET /users/123`). To create dynamic routes using folders, enclose the folder name in brackets `[]`.
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/users/[id]/route.ts"
+// Location: src/http/users/[id]/route.ts
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  getSingle: route.get('/', {
+    handle({ params }) {
+      const { id } = params
+      return { message: \`Fetching user \${id}\` }
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/users/[id]/route.ts"
+// Location: src/http/users/[id]/route.ts
+import { Controller, Get, Param } from 'exisjs/decorators'
+
+@Controller()
+export default class SingleUserController {
+  @Get('/')
+  getSingle(@Param('id') id: string) {
+    return { message: \`Fetching user \${id}\` }
+  }
+}
+```
+
+  
+
+## Request & Response Objects
+
+Handlers often need access to the client’s request details, or fine-grained control over the response headers and status codes. Every route handler natively receives powerful `req` and `res` objects.
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/profile/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  profile: route.get('/profile', {
+    handle({ req, res }) {
+      // Read Request details
+      console.log('IP:', req.ip)
+      console.log('Headers:', req.headers)
+
+      // Chain Response methods elegantly!
+      res
+        .status(202)
+        .cookie('session', 'xyz123', { httpOnly: true, secure: true })
+        .header('X-Custom-Header', 'Exis')
+        .json({ message: 'Accepted' })
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/profile/route.ts"
+import { Controller, Get, Req, Res } from 'exisjs/decorators'
+import type { Request, Response } from 'exisjs/router'
+
+@Controller()
+export default class ProfileController {
+  @Get('/profile')
+  profile(@Req() req: Request, @Res() res: Response) {
+    // Read Request details
+    console.log('IP:', req.ip)
+    console.log('Headers:', req.headers)
+
+    // Chain Response methods elegantly!
+    res
+      .status(202)
+      .cookie('session', 'xyz123', { httpOnly: true, secure: true })
+      .header('X-Custom-Header', 'Exis')
+      .json({ message: 'Accepted' })
+  }
+}
+```
+
+  
+
+<Info title="Default Responses">
+When a request handler returns a JavaScript object or array, it is automatically serialized to JSON and sent with a default `200 OK` status code. You only need to use the `res` object when you want to explicitly modify headers, cookies, or status codes!
+</Info>
+
+## Payloads & Query Parameters
+
+You can easily extract query strings from the URL or parsed JSON bodies from POST requests directly through the `req` object (or via decorators in OOP).
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/search/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  search: route.get('/search', {
+    handle({ req }) {
+      // e.g., GET /search?q=exis&limit=10
+      const { q, limit } = req.query
+      return { query: q, limit }
+    }
+  }),
+  create: route.post('/create', {
+    handle({ req }) {
+      // Access parsed JSON body natively
+      const data = req.body
+      return { received: data }
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/search/route.ts"
+import { Controller, Get, Post, Query, Body } from 'exisjs/decorators'
+
+@Controller()
+export default class SearchController {
+  @Get('/search')
+  search(@Query('q') q: string, @Query('limit') limit: number) {
+    // e.g., GET /search?q=exis&limit=10
+    return { query: q, limit }
+  }
+
+  @Post('/create')
+  create(@Body() data: any) {
+    // Access parsed JSON body natively
+    return { received: data }
+  }
+}
+```
+
+  
+
+## The Context API (Advanced)
+
+For developers who hate passing `(req, res)` arguments through endless service layers, ExisJS offers an elegant, Next.js-inspired approach: **The Context API**. Powered by Node.js `AsyncLocalStorage`, ExisJS exposes hooks that magically allow you to access the current request state from anywhere in your codebase.
+
+#### Functional Paradigm
+
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route, getContext, getRequest, getResponse, after } from 'exisjs/router'
+
+export default controller({
+  create: route.post('/', {
+    async handle() {
+      // Magically access request/response without prop-drilling
+      const req = getRequest()
+      const res = getResponse()
+      
+      // Access data injected by gateways!
+      const { userId } = getContext<{ userId: string }>()
+      
+      // Run heavy background tasks AFTER sending response to client
+      after(async () => {
+        await sendNotificationEmail(userId)
+      })
+
+      res.status(201)
+      return { success: true }
+    }
+  })
+})
+```
+
+  
+#### Class-Based (OOP) Paradigm
+
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post } from 'exisjs/decorators'
+import { getContext, getRequest, getResponse, after } from 'exisjs/router'
+
+@Controller()
+export default class OrdersController {
+  @Post('/')
+  async create() {
+    // You can still use the Context API seamlessly in OOP classes!
+    const req = getRequest()
+    const res = getResponse()
+    const { userId } = getContext<{ userId: string }>()
+    
+    after(async () => {
+      await sendNotificationEmail(userId)
+    })
+
+    res.status(201)
+    return { success: true }
+  }
+}
+```
+
+  
+
+## Modular Architecture
+
+While putting all logic in `route.ts` is fine for small apps, ExisJS strongly encourages separating concerns alongside your route definition:
+
+- **`schema.ts`**: Defines expected input validation constraints.
+- **`service.ts`**: Pure functions that interact with your database.
+- **`controller.ts`**: Handles business orchestration.
+- **`route.ts`**: Wires it to the HTTP network.

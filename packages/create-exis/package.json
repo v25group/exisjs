@@ -1,0 +1,46 @@
+{
+  "name": "@exisjs/create",
+  "version": "0.1.0",
+  "description": "Scaffolding tool for Exis JS framework",
+  "author": "V25 Group <support@v25group.com>",
+  "keywords": [
+    "exis",
+    "exisjs",
+    "framework",
+    "nodejs",
+    "typescript",
+    "backend",
+    "api",
+    "rpc",
+    "type-safe"
+  ],
+  "main": "dist/index.js",
+  "bin": {
+    "create-exis": "bin/create-exis.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git"
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "fs-extra": "^11.3.6",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^26.1.1",
+    "@types/prompts": "^2.4.9",
+    "typescript": "^7.0.2"
+  }
+}

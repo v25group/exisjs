@@ -1,0 +1,96 @@
+---
+nextUrl: "/"
+nextTitle: "Back to Home"
+---
+
+# Adapters & Serverless
+
+ExisJS was engineered from the ground up using modern web standards (Fetch API, Request/Response patterns). Because of this, ExisJS isn't just bound to Node.js—it can run virtually anywhere!
+
+To deploy your ExisJS application to serverless or edge environments, you simply wrap your `app` with the corresponding adapter from `exisjs/adapters`.
+
+---
+
+## AWS Lambda
+
+Deploying an ExisJS API as an AWS Lambda function (behind API Gateway) takes one line of code.
+
+```typescript filename="src/lambda.ts"
+import app from './http/server'
+import { serverlessAws } from 'exisjs/adapters'
+
+// Export the AWS Lambda handler
+export const handler = serverlessAws(app)
+```
+
+## Vercel
+
+Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Vercel, use the Vercel adapter inside `api/index.ts`.
+
+```typescript filename="api/index.ts"
+import app from '../src/http/server'
+import { serverlessVercel } from 'exisjs/adapters'
+
+// Export the Vercel handler
+export default serverlessVercel(app)
+```
+
+You'll also need a simple `vercel.json` to route all traffic to this function:
+
+```json filename="vercel.json"
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.ts" }
+  ]
+}
+```
+
+---
+
+## Edge Runtimes (Cloudflare, Deno, Bun)
+
+Because ExisJS is highly optimized and avoids bulky Node.js-only legacy dependencies, it works flawlessly on Edge runtimes like Cloudflare Workers, Deno, and Bun!
+
+### Cloudflare Workers
+
+```typescript filename="src/worker.ts"
+import app from './http/server'
+import { serverlessCloudflare } from 'exisjs/adapters'
+
+// Cloudflare expects an object with a fetch method
+export default {
+  fetch: serverlessCloudflare(app).fetch
+}
+```
+
+### Bun
+
+Bun provides a native, high-performance HTTP server. ExisJS provides a direct adapter to tie into Bun's `serve` function seamlessly.
+
+```typescript filename="src/bun.ts"
+import app from './http/server'
+import { serverlessBun } from 'exisjs/adapters'
+
+export default {
+  port: 3000,
+  fetch: serverlessBun(app).fetch
+}
+```
+
+### Deno
+
+```typescript filename="src/deno.ts"
+import app from './http/server'
+import { serverlessDeno } from 'exisjs/adapters'
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+
+serve(serverlessDeno(app), { port: 8000 });
+```
+
+---
+
+## Netlify & Fastly
+
+ExisJS also provides native adapters for `netlify` and `fastly`. The setup mirrors the examples above. 
+
+No matter where you choose to host your application, ExisJS handles the translation layer effortlessly, ensuring your code remains 100% portable and vendor-agnostic!

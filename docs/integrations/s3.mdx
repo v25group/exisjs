@@ -1,0 +1,122 @@
+---
+nextUrl: "/docs/integrations/resend"
+nextTitle: "Resend"
+---
+
+# AWS S3 Integration
+
+ExisJS provides a zero-config, native integration for **AWS S3** via the official `@aws-sdk/client-s3` package. 
+
+Just like our database plugins, you do **NOT** need to write massive boilerplate to initialize the AWS SDK. The S3 client is lazily initialized the exact moment you execute your first `PutObject` or `GetObject` command!
+
+---
+
+## Environment Variables
+
+The AWS S3 plugin securely reads your credentials directly from your `.env` file using the industry-standard AWS variable names.
+
+Before using the plugin, ensure you have your credentials set:
+
+```bash filename=".env"
+AWS_ACCESS_KEY_ID="your_access_key"
+AWS_SECRET_ACCESS_KEY="your_secret_key"
+AWS_REGION="us-east-1"
+```
+
+---
+
+## Installation
+
+ExisJS wraps the blazing fast `@aws-sdk/client-s3` library.
+
+```bash
+npm install @aws-sdk/client-s3
+```
+
+---
+
+## Usage
+
+Simply import the `s3` proxy from `exisjs/s3` and use standard AWS SDK commands. ExisJS will instantly boot the client behind the scenes.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/uploads/route.ts"
+import { controller, route } from 'exisjs/router'
+import { s3 } from 'exisjs/s3'
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+
+export default controller({
+  // ExisJS automatically parses multipart/form-data when you access req.files!
+  uploadFile: route.post('/', {
+    async handle(req) {
+      // req.files is automatically populated natively by ExisJS
+      const file = req.files[0] 
+      
+      const command = new PutObjectCommand({
+        Bucket: 'my-exis-bucket',
+        Key: file.filename,
+        Body: file.data, // Buffer
+        ContentType: file.mimetype,
+      })
+
+      // The s3 client magically lazy-loads here!
+      await s3.send(command)
+
+      return { success: true, url: `https://my-exis-bucket.s3.amazonaws.com/${file.filename}` }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/uploads/route.ts"
+import { Controller, Post, UploadedFile, type ExisFile } from 'exisjs/decorators'
+import { s3 } from 'exisjs/s3'
+import { PutObjectCommand } from '@aws-sdk/client-s3'
+
+@Controller('/uploads')
+export default class UploadsController {
+  
+  @Post('/')
+  async uploadFile(@UploadedFile('avatar') file: ExisFile) {
+    const command = new PutObjectCommand({
+      Bucket: 'my-exis-bucket',
+      Key: file.filename,
+      Body: file.data, // Buffer
+      ContentType: file.mimetype,
+    })
+
+    // The s3 client magically lazy-loads here!
+    await s3.send(command)
+
+    return { success: true, url: `https://my-exis-bucket.s3.amazonaws.com/${file.filename}` }
+  }
+}
+```
+
+---
+
+## Customizing Connection Options
+
+If you need to pass custom options to the S3 Client (like a custom Endpoint URL for Cloudflare R2 or DigitalOcean Spaces), call `configureS3(options)` inside your `server.ts` `onStart` hook.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { configureS3 } from 'exisjs/s3'
+
+export default exis({
+  async onStart() {
+    // Perfect for S3-compatible APIs like Cloudflare R2!
+    configureS3({
+      endpoint: 'https://<ACCOUNT_ID>.r2.cloudflarestorage.com',
+      forcePathStyle: true
+    })
+  }
+})
+```
+
+<Hint>
+Because ExisJS uses the official AWS SDK under the hood, the S3 integration works perfectly out-of-the-box with **Cloudflare R2**, **DigitalOcean Spaces**, **MinIO**, and any other S3-compatible storage provider!
+</Hint>

@@ -1,0 +1,222 @@
+---
+nextUrl: "/docs/dataloader"
+nextTitle: "Dataloader"
+---
+
+# Route Caching
+
+ExisJS comes with a powerful, built-in Caching Engine heavily inspired by modern frontend frameworks. It provides Next.js-style **Tag-based Revalidation** directly in your backend API.
+
+By default, ExisJS uses an ultra-fast local File System cache (`.exis/cache`), meaning you get persistent, server-side caching with absolutely **zero configuration** required. 
+
+---
+
+## 1. Basic Route Caching
+
+To cache an endpoint, simply attach the `cache()` middleware to it. By default, it will cache `GET` requests based on the URL path.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+import { cache } from 'exisjs/middleware'
+
+export default controller({
+  // Cache this route for 60 seconds (60,000 milliseconds)
+  list: route.get('/', {
+    middlewares: [cache({ ttlMs: 60000 })],
+    handle(req, res) {
+      // This heavy database query only runs once a minute!
+      const products = await db.products.findMany()
+      return products
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/products/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { cache } from 'exisjs/middleware'
+
+@Controller()
+export default class ProductsController {
+  // Cache this route for 60 seconds (60,000 milliseconds)
+  @Use(cache({ ttlMs: 60000 }))
+  @Get('/')
+  async list() {
+    // This heavy database query only runs once a minute!
+    const products = await db.products.findMany()
+    return products
+  }
+}
+```
+
+When a user hits this route:
+1. The first request takes full execution time. ExisJS automatically intercepts the response and writes it to the local cache. The response header `X-Exis-Cache: MISS` is set.
+2. The next 10,000 requests over the next minute hit the cache instantly without running your handler. The response header `X-Exis-Cache: HIT` is set.
+
+---
+
+## 2. Dynamic Cache Keys
+
+By default, the cache key is the exact request path (`req.path`). But what if your response depends on a user's language, or a query parameter? You can customize the key generation logic.
+
+```typescript
+cache({
+  ttlMs: 60000,
+  keyGenerator: (req) => {
+    // Cache separately for English vs French users
+    const lang = req.query.lang || 'en'
+    return `${req.path}?lang=${lang}`
+  }
+})
+```
+
+---
+
+## 3. Tag-Based Revalidation (On-Demand)
+
+Time-based caching (`ttlMs`) is great, but what if a product's price changes and you want to instantly invalidate the cache? 
+
+ExisJS allows you to assign **tags** to your cached responses.
+
+### Step 1: Assign a Tag
+
+#### Functional Paradigm
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+import { cache } from 'exisjs/middleware'
+
+export default controller({
+  list: route.get('/', {
+    middlewares: [
+      cache({ 
+        // We assign the 'products-list' tag to this cached route
+        tags: ['products-list'] 
+      })
+    ],
+    async handle(req, res) {
+      return await db.products.findMany()
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/products/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { cache } from 'exisjs/middleware'
+
+@Controller()
+export default class ProductsController {
+  @Use(cache({ tags: ['products-list'] }))
+  @Get('/')
+  async list() {
+    return await db.products.findMany()
+  }
+}
+```
+
+### Step 2: Invalidate the Tag
+
+Now, inside an admin route or webhook where a product is updated, you can instantly purge the cache using `revalidateTag()`.
+
+#### Functional Paradigm
+
+```typescript filename="src/http/admin/products/route.ts"
+import { controller, route } from 'exisjs/router'
+import { revalidateTag } from 'exisjs/cache'
+
+export default controller({
+  update: route.post('/:id', {
+    async handle(req, res) {
+      // 1. Update the product in the database
+      await db.products.update(req.params.id, req.body)
+
+      // 2. Instantly purge all routes cached with 'products-list'
+      await revalidateTag('products-list')
+
+      return { success: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/admin/products/route.ts"
+import { Controller, Post, Param, Body } from 'exisjs/decorators'
+import { revalidateTag } from 'exisjs/cache'
+
+@Controller()
+export default class AdminProductsController {
+  @Post('/:id')
+  async update(@Param('id') id: string, @Body() body: any) {
+    // 1. Update the product in the database
+    await db.products.update(id, body)
+
+    // 2. Instantly purge all routes cached with 'products-list'
+    await revalidateTag('products-list')
+
+    return { success: true }
+  }
+}
+```
+
+Dynamic tags are also supported by passing a function to `tags`:
+```typescript
+cache({
+  tags: (req) => [`product-${req.params.id}`]
+})
+```
+
+---
+
+## 4. Custom Cache Stores (Redis)
+
+By default, ExisJS uses the local File System (`.exis/cache`) to store responses. This works flawlessly for single-server setups. 
+
+If you are deploying horizontally across a cluster (e.g. Kubernetes, AWS ECS) or Serverless (AWS Lambda), you will want a distributed cache. ExisJS exposes the `CacheStore` interface, making it trivial to plug in Redis.
+
+*(Note: The official `exisjs/redis` integration provides a robust Redis Cache Store out of the box, which we will cover in the Integrations documentation!)*
+
+---
+
+## 5. API Reference (`exisjs/cache`)
+
+For advanced use-cases, you can import several utilities directly from the `exisjs/cache` package. Here is the full list of what is exported and how to use it:
+
+### `revalidateTag(tag: string)`
+Purges all cached responses associated with a specific tag. 
+```typescript
+import { revalidateTag } from 'exisjs/cache'
+await revalidateTag('products-list')
+```
+
+### `setCacheStore(store: CacheStore)`
+Allows you to globally override the default file-system cache with a custom distributed cache (like Redis or Memcached). This is typically done once in your `server.ts` or `exis.config.ts`.
+```typescript
+import { setCacheStore } from 'exisjs/cache'
+import { RedisCacheStore } from 'exisjs/redis'
+
+setCacheStore(new RedisCacheStore(process.env.REDIS_URL))
+```
+
+### `getCacheStore(): CacheStore`
+Retrieves the currently active cache store. Useful if you want to manually read/write to the cache outside of the middleware layer.
+```typescript
+import { getCacheStore } from 'exisjs/cache'
+
+const store = getCacheStore()
+await store.set('/custom-key', { data: 'hello' }, [], 60000)
+```
+
+### Interfaces & Classes
+If you are building your own Custom Cache Store, ExisJS exports the required interfaces:
+- `CacheStore`: The interface you must implement (`get`, `set`, `revalidateTag`, `getTags`).
+- `CacheItem`: The expected shape of a cached response (`data`, `tags`, `createdAt`).
+- `FileSystemCacheStore`: The default implementation used by the framework.
