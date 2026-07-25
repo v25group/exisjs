@@ -16,10 +16,10 @@
     "mongoose": "^8.24.1"
   },
   "devDependencies": {
-    "@eslint/js": "^8.0.0",
-    "@types/node": "^20.0.0",
-    "eslint": "^8.0.0",
-    "typescript": "^5.4.0",
-    "typescript-eslint": "^7.0.0"
+    "@eslint/js": "^8.57.1",
+    "@types/node": "^20.19.43",
+    "eslint": "^8.57.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^7.18.0"
   }
 }
