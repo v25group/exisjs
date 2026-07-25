@@ -7,13 +7,8 @@
     "@expo/vector-icons": "^15.1.1",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.18.14",
-<<<<<<< HEAD
     "@react-navigation/native": "^7.3.14",
     "expo": "~57.0.8",
-=======
-    "@react-navigation/native": "^7.3.13",
-    "expo": "~57.0.7",
->>>>>>> 2a847236bbc5c1865937ae5b80eed61062d7617f
     "expo-blur": "~57.0.2",
     "expo-constants": "~57.0.7",
     "expo-device": "~57.0.1",
