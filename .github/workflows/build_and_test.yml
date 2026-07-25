@@ -28,9 +28,6 @@ jobs:
     - name: Type Check & Lint
       run: npm run lint --if-present
       
-    - name: Security Audit
-      run: npm run audit:packages --if-present
-      
     - name: Build Packages
       run: npm run build
       

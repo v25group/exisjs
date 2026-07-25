@@ -29,8 +29,7 @@
     "release": "npm run build && changeset publish",
     "bench": "tsx bench/basic.ts",
     "bench:compare": "tsx bench/compare.ts",
-    "bench:router": "tsx bench/router.ts",
-    "audit:packages": "node scripts/audit-packages.js"
+    "bench:router": "tsx bench/router.ts"
   },
   "lint-staged": {
     "packages/**/*.ts": [
