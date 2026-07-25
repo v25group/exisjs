@@ -11,3 +11,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Ignore example app specific packages to prevent noise
+      - dependency-name: "react"
+      - dependency-name: "react-native*"
+      - dependency-name: "@react-navigation/*"
+      - dependency-name: "expo*"
+      - dependency-name: "groq-sdk"
