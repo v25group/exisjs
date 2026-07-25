@@ -29,7 +29,6 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install
-          npm install @typescript/typescript-linux-x64 --no-save
 
       - name: Authenticate with NPM
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
