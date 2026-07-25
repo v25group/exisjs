@@ -148,7 +148,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
     // Auto-detect uWebSockets.js backend
     if (
       options.server === 'uws' ||
-      (options.server !== 'node' && isUwsAvailable())
+      (options.server !== 'node' &&
+        isUwsAvailable() &&
+        this.options.env !== 'test')
     ) {
       this._useUws = true
       // Don't init Node server — we'll create the uWS app at listen() time
@@ -599,8 +601,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
   ws<Path extends string>(
     path: Path,
     ...handlers: (
-      | import('../types').Handler<any, any, any>
-      | import('../types').WsHandler
+      import('../types').Handler<any, any, any> | import('../types').WsHandler
     )[]
   ): App<TRoutes & { ws: Record<Path, any> }> {
     this.router.ws(path, ...(handlers as any))
@@ -797,13 +798,17 @@ export class App<TRoutes extends Record<string, any> = {}> {
                       req.body === undefined &&
                       ['POST', 'PUT', 'PATCH'].includes(req.method!)
                     ) {
-                      await req.formData().catch(() => { /* noop */ })
+                      await req.formData().catch(() => {
+                        /* noop */
+                      })
                     }
                     if (req.files) {
                       const isMulti = param.type === 'uploadedFiles'
                       let files: any[] = []
                       if (param.name) {
-                        files = req.files.filter((f: any) => f.fieldname === param.name)
+                        files = req.files.filter(
+                          (f: any) => f.fieldname === param.name
+                        )
                       } else {
                         files = req.files
                       }
@@ -816,20 +821,35 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
                 if (param.pipes && param.pipes.length > 0) {
                   for (const pipe of param.pipes) {
-                    if (typeof pipe === 'function' && pipe.prototype?.transform) {
+                    if (
+                      typeof pipe === 'function' &&
+                      pipe.prototype?.transform
+                    ) {
                       let pipeInstance: any = this.container.resolve(pipe)
                       if (!pipeInstance) pipeInstance = new pipe()
-                      rawArg = await pipeInstance.transform(rawArg, { type: param.type, name: param.name })
-                    } else if (typeof pipe === 'object' && typeof pipe.transform === 'function') {
-                      rawArg = await pipe.transform(rawArg, { type: param.type, name: param.name })
-                    } else if (typeof pipe === 'object' && typeof pipe.parse === 'function') {
+                      rawArg = await pipeInstance.transform(rawArg, {
+                        type: param.type,
+                        name: param.name,
+                      })
+                    } else if (
+                      typeof pipe === 'object' &&
+                      typeof pipe.transform === 'function'
+                    ) {
+                      rawArg = await pipe.transform(rawArg, {
+                        type: param.type,
+                        name: param.name,
+                      })
+                    } else if (
+                      typeof pipe === 'object' &&
+                      typeof pipe.parse === 'function'
+                    ) {
                       rawArg = await pipe.parse(rawArg)
                     } else if (typeof pipe === 'function') {
                       rawArg = await pipe(rawArg)
                     }
                   }
                 }
-                
+
                 args.push(rawArg)
               }
             }
@@ -894,7 +914,10 @@ export class App<TRoutes extends Record<string, any> = {}> {
                 await filterInstance.catch(err, { req, res })
                 handled = true
                 break
-              } else if (typeof filter === 'object' && typeof filter.catch === 'function') {
+              } else if (
+                typeof filter === 'object' &&
+                typeof filter.catch === 'function'
+              ) {
                 await filter.catch(err, { req, res })
                 handled = true
                 break
@@ -1511,8 +1534,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     let port: number
     let host: string
     let onListen:
-      | ((address: { port: number; host: string }) => void)
-      | undefined
+      ((address: { port: number; host: string }) => void) | undefined
 
     if (typeof portOrOptions === 'number') {
       port = portOrOptions
@@ -1808,7 +1830,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
         finish()
         return
       }
-      
+
       if (this._useUws && !this._uwsListenToken) {
         finish()
         return
@@ -2260,11 +2282,15 @@ export class App<TRoutes extends Record<string, any> = {}> {
                     if (reqPath.startsWith(rule.slice(0, -2))) return true
                   } else if (reqPath === rule) return true
                 } else {
-                  const pathMatch = rule.path.endsWith('/*') 
-                    ? reqPath.startsWith(rule.path.slice(0, -2)) 
+                  const pathMatch = rule.path.endsWith('/*')
+                    ? reqPath.startsWith(rule.path.slice(0, -2))
                     : reqPath === rule.path
                   if (pathMatch) {
-                    if (!rule.methods || rule.methods.includes(reqMethod as any)) return true
+                    if (
+                      !rule.methods ||
+                      rule.methods.includes(reqMethod as any)
+                    )
+                      return true
                   }
                 }
               }
@@ -2272,18 +2298,32 @@ export class App<TRoutes extends Record<string, any> = {}> {
             }
 
             if (gwConfig.middleware) {
-              const wrapped = gwConfig.middleware.map((m: any) => (req: any, res: any, next: any) => isExcluded(req.path, req.method) ? next() : m(req, res, next))
+              const wrapped = gwConfig.middleware.map(
+                (m: any) => (req: any, res: any, next: any) =>
+                  isExcluded(req.path, req.method) ? next() : m(req, res, next)
+              )
               allMiddlewares.push(...wrapped)
             }
             if (gwConfig.filters) {
-              const wrapped = gwConfig.filters.map((f: any) => (err: any, req: any, res: any, next: any) => isExcluded(req.path, req.method) ? next(err) : (f.prototype && f.prototype.catch ? new f().catch(err, req, res, next) : f(err, req, res, next)))
+              const wrapped = gwConfig.filters.map(
+                (f: any) => (err: any, req: any, res: any, next: any) =>
+                  isExcluded(req.path, req.method)
+                    ? next(err)
+                    : f.prototype && f.prototype.catch
+                      ? new f().catch(err, req, res, next)
+                      : f(err, req, res, next)
+              )
               allFilters.push(...wrapped)
             }
             if (gwConfig.guards) {
               const wrapped = gwConfig.guards.map((g: any) => {
                 return async (req: any) => {
                   if (isExcluded(req.path, req.method)) return true
-                  return typeof g === 'function' ? (g.prototype?.canActivate ? new g().canActivate(req) : g(req)) : g.canActivate(req)
+                  return typeof g === 'function'
+                    ? g.prototype?.canActivate
+                      ? new g().canActivate(req)
+                      : g(req)
+                    : g.canActivate(req)
                 }
               })
               allGuards.push(...wrapped)
@@ -2292,7 +2332,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
               const wrapped = gwConfig.interceptors.map((i: any) => {
                 return async (req: any, res: any) => {
                   if (isExcluded(req.path, req.method)) return
-                  return typeof i === 'function' ? (i.prototype?.intercept ? new i().intercept(req, res) : i(req, res)) : i.intercept(req, res)
+                  return typeof i === 'function'
+                    ? i.prototype?.intercept
+                      ? new i().intercept(req, res)
+                      : i(req, res)
+                    : i.intercept(req, res)
                 }
               })
               allInterceptors.push(...wrapped)
@@ -2301,11 +2345,22 @@ export class App<TRoutes extends Record<string, any> = {}> {
               const baseTimeout = gwConfig.timeout
               const timeoutMiddleware = (req: any, res: any, next: any) => {
                 if (isExcluded(req.path, req.method)) return next()
-                const ms = typeof baseTimeout === 'function' ? baseTimeout(req) : baseTimeout
+                const ms =
+                  typeof baseTimeout === 'function'
+                    ? baseTimeout(req)
+                    : baseTimeout
                 if (ms) {
                   req.timeoutTimer = setTimeout(() => {
                     if (!res.headersSent) {
-                      res.status(408).json({ success: false, error: { code: 'REQUEST_TIMEOUT', message: 'Request Timeout' } })
+                      res
+                        .status(408)
+                        .json({
+                          success: false,
+                          error: {
+                            code: 'REQUEST_TIMEOUT',
+                            message: 'Request Timeout',
+                          },
+                        })
                     }
                   }, ms)
                   res.raw.on('finish', () => clearTimeout(req.timeoutTimer))
@@ -2355,11 +2410,32 @@ export class App<TRoutes extends Record<string, any> = {}> {
         await this.register(plugin)
       }
     }
-    
+
     // Inject Gateway features into module config for compileFunctionalController and OOP
-    mod.config.filters = [...allFilters, ...(mod.config.filters ? (Array.isArray(mod.config.filters) ? mod.config.filters : [mod.config.filters]) : [])]
-    mod.config.guards = [...allGuards, ...(mod.config.guards ? (Array.isArray(mod.config.guards) ? mod.config.guards : [mod.config.guards]) : [])]
-    mod.config.interceptors = [...allInterceptors, ...(mod.config.interceptors ? (Array.isArray(mod.config.interceptors) ? mod.config.interceptors : [mod.config.interceptors]) : [])]
+    mod.config.filters = [
+      ...allFilters,
+      ...(mod.config.filters
+        ? Array.isArray(mod.config.filters)
+          ? mod.config.filters
+          : [mod.config.filters]
+        : []),
+    ]
+    mod.config.guards = [
+      ...allGuards,
+      ...(mod.config.guards
+        ? Array.isArray(mod.config.guards)
+          ? mod.config.guards
+          : [mod.config.guards]
+        : []),
+    ]
+    mod.config.interceptors = [
+      ...allInterceptors,
+      ...(mod.config.interceptors
+        ? Array.isArray(mod.config.interceptors)
+          ? mod.config.interceptors
+          : [mod.config.interceptors]
+        : []),
+    ]
     mod.config.metadata = { ...allMetadata, ...(mod.config.metadata || {}) }
 
     const prefixMiddlewares: any[] = []
@@ -2475,12 +2551,21 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
         try {
           // 1. Run Guards
-          const routeGuards = [ ...(config.guards || []), ...(rc.guards || []) ]
+          const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
           for (const guard of routeGuards) {
-            const allowed = await (typeof guard === 'function' ? (guard.prototype?.canActivate ? new guard().canActivate(req) : guard(req)) : guard.canActivate(req))
+            const allowed = await (typeof guard === 'function'
+              ? guard.prototype?.canActivate
+                ? new guard().canActivate(req)
+                : guard(req)
+              : guard.canActivate(req))
             if (!allowed) {
               if (res && !res.headersSent) {
-                res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' } })
+                res
+                  .status(403)
+                  .json({
+                    success: false,
+                    error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
+                  })
               }
               return
             }
@@ -2502,9 +2587,16 @@ export class App<TRoutes extends Record<string, any> = {}> {
           const result = await rc.handle(ctx)
 
           // 2. Run Interceptors
-          const routeInterceptors = [ ...(config.interceptors || []), ...(rc.interceptors || []) ]
+          const routeInterceptors = [
+            ...(config.interceptors || []),
+            ...(rc.interceptors || []),
+          ]
           for (const interceptor of routeInterceptors) {
-             await (typeof interceptor === 'function' ? (interceptor.prototype?.intercept ? new interceptor().intercept(req, res) : interceptor(req, res)) : interceptor.intercept(req, res))
+            await (typeof interceptor === 'function'
+              ? interceptor.prototype?.intercept
+                ? new interceptor().intercept(req, res)
+                : interceptor(req, res)
+              : interceptor.intercept(req, res))
           }
 
           if (result !== undefined && !res.headersSent) {
@@ -2531,31 +2623,48 @@ export class App<TRoutes extends Record<string, any> = {}> {
       const method = rc.method.toLowerCase()
 
       const schema: any = {}
-      
-      const isValidatorOrPipe = (v: any) => 
-        v.parse || v.transform || (typeof v === 'function' && v.prototype?.transform)
+
+      const isValidatorOrPipe = (v: any) =>
+        v.parse ||
+        v.transform ||
+        (typeof v === 'function' && v.prototype?.transform)
 
       if (rc.body) {
         schema.body = isValidatorOrPipe(rc.body) ? rc.body : v.object(rc.body)
       }
       if (rc.query) {
-        schema.query = isValidatorOrPipe(rc.query) ? rc.query : v.object(rc.query)
+        schema.query = isValidatorOrPipe(rc.query)
+          ? rc.query
+          : v.object(rc.query)
       }
       if (rc.params) {
-        schema.params = isValidatorOrPipe(rc.params) ? rc.params : v.object(rc.params)
+        schema.params = isValidatorOrPipe(rc.params)
+          ? rc.params
+          : v.object(rc.params)
       }
       if (rc.host) {
         schema.host = rc.host
       }
       const combinedFilters = [
-        ...(config.filters ? (Array.isArray(config.filters) ? config.filters : [config.filters]) : []),
-        ...(rc.filters ? (Array.isArray(rc.filters) ? rc.filters : [rc.filters]) : [])
+        ...(config.filters
+          ? Array.isArray(config.filters)
+            ? config.filters
+            : [config.filters]
+          : []),
+        ...(rc.filters
+          ? Array.isArray(rc.filters)
+            ? rc.filters
+            : [rc.filters]
+          : []),
       ]
       if (combinedFilters.length > 0) {
         schema.filters = combinedFilters
       }
-      
-      const combinedMetadata = { ...(config.metadata || {}), ...(rc.metadata || {}) }
+
+      const combinedMetadata = {
+        ...(config.metadata || {}),
+        ...(rc.metadata || {}),
+      }
       if (Object.keys(combinedMetadata).length > 0) {
         schema.metadata = combinedMetadata
       }

@@ -71,6 +71,7 @@ describe('Gateway & Inline Config', () => {
 
     app = new App({
       env: 'production', // Skip lazy loading in tests
+      server: 'node',
     })
     app.apiDir = httpDir
 
