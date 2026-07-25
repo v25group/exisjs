@@ -17,6 +17,9 @@
   <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
     <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-black.svg?style=for-the-badge&logo=github&labelColor=000000&color=000000&logoWidth=20">
   </a>
+  <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
+    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-black.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
+  </a>
 </p>
 
 ---
