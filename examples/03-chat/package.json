@@ -14,10 +14,10 @@
     "exisjs": "^0.1.0"
   },
   "devDependencies": {
-    "@types/node": "^20.19.43",
-    "typescript": "^5.9.3",
-    "eslint": "^8.57.1",
     "@eslint/js": "^8.57.1",
+    "@types/node": "^20.19.43",
+    "eslint": "^8.57.1",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^7.18.0"
   }
 }
