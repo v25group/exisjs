@@ -1,18 +1,19 @@
 import v8 from 'node:v8'
 import { pathToFileURL } from 'node:url'
-
-// Memory threshold monitor
-setInterval(() => {
-  const stats = v8.getHeapStatistics()
-  if (stats.used_heap_size > 0.8 * stats.heap_size_limit) {
-    console.error(
-      '\x1b[33m[exis]\x1b[0m Server is approaching memory threshold, restarting...'
-    )
-    process.exit(143) // exit with SIGTERM equivalent
-  }
-}, 10000).unref() // don't block the event loop
+import { runInCluster } from '../server/cluster.js'
 
 async function start() {
+  // ─── Memory threshold monitor (only runs on worker processes) ───────────
+  setInterval(() => {
+    const stats = v8.getHeapStatistics()
+    if (stats.used_heap_size > 0.8 * stats.heap_size_limit) {
+      console.error(
+        '\x1b[33m[exis]\x1b[0m Server is approaching memory threshold, restarting...'
+      )
+      process.exit(143) // exit with SIGTERM equivalent
+    }
+  }, 10000).unref() // don't block the event loop
+
   const entryFile = process.env.EXIS_ENTRY_FILE
 
   if (!entryFile) {
@@ -68,4 +69,10 @@ async function start() {
   }
 }
 
-start()
+// ─── Multi-core cluster mode ────────────────────────────────────────────────────
+// The primary process forks workers across all CPU cores.
+// Each worker independently runs start() to boot its own HTTP server instance.
+// If a worker crashes, the cluster manager automatically respawns it.
+runInCluster(() => {
+  start()
+})
