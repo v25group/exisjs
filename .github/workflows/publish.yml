@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm ci
+          npm install
           npm install @typescript/typescript-linux-x64 --no-save
 
       - name: Authenticate with NPM
