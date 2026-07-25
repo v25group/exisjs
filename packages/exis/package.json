@@ -254,6 +254,7 @@
     "@types/node": "^26.1.1",
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
+    "@typescript/typescript-win32-x64": "^7.0.2",
     "autocannon": "^8.0.0",
     "benchmark": "^2.1.4",
     "find-my-way": "^9.7.0",
