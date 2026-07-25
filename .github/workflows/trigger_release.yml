@@ -16,19 +16,25 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         
       - name: Build Packages
         run: npm run build
         
-      - name: Publish @exis/core
+      - name: Publish exisjs
         run: npm publish --access public
         working-directory: packages/exis
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           
-      - name: Publish create-exis
+      - name: Publish @exisjs/create
         run: npm publish --access public
         working-directory: packages/create-exis
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @exisjs/client
+        run: npm publish --access public
+        working-directory: packages/client
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
