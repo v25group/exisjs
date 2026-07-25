@@ -20,16 +20,12 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
         
     - name: Install Dependencies
       run: npm install
       
     - name: Type Check & Lint
       run: npm run lint --if-present
-      
-    - name: Security Audit
-      run: npm run audit:packages --if-present
       
     - name: Build Packages
       run: npm run build

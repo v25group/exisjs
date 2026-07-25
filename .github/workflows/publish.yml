@@ -23,13 +23,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24.x
-          cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install Dependencies
         run: |
-          npm ci
-          npm install @typescript/typescript-linux-x64 --no-save
+          npm install
 
       - name: Authenticate with NPM
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc

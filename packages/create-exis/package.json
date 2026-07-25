@@ -41,7 +41,6 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^26.1.1",
     "@types/prompts": "^2.4.9",
-    "@typescript/typescript-win32-x64": "^7.0.2",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   }
 }
