@@ -61,6 +61,13 @@ export default defineExisConfig({
 
 Alternatively, you can register it manually inside your `src/http/server.ts`:
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
 import { AuthModule } from '../modules/auth.module'
@@ -71,6 +78,27 @@ export default exis({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { AuthModule } from '../modules/auth.module'
+import type { App } from 'exisjs'
+
+@Server({
+  plugins: [AuthModule]
+})
+export default class RootServer {
+  async onStart(app: App) {
+    console.log("Server with AuthModule booted.")
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
 
 ---
 

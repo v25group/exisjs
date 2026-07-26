@@ -15,7 +15,11 @@ ExisJS natively supports both a highly optimized **Functional Paradigm** (fastes
 
 ExisJS takes a radically different approach to routing compared to traditional Node.js frameworks like Express or Fastify. Instead of declaring routes programmatically in a giant `server.ts` file, ExisJS utilizes **folder-based file-system routing** (heavily inspired by modern meta-frameworks like Next.js).
 
-For a folder to become an accessible API endpoint, it must contain a `route.ts` file that exports a route definition.
+For a folder to become an accessible API endpoint, it must contain a `route.ts` file that exports a route definition. 
+
+In addition to `route.ts`, the ExisJS router utilizes two other special gatekeeper files:
+- **`server.ts`**: Placed at the root of your `http` directory, it is the entry point that boots your application, registers global plugins, and connects to databases.
+- **`gateway.ts`**: Can be placed in any folder. It acts as a gatekeeper, automatically applying middleware, CORS, headers, and dependencies to *all* routes within its directory and subdirectories.
 
 ### Routing Conventions
 
@@ -24,6 +28,61 @@ The ExisJS file-system router natively supports advanced folder naming conventio
 - **Dynamic Parameters (`[param]`)**: A folder named `[id]` creates a dynamic route segment (e.g., `/:id`). The value is accessible in your handler via `ctx.params.id`.
 - **Catch-all Routes (`[...param]`)**: A folder named `[...slug]` catches all subsequent URL segments, matching anything that follows (e.g., `/*slug`).
 - **Route Groups (`(group)`)**: A folder wrapped in parentheses (e.g., `(admin)`) is entirely ignored in the final URL path. This is incredibly useful for grouping related routes or applying shared controller-level middleware without adding `/admin` to the URL.
+
+### The Application Entry Point (`server.ts`)
+
+The `server.ts` file acts as the root configuration for your application. It provides lifecycle hooks to boot databases, register global plugins, and provide root-level dependencies.
+
+#### Functional Paradigm
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+
+export default exis({
+  async onStart(app) {
+    // Boot your database here!
+  }
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import type { App } from 'exisjs'
+
+@Server({
+  providers: [['LoggerService', { useValue: console }]]
+})
+export default class RootServer {
+  async onStart(app: App) {
+    // Boot your database here!
+  }
+}
+```
+
+### Folder Gateways (`gateway.ts`)
+
+Gateways apply configurations to all routes in their directory and subdirectories.
+
+#### Functional Paradigm
+```typescript filename="src/http/admin/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+
+export default defineGateway({
+  headers: { 'X-Admin-Area': 'true' }
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/admin/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+
+@Gateway({
+  headers: { 'X-Admin-Area': 'true' }
+})
+export default class AdminGateway {}
+```
+
+### Route Definitions (`route.ts`)
 
 For example, to create a simple `/health` endpoint, you create the folder `src/http/health/` and place a `route.ts` file inside it:
 
@@ -113,6 +172,13 @@ export default controller({
     handle(ctx) {
       // Create a new user
       return { success: true }
+    }
+  }),
+  preflight: route.options('/', {
+    handle({ res }) {
+      // Handle custom preflight logic if `preflightContinue: true` is configured in CORS
+      res.header('X-Custom-Options', 'true')
+      return { allowed: true }
     }
   })
 })

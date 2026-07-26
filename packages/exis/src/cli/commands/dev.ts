@@ -29,9 +29,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     process.exit(1)
   }
 
-  // Check for tsconfig
+  // Check for tsconfig (only warn for TypeScript projects)
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
-  if (!fs.existsSync(tsconfigPath)) {
+  if (!fs.existsSync(tsconfigPath) && entryFile.endsWith('.ts')) {
     warn('No tsconfig.json found — using default TypeScript settings.')
   }
 

@@ -50,8 +50,44 @@ async function start() {
     const url = pathToFileURL(entryFile).href
     const mod = await dynamicImport(url)
 
-    // Support declarative `export default exis({ ... })`
-    const app = mod.default || mod.app
+    // Support declarative `export default exis({ ... })` or `@Server` classes
+    let app = mod.default || mod.app
+
+    // Check if it's a class decorated with @Server
+    if (
+      app &&
+      typeof app === 'function' &&
+      app.prototype &&
+      app.prototype[Symbol.for('exisjs:server_config')]
+    ) {
+      const serverConfig = app.prototype[Symbol.for('exisjs:server_config')]
+      const AppClass = (await import('../server/app.js')).App
+      const instance = new AppClass({
+        plugins: serverConfig.plugins,
+      })
+
+      const serverInstance = new app()
+      if (serverConfig.providers) {
+        for (const p of serverConfig.providers) {
+          instance.provide(p[0], p[1])
+        }
+      }
+
+      instance.onStartHook = async () => {
+        if (typeof serverInstance.onStart === 'function') {
+          await serverInstance.onStart(instance)
+        }
+      }
+
+      instance.onCloseHook = async () => {
+        if (typeof serverInstance.onClose === 'function') {
+          await serverInstance.onClose(instance)
+        }
+      }
+
+      app = instance
+    }
+
     if (
       app &&
       typeof app.create === 'function' &&

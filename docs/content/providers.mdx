@@ -73,6 +73,13 @@ ExisJS utilizes an ultra-fast runtime container system. By default, ExisJS does 
 
 ExisJS's DI container is extremely flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/server.ts"
 import exis from 'exisjs'
 import { UsersService } from './users/service'
@@ -90,7 +97,7 @@ export default exis({
     // 3. Factory Provider
     app.provide('LoggerService', {
       useFactory: () => {
-        return { log: (msg: string) => console.log(\`[Logger]: \${msg}\`) }
+        return { log: (msg: string) => console.log(`[Logger]: ${msg}`) }
       }
     })
 
@@ -101,6 +108,31 @@ export default exis({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { UsersService } from './users/service'
+
+@Server({
+  providers: [
+    // 1. Standard Class Provider
+    UsersService,
+    // 2. Value Provider
+    ['DATABASE_URL', { useValue: 'postgres://localhost:5432/mydb' }],
+    // 3. Factory Provider
+    ['LoggerService', { useFactory: () => ({ log: (msg: string) => console.log(`[Logger]: ${msg}`) }) }],
+    // 4. Aliased Class Provider
+    ['AuthService', { useClass: UsersService }]
+  ]
+})
+export default class RootServer {}
+```
+
+  </TabsContent>
+</Tabs>
 
 ## Injection Scopes
 

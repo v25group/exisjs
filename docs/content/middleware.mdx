@@ -73,21 +73,25 @@ export default class MyController {
 
 The `cors` middleware handles Cross-Origin Resource Sharing effortlessly. It is fully configurable and optimized for zero-overhead on preflight requests.
 
-```typescript filename="src/http/server.ts"
-import { exis } from 'exisjs'
-import { cors } from 'exisjs/middleware'
+The best practice in ExisJS is to configure CORS globally in your **`exis.config.ts`** file (the Single Source of Truth). The framework will automatically merge and apply it globally for you.
 
-export default exis({
-  async onStart(app) {
-    app.use(cors({
-      origin: ['https://myapp.com', /localhost:\d+/],
-      methods: ['GET', 'POST', 'OPTIONS'],
-      credentials: true,
-      maxAge: 86400
-    }))
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
+export default async () => defineConfig({
+  cors: {
+    origin: ['https://myapp.com', /localhost:\d+/],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+    maxAge: 86400,
+    preflightContinue: true // Set this to true if you want OPTIONS requests to hit your custom route.options() handlers!
   }
 })
 ```
+
+By default, ExisJS intercepts `OPTIONS` requests at the middleware level and responds immediately with a `204 No Content` (and the appropriate CORS headers) to save server resources. However, if you need to run custom logic on preflight requests—such as hitting a specific `route.options('/', ...)` handler or a `@Options()` decorated controller method—you can set `preflightContinue: true`. 
+
+You can also configure CORS locally per-route by passing it to your controller config or gateway.
 
 ---
 

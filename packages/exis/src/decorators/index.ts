@@ -240,13 +240,34 @@ export function Use(...middlewares: any[]): any {
       const context = contextOrPropertyKey
       if (context.kind === 'class') {
         if (context.metadata) {
-          context.metadata[MIDDLEWARE_REGISTRY] =
-            context.metadata[MIDDLEWARE_REGISTRY] || []
-          context.metadata[MIDDLEWARE_REGISTRY].push(...middlewares)
+          if (
+            !context.metadata[MIDDLEWARE_REGISTRY] ||
+            Array.isArray(context.metadata[MIDDLEWARE_REGISTRY])
+          ) {
+            context.metadata[MIDDLEWARE_REGISTRY] = {
+              _classMiddlewares: context.metadata[MIDDLEWARE_REGISTRY] || [],
+            }
+          } else if (!context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares) {
+            context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+          }
+          context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares.push(
+            ...middlewares
+          )
         }
-        target.prototype[MIDDLEWARE_REGISTRY] =
-          target.prototype[MIDDLEWARE_REGISTRY] || []
-        target.prototype[MIDDLEWARE_REGISTRY].push(...middlewares)
+
+        if (
+          !target.prototype[MIDDLEWARE_REGISTRY] ||
+          Array.isArray(target.prototype[MIDDLEWARE_REGISTRY])
+        ) {
+          target.prototype[MIDDLEWARE_REGISTRY] = {
+            _classMiddlewares: target.prototype[MIDDLEWARE_REGISTRY] || [],
+          }
+        } else if (!target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares) {
+          target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+        }
+        target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares.push(
+          ...middlewares
+        )
       } else if (context.kind === 'method') {
         // TS 5.0 Standard Method Decorator
         ;(target as any)[METHOD_MIDDLEWARES] =
@@ -256,9 +277,18 @@ export function Use(...middlewares: any[]): any {
     } else {
       if (typeof target === 'function' && !contextOrPropertyKey) {
         // Legacy class decorator
-        target.prototype[MIDDLEWARE_REGISTRY] =
-          target.prototype[MIDDLEWARE_REGISTRY] || []
-        target.prototype[MIDDLEWARE_REGISTRY].push(...middlewares)
+        const proto = target.prototype
+        if (
+          !proto[MIDDLEWARE_REGISTRY] ||
+          Array.isArray(proto[MIDDLEWARE_REGISTRY])
+        ) {
+          proto[MIDDLEWARE_REGISTRY] = {
+            _classMiddlewares: proto[MIDDLEWARE_REGISTRY] || [],
+          }
+        } else if (!proto[MIDDLEWARE_REGISTRY]._classMiddlewares) {
+          proto[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+        }
+        proto[MIDDLEWARE_REGISTRY]._classMiddlewares.push(...middlewares)
       } else {
         // Legacy method decorator
         const proto = target
@@ -314,6 +344,35 @@ export function Header(name: string, value: string): any {
     fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
     fn[ROUTE_METADATA_PROP].headers = fn[ROUTE_METADATA_PROP].headers || {}
     fn[ROUTE_METADATA_PROP].headers[name] = value
+  }
+}
+
+/**
+ * Defines the response schema for OpenAPI generation.
+ *
+ * Example:
+ *
+ *     @Get('/')
+ *     @Returns(v.object({ id: v.string() }))
+ *     getUser() {}
+ *
+ * @param {RouteSchema['response']} schema The response schema
+ * @public
+ */
+export function Returns(
+  schema: import('../types').RouteSchema<any, any, any, any>['response']
+): any {
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard =
+      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
+    const fn = isStandard ? target : descriptor.value
+
+    fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
+    fn[ROUTE_METADATA_PROP].responseSchema = schema
   }
 }
 
@@ -603,5 +662,47 @@ export function Injectable(options?: { scope?: 'singleton' | 'request' }): any {
     if (options?.scope) {
       target.prototype[Symbol.for('exisjs:scope')] = options.scope
     }
+  }
+}
+
+export const SERVER_CONFIG = Symbol.for('exisjs:server_config')
+export const GATEWAY_CONFIG = Symbol.for('exisjs:gateway_config')
+
+export interface ServerConfig {
+  plugins?: any[]
+  providers?: any[]
+  cron?: any[]
+  queue?: any[]
+}
+
+/**
+ * Marks a class as a root Server module.
+ */
+export function Server(options?: ServerConfig): any {
+  return function (target: any, _context?: ClassDecoratorContext) {
+    target.prototype[SERVER_CONFIG] = options || {}
+  }
+}
+
+export interface GatewayConfig {
+  exclude?: any[]
+  middleware?: any[]
+  filters?: any[]
+  guards?: any[]
+  interceptors?: any[]
+  timeout?: number | ((req: any) => number)
+  metadata?: Record<string, any>
+  cors?: any
+  headers?: Record<string, string>
+  imports?: any[]
+  providers?: any[]
+}
+
+/**
+ * Marks a class as a Gateway module.
+ */
+export function Gateway(options?: GatewayConfig): any {
+  return function (target: any, _context?: ClassDecoratorContext) {
+    target.prototype[GATEWAY_CONFIG] = options || {}
   }
 }

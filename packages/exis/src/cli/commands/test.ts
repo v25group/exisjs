@@ -37,7 +37,7 @@ export async function testCommand(options: TestOptions): Promise<void> {
   }
 
   const reporterPath = pathToFileURL(
-    path.join(__dirname, '..', '..', 'testing', 'reporter.js')
+    path.join(__dirname, '..', '..', 'testing', 'reporter.mjs')
   ).href
   const testArgs = ['--test', '--test-reporter', reporterPath]
 

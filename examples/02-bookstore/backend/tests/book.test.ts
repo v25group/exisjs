@@ -5,7 +5,7 @@ describe('Book Native Tests', () => {
   // Magically boot the framework, inject dependencies, and cleanup on exit
   createTestContext(app)
 
-  test('should pass a basic test', async () => {
-    expect(1 + 1).toBe(2)
+  test('should pass a basic test', () => {
+    expect(true).toBe(true)
   })
 })

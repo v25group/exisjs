@@ -50,7 +50,7 @@ export async function createUser() {
 ## 4. Cascading Gateways
 
 **What it is:** Folder-level encapsulation for Middleware, CORS, and Plugins.
-**How it's implemented:** Handled natively by `gateway.ts` configurations. During boot, the router maintains a stack of active gateway configs as it traverses directories. Routes deeper in the tree inherit and merge arrays of middleware from parent gateways. If a gateway returns a response, execution halts before reaching the route.
+**How it's implemented:** Handled natively by `gateway.ts` configurations. Developers can define gateways using the functional `defineGateway({})` API or the Object-Oriented `@Gateway({})` class decorator. During boot, the router maintains a stack of active gateway configs as it traverses directories. Routes deeper in the tree inherit and merge arrays of middleware from parent gateways. If a gateway returns a response, execution halts before reaching the route.
 
 ---
 
@@ -457,15 +457,15 @@ export async function createUser() {
 
 ## 49. Class-Based Decorators
 
-**What it is:** A modern, incredibly fast implementation of `@Controller()` decorators that totally avoids the bloated `reflect-metadata` polyfills of older frameworks.
+**What it is:** A modern, incredibly fast implementation of `@Server()`, `@Gateway()`, and `@Controller()` decorators that totally avoids the bloated `reflect-metadata` polyfills of older frameworks.
 **How it's implemented:**
 
 - Uses standard TS 5.0+ decorators alongside legacy compatibility wrappers.
-- Instead of using slow `Reflect.defineMetadata`, it binds raw JavaScript Symbols directly to class prototypes (`Symbol.for('exisjs:routes')` and `Symbol.for('exisjs:middleware')`) ensuring O(1) instantaneous metadata lookup.
+- Instead of using slow `Reflect.defineMetadata`, it binds raw JavaScript Symbols directly to class prototypes (`Symbol.for('exisjs:routes')`, `Symbol.for('exisjs:server_config')`, `Symbol.for('exisjs:gateway_config')`, etc.) ensuring O(1) instantaneous metadata lookup.
 - Includes a robust set of routing decorators (`@Get`, `@Post`, `@Connect`, `@Trace`, `@Query`, etc.) and a powerful `@Use()` decorator that elegantly attaches middleware arrays to entire classes or individual methods natively.
 - **Native WS & SSE Support:** Integrates perfectly with the framework's modernized streaming protocols. By applying the `@Ws('/path')` or `@Sse('/path')` decorators alongside the specialized `@Socket()` and `@Stream()` parameter injectors, developers can securely hijack the HTTP pipeline, bypass restrictive middleware defaults, and orchestrate real-time `ExisWebSocket` and `ExisSSE` interactions natively inside class architectures.
 - The central Application context seamlessly discovers controllers with `app.registerControllers()`, auto-hydrates instances via Dependency Injection (`this.container.resolve()`), applies global prefixing via `@Controller('users')`, deeply merges class and method middlewares, and binds everything back into the hyper-fast Radix router automatically.
-- **File-System Integration:** You can totally ditch manual registration by simply doing `export default class MyController { ... }` directly inside a file-system `route.ts`! The framework automatically discovers the class, instantiates it via DI, and safely maps its decorators under the file's auto-generated namespace.
+- **File-System Integration:** You can totally ditch manual registration by simply doing `export default class MyController { ... }` directly inside a file-system `route.ts`, or using `@Server()` in `server.ts` and `@Gateway()` in `gateway.ts`! The framework automatically discovers the classes, instantiates them via DI, and safely maps their decorators under the file's auto-generated namespace.
 
 ---
 

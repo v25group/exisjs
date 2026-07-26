@@ -35,6 +35,7 @@ export default async (phase: string, { defaultConfig }: any) => {
     cors: {
       origin: process.env.CORS_ORIGIN || '*',
       credentials: true,
+      preflightContinue: true,
     },
     helmet: { enabled: true },
     compression: false,

@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -156,8 +156,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "cross-env NODE_ENV=test tsx --test tests/**/*.test.ts",
-    "benchmark": "tsx benchmarks/run.ts"
+    "test": "cross-env NODE_ENV=test tsx --test --test-reporter=./src/testing/reporter.mts tests/**/*.test.ts"
   },
   "bin": {
     "exisjs": "bin/exis.js"

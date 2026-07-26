@@ -13,6 +13,13 @@ In traditional frameworks, you write spaghetti code like `app.use('/admin', requ
 
 The most common use-case for a gateway is applying middleware arrays to a group of routes.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
 import { defineGateway } from 'exisjs/router'
 import { requireAuth } from '../../middleware/auth'
@@ -37,6 +44,38 @@ export default defineGateway({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { requireAuth } from '../../middleware/auth'
+import { helmet } from 'exisjs/middleware'
+
+@Gateway({
+  // This middleware array runs before ANY route in /admin/*
+  middleware: [
+    helmet(),
+    requireAuth
+  ],
+  
+  // Enforce strict CORS for this folder
+  cors: {
+    origin: 'https://admin.yourdomain.com',
+    methods: ['GET', 'POST', 'DELETE']
+  },
+
+  // Append custom default headers to all responses
+  headers: {
+    'X-Admin-Api-Version': '2.0'
+  }
+})
+export default class AdminGateway {}
+```
+
+  </TabsContent>
+</Tabs>
 
 When a request comes in for `/admin/users`, ExisJS processes the Gateway's middleware sequentially before it ever reaches your `route.ts` file.
 
@@ -106,6 +145,13 @@ export default class UsersController {
 
 Gateways allow you to seamlessly bundle other modules and plugins into a domain.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript className="language-typescript" filename="src/http/orders/gateway.ts"
 import { defineGateway } from 'exisjs/router'
 import AuthModule from '../auth/module'
@@ -119,6 +165,27 @@ export default defineGateway({
   plugins: [stripePlugin({ apiKey: process.env.STRIPE_KEY })]
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/orders/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import AuthModule from '../auth/module'
+import { stripePlugin } from '../../plugins/stripe'
+
+@Gateway({
+  // Pull in the entire Auth feature set
+  imports: [AuthModule],
+  
+  // Isolate Stripe setup just for the orders domain
+  plugins: [stripePlugin({ apiKey: process.env.STRIPE_KEY })]
+})
+export default class OrdersGateway {}
+```
+
+  </TabsContent>
+</Tabs>
 
 <Hint>
 - **Imports**: Automatically deduplicated. If 10 different gateways import `AuthModule`, its internal singletons are only initialized exactly once!
@@ -149,6 +216,13 @@ Gateways in ExisJS go far beyond just middleware and dependencies. They are a co
 
 Apply Authorization Guards directly to a folder. If the guard returns `false`, the entire folder is protected.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript className="language-typescript" filename="src/http/api/gateway.ts"
 import { defineGateway } from 'exisjs/router'
 import { RequireAdminRoleGuard } from '../../guards'
@@ -159,9 +233,33 @@ export default defineGateway({
 })
 ```
 
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { RequireAdminRoleGuard } from '../../guards'
+
+@Gateway({
+  // Protects the entire /api folder
+  guards: [RequireAdminRoleGuard]
+})
+export default class ApiGateway {}
+```
+
+  </TabsContent>
+</Tabs>
+
 ### 2. Folder-Scoped Exception Filters
 
 Catch exceptions globally for a specific domain. For example, return HTML error pages for `/views`, but standardized JSON errors for `/api`.
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
 
 ```typescript className="language-typescript" filename="src/http/api/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -173,9 +271,33 @@ export default defineGateway({
 })
 ```
 
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { ApiVersion2ErrorFilter } from '../../filters'
+
+@Gateway({
+  // Catches all exceptions thrown inside /api/*
+  filters: [ApiVersion2ErrorFilter]
+})
+export default class ApiGateway {}
+```
+
+  </TabsContent>
+</Tabs>
+
 ### 3. Folder-Scoped Interceptors
 
 Transform or wrap all responses exiting a specific folder.
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
 
 ```typescript className="language-typescript" filename="src/http/api/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -187,9 +309,33 @@ export default defineGateway({
 })
 ```
 
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { StandardResponseInterceptor } from '../../interceptors'
+
+@Gateway({
+  // Wraps all responses from /api/* in a standard format
+  interceptors: [StandardResponseInterceptor]
+})
+export default class ApiGateway {}
+```
+
+  </TabsContent>
+</Tabs>
+
 ### 4. Bypassing Gateways (Exclude)
 
 Seamlessly bypass the Gateway's middleware, guards, and filters for specific sub-paths or methods without breaking your clean folder structure.
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
 
 ```typescript className="language-typescript" filename="src/http/api/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -204,9 +350,36 @@ export default defineGateway({
 })
 ```
 
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/api/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+
+@Gateway({
+  // Seamlessly bypass middleware, guards, and filters
+  exclude: [
+    '/api/public/status', // Exact Match
+    '/api/webhooks/*',    // Wildcard Match
+    { path: '/api/users', methods: ['GET'] } // Method-specific bypass
+  ]
+})
+export default class ApiGateway {}
+```
+
+  </TabsContent>
+</Tabs>
+
 ### 5. Dynamic Request Timeouts
 
 Define dynamic, folder-scoped request timeouts! Give your `/reports` folder 60 seconds, but restrict `/api` to 5 seconds. You can even evaluate it dynamically per-request.
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
 
 ```typescript className="language-typescript" filename="src/http/reports/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -217,9 +390,32 @@ export default defineGateway({
 })
 ```
 
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/reports/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+
+@Gateway({
+  // Dynamic request timeouts evaluated per-request
+  timeout: (req) => req.headers['x-premium'] ? 30000 : 5000
+})
+export default class ReportsGateway {}
+```
+
+  </TabsContent>
+</Tabs>
+
 ### 6. Cascading Metadata
 
 Define tags (like OpenAPI/Swagger tags or Role definitions) at the folder level that automatically cascade down to every single route inside!
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
 
 ```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -231,3 +427,21 @@ export default defineGateway({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript className="language-typescript" filename="src/http/admin/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+
+@Gateway({
+  // Automatically cascades OpenAPI tags to every route in the folder
+  metadata: {
+    openapi: { tags: ['Admin API'], security: ['bearerAuth'] }
+  }
+})
+export default class AdminGateway {}
+```
+
+  </TabsContent>
+</Tabs>

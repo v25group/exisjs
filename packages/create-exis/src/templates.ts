@@ -30,7 +30,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.1.4',
+      exisjs: '^0.1.5',
     },
   }
 
@@ -46,7 +46,9 @@ export function packageJsonTemplate(
       ...(pkg.devDependencies || {}),
       eslint: '^9.9.0',
       '@eslint/js': '^9.9.0',
-      'typescript-eslint': '^8.0.0',
+    }
+    if (useTypeScript) {
+      pkg.devDependencies['typescript-eslint'] = '^8.0.0'
     }
   }
 
@@ -136,7 +138,38 @@ export const env = v.env(v.object({
   }
 }
 
-export function serverTemplate(): string {
+export function serverTemplate(
+  paradigm: string,
+  useTypeScript: boolean
+): string {
+  if (paradigm === 'oop') {
+    const importType = useTypeScript
+      ? `\nimport type { App } from 'exisjs'`
+      : ''
+    const paramType = useTypeScript ? ': App' : ''
+
+    return `import { Server } from 'exisjs/decorators'${importType}
+
+@Server()
+export default class RootServer {
+  async onStart(app${paramType}) {
+    // 1. Connect to your database
+    // await db.connect()
+    
+    // 2. Register plugins
+    // app.plugin(authPlugin)
+    
+    // The Exis CLI automatically boots the server and file-system routes
+  }
+  
+  async onClose(app${paramType}) {
+    // Gracefully close database connections here
+    // await db.disconnect()
+  }
+}
+`
+  }
+
   return `import { exis } from 'exisjs'
 
 export default exis({
@@ -158,7 +191,23 @@ export default exis({
 `
 }
 
-export function healthRouteTemplate(): string {
+export function healthRouteTemplate(paradigm: string): string {
+  if (paradigm === 'oop') {
+    return `import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class HealthController {
+  @Get('/')
+  check() {
+    return { 
+      status: 'ok',
+      timestamp: new Date().toISOString()
+    }
+  }
+}
+`
+  }
+
   return `import { controller, route } from 'exisjs/router'
 
 export default controller({
@@ -174,7 +223,20 @@ export default controller({
 `
 }
 
-export function rootRouteTemplate(): string {
+export function rootRouteTemplate(paradigm: string): string {
+  if (paradigm === 'oop') {
+    return `import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class RootController {
+  @Get('/')
+  welcome() {
+    return { message: 'Welcome to Exis JS!' }
+  }
+}
+`
+  }
+
   return `import { controller, route } from 'exisjs/router'
 
 export default controller({
@@ -271,8 +333,9 @@ The easiest way to deploy your Exis JS app is on any Node.js compatible hosting 
 `
 }
 
-export function eslintTemplate(): string {
-  return `import eslint from '@eslint/js';
+export function eslintTemplate(useTypeScript: boolean): string {
+  if (useTypeScript) {
+    return `import eslint from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -282,5 +345,15 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
 );
+`
+  }
+  return `import eslint from '@eslint/js';
+
+export default [
+  {
+    ignores: ['.exis/**', 'node_modules/**', 'coverage/**'],
+  },
+  eslint.configs.recommended,
+];
 `
 }

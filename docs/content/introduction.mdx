@@ -29,6 +29,47 @@ To get started, you can scaffold the project with the Exis CLI. This will create
 The CLI will automatically prompt you to configure TypeScript, ESLint, and import aliases. It natively detects your active package manager (npm, yarn, pnpm, bun) for dependency installation.
 </Hint>
 
+## Quick Start
+
+ExisJS supports two paradigms seamlessly: the **Functional** approach (ideal for lightweight microservices) and the **Class-Based (OOP)** approach (ideal for large enterprise applications).
+
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
+```typescript filename="src/http/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  welcome: route.get('/', {
+    handle() {
+      return { message: 'Welcome to ExisJS!' }
+    }
+  })
+})
+```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+
+@Controller()
+export default class RootController {
+  @Get('/')
+  welcome() {
+    return { message: 'Welcome to ExisJS!' }
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
+
 ## Alternatives
 
 Alternatively, if you'd like to integrate Exis into an existing project, you can start from scratch by installing the core packages. At a minimum, you'll need the `exisjs` dependency.

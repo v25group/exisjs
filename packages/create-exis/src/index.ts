@@ -81,6 +81,7 @@ async function run() {
   let useTypeScript = true
   let useSrc = true
   let useEslint = true
+  let paradigm = 'functional'
   let alias = '@/*'
 
   if (!isYes) {
@@ -110,6 +111,17 @@ async function run() {
         inactive: 'No',
       },
       {
+        type: (prev: unknown, values: any) =>
+          values.typescript ? 'select' : null,
+        name: 'paradigm',
+        message: 'Which routing paradigm do you prefer?',
+        choices: [
+          { title: 'Functional (Default)', value: 'functional' },
+          { title: 'Class-Based (OOP)', value: 'oop' },
+        ],
+        initial: 0,
+      },
+      {
         type: 'toggle',
         name: 'customAlias',
         message:
@@ -134,7 +146,8 @@ async function run() {
 
     useTypeScript = answers.typescript
     useSrc = answers.srcDir
-    useEslint = useTypeScript ? answers.eslint : false
+    useEslint = answers.eslint
+    paradigm = answers.paradigm || 'functional'
     alias = answers.alias || '@/*'
   }
 
@@ -161,7 +174,15 @@ async function run() {
   if (useSrc) fs.mkdirSync(path.join(targetDir, 'src'), { recursive: true })
 
   // Write all template files
-  writeTemplates(targetDir, dirName, baseDir, alias, useEslint, useTypeScript)
+  writeTemplates(
+    targetDir,
+    dirName,
+    baseDir,
+    alias,
+    useEslint,
+    useTypeScript,
+    paradigm
+  )
 
   const deps = ['exisjs']
   const devDeps = useTypeScript ? ['@types/node', 'typescript'] : []
@@ -176,11 +197,29 @@ async function run() {
   }
   console.log()
 
+  // Strip npm environment variables to avoid workspace conflicts when spawning npm install
+  const env = { ...process.env }
+  for (const key of Object.keys(env)) {
+    if (
+      key.toLowerCase().startsWith('npm_') ||
+      key.toLowerCase().startsWith('pnpm_') ||
+      key.toLowerCase().startsWith('yarn_') ||
+      key.toLowerCase().startsWith('bun_')
+    ) {
+      delete env[key]
+    }
+  }
+
   // Run install natively so the user sees the real progress!
-  cp.spawnSync(`${pkgManager} install`, {
+  const installCmd =
+    pkgManager === 'npm'
+      ? 'npm install --no-workspaces'
+      : `${pkgManager} install`
+  cp.spawnSync(installCmd, {
     cwd: targetDir,
     stdio: 'inherit',
     shell: true,
+    env,
   })
 
   console.log(`
@@ -204,7 +243,8 @@ function writeTemplates(
   baseDir: string,
   alias: string,
   useEslint: boolean,
-  useTypeScript: boolean
+  useTypeScript: boolean,
+  paradigm: string
 ): void {
   const isSrc = baseDir.startsWith('src')
   const ext = useTypeScript ? 'ts' : 'js'
@@ -222,16 +262,20 @@ function writeTemplates(
   write(dir, `exis.config.${ext}`, exisConfigTemplate(useTypeScript))
   write(dir, `env.${ext}`, envTsTemplate(useTypeScript))
 
-  write(dir, `${baseDir}/server.${ext}`, serverTemplate())
-  write(dir, `${baseDir}/route.${ext}`, rootRouteTemplate())
-  write(dir, `${baseDir}/health/route.${ext}`, healthRouteTemplate())
+  write(
+    dir,
+    `${baseDir}/server.${ext}`,
+    serverTemplate(paradigm, useTypeScript)
+  )
+  write(dir, `${baseDir}/route.${ext}`, rootRouteTemplate(paradigm))
+  write(dir, `${baseDir}/health/route.${ext}`, healthRouteTemplate(paradigm))
 
   write(dir, '.env', envTemplate())
   write(dir, '.gitignore', gitignoreTemplate())
   write(dir, 'README.md', readmeTemplate(name))
 
   if (useEslint) {
-    write(dir, 'eslint.config.mjs', eslintTemplate())
+    write(dir, 'eslint.config.mjs', eslintTemplate(useTypeScript))
   }
 }
 

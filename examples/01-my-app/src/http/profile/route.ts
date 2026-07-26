@@ -16,8 +16,8 @@ import {
   Socket,
   Stream,
   Req,
+  Returns,
 } from 'exisjs/decorators'
-import { cors } from 'exisjs/middleware'
 import { v } from 'exisjs/validator'
 import { inject } from 'exisjs/di'
 import type { Request, Response, NextFunction } from 'exisjs/router'
@@ -38,8 +38,7 @@ class SimpleAuthGuard {
 }
 
 @Controller()
-// Apply CORS and a custom middleware to ALL routes in this class
-@Use(cors({ origin: '*' }))
+// Apply a custom middleware to ALL routes in this class
 @Use((req: Request, res: Response, next: NextFunction) => {
   console.log('Profile Controller hit via @Use!')
   next()
@@ -62,23 +61,21 @@ export default class ProfileController {
     return user
   }
 
-  @Post('/update', {
-    body: v.object({
-      name: v.string(),
-      preferences: v.object({
-        theme: v.string(),
-      }),
-    }),
-    response: v.object({
-      success: v.boolean(),
-      message: v.string(),
-    }),
-  })
+  @Post('/update')
+  @Returns(v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }))
   @UseGuards(SimpleAuthGuard)
   @HttpCode(202)
   @Header('X-Custom-Header', 'custom-value')
   async updateProfile(
-    @Body() body: { name: string; preferences: { theme: string } }
+    @Body(v.object({
+      name: v.string(),
+      preferences: v.object({
+        theme: v.string(),
+      }),
+    })) body: { name: string; preferences: { theme: string } }
   ) {
     const newName = body.name
     return {

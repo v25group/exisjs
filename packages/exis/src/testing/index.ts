@@ -1,5 +1,6 @@
 export * from './mocks'
-export * from './client'
+export type { TestResponse, TestApp } from './client'
+export { TestRequest } from './client'
 
 import * as _nodeTest from 'node:test'
 import _assert from 'node:assert'
@@ -43,19 +44,8 @@ export type HookApi = (fn: HookFunction) => void
 
 // Re-export native test runner features with top-tier TypeScript support
 
-function createTestApi(baseTestFn: any): TestApi {
-  const api: any = (name: string, optionsOrFn: any, maybeFn?: any) => {
-    return baseTestFn(name, optionsOrFn, maybeFn)
-  }
-
-  api.only = (name: string, optionsOrFn: any, maybeFn?: any) =>
-    baseTestFn.only(name, optionsOrFn, maybeFn)
-  api.skip = (name: string, optionsOrFn: any, maybeFn?: any) =>
-    baseTestFn.skip(name, optionsOrFn, maybeFn)
-  api.todo = (name: string, optionsOrFn: any, maybeFn?: any) =>
-    baseTestFn.todo(name, optionsOrFn, maybeFn)
-
-  api.each = function (cases: any[]) {
+function applyEach(baseTestFn: any): TestApi {
+  baseTestFn.each = function (cases: any[]) {
     return (name: string, fn: (...args: any[]) => void | Promise<void>) => {
       for (const c of cases) {
         const testArgs = Array.isArray(c) ? c : [c]
@@ -64,13 +54,12 @@ function createTestApi(baseTestFn: any): TestApi {
       }
     }
   }
-
-  return api as TestApi
+  return baseTestFn as TestApi
 }
 
-export const test = createTestApi(_nodeTest.test)
-export const describe = createTestApi(_nodeTest.describe)
-export const it = createTestApi(_nodeTest.it)
+export const test = applyEach(_nodeTest.test)
+export const describe = applyEach(_nodeTest.describe)
+export const it = applyEach(_nodeTest.it)
 export const before = _nodeTest.before as unknown as HookApi
 export const beforeAll = _nodeTest.before as unknown as HookApi
 export const after = _nodeTest.after as unknown as HookApi
@@ -162,7 +151,45 @@ export const ex = {
 export const assert = _nodeTest.assert || _assert
 export { expect } from './expect'
 
-export function createTestContext(app: any): TestApp {
+import { App } from '../server/app'
+
+export function createTestContext(appInput: any): TestApp {
+  let app = appInput
+
+  // Handle @Server decorated classes natively
+  if (
+    app &&
+    typeof app === 'function' &&
+    app.prototype &&
+    app.prototype[Symbol.for('exisjs:server_config')]
+  ) {
+    const serverConfig = app.prototype[Symbol.for('exisjs:server_config')]
+    const instance = new App({
+      plugins: serverConfig.plugins,
+    })
+
+    const serverInstance = new app()
+    if (serverConfig.providers) {
+      for (const p of serverConfig.providers) {
+        instance.provide(p[0], p[1])
+      }
+    }
+
+    instance.onStartHook = async () => {
+      if (typeof serverInstance.onStart === 'function') {
+        await serverInstance.onStart(instance)
+      }
+    }
+
+    instance.onCloseHook = async () => {
+      if (typeof serverInstance.onClose === 'function') {
+        await serverInstance.onClose(instance)
+      }
+    }
+
+    app = instance
+  }
+
   process.on('unhandledRejection', (reason) => {
     console.error('UNHANDLED REJECTION DETECTED:', reason)
   })

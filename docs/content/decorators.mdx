@@ -8,6 +8,47 @@ All decorators can be imported directly from `exisjs/decorators`.
 
 ---
 
+## 1. Servers & Gateways
+
+ExisJS allows you to configure your root application and directory-scoped gateways using decorators, completely replacing the need for functional `exis()` and `defineGateway()` wrappers if you prefer OOP.
+
+### `@Server(config)`
+Used exclusively in your `src/http/server.ts` file to bootstrap the application.
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { metricsPlugin } from './plugins/metrics'
+import type { App } from 'exisjs'
+
+@Server({
+  plugins: [metricsPlugin],
+  providers: [['Logger', { useValue: console }]]
+})
+export default class RootServer {
+  async onStart(app: App) {
+    console.log('Server started!')
+  }
+}
+```
+
+### `@Gateway(config)`
+Used inside any folder (e.g. `src/http/admin/gateway.ts`) to act as a gatekeeper for all routes within that directory and its subdirectories.
+
+```typescript filename="src/http/admin/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { requireAuth } from '../../middleware/auth'
+
+@Gateway({
+  middleware: [requireAuth],
+  cors: { origin: 'https://admin.com' },
+  timeout: 10000,
+  metadata: { openapi: { tags: ['Admin'] } }
+})
+export default class AdminGateway {}
+```
+
+---
+
 ## 1. Controllers & Routing
 
 To map a class to a route prefix, use the `@Controller()` decorator. You can then use HTTP Method decorators to map class methods to specific endpoints.

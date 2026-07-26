@@ -9,7 +9,7 @@ export const protectRoute = async (
   next: NextFunction
 ) => {
   try {
-    const authHeader = req.headers['authorization']
+    const authHeader = req.header('authorization')
     if (!authHeader) {
       throw HttpError.unauthorized('No authentication token, access denied')
     }

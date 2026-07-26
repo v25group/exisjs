@@ -131,7 +131,8 @@ export function serveSwagger(app: App, options: SwaggerOptions = {}) {
       spec.components = options.components
     }
 
-    res.json(spec)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8')
+    res.raw.end(JSON.stringify(spec))
   })
 
   // Serve Swagger UI HTML

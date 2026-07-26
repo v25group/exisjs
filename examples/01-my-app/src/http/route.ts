@@ -1,9 +1,9 @@
-import { controller, route } from 'exisjs/router'
+import { Controller, Get } from 'exisjs/decorators'
 
-export default controller({
-  welcome: route.get('/', {
-    handle() {
-      return { message: 'Welcome to Exis!' }
-    }
-  })
-})
+@Controller()
+export default class RootController {
+  @Get('/')
+  welcome() {
+    return { message: 'Welcome to Exis!' }
+  }
+}

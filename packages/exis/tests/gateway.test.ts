@@ -97,6 +97,7 @@ describe('Gateway & Inline Config', () => {
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
 
+    console.log('RES HEADERS:', res.headers)
     // Assert headers
     expect(res.headers['x-root-gateway']).toBe('true')
     expect(res.headers['x-sub-gateway']).toBe('true')

@@ -59,6 +59,13 @@ export const { loaderMiddleware, getLoaders } = defineLoaders({
 
 Because ExisJS uses lazy-initialization, there is **zero performance penalty** for routes that don't actually use the loaders.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
 import { loaderMiddleware } from '../loaders'
@@ -70,6 +77,26 @@ export default exis({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { loaderMiddleware } from '../loaders'
+import type { App } from 'exisjs'
+
+@Server()
+export default class RootServer {
+  async onStart(app: App) {
+    // Register globally for all routes
+    app.use(loaderMiddleware)
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
 
 ---
 

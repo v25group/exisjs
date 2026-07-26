@@ -3,11 +3,12 @@ import type { ExisResponse } from './server/response'
 import type { ExisWebSocket } from './websocket/socket'
 import type { ExisSSE } from './server/sse'
 
-export type Request<
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Request<
   TBody = unknown,
   TQuery = Record<string, string>,
   TParams = Record<string, string>,
-> = ExisRequest<TBody, TQuery, TParams>
+> extends ExisRequest<TBody, TQuery, TParams> {}
 
 export type Response<TResponse = any> = ExisResponse<TResponse>
 
@@ -93,9 +94,18 @@ export interface RouteSchema<
   TResponse = unknown,
 > {
   response?: TResponse
-  body?: { parse: (val: unknown) => TBody } | { transform: (val: unknown, meta?: any) => Promise<TBody> | TBody } | any
-  query?: { parse: (val: unknown) => TQuery } | { transform: (val: unknown, meta?: any) => Promise<TQuery> | TQuery } | any
-  params?: { parse: (val: unknown) => TParams } | { transform: (val: unknown, meta?: any) => Promise<TParams> | TParams } | any
+  body?:
+    | { parse: (val: unknown) => TBody }
+    | { transform: (val: unknown, meta?: any) => Promise<TBody> | TBody }
+    | any
+  query?:
+    | { parse: (val: unknown) => TQuery }
+    | { transform: (val: unknown, meta?: any) => Promise<TQuery> | TQuery }
+    | any
+  params?:
+    | { parse: (val: unknown) => TParams }
+    | { transform: (val: unknown, meta?: any) => Promise<TParams> | TParams }
+    | any
   host?: string | string[]
   filters?: any | any[]
   metadata?: Record<string, any>
@@ -165,6 +175,7 @@ export interface CorsConfig {
   exposedHeaders?: string[]
   credentials?: boolean
   maxAge?: number
+  preflightContinue?: boolean
 }
 
 export interface LoggerConfig {

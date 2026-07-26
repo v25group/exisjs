@@ -1,4 +1,4 @@
-import { defineGateway } from 'exisjs/router'
+import { Gateway } from 'exisjs/decorators'
 
 // Imagine this is a complex external plugin or shared module we are importing
 // import { StripeModule } from '@plugins/stripe'
@@ -10,7 +10,8 @@ class UsersService {
   }
 }
 
-export default defineGateway({
+@Gateway({
   // imports: [StripeModule],
   providers: [['UsersService', { useClass: UsersService }]],
 })
+export default class UsersGateway {}

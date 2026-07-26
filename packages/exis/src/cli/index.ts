@@ -165,15 +165,19 @@ program
   .description('Generate new features')
   .argument(
     '<type>',
-    'Type of feature to generate (route | plugin | middleware | test)'
+    'Type of feature to generate (route | resource | plugin | middleware | test)'
   )
   .argument('[name]', 'Name of the feature')
-  .action(async (type, name) => {
+  .option(
+    '--oop',
+    'Generate using Class-Based (OOP) paradigm instead of Functional'
+  )
+  .action(async (type, name, options) => {
     const { generateRoute, generatePlugin, generateMiddleware, generateTest } =
       await import('./commands/generate')
-    if (type === 'route' || type === 'r') {
-      if (!name) return console.error('Name is required for route')
-      await generateRoute(name)
+    if (type === 'route' || type === 'r' || type === 'resource') {
+      if (!name) return console.error('Name is required for route/resource')
+      await generateRoute(name, process.cwd(), options)
     } else if (type === 'plugin' || type === 'p') {
       if (!name) return console.error('Name is required for plugin')
       await generatePlugin(name)

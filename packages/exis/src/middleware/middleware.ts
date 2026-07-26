@@ -72,6 +72,11 @@ export function cors(config: CorsConfig = {}): Handler {
         res.set('Access-Control-Max-Age', String(maxAge))
       }
 
+      if (config.preflightContinue) {
+        next()
+        return
+      }
+
       res.status(204).send('')
       return
     }
@@ -88,8 +93,7 @@ export function requestId(): Handler {
   return (req, res, next) => {
     const h = req.raw.headers
     const id = (h['x-request-id'] || h['traceparent'] || h['x-b3-traceid']) as
-      | string
-      | undefined
+      string | undefined
     const finalId = id
       ? id.startsWith('00-')
         ? id.split('-')[1]
@@ -159,7 +163,16 @@ export const notFound: Handler = (req, res) => {
 // ─── Static File Serving ────────────────────────────────────────────────────────
 
 export { compression } from './compression'
-export { helmet, csrf, timeout, hpp, xss, mongoSanitize, sqlSanitize, dbSanitize } from './security'
+export {
+  helmet,
+  csrf,
+  timeout,
+  hpp,
+  xss,
+  mongoSanitize,
+  sqlSanitize,
+  dbSanitize,
+} from './security'
 export { cacheMiddleware as cache } from './cache'
 export { dedupeMiddleware as dedupe } from './dedupe'
 export { backpressureMiddleware as backpressure } from './backpressure'

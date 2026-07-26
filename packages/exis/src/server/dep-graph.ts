@@ -15,22 +15,24 @@ export async function generateDependencyGraph(
     await processFile(routeFile, routeFile, cwd, graph, visited)
   }
 
-  // Also save to .exis/dev/dependency-graph.json
-  const exisDevPath = path.join(cwd, '.exis', 'dev')
-  try {
-    await fs.mkdir(exisDevPath, { recursive: true })
-    const serializable: Record<string, string[]> = {}
-    for (const [dep, routes] of graph.entries()) {
-      serializable[path.relative(cwd, dep)] = Array.from(routes).map((r) =>
-        path.relative(cwd, r)
+  // Also save to .exis/dev/dependency-graph.json (skip during tests)
+  if (process.env.NODE_ENV !== 'test' && process.env.__EXIS_TEST !== 'true') {
+    const exisDevPath = path.join(cwd, '.exis', 'dev')
+    try {
+      await fs.mkdir(exisDevPath, { recursive: true })
+      const serializable: Record<string, string[]> = {}
+      for (const [dep, routes] of graph.entries()) {
+        serializable[path.relative(cwd, dep)] = Array.from(routes).map((r) =>
+          path.relative(cwd, r)
+        )
+      }
+      await fs.writeFile(
+        path.join(exisDevPath, 'dependency-graph.json'),
+        JSON.stringify(serializable, null, 2)
       )
+    } catch {
+      // Ignore errors saving
     }
-    await fs.writeFile(
-      path.join(exisDevPath, 'dependency-graph.json'),
-      JSON.stringify(serializable, null, 2)
-    )
-  } catch {
-    // Ignore errors saving
   }
 
   return graph

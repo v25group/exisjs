@@ -38,4 +38,4 @@ userSchema.methods.comparePassword = async function (userPassword: string) {
   return await Password.verifyPassword(userPassword, this.password)
 }
 
-export const User = mongoose.model('User', userSchema)
+export const User = mongoose.models.User || mongoose.model('User', userSchema)

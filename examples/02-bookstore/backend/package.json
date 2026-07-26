@@ -11,9 +11,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "mongoose": "^8.24.1",
     "cloudinary": "^2.10.0",
-    "exisjs": "*",
-    "mongoose": "^8.24.1"
+    "exisjs": "*"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.1",

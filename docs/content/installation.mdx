@@ -52,6 +52,13 @@ Once the installation is complete, your project directory will look something li
 
 Let's look at the generated `src/http/server.ts`. This is the strict entry point of your application, where you can connect to databases and register global plugins.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
 
@@ -72,6 +79,35 @@ export default exis({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import type { App } from 'exisjs'
+
+@Server()
+export default class RootServer {
+  async onStart(app: App) {
+    // 1. Connect to your database
+    // await db.connect()
+
+    // 2. Register plugins
+    // app.plugin(authPlugin)
+
+    // The Exis CLI automatically boots the server and file-system routes
+  }
+  
+  async onClose(app: App) {
+    // Gracefully close database connections here
+    // await db.disconnect()
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
 
 With ExisJS, the framework automatically handles booting up your server and loading your routes based on the file system. You don't need to manually call `app.listen()`!
 

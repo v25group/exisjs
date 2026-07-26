@@ -115,7 +115,7 @@ function formatDuration(ms: number | undefined): string {
 
 // ─── Reporter ───────────────────────────────────────────────────────────────
 
-module.exports = async function* customReporter(
+export default async function* customReporter(
   source: AsyncIterable<TestEvent>
 ): AsyncGenerator<string> {
   let passedTests = 0
@@ -129,7 +129,9 @@ module.exports = async function* customReporter(
 
   const filesMap = new Map<string, FileData>()
   const getFileData = (file: string): FileData => {
-    let fd = filesMap.get(file)
+    const absFile = path.isAbsolute(file) ? file : path.resolve(process.cwd(), file)
+    const normalized = absFile.replace(/\\/g, '/')
+    let fd = filesMap.get(normalized)
     if (!fd) {
       fd = {
         output: [],
@@ -138,32 +140,50 @@ module.exports = async function* customReporter(
         failedCount: 0,
         skippedCount: 0,
       }
-      filesMap.set(file, fd)
+      filesMap.set(normalized, fd)
     }
     return fd
   }
 
   try {
+    let currentFile = ''
+    const printedFiles = new Set<string>()
     for await (const event of source) {
       const { type, data } = event
-      if (!data?.file) continue
+      if (!data) continue
       const { name, nesting, details, file, skip, todo } = data
-      const fileData = getFileData(file)
+
+      // Track the actual test file since wrapped tests report `index.ts`
+      const safeName = name || ''
+      const normalizedName = safeName.replace(/\\/g, '/')
+      const isFileSuite = ((type as any) === 'test:enqueue' || (type as any) === 'test:start') && (safeName === file || normalizedName === relFile(file || '') || (file && file.replace(/\\/g, '/').endsWith(normalizedName)))
+      if (isFileSuite) {
+        currentFile = file || safeName
+      }
+      const activeFile = (file && file.replace(/\\/g, '/').match(/testing\/index\.[mc]?[jt]s/)) ? (currentFile || file) : (file || currentFile)
+      
+      if (!activeFile) continue
+
+      const fileData = getFileData(activeFile)
       const isSuite = details?.type === 'suite'
       const indent = '  '.repeat(Math.max(nesting, 0))
 
-      // ─── File-level suite completion (nesting 0) ─────────────────────────
-      if (nesting === 0 && (type === 'test:pass' || type === 'test:fail')) {
-        const relPath = relFile(file)
-        const badge = fileData.failed
-          ? `${RED_BG}${BOLD} FAIL ${RESET}`
-          : `${GREEN_BG}${BOLD} PASS ${RESET}`
+      // ─── File-level suite completion ─────────────────────────
+      const isTopLevelCompletion = (type === 'test:pass' || type === 'test:fail') && nesting === 0
+      
+      if (isTopLevelCompletion) {
+        if (!printedFiles.has(activeFile)) {
+          const relPath = relFile(activeFile)
+          const badge = fileData.failed
+            ? `${RED_BG}${BOLD} FAIL ${RESET}`
+            : `${GREEN_BG}${BOLD} PASS ${RESET}`
 
-        yield `\n ${badge} ${DIM}exis${RESET} ${relPath}\n`
+          yield `\n ${badge} ${DIM}exis${RESET} ${relPath}\n`
+          printedFiles.add(activeFile)
+          if (fileData.failed) failedSuites++; else passedSuites++;
+        }
         for (const line of fileData.output) yield line
-
-        if (fileData.failed) failedSuites++
-        else passedSuites++
+        fileData.output.length = 0 // Clear it so it doesn't print twice
         continue
       }
 
@@ -188,8 +208,36 @@ module.exports = async function* customReporter(
 
       // ─── Suite headers (describe blocks) ──────────────────────────────────
       if (isSuite) {
-        if (type === 'test:fail') fileData.failed = true
-        fileData.output.push(`${indent} ${BOLD}${name}${RESET}\n`)
+        if (type === 'test:start') {
+          fileData.output.push(`${indent} ${BOLD}${name}${RESET}\n`)
+        }
+        if (type === 'test:fail') {
+          fileData.failed = true
+          const err = details?.error
+          if (err) {
+            const errMsg = err?.message || err?.cause?.message || 'Unknown error'
+            const stack = cleanStack(err?.stack || err?.cause?.stack)
+            fileData.output.push(`\n${indent}   ${RED}${errMsg}${RESET}\n`)
+            if (stack) {
+              fileData.output.push(
+                stack
+                  .split('\n')
+                  .map((l) => `${indent}   ${DIM}${l}${RESET}`)
+                  .join('\n') + '\n\n'
+              )
+            }
+          }
+        }
+        continue
+      }
+
+      // ─── Console Logs (stdout/stderr) ─────────────────────────────────────
+      if (type === 'test:stdout' || type === 'test:stderr') {
+        const message = (data as any).message?.trimEnd()
+        if (message) {
+          const logLines = message.split('\n').map((l: string) => `${indent}   ${DIM}│${RESET} ${l}`)
+          fileData.output.push(...logLines, '\n')
+        }
         continue
       }
 
@@ -229,8 +277,8 @@ module.exports = async function* customReporter(
         fileData.failed = true
 
         failures.push({
-          file: relFile(file),
-          fullName: name,
+          file: relFile(activeFile),
+          fullName: safeName,
           errMsg,
           stack,
         })

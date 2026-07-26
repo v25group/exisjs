@@ -1,4 +1,5 @@
-import { exis } from 'exisjs'
+import { Server } from 'exisjs/decorators'
+import type { App } from 'exisjs'
 import { serveSwagger } from 'exisjs/swagger'
 import { metricsPlugin } from '@/plugins/metrics'
 import { loaderMiddleware } from '../loaders'
@@ -13,18 +14,21 @@ export class DatabaseConnectionError extends Error {
   }
 }
 
-export default exis({
-  async onStart(app) {
-    // 1. Connect to your database
-    // await db.connect()
-
-    // Demonstrate Dependency Injection
-    app.provide('DATABASE_URL', { useValue: 'postgres://localhost:5432/mydb' })
-    app.provide('LoggerService', {
+@Server({
+  plugins: [metricsPlugin],
+  providers: [
+    ['DATABASE_URL', { useValue: 'postgres://localhost:5432/mydb' }],
+    ['LoggerService', {
       useFactory: () => {
         return { log: (msg: string) => console.log(`[LoggerService]: ${msg}`) }
-      },
-    })
+      }
+    }]
+  ]
+})
+export default class RootServer {
+  async onStart(app: App) {
+    // 1. Connect to your database
+    // await db.connect()
 
     // 2. Register plugins and middleware
     app.use(loaderMiddleware)
@@ -64,13 +68,12 @@ export default exis({
     )
 
     serveSwagger(app, { title: 'My App API', version: '1.0.0' })
-    metricsPlugin.register(app, { path: '/metrics' })
-
     // The Exis CLI automatically boots the server and file-system routes
-  },
+  }
 
-  async onClose(app) {
+  async onClose(app: App) {
     // Gracefully close database connections here
     // await db.disconnect()
-  },
-})
+  }
+}
+

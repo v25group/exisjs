@@ -3,6 +3,7 @@ import path from 'node:path'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { createTempDir, cleanupTempDir } from './helpers'
 const execAsync = promisify(exec)
 
 describe('Exis CLI E2E', () => {
@@ -10,8 +11,7 @@ describe('Exis CLI E2E', () => {
   const cliPath = path.resolve(__dirname, '../dist/cli/index.js')
 
   beforeAll(() => {
-    tmpDir = path.join(__dirname, '.tmp-exis-cli-e2e-' + Date.now())
-    fs.mkdirSync(tmpDir, { recursive: true })
+    tmpDir = createTempDir('exis-cli-e2e-')
 
     // Create a dummy tsconfig to prevent buildCommand from failing immediately
     fs.writeFileSync(
@@ -21,9 +21,7 @@ describe('Exis CLI E2E', () => {
   })
 
   afterAll(() => {
-    if (fs.existsSync(tmpDir)) {
-      fs.rmSync(tmpDir, { recursive: true, force: true })
-    }
+    cleanupTempDir(tmpDir)
   })
 
   it('prints help message when run with --help', async () => {

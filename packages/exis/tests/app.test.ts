@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import * as http from 'node:http'
 import { describe, it, expect, beforeAll, afterAll, ex } from '../src/testing'
 import { App } from '../src/server/app'
-import { writeTempFile, cleanupTempDir } from './helpers'
+import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
 
 // Helper to make HTTP requests
 function request(
@@ -46,8 +46,7 @@ describe('App create & autoMountRoutes', () => {
   let server: ReturnType<App['listen']>
 
   beforeAll(async () => {
-    tmpDir = path.join(__dirname, '.tmp-automount-' + Date.now())
-    fs.mkdirSync(tmpDir, { recursive: true })
+    tmpDir = createTempDir('exis-automount-')
 
     const routerPath = path
       .join(__dirname, '../src/router/router')
@@ -120,6 +119,7 @@ describe('App create & autoMountRoutes', () => {
       logger: true,
       cors: false,
       helmet: false,
+      env: 'test',
     })
 
     // Auto mount the temp directory via public create method

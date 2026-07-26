@@ -17,34 +17,37 @@ ExisJS exports everything you need for testing directly from `exisjs/testing`. T
 
 ### Creating a Test Context
 
-When testing an API, you want to boot the app, run HTTP requests against it, and then gracefully shut it down (closing database connections so the test runner doesn't hang). `createTestContext` does exactly this for you automatically!
+When testing an API, you want to boot the app, run HTTP requests against it, and then gracefully shut it down (closing database connections so the test runner doesn't hang). `createTestContext` does exactly this for you automatically! It seamlessly handles both functional `exis({ ... })` applications and Object-Oriented `@Server` decorated classes.
 
 ```typescript filename="tests/users.test.ts"
-import { describe, it, assert, createTestContext } from 'exisjs/testing'
-import app from '../src/http/server' // Import your Exis instance
+import { describe, it, expect, createTestContext } from 'exisjs/testing'
+import app from '../src/http/server' // Import your Exis instance or @Server class
 
 describe('Users API', () => {
   // Automatically boots the app, runs `onStart`, and gracefully shuts down databases after tests!
-  const client = createTestContext(app)
+  const api = createTestContext(app)
 
   it('should create a new user', async () => {
-    // client acts as a super-fast in-memory HTTP client
-    const res = await client.post('/users', {
-      body: { name: 'Alice', email: 'alice@example.com' }
-    })
+    // `api` exposes a fast, fluid HTTP client
+    const res = await api
+      .post('/users')
+      .send({ name: 'Alice', email: 'alice@example.com' })
+      .execute()
 
-    // Native Node.js assertions
-    assert.strictEqual(res.statusCode, 201)
-    assert.strictEqual(res.json.name, 'Alice')
+    // Integrated Jest-like expectations
+    expect(res.status).toBe(201)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.name).toBe('Alice')
   })
 
   it('should return 400 on invalid input', async () => {
-    const res = await client.post('/users', {
-      body: { name: 'Bob' } // Missing email
-    })
+    const res = await api
+      .post('/users')
+      .send({ name: 'Bob' }) // Missing email
+      .execute()
 
-    assert.strictEqual(res.statusCode, 400)
-    assert.strictEqual(res.json.success, false)
+    expect(res.status).toBe(400)
+    expect(res.body.success).toBe(false)
   })
 })
 ```
@@ -80,7 +83,7 @@ ExisJS allows you to configure your testing environment directly. By default, it
 If you are using ExisJS's built-in **Dependency Injection (DI)** or **Gateways**, mocking is incredibly easy. You don't need magic `jest.mock()` intercepts. You can simply override the providers in your test!
 
 ```typescript filename="tests/billing.test.ts"
-import { describe, it, assert, createTestContext } from 'exisjs/testing'
+import { describe, it, expect, createTestContext } from 'exisjs/testing'
 import app from '../src/http/server'
 import { BillingGateway } from '../src/http/billing/gateway'
 
@@ -91,15 +94,16 @@ describe('Billing API', () => {
     charge: async (amount: number) => ({ success: true, transactionId: 'test_123' })
   })
 
-  const client = createTestContext(app)
+  const api = createTestContext(app)
 
   it('should process payment', async () => {
-    const res = await client.post('/billing/charge', {
-      body: { amount: 500 }
-    })
+    const res = await api
+      .post('/billing/charge')
+      .send({ amount: 500 })
+      .execute()
 
-    assert.strictEqual(res.statusCode, 200)
-    assert.strictEqual(res.json.transactionId, 'test_123')
+    expect(res.status).toBe(200)
+    expect(res.body.transactionId).toBe('test_123')
   })
 })
 ```

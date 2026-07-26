@@ -963,9 +963,47 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
         const routeMeta = routeMetadataMap[route.handlerName] || {}
         const finalHost = routeMeta.hosts || host
-        if (route.schema || finalHost) {
-          const schema = route.schema || {}
+
+        let schema = route.schema
+        const paramMetadata = paramMetadataMap[route.handlerName] || []
+
+        let extractedBodySchema: any = undefined
+        let extractedQuerySchema: any = undefined
+
+        for (const param of paramMetadata) {
+          if (!param) continue
+          if (param.type === 'body') {
+            const bodyPipe = param.pipes?.find(
+              (p: any) => p && typeof p.parse === 'function'
+            )
+            if (bodyPipe) extractedBodySchema = bodyPipe
+          }
+          if (param.type === 'query') {
+            const queryPipe = param.pipes?.find(
+              (p: any) => p && typeof p.parse === 'function'
+            )
+            if (queryPipe) extractedQuerySchema = queryPipe
+          }
+        }
+
+        const extractedResponseSchema = routeMeta.responseSchema
+
+        if (
+          schema ||
+          finalHost ||
+          extractedBodySchema ||
+          extractedQuerySchema ||
+          extractedResponseSchema
+        ) {
+          schema = schema || {}
           if (finalHost) schema.host = finalHost
+          if (extractedBodySchema && !schema.body)
+            schema.body = extractedBodySchema
+          if (extractedQuerySchema && !schema.query)
+            schema.query = extractedQuerySchema
+          if (extractedResponseSchema && !schema.response)
+            schema.response = extractedResponseSchema
+
           ;(this.router as any)[method](
             fullPath,
             ...allMiddlewares,
@@ -2055,14 +2093,30 @@ export class App<TRoutes extends Record<string, any> = {}> {
             const normalizedPath = path.resolve(root, filePath)
             this.routeMap.set(normalizedPath, routePath)
             const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
-            const isController = (obj: any) =>
+            const isClassController = (obj: any) =>
               obj &&
               obj.prototype &&
               obj.prototype[CONTROLLER_PREFIX] !== undefined
 
+            const unwrappedMod =
+              routeMod.default && routeMod.default.default
+                ? routeMod.default.default
+                : routeMod.default
+                  ? routeMod.default
+                  : routeMod
+
+            const functionalControllerObj =
+              unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
+
             const routerInstance =
               routeMod.router || routeMod.default || routeMod
-            if (isController(routerInstance)) {
+
+            if (functionalControllerObj) {
+              const router = this.compileFunctionalController(
+                functionalControllerObj
+              )
+              this.mountRouteWithSource(routePath, router, normalizedPath)
+            } else if (isClassController(routerInstance)) {
               this.registerControllers([routerInstance], routePath)
             } else {
               this.mountRouteWithSource(
@@ -2076,7 +2130,10 @@ export class App<TRoutes extends Record<string, any> = {}> {
           return
         }
       }
-    } catch {
+    } catch (err: any) {
+      if (err.code !== 'ENOENT') {
+        console.warn('exisjs: Failed to load routes manifest:', err.message)
+      }
       // Fall back to scanning the filesystem
     }
 
@@ -2451,9 +2508,30 @@ export class App<TRoutes extends Record<string, any> = {}> {
       }
     }
 
-    const routeConfig: any = mod.config || {}
-    if (routeConfig.middleware) allMiddlewares.push(...routeConfig.middleware)
+    const currentMod =
+      mod && mod.default && mod.default.default
+        ? mod.default.default
+        : mod && mod.default
+          ? mod.default
+          : mod
+
+    const isControllerObj = currentMod && currentMod.__isController === true
+    const routeConfig: any = {
+      ...(isControllerObj ? currentMod : {}),
+      ...(mod.config || {}),
+    }
+
+    // Fallback to global app.options.cors if neither gateway nor route specify it
     if (routeConfig.cors !== undefined) allCors = routeConfig.cors
+    else if (allCors === undefined && this.options.cors !== undefined)
+      allCors = this.options.cors
+
+    if (routeConfig.middleware)
+      allMiddlewares.push(
+        ...(Array.isArray(routeConfig.middleware)
+          ? routeConfig.middleware
+          : [routeConfig.middleware])
+      )
     if (routeConfig.headers)
       allHeaders = { ...allHeaders, ...routeConfig.headers }
     if (routeConfig.plugins) {

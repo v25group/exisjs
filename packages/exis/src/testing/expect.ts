@@ -1,5 +1,4 @@
 import assert from 'node:assert'
-import { getTestContext } from 'node:test'
 
 export class Expectation {
   constructor(
@@ -423,28 +422,6 @@ export class Expectation {
       )
     }
   }
-  // --- Snapshots ---
-
-  toMatchSnapshot(): void {
-    const t = getTestContext() as import('node:test').TestContext
-    if (!t) {
-      assert.fail(
-        'expect().toMatchSnapshot() can only be called inside a test() block.'
-      )
-    }
-    t.assert.snapshot(this.actual)
-  }
-
-  toMatchInlineSnapshot(): void {
-    const t = getTestContext() as import('node:test').TestContext
-    if (!t) {
-      assert.fail(
-        'expect().toMatchInlineSnapshot() can only be called inside a test() block.'
-      )
-    }
-    t.assert.snapshot(this.actual)
-  }
-
   // --- Promises ---
 
   get resolves() {

@@ -2,6 +2,7 @@ import './utils/env'
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
 export { defineApp as exis } from './server/define'
+export type { App } from './server/app'
 export { defineConfig } from './utils/config'
 
 // ─── Logger ───────────────────────────────────────────────────────────────────

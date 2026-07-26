@@ -68,7 +68,7 @@ export class ExisRequest<
     this._method = val
   }
 
-  get headers() {
+  get headers(): import('node:http').IncomingHttpHeaders {
     return this.raw.headers
   }
 

@@ -105,6 +105,13 @@ const payload = JWT.verifyJWT<{ userId: number, role: string }>(token, process.e
 
 You can easily wrap this in a gateway middleware to protect entire folders:
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/admin/gateway.ts"
 import { defineGateway } from 'exisjs/router'
 import { JWT } from 'exisjs/auth'
@@ -120,6 +127,28 @@ export default defineGateway({
   ]
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/admin/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { JWT } from 'exisjs/auth'
+
+@Gateway({
+  middlewares: [
+    (req, res, next) => {
+      const token = req.headers.authorization?.split(' ')[1]
+      req.user = JWT.verifyJWT(token, process.env.JWT_SECRET)
+      next()
+    }
+  ]
+})
+export default class AdminGateway {}
+```
+
+  </TabsContent>
+</Tabs>
 
 ---
 
@@ -184,6 +213,13 @@ If you prefer stateful authentication over JWTs, ExisJS ships with a fully-featu
 
 By default, it uses a rapid `MemorySessionStore`, but you can plug in any distributed store (like Redis) by implementing the `SessionStore` interface.
 
+<Tabs defaultValue="functional" className="mb-6 w-full">
+  <TabsList className="grid w-[300px] grid-cols-2">
+    <TabsTrigger value="functional">Functional</TabsTrigger>
+    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
+  </TabsList>
+  <TabsContent value="functional" className="mt-4">
+
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
 import { session } from 'exisjs/auth'
@@ -198,6 +234,29 @@ export default exis({
   }
 })
 ```
+
+  </TabsContent>
+  <TabsContent value="oop" className="mt-4">
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { session } from 'exisjs/auth'
+import type { App } from 'exisjs'
+
+@Server()
+export default class RootServer {
+  async onStart(app: App) {
+    // 1. Mount the session globally
+    app.use(session({ 
+      secret: process.env.SESSION_SECRET_KEY, // Must be 32+ chars
+      ttl: 86400 * 1000 // 1 day
+    }))
+  }
+}
+```
+
+  </TabsContent>
+</Tabs>
 
 #### Functional Paradigm
 
