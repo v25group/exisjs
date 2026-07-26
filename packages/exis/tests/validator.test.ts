@@ -1,5 +1,5 @@
 import { v, ValidatorError, ValidatorType } from '../src/utils/validator'
-
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 // ─── String Validator ─────────────────────────────────────────────────────────
 
 describe('v.string()', () => {
@@ -168,7 +168,7 @@ describe('v.object()', () => {
   it('rejects missing required fields', () => {
     try {
       userSchema.parse({ name: 'John' })
-      fail('Should have thrown')
+      expect.fail('Should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(ValidatorError)
       const validationErr = err as ValidatorError
@@ -180,11 +180,11 @@ describe('v.object()', () => {
   it('collects multiple errors', () => {
     try {
       userSchema.parse({})
-      fail('Should have thrown')
+      expect.fail('Should have thrown')
     } catch (err) {
       expect(err).toBeInstanceOf(ValidatorError)
       const validationErr = err as ValidatorError
-      // Both name and email should fail
+      // Both name and email should expect.fail
       expect(validationErr.errors.length).toBe(2)
     }
   })
@@ -192,7 +192,7 @@ describe('v.object()', () => {
   it('provides correct error paths', () => {
     try {
       userSchema.parse({ name: 'J', email: 'invalid' })
-      fail('Should have thrown')
+      expect.fail('Should have thrown')
     } catch (err) {
       const validationErr = err as ValidatorError
       const paths = validationErr.errors.map((e) => e.path)
@@ -340,7 +340,7 @@ describe('Validator Modifiers', () => {
     expect(ref.parse(2)).toBe(2)
     try {
       ref.parse(3)
-      fail('Should throw')
+      expect.fail('Should throw')
     } catch (err: unknown) {
       expect((err as Error).message).toMatch('Must be even')
     }
@@ -349,7 +349,7 @@ describe('Validator Modifiers', () => {
   it('custom error messages work for native methods', () => {
     try {
       v.string().min(10, 'Too short!').parse('abc')
-      fail('Should throw')
+      expect.fail('Should throw')
     } catch (err: unknown) {
       expect((err as Error).message).toMatch('Too short!')
     }

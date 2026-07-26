@@ -1,6 +1,7 @@
 import { App } from '../src/server/app'
 import { definePlugin } from '../src/exports/plugin'
 import request from 'supertest'
+import { describe, expect, it } from '../src/testing'
 
 describe('Plugin System', () => {
   it('registers a plugin via definePlugin with exact type inference', async () => {

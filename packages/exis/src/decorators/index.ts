@@ -30,6 +30,17 @@ export interface ControllerOptions {
 /**
  * Marks a class as a controller, automatically grouping its routes under the provided prefix.
  * Uses standard ES decorators, completely avoiding reflect-metadata bloat.
+ *
+ * Example:
+ *
+ *     @Controller('/api/users')
+ *     export class UserController {
+ *       @Get()
+ *       getUsers() { return []; }
+ *     }
+ *
+ * @param {string | ControllerOptions} [prefixOrOptions] Route prefix or options
+ * @public
  */
 export function Controller(prefixOrOptions?: string | ControllerOptions): any {
   return function (target: any, context?: ClassDecoratorContext) {
@@ -166,7 +177,32 @@ function createMethodDecorator(method: HttpMethod) {
   }
 }
 
+/**
+ * Marks a method as a GET route handler.
+ *
+ * Example:
+ *
+ *     @Get('/:id')
+ *     getUser(@Param('id') id: string) { return { id }; }
+ *
+ * @param {string} [path] The route path
+ * @param {RouteSchema} [schema] Optional validation schema
+ * @public
+ */
 export const Get = createMethodDecorator('GET')
+
+/**
+ * Marks a method as a POST route handler.
+ *
+ * Example:
+ *
+ *     @Post('/', { body: v.object({ name: v.string() }) })
+ *     createUser(@Body() body: any) { return body; }
+ *
+ * @param {string} [path] The route path
+ * @param {RouteSchema} [schema] Optional validation schema
+ * @public
+ */
 export const Post = createMethodDecorator('POST')
 export const Put = createMethodDecorator('PUT')
 export const Patch = createMethodDecorator('PATCH')
@@ -179,6 +215,18 @@ export const Trace = createMethodDecorator('TRACE')
 export const Ws = createMethodDecorator('WS')
 export const Sse = createMethodDecorator('SSE')
 
+/**
+ * Applies middleware to a Controller class or route method.
+ *
+ * Example:
+ *
+ *     @Use(requireAuth)
+ *     @Get('/dashboard')
+ *     getDashboard() {}
+ *
+ * @param {...any} middlewares Middleware functions
+ * @public
+ */
 export function Use(...middlewares: any[]): any {
   return function (
     target: any,
@@ -226,6 +274,18 @@ export function Use(...middlewares: any[]): any {
 
 // ─── Custom HTTP Status / Header Response Decorators ────────────────────────
 
+/**
+ * Defines a custom HTTP status code for a successful response.
+ *
+ * Example:
+ *
+ *     @Post('/')
+ *     @HttpCode(201)
+ *     create() {}
+ *
+ * @param {number} code HTTP Status code
+ * @public
+ */
 export function HttpCode(code: number): any {
   return function (
     target: any,
@@ -365,25 +425,32 @@ export function UseFilters(...filters: any[]): any {
     ) {
       const context = contextOrPropertyKey
       if (context.kind === 'class') {
-        target.prototype[LIFECYCLE_METADATA_PROP] = target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters = target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
+        target.prototype[LIFECYCLE_METADATA_PROP] =
+          target.prototype[LIFECYCLE_METADATA_PROP] || {}
+        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters =
+          target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
         target.prototype[LIFECYCLE_METADATA_PROP]._classFilters.push(...filters)
       } else if (context.kind === 'method') {
-        ;(target as any)[LIFECYCLE_METADATA_PROP] = (target as any)[LIFECYCLE_METADATA_PROP] || {}
-        ;(target as any)[LIFECYCLE_METADATA_PROP].filters = (target as any)[LIFECYCLE_METADATA_PROP].filters || []
+        ;(target as any)[LIFECYCLE_METADATA_PROP] =
+          (target as any)[LIFECYCLE_METADATA_PROP] || {}
+        ;(target as any)[LIFECYCLE_METADATA_PROP].filters =
+          (target as any)[LIFECYCLE_METADATA_PROP].filters || []
         ;(target as any)[LIFECYCLE_METADATA_PROP].filters.push(...filters)
       }
     } else {
       if (typeof target === 'function' && !contextOrPropertyKey) {
         // Legacy class decorator
-        target.prototype[LIFECYCLE_METADATA_PROP] = target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters = target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
+        target.prototype[LIFECYCLE_METADATA_PROP] =
+          target.prototype[LIFECYCLE_METADATA_PROP] || {}
+        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters =
+          target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
         target.prototype[LIFECYCLE_METADATA_PROP]._classFilters.push(...filters)
       } else {
         // Legacy method decorator
         const fn = target[contextOrPropertyKey]
         fn[LIFECYCLE_METADATA_PROP] = fn[LIFECYCLE_METADATA_PROP] || {}
-        fn[LIFECYCLE_METADATA_PROP].filters = fn[LIFECYCLE_METADATA_PROP].filters || []
+        fn[LIFECYCLE_METADATA_PROP].filters =
+          fn[LIFECYCLE_METADATA_PROP].filters || []
         fn[LIFECYCLE_METADATA_PROP].filters.push(...filters)
       }
     }
@@ -392,13 +459,19 @@ export function UseFilters(...filters: any[]): any {
 
 // ─── Route Parameters ──────────────────────────────────────────────────────────
 
-function createParamDecorator(type: string, nameOrPipe?: string | any, ...pipes: any[]) {
+function createParamDecorator(
+  type: string,
+  nameOrPipe?: string | any,
+  ...pipes: any[]
+) {
   return function (
     target: any,
     propertyKey: string | symbol,
     parameterIndex: number
   ) {
-    const isPipe = typeof nameOrPipe === 'function' || (typeof nameOrPipe === 'object' && nameOrPipe !== null)
+    const isPipe =
+      typeof nameOrPipe === 'function' ||
+      (typeof nameOrPipe === 'object' && nameOrPipe !== null)
     const name = isPipe ? undefined : nameOrPipe
     const allPipes = isPipe ? [nameOrPipe, ...pipes] : pipes
 
@@ -408,18 +481,24 @@ function createParamDecorator(type: string, nameOrPipe?: string | any, ...pipes:
   }
 }
 
-export const Param = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('param', nameOrPipe, ...pipes)
-export const Body = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('body', nameOrPipe, ...pipes)
-export const Headers = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('header', nameOrPipe, ...pipes)
-export const HostParam = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('host', nameOrPipe, ...pipes)
+export const Param = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('param', nameOrPipe, ...pipes)
+export const Body = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('body', nameOrPipe, ...pipes)
+export const Headers = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('header', nameOrPipe, ...pipes)
+export const HostParam = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('host', nameOrPipe, ...pipes)
 export const Req = () => createParamDecorator('req')
 export const Socket = () => createParamDecorator('socket')
 export const Stream = () => createParamDecorator('stream')
 export const Session = () => createParamDecorator('session')
 export const Next = () => createParamDecorator('next')
 export const Ip = () => createParamDecorator('ip')
-export const UploadedFile = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('uploadedFile', nameOrPipe, ...pipes)
-export const UploadedFiles = (nameOrPipe?: string | any, ...pipes: any[]) => createParamDecorator('uploadedFiles', nameOrPipe, ...pipes)
+export const UploadedFile = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('uploadedFile', nameOrPipe, ...pipes)
+export const UploadedFiles = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('uploadedFiles', nameOrPipe, ...pipes)
 
 export const Res = (options?: { passthrough?: boolean }): any => {
   return function (
@@ -451,11 +530,16 @@ export function Query(
       (contextOrPropertyKey && contextOrPropertyKey.kind === 'parameter')
 
     if (isParam) {
-      const isPipe = typeof pathOrName === 'function' || (typeof pathOrName === 'object' && pathOrName !== null)
+      const isPipe =
+        typeof pathOrName === 'function' ||
+        (typeof pathOrName === 'object' && pathOrName !== null)
       const name = isPipe ? undefined : pathOrName
       const pipesArray: any[] = isPipe ? [pathOrName] : []
-      if (schemaOrPipe && (typeof schemaOrPipe === 'function' || typeof schemaOrPipe === 'object')) {
-         pipesArray.push(schemaOrPipe)
+      if (
+        schemaOrPipe &&
+        (typeof schemaOrPipe === 'function' || typeof schemaOrPipe === 'object')
+      ) {
+        pipesArray.push(schemaOrPipe)
       }
       pipesArray.push(...pipes)
 
@@ -465,7 +549,7 @@ export function Query(
       fn[PARAM_METADATA_PROP][parameterIndex] = {
         type: 'query',
         name,
-        pipes: pipesArray
+        pipes: pipesArray,
       }
     } else {
       const path = pathOrName || ''

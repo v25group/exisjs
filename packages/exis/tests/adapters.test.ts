@@ -1,6 +1,7 @@
 import { App } from '../src/server/app'
 import { serverlessAws, APIGatewayEvent } from '../src/adapters/aws-lambda'
 import { serverlessVercel } from '../src/adapters/vercel'
+import { describe, expect, it, ex } from '../src/testing'
 
 describe('Serverless Adapters', () => {
   describe('AWS Lambda Adapter', () => {
@@ -72,7 +73,7 @@ describe('Serverless Adapters', () => {
   describe('Vercel Adapter', () => {
     it('returns a handler that invokes app.handle', () => {
       const app = new App()
-      const spy = jest.spyOn(app, 'handle').mockImplementation(async () => {})
+      const spy = ex.spyOn(app, 'handle').mockImplementation(async () => {})
 
       const handler = serverlessVercel(app)
 

@@ -1069,14 +1069,12 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   // ─── Web Standard Fetch (Edge Runtime) & Inject ──────────────────────────────
 
-  public fetch(
+  public async fetch(
     request: globalThis.Request,
     env?: any,
     ctx?: any
   ): Promise<globalThis.Response> {
-    // Dynamic require to avoid circular dependencies and top-level execution
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { handleFetch } = require('../adapters/fetch')
+    const { handleFetch } = await import('../adapters/fetch')
     return handleFetch(this, request, env, ctx)
   }
 
@@ -1461,59 +1459,63 @@ export class App<TRoutes extends Record<string, any> = {}> {
       },
     ]
 
-    await runHandlers(pipeline, req, res, async (err) => {
-      if (isAborted) return
+    this._executeWithContext(req, res, () => {
+      runHandlers(pipeline, req, res, async (err) => {
+        if (isAborted) return
 
-      if (err) {
-        this.log.error({ err }, 'Error during uWS WebSocket upgrade middleware')
+        if (err) {
+          this.log.error(
+            { err },
+            'Error during uWS WebSocket upgrade middleware'
+          )
+          uwsRes.cork(() => {
+            uwsRes.writeStatus('500 Internal Server Error')
+            uwsRes.end()
+          })
+          return
+        }
+
+        if (res.headersSent) {
+          return // Middleware sent an HTTP response
+        }
+
+        // We need to fetch headers directly from the shimReq.headers
+        const secWebSocketKey = shimReq.headers['sec-websocket-key'] || ''
+        const secWebSocketProtocol =
+          shimReq.headers['sec-websocket-protocol'] || ''
+        const secWebSocketExtensions =
+          shimReq.headers['sec-websocket-extensions'] || ''
+
+        // Prepare user data for the upgraded websocket
+        const userData = {
+          req,
+          res,
+          exisWs: new ExisWebSocket(null as any, req, this.wsServer), // the raw will be set to shim in open()
+          finalHandler:
+            matched.route.handlers[matched.route.handlers.length - 1],
+        }
+
+        this.wsServer.track(userData.exisWs)
+        // Attach to request
+        ;(req as Request & { ws?: ExisWebSocket }).ws = userData.exisWs
+
         uwsRes.cork(() => {
-          uwsRes.writeStatus('500 Internal Server Error')
-          uwsRes.end()
+          uwsRes.upgrade(
+            userData,
+            secWebSocketKey,
+            secWebSocketProtocol,
+            secWebSocketExtensions,
+            context
+          )
         })
-        return
-      }
 
-      if (res.headersSent) {
-        return // Middleware sent an HTTP response
-      }
-
-      // We need to fetch headers directly from the shimReq.headers
-      const secWebSocketKey = shimReq.headers['sec-websocket-key'] || ''
-      const secWebSocketProtocol =
-        shimReq.headers['sec-websocket-protocol'] || ''
-      const secWebSocketExtensions =
-        shimReq.headers['sec-websocket-extensions'] || ''
-
-      // Prepare user data for the upgraded websocket
-      const userData = {
-        req,
-        res,
-        exisWs: new ExisWebSocket(null as any, req, this.wsServer), // the raw will be set to shim in open()
-        finalHandler: matched.route.handlers[matched.route.handlers.length - 1],
-      }
-
-      this.wsServer.track(userData.exisWs)
-      // Attach to request
-      ;(req as Request & { ws?: ExisWebSocket }).ws = userData.exisWs
-
-      uwsRes.cork(() => {
-        uwsRes.upgrade(
-          userData,
-          secWebSocketKey,
-          secWebSocketProtocol,
-          secWebSocketExtensions,
-          context
-        )
-      })
-
-      // The open handler in createUwsApp will call finalHandler?
-      // Actually we should just execute the finalHandler here since upgrade succeeds immediately if we don't block
-      Promise.resolve(
-        userData.finalHandler(req, res, () => {
-          /* noop */
+        Promise.resolve(
+          userData.finalHandler(req, res, () => {
+            /* noop */
+          })
+        ).catch((e) => {
+          this.log.error({ err: e }, 'Error in uWS WebSocket handler')
         })
-      ).catch((e) => {
-        this.log.error({ err: e }, 'Error in uWS WebSocket handler')
       })
     })
   }
@@ -1582,11 +1584,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
         if (onListen) {
           onListen(address)
         } else {
-          const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
-          this.log.info(
-            { url, env: this.options.env, backend: 'uws' },
-            `Server running at ${url} (uWebSockets.js)`
-          )
+          if (!process.env.__EXIS_DEV_SERVER && !process.env.__EXIS_CLI) {
+            const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+            this.log.info(
+              { url, env: this.options.env, backend: 'uws' },
+              `Server running at ${url} (uWebSockets.js)`
+            )
+          }
         }
 
         if (this.options.env === 'production') {
@@ -1762,6 +1766,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
     const readyMs = 125
     const displayEnv = this.options.env || process.env.NODE_ENV || 'development'
+    const workerCount = process.env.__EXIS_CLUSTER_WORKERS
+
+    const cluster = await import('node:cluster')
+    // In cluster mode, ONLY let Worker #1 print the banner so we don't spam the console 12 times
+    if (cluster.default.isWorker && cluster.default.worker?.id !== 1) {
+      return
+    }
 
     console.log(
       `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  ready in ${c.bold}${readyMs} ms${c.reset}\n`
@@ -1775,6 +1786,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
     console.log(
       `  ${c.white}➜${c.reset}  ${c.dim}Environ:${c.reset} ${c.green}${displayEnv}${c.reset}`
     )
+    if (workerCount && Number(workerCount) > 1) {
+      console.log(
+        `  ${c.white}➜${c.reset}  ${c.dim}Workers:${c.reset} ${c.magenta}${workerCount}${c.reset}`
+      )
+    }
     console.log(
       `  ${c.white}➜${c.reset}  press ${c.bold}h + enter${c.reset} ${c.dim}to show help${c.reset}\n`
     )
@@ -2021,11 +2037,16 @@ export class App<TRoutes extends Record<string, any> = {}> {
         let url = pathToFileURL(manifestPath).href
         if (!isProd) url += '?t=' + Date.now() // cache bust for dev
 
-        const dynamicImport = new Function(
-          'specifier',
-          'return import(specifier)'
-        )
-        const mod = await dynamicImport(url)
+        let mod: any
+        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+          mod = await import(url)
+        } else {
+          const dynamicImport = new Function(
+            'specifier',
+            'return import(specifier)'
+          )
+          mod = await dynamicImport(url)
+        }
         const manifest = mod.manifest
 
         if (Array.isArray(manifest)) {
@@ -2222,10 +2243,21 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   async mountRouteFile(filePath: string, routePath: string): Promise<void> {
     let mod: any
-    const dynamicImport = new Function('specifier', 'return import(specifier)')
     try {
-      const url = pathToFileURL(filePath).href + '?t=' + Date.now()
-      mod = await dynamicImport(url)
+      const url =
+        process.env.VITEST || process.env.NODE_ENV === 'test'
+          ? pathToFileURL(filePath).href
+          : pathToFileURL(filePath).href + '?t=' + Date.now()
+
+      if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+        mod = await import(url)
+      } else {
+        const dynamicImport = new Function(
+          'specifier',
+          'return import(specifier)'
+        )
+        mod = await dynamicImport(url)
+      }
     } catch {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       mod = require(filePath)
@@ -2269,10 +2301,31 @@ export class App<TRoutes extends Record<string, any> = {}> {
         else if (await fs.stat(gwPathJs).catch(() => null)) targetGw = gwPathJs
 
         if (targetGw) {
-          const url = pathToFileURL(targetGw).href + '?t=' + Date.now()
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const gwMod = await dynamicImport(url).catch(() => require(targetGw))
-          const gwConfig = gwMod.default || gwMod
+          const gwUrl =
+            process.env.VITEST || process.env.NODE_ENV === 'test'
+              ? pathToFileURL(targetGw).href
+              : pathToFileURL(targetGw).href + '?t=' + Date.now()
+          let gwMod: any
+          try {
+            if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+              gwMod = await import(gwUrl)
+            } else {
+              const dynamicImportGw = new Function(
+                'specifier',
+                'return import(specifier)'
+              )
+              gwMod = await dynamicImportGw(gwUrl)
+            }
+          } catch {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            gwMod = require(targetGw)
+          }
+          const gwConfig =
+            gwMod && gwMod.default && gwMod.default.default
+              ? gwMod.default.default
+              : gwMod && gwMod.default
+                ? gwMod.default
+                : gwMod
           if (gwConfig) {
             const isExcluded = (reqPath: string, reqMethod: string) => {
               if (!gwConfig.exclude) return false
@@ -2352,15 +2405,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
                 if (ms) {
                   req.timeoutTimer = setTimeout(() => {
                     if (!res.headersSent) {
-                      res
-                        .status(408)
-                        .json({
-                          success: false,
-                          error: {
-                            code: 'REQUEST_TIMEOUT',
-                            message: 'Request Timeout',
-                          },
-                        })
+                      res.status(408).json({
+                        success: false,
+                        error: {
+                          code: 'REQUEST_TIMEOUT',
+                          message: 'Request Timeout',
+                        },
+                      })
                     }
                   }, ms)
                   res.raw.on('finish', () => clearTimeout(req.timeoutTimer))
@@ -2400,43 +2451,64 @@ export class App<TRoutes extends Record<string, any> = {}> {
       }
     }
 
-    if (!mod.config) mod.config = {}
-    if (mod.config.middleware) allMiddlewares.push(...mod.config.middleware)
-    if (mod.config.cors !== undefined) allCors = mod.config.cors
-    if (mod.config.headers)
-      allHeaders = { ...allHeaders, ...mod.config.headers }
-    if (mod.config.plugins) {
-      for (const plugin of mod.config.plugins) {
+    const routeConfig: any = mod.config || {}
+    if (routeConfig.middleware) allMiddlewares.push(...routeConfig.middleware)
+    if (routeConfig.cors !== undefined) allCors = routeConfig.cors
+    if (routeConfig.headers)
+      allHeaders = { ...allHeaders, ...routeConfig.headers }
+    if (routeConfig.plugins) {
+      for (const plugin of routeConfig.plugins) {
         await this.register(plugin)
       }
     }
 
-    // Inject Gateway features into module config for compileFunctionalController and OOP
-    mod.config.filters = [
+    // Pass gateway features to controllers via metadata if necessary
+    const combinedFilters = [
       ...allFilters,
-      ...(mod.config.filters
-        ? Array.isArray(mod.config.filters)
-          ? mod.config.filters
-          : [mod.config.filters]
+      ...(routeConfig.filters
+        ? Array.isArray(routeConfig.filters)
+          ? routeConfig.filters
+          : [routeConfig.filters]
         : []),
     ]
-    mod.config.guards = [
+    const combinedGuards = [
       ...allGuards,
-      ...(mod.config.guards
-        ? Array.isArray(mod.config.guards)
-          ? mod.config.guards
-          : [mod.config.guards]
+      ...(routeConfig.guards
+        ? Array.isArray(routeConfig.guards)
+          ? routeConfig.guards
+          : [routeConfig.guards]
         : []),
     ]
-    mod.config.interceptors = [
+    const combinedInterceptors = [
       ...allInterceptors,
-      ...(mod.config.interceptors
-        ? Array.isArray(mod.config.interceptors)
-          ? mod.config.interceptors
-          : [mod.config.interceptors]
+      ...(routeConfig.interceptors
+        ? Array.isArray(routeConfig.interceptors)
+          ? routeConfig.interceptors
+          : [routeConfig.interceptors]
         : []),
     ]
-    mod.config.metadata = { ...allMetadata, ...(mod.config.metadata || {}) }
+
+    // Inject into the default export if it's a functional controller
+    if (mod.default && typeof mod.default === 'object') {
+      try {
+        if (!mod.default.filters) mod.default.filters = []
+        mod.default.filters.push(...combinedFilters)
+
+        if (!mod.default.guards) mod.default.guards = []
+        mod.default.guards.push(...combinedGuards)
+
+        if (!mod.default.interceptors) mod.default.interceptors = []
+        mod.default.interceptors.push(...combinedInterceptors)
+
+        if (!mod.default.metadata) mod.default.metadata = {}
+        Object.assign(mod.default.metadata, {
+          ...allMetadata,
+          ...(routeConfig.metadata || {}),
+        })
+      } catch {
+        // If mod.default is frozen, ignore
+      }
+    }
 
     const prefixMiddlewares: any[] = []
     if (allCors !== undefined) {
@@ -2460,9 +2532,20 @@ export class App<TRoutes extends Record<string, any> = {}> {
     const isController = (obj: any) =>
       obj && obj.prototype && obj.prototype[CONTROLLER_PREFIX] !== undefined
 
-    if (mod.default && mod.default.__isController) {
+    const unwrappedMod =
+      mod && mod.default && mod.default.default
+        ? mod.default.default
+        : mod && mod.default
+          ? mod.default
+          : mod
+    const functionalControllerObj =
+      unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
+
+    if (functionalControllerObj) {
       // ─── THE NEW PERFECT FUNCTIONAL CONTROLLER ───
-      const compiledRouter = this.compileFunctionalController(mod.default)
+      const compiledRouter = this.compileFunctionalController(
+        functionalControllerObj
+      )
       this.mountRouteWithSource(
         routePath,
         compiledRouter,
@@ -2476,12 +2559,12 @@ export class App<TRoutes extends Record<string, any> = {}> {
         filePath,
         prefixMiddlewares
       )
-    } else if (mod.default && isController(mod.default)) {
-      this.registerControllers([mod.default], routePath, prefixMiddlewares)
-    } else if (mod.default && isRouter(mod.default)) {
+    } else if (unwrappedMod && isController(unwrappedMod)) {
+      this.registerControllers([unwrappedMod], routePath, prefixMiddlewares)
+    } else if (unwrappedMod && isRouter(unwrappedMod)) {
       this.mountRouteWithSource(
         routePath,
-        mod.default,
+        unwrappedMod,
         filePath,
         prefixMiddlewares
       )
@@ -2497,10 +2580,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
   private compileFunctionalController(
     config: any
   ): import('../router/router').Router {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Router } = require('../router/router')
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { cors } = require('../middleware/middleware')
     const router = new Router()
 
     const fileMiddleware: any[] = []
@@ -2560,12 +2639,10 @@ export class App<TRoutes extends Record<string, any> = {}> {
               : guard.canActivate(req))
             if (!allowed) {
               if (res && !res.headersSent) {
-                res
-                  .status(403)
-                  .json({
-                    success: false,
-                    error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
-                  })
+                res.status(403).json({
+                  success: false,
+                  error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
+                })
               }
               return
             }
@@ -2694,9 +2771,14 @@ export class App<TRoutes extends Record<string, any> = {}> {
         router.sse(rc.path, ...routeMiddlewares, sseHandler)
       } else {
         if (Object.keys(schema).length > 0) {
-          router[method](rc.path, ...routeMiddlewares, schema, superHandler)
+          ;(router as any)[method](
+            rc.path,
+            ...routeMiddlewares,
+            schema,
+            superHandler
+          )
         } else {
-          router[method](rc.path, ...routeMiddlewares, superHandler)
+          ;(router as any)[method](rc.path, ...routeMiddlewares, superHandler)
         }
       }
     }

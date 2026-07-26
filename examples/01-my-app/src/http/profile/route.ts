@@ -50,7 +50,7 @@ export default class ProfileController {
   @Get('/:id', {
     response: v.object({
       success: v.boolean(),
-      user: v.object({
+      data: v.object({
         id: v.string(),
         name: v.string(),
         role: v.string(),
@@ -59,10 +59,7 @@ export default class ProfileController {
   })
   async getProfile(@Param('id') id: string) {
     const user = await this.profileService.fetchUser(id)
-    return {
-      success: true,
-      user,
-    }
+    return user
   }
 
   @Post('/update', {

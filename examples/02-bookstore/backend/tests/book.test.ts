@@ -1,4 +1,4 @@
-import { test, describe, assert, createTestContext } from 'exisjs/testing'
+import { test, describe, expect, createTestContext } from 'exisjs/testing'
 import app from '../src/http/server'
 
 describe('Book Native Tests', () => {
@@ -6,6 +6,6 @@ describe('Book Native Tests', () => {
   createTestContext(app)
 
   test('should pass a basic test', async () => {
-    assert.strictEqual(1 + 1, 2, 'Math works')
+    expect(1 + 1).toBe(2)
   })
 })

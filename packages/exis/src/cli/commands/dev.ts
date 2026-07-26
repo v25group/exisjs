@@ -12,7 +12,12 @@ interface DevOptions {
 
 export async function devCommand(options: DevOptions = {}): Promise<void> {
   const cwd = process.cwd()
-  const startServerPath = require.resolve('../../lib/start-server')
+  let startServerPath = ''
+  try {
+    startServerPath = require.resolve('../../lib/start-server')
+  } catch {
+    startServerPath = require.resolve('../../lib/start-server.ts')
+  }
 
   // Detect entry file
   const entryFile = resolveEntry(cwd, options.entry)
@@ -99,11 +104,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
             `${c.red}  Force killing process after timeout...${c.reset}`
           )
           try {
-            if (process.platform === 'win32') {
-              // eslint-disable-next-line @typescript-eslint/no-require-imports
-              const { execSync } = require('node:child_process')
-              execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' })
-            } else {
+            if (process.platform !== 'win32') {
               child.kill('SIGKILL')
             }
           } catch {
@@ -119,11 +120,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       })
 
       try {
-        if (process.platform === 'win32') {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const { execSync } = require('node:child_process')
-          execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' })
-        } else {
+        if (process.platform !== 'win32') {
           child.kill('SIGTERM')
         }
       } catch {

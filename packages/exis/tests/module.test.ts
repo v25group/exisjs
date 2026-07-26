@@ -2,6 +2,7 @@ import { App } from '../src/server/app'
 import { defineModule } from '../src/module/module'
 import { inject } from '../src/di/inject'
 import { defineGateway } from '../src/router/gateway'
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 
 describe('Modular Architecture', () => {
   it('should register standalone module providers and deduplicate imports', async () => {

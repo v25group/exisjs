@@ -1,21 +1,166 @@
 export * from './mocks'
 export * from './client'
 
-import { before, after } from 'node:test'
+import * as _nodeTest from 'node:test'
+import _assert from 'node:assert'
+import util from 'node:util'
 import { createTestApp, TestApp } from './client'
 
-// Re-export native test runner features for developer convenience
-export {
-  test,
-  describe,
-  it,
-  before,
-  after,
-  beforeEach,
-  afterEach,
-  mock,
-} from 'node:test'
-export { default as assert } from 'node:assert'
+export interface TestOptions {
+  only?: boolean
+  skip?: boolean | string
+  todo?: boolean | string
+  concurrency?: number | boolean
+  timeout?: number
+}
+
+export interface TestContext {
+  name: string
+  skip(message?: string): void
+  todo(message?: string): void
+  test(name: string, fn?: TestFunction): void
+  test(name: string, options: TestOptions, fn?: TestFunction): void
+}
+
+export type TestFunction = (t: TestContext) => void | Promise<void>
+export type HookFunction = () => void | Promise<void>
+
+export interface TestApi {
+  (name: string, fn?: TestFunction): void
+  (name: string, options: TestOptions, fn?: TestFunction): void
+  only(name: string, fn?: TestFunction): void
+  only(name: string, options: TestOptions, fn?: TestFunction): void
+  skip(name: string, fn?: TestFunction): void
+  skip(name: string, options: TestOptions, fn?: TestFunction): void
+  todo(name: string, fn?: TestFunction): void
+  todo(name: string, options: TestOptions, fn?: TestFunction): void
+  each<T = any>(
+    cases: T[]
+  ): (name: string, fn: (...args: any[]) => void | Promise<void>) => void
+}
+
+export type HookApi = (fn: HookFunction) => void
+
+// Re-export native test runner features with top-tier TypeScript support
+
+function createTestApi(baseTestFn: any): TestApi {
+  const api: any = (name: string, optionsOrFn: any, maybeFn?: any) => {
+    return baseTestFn(name, optionsOrFn, maybeFn)
+  }
+
+  api.only = (name: string, optionsOrFn: any, maybeFn?: any) =>
+    baseTestFn.only(name, optionsOrFn, maybeFn)
+  api.skip = (name: string, optionsOrFn: any, maybeFn?: any) =>
+    baseTestFn.skip(name, optionsOrFn, maybeFn)
+  api.todo = (name: string, optionsOrFn: any, maybeFn?: any) =>
+    baseTestFn.todo(name, optionsOrFn, maybeFn)
+
+  api.each = function (cases: any[]) {
+    return (name: string, fn: (...args: any[]) => void | Promise<void>) => {
+      for (const c of cases) {
+        const testArgs = Array.isArray(c) ? c : [c]
+        const testName = util.format(name, ...testArgs)
+        baseTestFn(testName, () => fn(...testArgs))
+      }
+    }
+  }
+
+  return api as TestApi
+}
+
+export const test = createTestApi(_nodeTest.test)
+export const describe = createTestApi(_nodeTest.describe)
+export const it = createTestApi(_nodeTest.it)
+export const before = _nodeTest.before as unknown as HookApi
+export const beforeAll = _nodeTest.before as unknown as HookApi
+export const after = _nodeTest.after as unknown as HookApi
+export const afterAll = _nodeTest.after as unknown as HookApi
+export const beforeEach = _nodeTest.beforeEach as unknown as HookApi
+export const afterEach = _nodeTest.afterEach as unknown as HookApi
+export const mock = _nodeTest.mock
+
+function applyMockPolyfill(fn: any) {
+  if (!fn.mock) return fn
+  fn.mockRestore = () => fn.mock.restore()
+  fn.mockImplementation = (impl: any) => {
+    fn.mock.mockImplementation(impl)
+    return fn
+  }
+  fn.mockResolvedValue = (val: any) => {
+    fn.mock.mockImplementation(async () => val)
+    return fn
+  }
+  fn.mockReturnValue = (val: any) => {
+    fn.mock.mockImplementation(() => val)
+    return fn
+  }
+  fn.mockRejectedValue = (err: any) => {
+    fn.mock.mockImplementation(async () => {
+      throw err
+    })
+    return fn
+  }
+  fn.mockClear = () => fn.mock.resetCalls()
+  return fn
+}
+
+export const ex = {
+  fn: (impl?: any) => applyMockPolyfill(_nodeTest.mock.fn(impl)),
+  spyOn: (obj: any, methodName: string) =>
+    applyMockPolyfill(_nodeTest.mock.method(obj, methodName)),
+  timers: _nodeTest.mock.timers,
+  mock: (specifier: string, factory?: () => any) => {
+    if (factory) {
+      const mockExports = factory()
+      const options: any = {}
+      if (mockExports.default) {
+        options.defaultExport = mockExports.default
+        const { default: _, ...named } = mockExports
+        options.namedExports = named
+      } else {
+        options.namedExports = mockExports
+      }
+      _nodeTest.mock.module(specifier, options)
+    } else {
+      _nodeTest.mock.module(specifier)
+    }
+  },
+  setSystemTime: (time: number | Date) => {
+    try {
+      _nodeTest.mock.timers.enable({
+        apis: ['Date', 'setTimeout', 'setInterval', 'setImmediate'],
+      })
+    } catch {
+      /* ignore if already enabled */
+    }
+    _nodeTest.mock.timers.setTime(time.valueOf() as number)
+  },
+  advanceTimersByTime: (ms: number) => {
+    try {
+      _nodeTest.mock.timers.enable({
+        apis: ['Date', 'setTimeout', 'setInterval', 'setImmediate'],
+      })
+    } catch {
+      /* ignore */
+    }
+    _nodeTest.mock.timers.tick(ms)
+  },
+  useFakeTimers: () => {
+    try {
+      _nodeTest.mock.timers.enable({
+        apis: ['Date', 'setTimeout', 'setInterval', 'setImmediate'],
+      })
+    } catch {
+      /* ignore */
+    }
+  },
+  useRealTimers: () => {
+    _nodeTest.mock.timers.reset()
+  },
+  clearAllMocks: () => _nodeTest.mock.reset(),
+}
+export const assert = _nodeTest.assert || _assert
+export { expect } from './expect'
 
 export function createTestContext(app: any): TestApp {
   process.on('unhandledRejection', (reason) => {
@@ -37,7 +182,10 @@ export function createTestContext(app: any): TestApp {
       const { createRequire } = require('node:module')
       const requireFromCwd = createRequire(process.cwd() + '/package.json')
       const mongoose = requireFromCwd('mongoose')
-      console.log('mongoose.__connectionPromise exists:', !!mongoose.__connectionPromise)
+      console.log(
+        'mongoose.__connectionPromise exists:',
+        !!mongoose.__connectionPromise
+      )
       if (mongoose.__connectionPromise) {
         await mongoose.__connectionPromise
       } else if (mongoose.connection && mongoose.connection.readyState === 2) {
@@ -64,7 +212,8 @@ export function createTestContext(app: any): TestApp {
       const requireFromCwd = createRequire(process.cwd() + '/package.json')
       const mongoose = requireFromCwd('mongoose')
       if (mongoose.connection && mongoose.connection.readyState !== 0) {
-        if (mongoose.connection.readyState === 2) { // 2 = connecting
+        if (mongoose.connection.readyState === 2) {
+          // 2 = connecting
           console.log('Testing: awaiting mongoose connection')
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           await mongoose.connection.asPromise().catch(() => {})
@@ -100,7 +249,7 @@ export function createTestContext(app: any): TestApp {
       // Redis not used
     }
 
-    // Call the built-in graceful shutdown which cleans up the queue, 
+    // Call the built-in graceful shutdown which cleans up the queue,
     // cron jobs, database connections, and running servers.
     if (typeof app.close === 'function') {
       console.log('Testing: app.close()')

@@ -25,12 +25,14 @@ export class ExisWebSocket {
     this.id = randomUUID()
 
     // Listen for pong messages to verify connection is alive and track latency
-    this.raw.on('pong', () => {
-      this.isAlive = true
-      if (this.lastPingTime > 0) {
-        this.latency = Date.now() - this.lastPingTime
-      }
-    })
+    if (this.raw) {
+      this.raw.on('pong', () => {
+        this.isAlive = true
+        if (this.lastPingTime > 0) {
+          this.latency = Date.now() - this.lastPingTime
+        }
+      })
+    }
   }
 
   /**

@@ -2,7 +2,7 @@ import { App } from '../src/server/app'
 import { Router } from '../src/router/router'
 import { HttpError, asyncHandler } from '../src/utils/errors'
 import { createTestApp, TestApp } from '../src/testing/client'
-
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 // ─── Integration Tests ───────────────────────────────────────────────────────
 
 describe('Integration: Full Request Lifecycle', () => {

@@ -72,11 +72,7 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     )
 
     try {
-      if (process.platform === 'win32') {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { execSync } = require('node:child_process')
-        execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: 'ignore' })
-      } else {
+      if (process.platform !== 'win32') {
         child.kill('SIGTERM')
       }
     } catch {

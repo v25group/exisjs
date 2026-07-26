@@ -1,23 +1,28 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import * as cp from 'node:child_process'
+import cp from 'node:child_process'
 import { generateRoute } from '../src/cli/commands/generate'
 import { buildCommand } from '../src/cli/commands/build'
 import { startCommand } from '../src/cli/commands/start'
 import { devCommand } from '../src/cli/commands/dev'
 import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
-
-// Mock dependencies
-jest.mock('node:child_process', () => ({
-  spawn: jest.fn(),
-}))
+import {
+  ex,
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  afterEach,
+} from '../src/testing'
 
 describe('CLI Commands', () => {
   let tmpDir: string
   let originalCwd: () => string
-  let mockExit: jest.SpyInstance
-  let mockLog: jest.SpyInstance
-  let mockError: jest.SpyInstance
+  let mockExit: any
+  let mockLog: any
+  let mockError: any
+  let mockSpawn: any
 
   beforeAll(() => {
     tmpDir = createTempDir('exis-cli-')
@@ -25,13 +30,17 @@ describe('CLI Commands', () => {
     process.cwd = () => tmpDir
 
     // Suppress console output during tests
-    mockLog = jest.spyOn(console, 'log').mockImplementation(() => {})
-    mockError = jest.spyOn(console, 'error').mockImplementation(() => {})
+    mockLog = ex.spyOn(console, 'log')
+    mockError = ex.spyOn(console, 'error')
 
     // Mock process.exit so we don't kill the test runner
-    mockExit = jest.spyOn(process, 'exit').mockImplementation((code) => {
+    mockExit = ex.spyOn(process, 'exit')
+    mockExit.mockImplementation((code: number) => {
       throw new Error(`ProcessExited: ${code}`)
     })
+
+    // Mock child_process.spawn
+    mockSpawn = ex.spyOn(cp, 'spawn')
   })
 
   afterAll(() => {
@@ -39,11 +48,15 @@ describe('CLI Commands', () => {
     mockLog.mockRestore()
     mockError.mockRestore()
     mockExit.mockRestore()
+    mockSpawn.mockRestore()
     cleanupTempDir(tmpDir)
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    mockSpawn.mockClear()
+    mockLog.mockClear()
+    mockError.mockClear()
+    mockExit.mockClear()
     process.removeAllListeners('SIGINT')
     process.removeAllListeners('SIGTERM')
     process.stdin.removeAllListeners('data')
@@ -73,15 +86,15 @@ describe('CLI Commands', () => {
       // First generation
       await generateRoute('existing', tmpDir)
 
-      // Clear mockLog to track subsequent calls
+      // Clear mocks to track subsequent calls
       mockError.mockClear()
+      mockExit.mockClear()
 
-      // Second generation should log a warning and not throw
+      // Second generation should call process.exit(1)
       await generateRoute('existing', tmpDir)
 
-      expect(mockError).toHaveBeenCalledWith(
-        expect.stringContaining('already exists')
-      )
+      expect(mockError).toHaveBeenCalled()
+      expect(mockError.mock.calls[0].arguments[0]).toContain('already exists')
     })
   })
 
@@ -95,18 +108,22 @@ describe('CLI Commands', () => {
 
       // Mock spawn to return a fake child process that exits with 0
       const mockChild = {
-        stdout: { on: jest.fn() },
-        stderr: { on: jest.fn() },
-        on: jest.fn((event, cb) => {
+        stdout: { on: ex.fn() },
+        stderr: { on: ex.fn() },
+        on: ex.fn((event: string, cb: any) => {
           if (event === 'exit') cb(0)
         }),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
-      await buildCommand({ outDir: 'dist' })
+      try {
+        await buildCommand({ outDir: 'dist' })
+      } catch (e: any) {
+        if (e.message !== 'ProcessExited: 0') throw e
+      }
 
       expect(cp.spawn).toHaveBeenCalled()
-      const args = (cp.spawn as jest.Mock).mock.calls[0]
+      const args = mockSpawn.mock.calls[0].arguments
       expect(args[0]).toContain('tsc') // command string
       expect(args[0]).toContain('--project') // command string arguments
     })
@@ -115,13 +132,13 @@ describe('CLI Commands', () => {
       writeTempFile(tmpDir, 'tsconfig.json', '{}')
 
       const mockChild = {
-        stdout: { on: jest.fn() },
-        stderr: { on: jest.fn() },
-        on: jest.fn((event, cb) => {
+        stdout: { on: ex.fn() },
+        stderr: { on: ex.fn() },
+        on: ex.fn((event: string, cb: any) => {
           if (event === 'exit') cb(1)
         }),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
       await expect(buildCommand({ outDir: 'dist' })).rejects.toThrow(
         'ProcessExited: 1'
@@ -141,15 +158,15 @@ describe('CLI Commands', () => {
       writeTempFile(tmpDir, entryPath, 'console.log("ready")')
 
       const mockChild = {
-        on: jest.fn(),
-        kill: jest.fn(),
+        on: ex.fn(),
+        kill: ex.fn(),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
       await startCommand()
 
       expect(cp.spawn).toHaveBeenCalled()
-      const args = (cp.spawn as jest.Mock).mock.calls[0]
+      const args = mockSpawn.mock.calls[0].arguments
       expect(args[0]).toContain('node')
       expect(args[2].env.EXIS_ENTRY_FILE).toContain(path.normalize(entryPath))
     })
@@ -159,15 +176,15 @@ describe('CLI Commands', () => {
       writeTempFile(tmpDir, entryPath, 'console.log("ready")')
 
       const mockChild = {
-        on: jest.fn(),
-        kill: jest.fn(),
+        on: ex.fn(),
+        kill: ex.fn(),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
       await startCommand()
 
       expect(cp.spawn).toHaveBeenCalled()
-      const args = (cp.spawn as jest.Mock).mock.calls[0]
+      const args = mockSpawn.mock.calls[0].arguments
       expect(args[0]).toContain('node')
       expect(args[2].env.EXIS_ENTRY_FILE).toContain(path.normalize(entryPath))
     })
@@ -188,10 +205,10 @@ describe('CLI Commands', () => {
       writeTempFile(tmpDir, entryPath, 'console.log("dev")')
 
       const mockChild = {
-        on: jest.fn(),
-        kill: jest.fn(),
+        on: ex.fn(),
+        kill: ex.fn(),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
       try {
         await devCommand({ _disableWatch: true })
@@ -199,8 +216,8 @@ describe('CLI Commands', () => {
         if ((err as Error).message !== 'ProcessExited: 1') throw err
       }
 
-      if ((cp.spawn as jest.Mock).mock.calls.length > 0) {
-        const args = (cp.spawn as jest.Mock).mock.calls[0]
+      if (mockSpawn.mock.calls.length > 0) {
+        const args = mockSpawn.mock.calls[0].arguments
         const binPath = args[0]
         // ensure it's trying to run tsx or ts-node
         expect(binPath).toMatch(/node|tsx|ts-node/)
@@ -211,10 +228,10 @@ describe('CLI Commands', () => {
       writeTempFile(tmpDir, 'src/http/server.ts', 'console.log("dev")')
 
       const mockChild = {
-        on: jest.fn(),
-        kill: jest.fn(),
+        on: ex.fn(),
+        kill: ex.fn(),
       }
-      ;(cp.spawn as jest.Mock).mockReturnValue(mockChild)
+      mockSpawn.mockReturnValue(mockChild)
 
       try {
         await devCommand({ _disableWatch: true })

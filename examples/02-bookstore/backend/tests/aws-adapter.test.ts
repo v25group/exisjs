@@ -1,4 +1,4 @@
-import { test, describe, assert } from 'exisjs/testing'
+import { test, describe, expect } from 'exisjs/testing'
 import { exis } from 'exisjs'
 import { serverlessAws } from 'exisjs/adapters'
 
@@ -29,10 +29,10 @@ describe('AWS Lambda Adapter', () => {
     const result = await handler(mockEvent as any)
 
     // 5. Assert the API Gateway Result
-    assert.strictEqual(result.statusCode, 200)
+    expect(result.statusCode).toBe(200)
     
     // The AWS adapter encodes the body as base64 for API Gateway
     const decodedBody = Buffer.from(result.body, 'base64').toString('utf8')
-    assert.strictEqual(decodedBody, '{"message":"Hello from AWS Lambda!"}')
+    expect(decodedBody).toBe('{"message":"Hello from AWS Lambda!"}')
   })
 })

@@ -9,6 +9,20 @@ export interface ExisAppOptions extends ExisConfig {
 /**
  * Declaratively define an Exis application.
  * The CLI will handle initialization and listening automatically.
+ *
+ * Example:
+ *
+ *     import { exis } from 'exisjs';
+ *     import { rootRouter } from './router';
+ *
+ *     export default exis({
+ *       port: 3000,
+ *       routers: [rootRouter]
+ *     });
+ *
+ * @param {ExisAppOptions} [options] Application configuration and hooks
+ * @returns {App} The constructed Exis Application instance
+ * @public
  */
 export function defineApp(options?: ExisAppOptions): App {
   const app = new App(options)

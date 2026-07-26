@@ -13,7 +13,7 @@ import {
   getResponseBody,
   getResponseHeader,
 } from './helpers'
-
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
 describe('cors()', () => {
@@ -334,10 +334,10 @@ describe('validate()', () => {
 describe('requestLogger()', () => {
   it('logs requests on res.end()', () => {
     const mockLog = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      child: jest.fn().mockReturnThis(),
+      info: ex.fn(),
+      warn: ex.fn(),
+      error: ex.fn(),
+      child: ex.fn(() => mockLog),
     }
     const handler = requestLogger(mockLog as never)
 
@@ -357,10 +357,10 @@ describe('requestLogger()', () => {
 
   it('logs warnings for 4xx errors', () => {
     const mockLog = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      child: jest.fn().mockReturnThis(),
+      info: ex.fn(),
+      warn: ex.fn(),
+      error: ex.fn(),
+      child: ex.fn(() => mockLog),
     }
     const handler = requestLogger(mockLog as never)
     const req = createMockRequest()
@@ -373,10 +373,10 @@ describe('requestLogger()', () => {
 
   it('logs errors for 5xx errors', () => {
     const mockLog = {
-      info: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      child: jest.fn().mockReturnThis(),
+      info: ex.fn(),
+      warn: ex.fn(),
+      error: ex.fn(),
+      child: ex.fn(() => mockLog),
     }
     const handler = requestLogger(mockLog as never)
     const req = createMockRequest()
@@ -408,67 +408,76 @@ describe('serveStatic()', () => {
     cleanupTempDir(tmpDir)
   })
 
-  it('serves a file', (done) => {
-    const handler = serveStatic(tmpDir)
-    const req = createMockRequest({ method: 'GET', url: '/test.txt' })
-    const res = createMockResponse()
+  it('serves a file', async () => {
+    await new Promise<void>((resolve) => {
+      const handler = serveStatic(tmpDir)
+      const req = createMockRequest({ method: 'GET', url: '/test.txt' })
+      const res = createMockResponse()
 
-    // Stub stream method since createMockResponse doesn't implement it fully
-    res.sendStream = jest.fn((stream: any) => {
-      expect(getResponseHeader(res, 'content-type')).toBe('text/plain')
-      done()
-      return res
-    })
+      res.sendStream = ex.fn((stream: any) => {
+        expect(getResponseHeader(res, 'content-type')).toBe('text/plain')
+        resolve()
+        return res
+      })
 
-    handler(req, res, createMockNext())
-  })
-
-  it('ignores POST requests', (done) => {
-    const handler = serveStatic(tmpDir)
-    const req = createMockRequest({ method: 'POST', url: '/test.txt' })
-    const res = createMockResponse()
-
-    handler(req, res, () => {
-      done()
+      handler(req, res, createMockNext())
     })
   })
 
-  it('returns 404 or falls through for missing files', (done) => {
-    const handler = serveStatic(tmpDir)
-    const req = createMockRequest({ method: 'GET', url: '/missing.js' })
-    const res = createMockResponse()
+  it('ignores POST requests', async () => {
+    await new Promise<void>((resolve) => {
+      const handler = serveStatic(tmpDir)
+      const req = createMockRequest({ method: 'POST', url: '/test.txt' })
+      const res = createMockResponse()
 
-    handler(req, res, () => {
-      done()
+      handler(req, res, () => {
+        resolve()
+      })
     })
   })
 
-  it('protects against path traversal', (done) => {
-    const handler = serveStatic(tmpDir)
-    const req = createMockRequest({
-      method: 'GET',
-      url: '/../../../../etc/passwd',
-    })
-    const res = createMockResponse()
+  it('returns 404 or falls through for missing files', async () => {
+    await new Promise<void>((resolve) => {
+      const handler = serveStatic(tmpDir)
+      const req = createMockRequest({ method: 'GET', url: '/missing.js' })
+      const res = createMockResponse()
 
-    handler(req, res, () => {
-      done()
+      handler(req, res, () => {
+        resolve()
+      })
     })
   })
 
-  it('handles HEAD requests', (done) => {
-    const handler = serveStatic(tmpDir)
-    const req = createMockRequest({ method: 'HEAD', url: '/test.txt' })
-    const res = createMockResponse()
+  it('protects against path traversal', async () => {
+    await new Promise<void>((resolve) => {
+      const handler = serveStatic(tmpDir)
+      const req = createMockRequest({
+        method: 'GET',
+        url: '/../../../../etc/passwd',
+      })
+      const res = createMockResponse()
 
-    res.send = jest.fn(() => {
-      expect(res.statusCode).toBe(200)
-      expect(getResponseHeader(res, 'content-type')).toBe('text/plain')
-      done()
-      return res
+      handler(req, res, () => {
+        resolve()
+      })
     })
+  })
 
-    handler(req, res, createMockNext())
+  it('handles HEAD requests', async () => {
+    await new Promise<void>((resolve) => {
+      const handler = serveStatic(tmpDir)
+      const req = createMockRequest({ method: 'HEAD', url: '/test.txt' })
+      const res = createMockResponse()
+
+      res.send = ex.fn(() => {
+        expect(res.statusCode).toBe(200)
+        expect(getResponseHeader(res, 'content-type')).toBe('text/plain')
+        resolve()
+        return res
+      })
+
+      handler(req, res, createMockNext())
+    })
   })
 })
 
@@ -489,6 +498,7 @@ describe('validate() fallback', () => {
     const next = createMockNext()
 
     await handler(req, res, next)
-    expect(next).toHaveBeenCalledWith(expect.any(Error))
+    expect(next).toHaveBeenCalled()
+    expect(next.mock.calls[0].arguments[0]).toBeInstanceOf(Error)
   })
 })

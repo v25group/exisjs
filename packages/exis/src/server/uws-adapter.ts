@@ -53,6 +53,8 @@ export class UwsIncomingMessage {
   public complete = false
 
   private _listeners: Record<string, ((...args: any[]) => void)[]> = {}
+  private _bufferedData: Buffer[] = []
+  private _hasEnded = false
 
   constructor(req: any, res: any) {
     // Copy everything synchronously — uWS.HttpRequest is invalidated after return
@@ -77,6 +79,17 @@ export class UwsIncomingMessage {
   on(event: string, listener: (...args: any[]) => void): this {
     if (!this._listeners[event]) this._listeners[event] = []
     this._listeners[event].push(listener)
+
+    if (event === 'data' && this._bufferedData.length > 0) {
+      for (const chunk of this._bufferedData) {
+        listener(chunk)
+      }
+      this._bufferedData = []
+    }
+    if (event === 'end' && this._hasEnded) {
+      listener()
+    }
+
     return this
   }
 
@@ -108,7 +121,11 @@ export class UwsIncomingMessage {
 
   emit(event: string, ...args: any[]): boolean {
     const listeners = this._listeners[event]
-    if (!listeners || listeners.length === 0) return false
+    if (!listeners || listeners.length === 0) {
+      if (event === 'data') this._bufferedData.push(args[0])
+      if (event === 'end') this._hasEnded = true
+      return false
+    }
     for (const fn of listeners) fn(...args)
     return true
   }
@@ -160,8 +177,34 @@ export class UwsServerResponse {
     this._headers.delete(name.toLowerCase())
   }
 
-  end(data?: any): void {
-    if (this._aborted || this.headersSent) return
+  write(chunk: string | Buffer): boolean {
+    if (this._aborted) return false
+
+    let result = false
+    this._uwsRes.cork(() => {
+      if (!this.headersSent) {
+        this.headersSent = true
+        this._uwsRes.writeStatus(String(this.statusCode))
+        for (const [key, value] of this._headers) {
+          this._uwsRes.writeHeader(key, value)
+        }
+      }
+      result = this._uwsRes.write(chunk)
+    })
+
+    return result
+  }
+
+  end(data?: any, callback?: () => void): void {
+    if (typeof data === 'function') {
+      callback = data
+      data = undefined
+    }
+
+    if (this._aborted || this.headersSent) {
+      if (callback) callback()
+      return
+    }
     this.headersSent = true
 
     this._uwsRes.cork(() => {
@@ -170,6 +213,9 @@ export class UwsServerResponse {
 
       // Write all headers
       for (const [key, value] of this._headers) {
+        if (key === 'content-length' && data !== undefined && data !== null) {
+          continue // uWebSockets automatically adds Content-Length for data
+        }
         this._uwsRes.writeHeader(key, value)
       }
 
@@ -188,6 +234,7 @@ export class UwsServerResponse {
     })
 
     this.emit('finish')
+    if (callback) callback()
   }
 
   // Minimal EventEmitter-like interface
@@ -347,11 +394,16 @@ export function createUwsApp(
     if (contentLength && parseInt(contentLength, 10) > 0) {
       const chunks: Buffer[] = []
       uwsRes.onData((chunk: ArrayBuffer, isLast: boolean) => {
-        chunks.push(Buffer.from(chunk))
+        // We MUST copy the ArrayBuffer because uWS frees the memory immediately
+        const copy = Buffer.alloc(chunk.byteLength)
+        Buffer.from(chunk).copy(copy)
+        chunks.push(copy)
         if (isLast) {
           shimReq.complete = true
-          shimReq.emit('data', Buffer.concat(chunks))
-          shimReq.emit('end')
+          setImmediate(() => {
+            shimReq.emit('data', Buffer.concat(chunks))
+            shimReq.emit('end')
+          })
         }
       })
     } else {

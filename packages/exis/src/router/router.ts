@@ -88,13 +88,19 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           } else {
             body = await req.json()
           }
-          if (typeof bodyValidator.transform === 'function') {
-            req.body = await bodyValidator.transform(body, { type: 'body', data: body })
-          } else if (typeof bodyValidator === 'function' && bodyValidator.prototype?.transform) {
+          if (typeof bodyValidator.parse === 'function') {
+            req.body = bodyValidator.parse(body)
+          } else if (typeof bodyValidator.transform === 'function') {
+            req.body = await bodyValidator.transform(body, {
+              type: 'body',
+              data: body,
+            })
+          } else if (
+            typeof bodyValidator === 'function' &&
+            bodyValidator.prototype?.transform
+          ) {
             const pipe = new bodyValidator()
             req.body = await pipe.transform(body, { type: 'body', data: body })
-          } else if (typeof bodyValidator.parse === 'function') {
-            req.body = bodyValidator.parse(body)
           }
           next()
         } catch (err) {
@@ -107,13 +113,25 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       const queryValidator = schema.query
       actualHandlers.unshift(async (req, res, next) => {
         try {
-          if (typeof queryValidator.transform === 'function') {
-            req.query = await queryValidator.transform(req.query, { type: 'query', data: req.query }) as any
-          } else if (typeof queryValidator === 'function' && queryValidator.prototype?.transform) {
+          if (typeof queryValidator.parse === 'function') {
+            req.query = queryValidator.parse(req.query) as Record<
+              string,
+              string
+            >
+          } else if (typeof queryValidator.transform === 'function') {
+            req.query = (await queryValidator.transform(req.query, {
+              type: 'query',
+              data: req.query,
+            })) as any
+          } else if (
+            typeof queryValidator === 'function' &&
+            queryValidator.prototype?.transform
+          ) {
             const pipe = new queryValidator()
-            req.query = await pipe.transform(req.query, { type: 'query', data: req.query }) as any
-          } else if (typeof queryValidator.parse === 'function') {
-            req.query = queryValidator.parse(req.query) as Record<string, string>
+            req.query = (await pipe.transform(req.query, {
+              type: 'query',
+              data: req.query,
+            })) as any
           }
           next()
         } catch (err) {
@@ -128,13 +146,25 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       // So we push it (not unshift) to run after route matching populates params
       actualHandlers.unshift(async (req, res, next) => {
         try {
-          if (typeof paramsValidator.transform === 'function') {
-            req.params = await paramsValidator.transform(req.params, { type: 'param', data: req.params }) as any
-          } else if (typeof paramsValidator === 'function' && paramsValidator.prototype?.transform) {
+          if (typeof paramsValidator.parse === 'function') {
+            req.params = paramsValidator.parse(req.params) as Record<
+              string,
+              string
+            >
+          } else if (typeof paramsValidator.transform === 'function') {
+            req.params = (await paramsValidator.transform(req.params, {
+              type: 'param',
+              data: req.params,
+            })) as any
+          } else if (
+            typeof paramsValidator === 'function' &&
+            paramsValidator.prototype?.transform
+          ) {
             const pipe = new paramsValidator()
-            req.params = await pipe.transform(req.params, { type: 'param', data: req.params }) as any
-          } else if (typeof paramsValidator.parse === 'function') {
-            req.params = paramsValidator.parse(req.params) as Record<string, string>
+            req.params = (await pipe.transform(req.params, {
+              type: 'param',
+              data: req.params,
+            })) as any
           }
           next()
         } catch (err) {
@@ -166,7 +196,10 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
       if (isZodLike) {
         const parser = schema.response.parse.bind(schema.response)
-        routeInfo._serializer = (data: unknown) => stringifier(parser(data))
+        routeInfo._serializer = (data: unknown) => {
+          console.log('[Router] _serializer received data:', data)
+          return stringifier(parser(data))
+        }
       } else if (stringifier !== JSON.stringify) {
         routeInfo._serializer = stringifier
       }
@@ -376,9 +409,21 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     }
 
     if (fallthrough) {
-      runHandlers(matched.route.handlers, req, res, fallthrough, matched.route.schema?.filters)
+      runHandlers(
+        matched.route.handlers,
+        req,
+        res,
+        fallthrough,
+        matched.route.schema?.filters
+      )
     } else {
-      runHandlers(matched.route.handlers, req, res, undefined, matched.route.schema?.filters)
+      runHandlers(
+        matched.route.handlers,
+        req,
+        res,
+        undefined,
+        matched.route.schema?.filters
+      )
     }
   }
 
@@ -423,7 +468,10 @@ export function runHandlers(
               const filterInstance = new filter()
               await filterInstance.catch(err, { req, res })
               return
-            } else if (typeof filter === 'object' && typeof filter.catch === 'function') {
+            } else if (
+              typeof filter === 'object' &&
+              typeof filter.catch === 'function'
+            ) {
               await filter.catch(err, { req, res })
               return
             }

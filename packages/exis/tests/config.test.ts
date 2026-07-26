@@ -1,5 +1,6 @@
 import { defineConfig, mergeConfig, defaultConfig } from '../src/utils/config'
 import type { ExisConfig } from '../src/types'
+import { describe, it, expect } from '../src/testing'
 
 // ─── defineConfig ─────────────────────────────────────────────────────────────
 

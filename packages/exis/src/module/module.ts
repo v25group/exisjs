@@ -14,6 +14,22 @@ export interface ModuleOptions {
 /**
  * Defines a functional standalone Module.
  * Modules elegantly group dependencies (providers), imports, and routes into a single encapsulated plugin.
+ *
+ * Example:
+ *
+ *     export const userModule = defineModule({
+ *       name: 'UserModule',
+ *       providers: [
+ *         ['UserService', { useClass: UserService }]
+ *       ],
+ *       routes(app) {
+ *         app.router.use('/users', userController);
+ *       }
+ *     });
+ *
+ * @param {ModuleOptions} options Module configuration options
+ * @return {ExisPlugin} The built Exis module
+ * @public
  */
 export function defineModule(options: ModuleOptions): ExisPlugin {
   return {

@@ -1,5 +1,6 @@
 import { App } from '../src/server/app'
 import { inject } from '../src/di/inject'
+import { describe, it, expect } from '../src/testing'
 
 describe('Dependency Injection', () => {
   it('should provide and resolve a value provider globally', () => {

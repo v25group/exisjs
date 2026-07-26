@@ -1,4 +1,4 @@
-import { test, describe, assert, createTestContext } from 'exisjs/testing'
+import { test, describe, expect, createTestContext } from 'exisjs/testing'
 import { User } from '../src/models/User'
 import app from '../src/http/server'
 
@@ -10,6 +10,6 @@ describe('User Model Native Tests', () => {
     const users = await User.find().limit(1)
     
     // Assert that the array is returned (even if empty)
-    assert(Array.isArray(users), 'User.find() should return an array')
+    expect(Array.isArray(users)).toBeTruthy()
   })
 })

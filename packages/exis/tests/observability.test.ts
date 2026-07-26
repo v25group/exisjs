@@ -7,6 +7,7 @@ import {
   createMockNext,
   getResponseBody,
 } from '../src/testing/mocks'
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 
 describe('Observability', () => {
   describe('Health Check Middleware', () => {
@@ -89,10 +90,10 @@ describe('Observability', () => {
 
   describe('Metrics Middleware', () => {
     it('calls start and end trackers correctly', () => {
-      const startTracker = jest.fn()
-      const endTracker = jest.fn()
+      const startTracker = ex.fn()
+      const endTracker = ex.fn()
       const adapter = {
-        onRequestStart: jest.fn().mockReturnValue(startTracker),
+        onRequestStart: ex.fn(() => startTracker),
         onRequestEnd: endTracker,
       }
 
@@ -116,29 +117,28 @@ describe('Observability', () => {
       // Complete request
       res.status(201).end()
 
-      expect(startTracker).toHaveBeenCalledWith(
-        expect.objectContaining({ statusCode: 201 })
-      )
-      expect(endTracker).toHaveBeenCalledWith(
-        expect.objectContaining({
-          method: 'GET',
-          path: '/users/:id',
-          statusCode: 201,
-        })
-      )
+      expect(startTracker).toHaveBeenCalled()
+      expect(startTracker.mock.calls[0].arguments[0].statusCode).toBe(201)
+
+      expect(endTracker).toHaveBeenCalled()
+      expect(endTracker.mock.calls[0].arguments[0].method).toBe('GET')
+      expect(endTracker.mock.calls[0].arguments[0].path).toBe('/users/:id')
+      expect(endTracker.mock.calls[0].arguments[0].statusCode).toBe(201)
     })
   })
 
   describe('Tracing Middleware (OpenTelemetry)', () => {
     it('starts and ends a span, setting status on success', () => {
       const mockSpan = {
-        setAttribute: jest.fn(),
-        setStatus: jest.fn(),
-        recordException: jest.fn(),
-        end: jest.fn(),
+        setAttribute: ex.fn(),
+        setStatus: ex.fn(),
+        recordException: ex.fn(),
+        end: ex.fn(),
       }
       const adapter = {
-        startActiveSpan: jest.fn((name, meta, cb) => cb(mockSpan)),
+        startActiveSpan: ex.fn((name: string, meta: any, cb: any) =>
+          cb(mockSpan)
+        ),
       }
 
       const handler = tracing(adapter)
@@ -148,10 +148,18 @@ describe('Observability', () => {
 
       handler(req, res, next)
 
-      expect(adapter.startActiveSpan).toHaveBeenCalledWith(
-        'GET /orders',
-        expect.objectContaining({ method: 'GET', path: '/orders' }),
-        expect.any(Function)
+      expect(adapter.startActiveSpan).toHaveBeenCalled()
+      expect(adapter.startActiveSpan.mock.calls[0].arguments[0]).toBe(
+        'GET /orders'
+      )
+      expect(adapter.startActiveSpan.mock.calls[0].arguments[1].method).toBe(
+        'GET'
+      )
+      expect(adapter.startActiveSpan.mock.calls[0].arguments[1].path).toBe(
+        '/orders'
+      )
+      expect(typeof adapter.startActiveSpan.mock.calls[0].arguments[2]).toBe(
+        'function'
       )
 
       res.status(200).end()
@@ -166,13 +174,15 @@ describe('Observability', () => {
 
     it('sets ERROR status code on 500 responses', () => {
       const mockSpan = {
-        setAttribute: jest.fn(),
-        setStatus: jest.fn(),
-        recordException: jest.fn(),
-        end: jest.fn(),
+        setAttribute: ex.fn(),
+        setStatus: ex.fn(),
+        recordException: ex.fn(),
+        end: ex.fn(),
       }
       const adapter = {
-        startActiveSpan: jest.fn((name, meta, cb) => cb(mockSpan)),
+        startActiveSpan: ex.fn((name: string, meta: any, cb: any) =>
+          cb(mockSpan)
+        ),
       }
 
       const handler = tracing(adapter)

@@ -49,6 +49,8 @@ const c = {
 }
 
 function resolveWorkerCount(config?: ClusterConfig): number {
+  if (process.env.__EXIS_DEV_SERVER === '1') return 1
+
   const raw = config?.workers ?? 'auto'
 
   if (raw === false || raw === 0) return 1
@@ -100,26 +102,12 @@ function primaryProcess(workerCount: number, config?: ClusterConfig) {
   // Track respawn timestamps for crash-loop detection
   const respawnTimestamps: number[] = []
 
-  console.log(`\n${c.primary}${c.bold}  ExisJS Cluster${c.reset}`)
-  console.log(`${c.dim}  ───────────────────────────────────────${c.reset}`)
-  console.log(
-    `  ${c.cyan}Primary${c.reset}   ${c.dim}PID ${process.pid}${c.reset}`
-  )
-  console.log(
-    `  ${c.cyan}Workers${c.reset}   ${c.bold}${workerCount}${c.reset} ${c.dim}(${os.cpus().length} cores available)${c.reset}`
-  )
-  console.log(`  ${c.cyan}Platform${c.reset}  ${os.platform()} ${os.arch()}`)
-  console.log(`${c.dim}  ───────────────────────────────────────${c.reset}\n`)
+  process.env.__EXIS_CLUSTER_WORKERS = String(workerCount)
 
   // Fork workers
   for (let i = 0; i < workerCount; i++) {
-    const worker = cluster.fork()
-    console.log(
-      `  ${c.green}✓${c.reset} Worker ${c.bold}#${i + 1}${c.reset} started ${c.dim}(PID ${worker.process.pid})${c.reset}`
-    )
+    cluster.fork()
   }
-
-  console.log('')
 
   let isShuttingDown = false
 

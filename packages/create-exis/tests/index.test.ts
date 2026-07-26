@@ -1,44 +1,41 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { exec } from 'node:child_process'
+import {
+  test as it,
+  describe,
+  expect,
+  ex,
+  beforeAll,
+  afterAll,
+  beforeEach,
+} from 'exisjs/testing'
+import Module from 'node:module'
 
-jest.mock('node:child_process', () => ({
-  exec: jest.fn((cmd, optionsOrCallback, cb) => {
-    const callback =
-      typeof optionsOrCallback === 'function' ? optionsOrCallback : cb
-    if (callback) callback(null, { stdout: '', stderr: '' })
-  }),
-  spawnSync: jest.fn(() => ({ status: 0 })),
-}))
-
-jest.mock('prompts', () => {
-  return jest.fn().mockResolvedValue({
-    typescript: true,
-    eslint: true,
-    srcDir: true,
-    customAlias: false,
-    alias: '@/*',
-  })
-})
-
-jest.mock(
-  'ora',
-  () => {
-    return jest.fn().mockReturnValue({
-      start: jest.fn().mockReturnThis(),
-      succeed: jest.fn().mockReturnThis(),
-      fail: jest.fn().mockReturnThis(),
-    })
+const mockModules: Record<string, any> = {
+  'node:child_process': {
+    exec: ex.fn((cmd: string, optionsOrCallback: any, cb: any) => {
+      const callback =
+        typeof optionsOrCallback === 'function' ? optionsOrCallback : cb
+      if (callback) callback(null, { stdout: '', stderr: '' })
+    }),
+    spawnSync: ex.fn(() => ({ status: 0 })),
   },
-  { virtual: true }
-)
+}
+
+const originalLoad = (Module as any)._load
+;(Module as any)._load = function (...args: any[]) {
+  const request = args[0]
+  if (mockModules[request]) {
+    return mockModules[request]
+  }
+  return originalLoad.apply(this, args)
+}
 
 describe('create-exis scaffolding', () => {
   let tmpDir: string
   let originalCwd: () => string
-  let mockExit: jest.SpyInstance
-  let mockLog: jest.SpyInstance
-  let mockError: jest.SpyInstance
+  let mockExit: any
 
   beforeAll(() => {
     tmpDir = path.join(__dirname, '.tmp-create-exis-' + Date.now())
@@ -46,9 +43,9 @@ describe('create-exis scaffolding', () => {
     originalCwd = process.cwd
     process.cwd = () => tmpDir
 
-    mockExit = jest.spyOn(process, 'exit').mockImplementation((code) => {
-      // Just record the call
-      return undefined as never
+    mockExit = ex.spyOn(process, 'exit')
+    mockExit.mockImplementation((code: number) => {
+      throw new Error(`ProcessExited: ${code}`)
     })
   })
 
@@ -58,19 +55,23 @@ describe('create-exis scaffolding', () => {
     if (fs.existsSync(tmpDir)) {
       fs.rmSync(tmpDir, { recursive: true, force: true })
     }
+    // Restore loader
+    ;(Module as any)._load = originalLoad
   })
 
   beforeEach(() => {
-    jest.clearAllMocks()
-    process.argv = ['node', 'index.js', 'my-test-app']
+    ex.clearAllMocks()
+    process.argv = ['node', 'index.js', 'my-test-app', '-y']
   })
 
   it('scaffolds a new project with srcDir and eslint enabled', async () => {
     try {
       await import('../src/index')
-    } catch (err) {
-      console.error('IMPORT ERROR:', err)
-      throw err
+    } catch (err: any) {
+      if (err.message !== 'ProcessExited: 0') {
+        console.error('IMPORT ERROR:', err)
+        throw err
+      }
     }
 
     // Give promises time to settle

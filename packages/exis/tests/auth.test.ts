@@ -5,6 +5,7 @@ import { MemorySessionStore, session } from '../src/auth/session'
 import { App } from '../src/server/app'
 import request from 'supertest'
 import type { Request, Response } from '../src/types'
+import { describe, expect, it } from '../src/testing'
 
 describe('Auth Module', () => {
   describe('Password Hashing (Native)', () => {

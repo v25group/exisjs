@@ -99,6 +99,7 @@ program
   .command('test [files...]')
   .description('Run the native test suite (node:test)')
   .option('--watch', 'Watch for file changes and re-run tests')
+  .option('-u, --update', 'Update test snapshots')
   .option('-e, --entry <file>', 'Custom entry file path')
   .action(async (files, options) => {
     const { testCommand } = await import('./commands/test')

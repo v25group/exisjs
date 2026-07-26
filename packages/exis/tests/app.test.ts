@@ -1,6 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as http from 'node:http'
+import { describe, it, expect, beforeAll, afterAll, ex } from '../src/testing'
 import { App } from '../src/server/app'
 import { writeTempFile, cleanupTempDir } from './helpers'
 
@@ -214,8 +215,8 @@ describe('App Lifecycle', () => {
     const server = app.listen(0)
     await new Promise<void>((r) => server.on('listening', r))
 
-    const hook1 = jest.fn()
-    const hook2 = jest.fn(async () => {
+    const hook1 = ex.fn()
+    const hook2 = ex.fn(async () => {
       await new Promise((r) => setTimeout(r, 10))
     })
 
@@ -262,7 +263,7 @@ describe('App Lifecycle', () => {
     const server = app.listen(0)
     await new Promise<void>((r) => server.on('listening', r))
 
-    const closeListener = jest.fn()
+    const closeListener = ex.fn()
     server.on('close', closeListener)
 
     await app.close()

@@ -156,6 +156,8 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   const ms = Date.now() - start
 
   console.log(`\n${c.green}✓ built in ${ms}ms${c.reset}\n`)
+
+  process.exit(0)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

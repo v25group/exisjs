@@ -1,9 +1,17 @@
 import { createClient } from '../src/index'
+import {
+  test,
+  describe,
+  expect,
+  ex,
+  beforeEach,
+  afterEach,
+} from 'exisjs/testing'
 
 describe('tRPC-Style Client', () => {
   beforeEach(() => {
     // Mock the global fetch
-    global.fetch = jest.fn(async function (url: any, options?: any) {
+    global.fetch = ex.fn(async function (url: any, options?: any) {
       let body: any = null
 
       if (options?.body && typeof options.body === 'string') {
@@ -33,7 +41,8 @@ describe('tRPC-Style Client', () => {
   })
 
   afterEach(() => {
-    jest.restoreAllMocks()
+    // Restore fetch if needed
+    delete (global as any).fetch
   })
 
   type TestRouter = {
@@ -42,7 +51,7 @@ describe('tRPC-Style Client', () => {
     '/api/search': { get: any }
   }
 
-  it('translates object paths to fetch calls perfectly', async () => {
+  test('translates object paths to fetch calls perfectly', async () => {
     const client = createClient<TestRouter>({
       baseUrl: 'http://localhost:3000',
     })
@@ -55,7 +64,7 @@ describe('tRPC-Style Client', () => {
     expect(result.body).toBe(null)
   })
 
-  it('handles post requests with payloads', async () => {
+  test('handles post requests with payloads', async () => {
     const client = createClient<TestRouter>({
       baseUrl: 'http://localhost:3000',
     })
@@ -75,7 +84,7 @@ describe('tRPC-Style Client', () => {
     expect(hasContentType).toBe(true)
   })
 
-  it('merges global options with request options', async () => {
+  test('merges global options with request options', async () => {
     const client = createClient<TestRouter>({
       baseUrl: 'http://localhost:3000',
       headers: { Authorization: 'Bearer 123' },
@@ -100,8 +109,8 @@ describe('tRPC-Style Client', () => {
     expect(hasCustom).toBe(true)
   })
 
-  it('throws ExisClientError on non-200 responses', async () => {
-    const customFetch = jest.fn().mockResolvedValue({
+  test('throws ExisClientError on non-200 responses', async () => {
+    const customFetch = ex.fn(async () => ({
       ok: false,
       status: 400,
       headers: new Headers({ 'content-type': 'application/json' }),
@@ -109,7 +118,7 @@ describe('tRPC-Style Client', () => {
       clone: function () {
         return this
       },
-    })
+    }))
 
     const client = createClient<TestRouter>({
       baseUrl: 'http://localhost:3000',
@@ -129,11 +138,11 @@ describe('tRPC-Style Client', () => {
     }
   })
 
-  it('executes lifecycle interceptors correctly', async () => {
-    const onRequest = jest.fn()
-    const onResponse = jest.fn()
+  test('executes lifecycle interceptors correctly', async () => {
+    const onRequest = ex.fn()
+    const onResponse = ex.fn()
 
-    const customFetch = jest.fn().mockResolvedValue({
+    const customFetch = ex.fn(async () => ({
       ok: true,
       status: 200,
       headers: new Headers({ 'content-type': 'application/json' }),
@@ -141,7 +150,7 @@ describe('tRPC-Style Client', () => {
       clone: function () {
         return this
       },
-    })
+    }))
 
     const client = createClient<TestRouter>({
       baseUrl: 'http://localhost:3000',
@@ -153,12 +162,17 @@ describe('tRPC-Style Client', () => {
     await client.api.users.get()
 
     expect(onRequest).toHaveBeenCalledTimes(1)
-    expect(onRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ method: 'GET' }),
+
+    // Manual assertions for our node:test polyfill limitations with expect.objectContaining
+    const reqArg = onRequest.mock.calls[0].arguments[0]
+    expect(reqArg.method).toBe('GET')
+    expect(onRequest.mock.calls[0].arguments[1]).toBe(
       'http://localhost:3000/api/users'
     )
 
     expect(onResponse).toHaveBeenCalledTimes(1)
-    expect(onResponse.mock.calls[0][1]).toBe('http://localhost:3000/api/users')
+    expect(onResponse.mock.calls[0].arguments[1]).toBe(
+      'http://localhost:3000/api/users'
+    )
   })
 })

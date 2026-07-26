@@ -112,12 +112,39 @@ export type RouteDefinition<B = any, Q = any, P = any> = RouteConfig<
  * Defines a new HTTP route with schema validation and a supercharged execution context.
  */
 export const route = {
-  /** Defines a GET route. */
+  /**
+   * Defines a GET route.
+   *
+   * Example:
+   *
+   *     route.get('/users', {
+   *       query: { search: v.string() },
+   *       handle({ query }) { return { users: [] }; }
+   *     })
+   *
+   * @param {string} path
+   * @param {RouteConfig} config
+   * @public
+   */
   get: <B = any, Q = any, P = any>(
     path: string,
     config: RouteConfig<B, Q, P>
   ): RouteDefinition<B, Q, P> => ({ method: 'get', path, ...config }),
-  /** Defines a POST route. */
+
+  /**
+   * Defines a POST route.
+   *
+   * Example:
+   *
+   *     route.post('/users', {
+   *       body: { name: v.string() },
+   *       handle({ body }) { return { success: true }; }
+   *     })
+   *
+   * @param {string} path
+   * @param {RouteConfig} config
+   * @public
+   */
   post: <B = any, Q = any, P = any>(
     path: string,
     config: RouteConfig<B, Q, P>

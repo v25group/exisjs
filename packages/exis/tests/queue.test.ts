@@ -1,6 +1,7 @@
 import { App } from '../src/server/app'
 import RedisMock from 'ioredis-mock'
 import { v } from '../src/utils/validator'
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 
 const drivers = ['memory', 'redis'] as const
 
@@ -18,7 +19,7 @@ describe('Exis Native Queue', () => {
           },
         })
 
-        const payloadProcessed = jest.fn()
+        const payloadProcessed = ex.fn()
 
         // define job
         app.queue(

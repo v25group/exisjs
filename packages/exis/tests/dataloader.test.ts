@@ -2,6 +2,7 @@ import { App } from '../src/server/app'
 import { createServer } from 'node:http'
 import { ExisRequest } from '../src/server/request'
 import { ExisResponse } from '../src/server/response'
+import { describe, expect, it, ex } from '../src/testing'
 
 describe('Native Dataloader', () => {
   it('batches concurrent requests for the same key and different keys into a single batch function call', async () => {
@@ -144,7 +145,7 @@ describe('Native Dataloader', () => {
     let batchCallCount = 0
     const app = new App().dataloader<{ id: number }, { id: number }, string>(
       'users',
-      async (keys: readonly {id: number}[]) => {
+      async (keys: readonly { id: number }[]) => {
         batchCallCount++
         return keys.map((key) => ({ id: key.id }))
       },

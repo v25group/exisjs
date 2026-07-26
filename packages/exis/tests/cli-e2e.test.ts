@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
-
+import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 const execAsync = promisify(exec)
 
 describe('Exis CLI E2E', () => {
@@ -39,7 +39,7 @@ describe('Exis CLI E2E', () => {
   it('prints error and exits with non-zero when run with unknown command', async () => {
     try {
       await execAsync(`node "${cliPath}" unknown-command`, { cwd: tmpDir })
-      fail('Should have thrown an error')
+      expect.fail('Should have thrown an error')
     } catch (err: any) {
       expect(err.code).not.toBe(0)
       expect(err.stderr).toContain("error: unknown command 'unknown-command'")

@@ -37,7 +37,7 @@ export default async (phase: string, { defaultConfig }: any) => {
       credentials: true,
     },
     helmet: { enabled: true },
-    compression: true,
+    compression: false,
 
     /**
      * Advanced Tuning

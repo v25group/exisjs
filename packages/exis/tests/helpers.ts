@@ -1,8 +1,12 @@
 export * from '../src/testing/mocks'
 import { Logger } from '../src/types'
+import { ex } from '../src/testing'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import * as os from 'node:os'
 
 export function createMockLogger(): Logger {
-  const noop = jest.fn()
+  const noop = ex.fn()
   return {
     fatal: noop,
     error: noop,
@@ -12,17 +16,13 @@ export function createMockLogger(): Logger {
     trace: noop,
     silent: noop,
     level: 'silent',
-    child: jest.fn(() => createMockLogger()),
+    child: ex.fn(() => createMockLogger()),
   }
 }
 
 export function createMockNext() {
-  return jest.fn()
+  return ex.fn()
 }
-
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import * as os from 'node:os'
 
 export function createTempDir(prefix = 'exis-test-'): string {
   const tmpDir = os.tmpdir()

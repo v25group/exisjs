@@ -1,117 +1,271 @@
 /**
- * Custom Jest-like Test Reporter for ExisJS
+ * Custom Jest/Vitest-like Test Reporter for ExisJS
+ *
+ * Consumes the async iterable of TestEvent objects emitted by Node's
+ * built-in test runner (node:test) and renders Jest-style terminal output.
  */
 
-const GREEN_BG = '\x1b[42m\x1b[30m'
-const RED_BG = '\x1b[41m\x1b[30m'
-const GREEN = '\x1b[32m'
-const RED = '\x1b[31m'
-const DIM = '\x1b[90m'
-const BOLD = '\x1b[1m'
-const RESET = '\x1b[0m'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+// Node's test runner doesn't ship reporter event types, so we declare the
+// shape we actually rely on. Keep this in sync with node:test's TestEvent.
+
+interface TestEventDetails {
+  duration_ms?: number
+  type?: 'suite' | 'test'
+  error?: {
+    message?: string
+    stack?: string
+    cause?: { message?: string; stack?: string }
+    // node:assert failures carry these for diffing
+    expected?: unknown
+    actual?: unknown
+  }
+}
+
+interface TestEventData {
+  name: string
+  nesting: number
+  testNumber?: number
+  file?: string
+  line?: number
+  column?: number
+  details?: TestEventDetails
+  skip?: string | boolean
+  todo?: string | boolean
+}
+
+interface TestEvent {
+  type:
+    | 'test:pass'
+    | 'test:fail'
+    | 'test:skip'
+    | 'test:todo'
+    | 'test:diagnostic'
+    | 'test:stdout'
+    | 'test:stderr'
+    | 'test:start'
+  data: TestEventData
+}
+
+interface FailedTestRecord {
+  file: string
+  fullName: string
+  errMsg: string
+  stack: string
+}
+
+interface FileData {
+  output: string[]
+  failed: boolean
+  passedCount: number
+  failedCount: number
+  skippedCount: number
+}
+
+// ─── Colors (respects NO_COLOR / non-TTY) ──────────────────────────────────
+
+const supportsColor = !process.env.NO_COLOR && (process.stdout.isTTY ?? false)
+
+function paint(code: string) {
+  return supportsColor ? code : ''
+}
+
+const GREEN_BG = paint('\x1b[42m\x1b[30m')
+const RED_BG = paint('\x1b[41m\x1b[30m')
+const GREEN = paint('\x1b[32m')
+const RED = paint('\x1b[31m')
+const YELLOW = paint('\x1b[33m')
+const DIM = paint('\x1b[90m')
+const BOLD = paint('\x1b[1m')
+const RESET = paint('\x1b[0m')
+
 const CHECK = '√'
 const CROSS = '×'
+const SKIP = '○'
+const TODO = '‼'
 
-module.exports = async function* customReporter(source: AsyncIterable<any>) {
+const SLOW_TEST_MS = 100 // tests slower than this get a yellow duration flag
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function relFile(file: string): string {
+  const cleaned = file.startsWith('file://') ? fileURLToPath(file) : file
+  return path.relative(process.cwd(), cleaned).split(path.sep).join('/')
+}
+
+/** Filters a stack trace down to frames that point at user code. */
+function cleanStack(stack: string | undefined): string {
+  if (!stack) return ''
+  return stack
+    .split('\n')
+    .filter((line) => !/node:internal|node_modules[\\/]/.test(line))
+    .slice(0, 6) // cap depth so one failure doesn't dominate the terminal
+    .join('\n')
+}
+
+function formatDuration(ms: number | undefined): string {
+  if (ms === undefined) return ''
+  const rounded = Math.round(ms)
+  const color = rounded > SLOW_TEST_MS ? YELLOW : DIM
+  return ` ${color}(${rounded} ms)${RESET}`
+}
+
+// ─── Reporter ───────────────────────────────────────────────────────────────
+
+module.exports = async function* customReporter(
+  source: AsyncIterable<TestEvent>
+): AsyncGenerator<string> {
   let passedTests = 0
   let failedTests = 0
+  let skippedTests = 0
   let totalTests = 0
   let passedSuites = 0
   let failedSuites = 0
   const startTime = Date.now()
+  const failures: FailedTestRecord[] = []
 
-  const filesMap = new Map<string, { output: string[]; failed: boolean }>()
-
-  const getFileData = (file: string) => {
-    if (!filesMap.has(file)) {
-      filesMap.set(file, { output: [], failed: false })
+  const filesMap = new Map<string, FileData>()
+  const getFileData = (file: string): FileData => {
+    let fd = filesMap.get(file)
+    if (!fd) {
+      fd = {
+        output: [],
+        failed: false,
+        passedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+      }
+      filesMap.set(file, fd)
     }
-    return filesMap.get(file)!
+    return fd
   }
 
-  for await (const event of source) {
-    if (!event.data) continue
-    const { type, data } = event
-    const { name, nesting, duration_ms, details, file } = data
+  try {
+    for await (const event of source) {
+      const { type, data } = event
+      if (!data?.file) continue
+      const { name, nesting, details, file, skip, todo } = data
+      const fileData = getFileData(file)
+      const isSuite = details?.type === 'suite'
+      const indent = '  '.repeat(Math.max(nesting, 0))
 
-    if (!file) continue
-    const fileData = getFileData(file)
-
-    if (type === 'test:pass' || type === 'test:fail') {
-      // nesting 0 is the entire file suite completing
-      if (nesting === 0) {
-        const relPath = file.replace(process.cwd(), '').replace(/^\\|\//, '')
+      // ─── File-level suite completion (nesting 0) ─────────────────────────
+      if (nesting === 0 && (type === 'test:pass' || type === 'test:fail')) {
+        const relPath = relFile(file)
         const badge = fileData.failed
           ? `${RED_BG}${BOLD} FAIL ${RESET}`
           : `${GREEN_BG}${BOLD} PASS ${RESET}`
 
-        yield `\n ${badge} ${DIM}Exis Framework${RESET} ${relPath}\n`
-        for (const line of fileData.output) {
-          yield line
-        }
+        yield `\n ${badge} ${DIM}exis${RESET} ${relPath}\n`
+        for (const line of fileData.output) yield line
 
-        if (fileData.failed) {
-          failedSuites++
-        } else {
-          passedSuites++
-        }
+        if (fileData.failed) failedSuites++
+        else passedSuites++
         continue
       }
 
-      const isTest = duration_ms !== undefined || name.includes('should')
+      // ─── Skipped / todo tests ─────────────────────────────────────────────
+      if (type === 'test:skip' || skip) {
+        fileData.output.push(
+          `${indent} ${DIM}${SKIP} ${name} (skipped)${RESET}\n`
+        )
+        skippedTests++
+        totalTests++
+        continue
+      }
 
+      if (type === 'test:todo' || todo) {
+        fileData.output.push(
+          `${indent} ${YELLOW}${TODO} ${name} (todo)${RESET}\n`
+        )
+        skippedTests++
+        totalTests++
+        continue
+      }
+
+      // ─── Suite headers (describe blocks) ──────────────────────────────────
+      if (isSuite) {
+        if (type === 'test:fail') fileData.failed = true
+        fileData.output.push(`${indent} ${BOLD}${name}${RESET}\n`)
+        continue
+      }
+
+      // ─── Individual tests ──────────────────────────────────────────────────
       if (type === 'test:pass') {
-        if (!isTest) {
-          fileData.output.push(
-            `${'  '.repeat(nesting)} ${BOLD}${name}${RESET}\n`
-          )
-        } else {
-          const timeStr = duration_ms
-            ? ` ${DIM}(${Math.round(duration_ms)} ms)${RESET}`
-            : ''
-          fileData.output.push(
-            `${'  '.repeat(nesting)} ${GREEN}${CHECK}${RESET} ${DIM}${name}${timeStr}\n`
-          )
-          passedTests++
-          totalTests++
-        }
+        const timeStr = formatDuration(details?.duration_ms)
+        fileData.output.push(
+          `${indent} ${GREEN}${CHECK}${RESET} ${DIM}${name}${RESET}${timeStr}\n`
+        )
+        passedTests++
+        totalTests++
+        continue
       }
 
       if (type === 'test:fail') {
-        if (!isTest) {
+        const timeStr = formatDuration(details?.duration_ms)
+        fileData.output.push(
+          `${indent} ${RED}${CROSS}${RESET} ${RED}${name}${RESET}${timeStr}\n`
+        )
+
+        const err = details?.error
+        const errMsg = err?.message || err?.cause?.message || 'Unknown error'
+        const stack = cleanStack(err?.stack || err?.cause?.stack)
+
+        fileData.output.push(`\n${indent}   ${RED}${errMsg}${RESET}\n`)
+        if (stack) {
           fileData.output.push(
-            `${'  '.repeat(nesting)} ${BOLD}${name}${RESET}\n`
+            stack
+              .split('\n')
+              .map((l) => `${indent}   ${DIM}${l}${RESET}`)
+              .join('\n') + '\n\n'
           )
-        } else {
-          const timeStr = duration_ms
-            ? ` ${DIM}(${Math.round(duration_ms)} ms)${RESET}`
-            : ''
-          fileData.output.push(
-            `${'  '.repeat(nesting)} ${RED}${CROSS}${RESET} ${RED}${name}${timeStr}\n`
-          )
-          const errMsg =
-            details?.error?.message ||
-            details?.error?.cause?.message ||
-            'Unknown error'
-          fileData.output.push(`\n${RED}${errMsg}${RESET}\n`)
-          failedTests++
-          totalTests++
-          fileData.failed = true
         }
+
+        failedTests++
+        totalTests++
+        fileData.failed = true
+
+        failures.push({
+          file: relFile(file),
+          fullName: name,
+          errMsg,
+          stack,
+        })
       }
     }
+  } catch (reporterErr) {
+    // Never let the reporter itself crash the test run silently.
+    yield `\n${RED}${BOLD}Reporter error:${RESET} ${(reporterErr as Error).message}\n`
   }
 
+  // ─── Failure summary (Vitest/Jest style, scannable at a glance) ───────────
+  if (failures.length > 0) {
+    yield `\n${BOLD}${RED}Failed Tests ${failures.length}${RESET}\n\n`
+    for (const f of failures) {
+      yield ` ${RED}${CROSS}${RESET} ${f.file} ${DIM}>${RESET} ${f.fullName}\n`
+      yield `   ${DIM}${f.errMsg}${RESET}\n`
+    }
+    yield '\n'
+  }
+
+  // ─── Final summary ──────────────────────────────────────────────────────
   const duration = ((Date.now() - startTime) / 1000).toFixed(3)
 
-  yield `\n${BOLD}Test Suites:${RESET} `
+  yield `${BOLD}Test Suites:${RESET} `
   if (failedSuites > 0) yield `${RED}${BOLD}${failedSuites} failed${RESET}, `
   yield `${GREEN}${BOLD}${passedSuites} passed${RESET}, ${passedSuites + failedSuites} total\n`
 
   yield `${BOLD}Tests:      ${RESET} `
   if (failedTests > 0) yield `${RED}${BOLD}${failedTests} failed${RESET}, `
+  if (skippedTests > 0) yield `${YELLOW}${skippedTests} skipped${RESET}, `
   yield `${GREEN}${BOLD}${passedTests} passed${RESET}, ${totalTests} total\n`
 
-  yield `${BOLD}Snapshots:  ${RESET} 0 total\n`
   yield `${BOLD}Time:       ${RESET} ${duration} s\n\n`
+
+  if (failedTests > 0 || failedSuites > 0) {
+    process.exitCode = 1
+  }
 }

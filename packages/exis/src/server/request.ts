@@ -132,12 +132,32 @@ export class ExisRequest<
     this._cookies = val
   }
 
+  /**
+   * When "trust proxy" is set, trusted proxy addresses + client.
+   *
+   * For example if the value were "client, proxy1, proxy2"
+   * you would receive the array `["client", "proxy1", "proxy2"]`
+   * where "proxy2" is the furthest down-stream and "proxy1" and
+   * "proxy2" were trusted.
+   *
+   * @return {string[]}
+   * @public
+   */
   get ips(): string[] {
     if (this._ips !== undefined) return this._ips
     this._resolveIps()
     return this._ips!
   }
 
+  /**
+   * Return the remote address from the trusted proxy.
+   *
+   * The is the remote address on the socket unless
+   * "trust proxy" is set.
+   *
+   * @return {string}
+   * @public
+   */
   get ip(): string {
     if (this._ip !== undefined) return this._ip
     this._resolveIps()
@@ -192,6 +212,16 @@ export class ExisRequest<
     return this.protocol === 'https'
   }
 
+  /**
+   * Parse the "Host" header field to a hostname.
+   *
+   * When the "trust proxy" setting trusts the socket
+   * address, the "X-Forwarded-Host" header field will
+   * be trusted.
+   *
+   * @return {string}
+   * @public
+   */
   get hostname(): string {
     if (this._hostname !== undefined) return this._hostname
     let host = this.raw.headers['x-forwarded-host']
@@ -207,36 +237,134 @@ export class ExisRequest<
     return this._hostname
   }
 
+  /**
+   * The original URL requested by the client.
+   *
+   * @return {string}
+   * @public
+   */
   get originalUrl(): string {
     return this._urlStr
   }
 
+  /**
+   * Return request header.
+   *
+   * The `Referrer` header field is special-cased,
+   * both `Referrer` and `Referer` are interchangeable.
+   *
+   * Examples:
+   *
+   *     req.get('Content-Type');
+   *     // => "text/plain"
+   *
+   *     req.get('content-type');
+   *     // => "text/plain"
+   *
+   *     req.get('Something');
+   *     // => undefined
+   *
+   * Aliased as `req.header()`.
+   *
+   * @param {string} header
+   * @return {string | undefined}
+   * @public
+   */
   get(header: string): string | undefined {
     const val = this.raw.headers[header.toLowerCase()]
     if (Array.isArray(val)) return val[0]
     return val
   }
 
+  /**
+   * Return request header.
+   *
+   * Alias for `req.get()`.
+   *
+   * @param {string} name
+   * @return {string | undefined}
+   * @public
+   */
   header(name: string): string | undefined {
     return this.get(name)
   }
 
+  /**
+   * Check if the incoming request contains the "Content-Type"
+   * header field, and it contains the given mime `type`.
+   *
+   * Examples:
+   *
+   *      // With Content-Type: text/html; charset=utf-8
+   *      req.is('html');
+   *      req.is('text/html');
+   *      req.is('text/*');
+   *      // => true
+   *
+   *      // When Content-Type is application/json
+   *      req.is('json');
+   *      req.is('application/json');
+   *      req.is('application/*');
+   *      // => true
+   *
+   *      req.is('html');
+   *      // => false
+   *
+   * @param {string} contentType
+   * @return {boolean}
+   * @public
+   */
   is(contentType: string): boolean {
     const header = this.get('content-type')
     if (!header) return false
     return header.includes(contentType)
   }
 
+  /**
+   * Check if the given `type(s)` is acceptable, returning
+   * the best match when true, otherwise `false`, in which
+   * case you should respond with 406 "Not Acceptable".
+   *
+   * Examples:
+   *
+   *     // Accept: text/html
+   *     req.accepts('html');
+   *     // => "html"
+   *
+   *     // Accept: text/*, application/json
+   *     req.accepts('html');
+   *     // => "html"
+   *
+   * @param {string[]} types
+   * @return {string | string[] | false}
+   * @public
+   */
   accepts(...types: string[]): string | string[] | false {
     const accept = accepts(this.raw)
     return accept.types(...types)
   }
 
+  /**
+   * Check if the given `lang`s are acceptable,
+   * otherwise you should respond with 406 "Not Acceptable".
+   *
+   * @param {string[]} languages
+   * @return {string | string[] | false}
+   * @public
+   */
   acceptsLanguages(...languages: string[]): string | string[] | false {
     const accept = accepts(this.raw)
     return accept.languages(...languages)
   }
 
+  /**
+   * Check if the request is fresh, aka
+   * Last-Modified or the ETag
+   * still match.
+   *
+   * @return {boolean}
+   * @public
+   */
   get fresh(): boolean {
     const method = this.method
     const s = this.res.statusCode
@@ -250,6 +378,14 @@ export class ExisRequest<
     return false
   }
 
+  /**
+   * Check if the request is stale, aka
+   * "Last-Modified" and / or the "ETag" for the
+   * resource has changed.
+   *
+   * @return {boolean}
+   * @public
+   */
   get stale(): boolean {
     return !this.fresh
   }

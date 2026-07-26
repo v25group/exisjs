@@ -4,6 +4,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import request from 'supertest'
 import os from 'node:os'
+import { describe, it, expect, beforeEach, afterEach } from '../src/testing'
 
 describe('Gateway & Inline Config', () => {
   let app: App

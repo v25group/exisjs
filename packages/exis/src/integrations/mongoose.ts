@@ -25,15 +25,17 @@ export function createMongooseClient(options?: any) {
     mongoose = requireFromCwd('mongoose')
   } catch {
     console.error('Failed to resolve mongoose from', process.cwd())
-    // eslint-disable-next-line preserve-caught-error
+
     throw new Error('Missing dependencies. Please run: npm install mongoose')
   }
 
   // Connect without awaiting. Mongoose natively buffers operations until connected.
-  const connectionPromise = mongoose.connect(uri, options).catch((err: Error) => {
-    console.error('Zero-config Mongoose connection error:', err.message)
-  })
-  
+  const connectionPromise = mongoose
+    .connect(uri, options)
+    .catch((err: Error) => {
+      console.error('Zero-config Mongoose connection error:', err.message)
+    })
+
   // Attach promise to mongoose object so tests can await it
   mongoose.__connectionPromise = connectionPromise
 

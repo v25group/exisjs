@@ -63,20 +63,67 @@ export class ExisResponse<TResponse = any> {
     }
   }
 
+  /**
+   * Set status `code`.
+   *
+   * @param {number} code
+   * @return {this}
+   * @public
+   */
   status(code: number): this {
     this.raw.statusCode = code
     return this
   }
 
+  /**
+   * Set header `field` to `val`, or pass
+   * an object of header fields.
+   *
+   * Examples:
+   *
+   *    res.set('Foo', ['bar', 'baz']);
+   *    res.set('Accept', 'application/json');
+   *
+   * Aliased as `res.header()`.
+   *
+   * @param {string} header
+   * @param {string | string[]} value
+   * @return {this}
+   * @public
+   */
   set(header: string, value: string | string[]): this {
     this.setHeader(header, value as string | string[])
     return this
   }
 
+  /**
+   * Set header `field` to `val`, or pass
+   * an object of header fields.
+   *
+   * Alias for `res.set()`.
+   *
+   * @param {string} name
+   * @param {string | string[]} value
+   * @return {this}
+   * @public
+   */
   header(name: string, value: string | string[]): this {
     return this.set(name, value)
   }
 
+  /**
+   * Send given HTTP status code.
+   *
+   * Sets the response status to `code` and the body
+   * to the string representation of the `code`.
+   *
+   * Examples:
+   *
+   *     res.sendStatus(200);
+   *
+   * @param {number} code
+   * @public
+   */
   sendStatus(code: number): void {
     this.statusCode = code
     this.send(String(code))
@@ -94,6 +141,20 @@ export class ExisResponse<TResponse = any> {
     return this
   }
 
+  /**
+   * Append additional header `field` with value `val`.
+   *
+   * Example:
+   *
+   *    res.append('Link', ['<http://localhost/>', '<http://localhost:3000/>']);
+   *    res.append('Set-Cookie', 'foo=bar; Path=/; HttpOnly');
+   *    res.append('Warning', '199 Miscellaneous warning');
+   *
+   * @param {string} field
+   * @param {string | string[]} value
+   * @return {this}
+   * @public
+   */
   append(field: string, value: string | string[]): this {
     const prev = this.getHeader(field)
     let finalValue: string | string[] = value
@@ -108,6 +169,18 @@ export class ExisResponse<TResponse = any> {
     return this
   }
 
+  /**
+   * Send a response.
+   *
+   * Examples:
+   *
+   *     res.send(Buffer.from('wahoo'));
+   *     res.send({ some: 'json' });
+   *     res.send('<p>some html</p>');
+   *
+   * @param {string | Buffer | object} body
+   * @public
+   */
   send(body: string | Buffer | object): void {
     if (this.raw.headersSent) return
 
@@ -140,6 +213,17 @@ export class ExisResponse<TResponse = any> {
     this.end(content)
   }
 
+  /**
+   * Send JSON response.
+   *
+   * Examples:
+   *
+   *     res.json(null);
+   *     res.json({ user: 'tj' });
+   *
+   * @param {unknown} data
+   * @public
+   */
   json(data: unknown extends TResponse ? any : TResponse): void {
     if (this.raw.headersSent) return
 
@@ -147,7 +231,8 @@ export class ExisResponse<TResponse = any> {
     try {
       const useSerializer = this._serializer && this.statusCode < 400
       str = useSerializer ? this._serializer!(data) : JSON.stringify(data)
-    } catch {
+    } catch (err) {
+      console.error('[ExisJS] Serialization error:', err)
       this.statusCode = 500
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
       this.end('{"error":"Failed to serialize response"}')
@@ -174,6 +259,16 @@ export class ExisResponse<TResponse = any> {
     this.end(str)
   }
 
+  /**
+   * Send HTML response.
+   *
+   * Examples:
+   *
+   *     res.html('<h1>Hello</h1>');
+   *
+   * @param {string} content
+   * @public
+   */
   html(content: string): void {
     if (this.headersSent) return
     if (!this.hasHeader('Content-Type')) {
@@ -184,6 +279,20 @@ export class ExisResponse<TResponse = any> {
     this.end(buf)
   }
 
+  /**
+   * Redirect to the given `url` with optional response `status`
+   * defaulting to 302.
+   *
+   * Examples:
+   *
+   *     res.redirect('/foo/bar');
+   *     res.redirect('http://example.com');
+   *     res.redirect('http://example.com', 301);
+   *
+   * @param {string} url
+   * @param {number} [code=302]
+   * @public
+   */
   redirect(url: string, code = 302): void {
     if (this.headersSent) return
     this.statusCode = code
@@ -199,6 +308,17 @@ export class ExisResponse<TResponse = any> {
     readable.pipe(this.raw as unknown as NodeJS.WritableStream)
   }
 
+  /**
+   * Transfer the file at the given `filePath` as an attachment.
+   *
+   * Optionally providing an alternate attachment `filename`,
+   * and optional `options`.
+   *
+   * @param {string} filePath
+   * @param {string} [filename]
+   * @param {unknown} [options]
+   * @public
+   */
   download(filePath: string, filename?: string, options?: unknown): void {
     if (this.headersSent) return
 
@@ -229,12 +349,42 @@ export class ExisResponse<TResponse = any> {
     stream.pipe(this.raw as unknown as NodeJS.WritableStream)
   }
 
+  /**
+   * Set _Content-Type_ response header with `type` through `mime.lookup()`
+   * when it does not contain "/", or set the Content-Type to `type` otherwise.
+   *
+   * Examples:
+   *
+   *     res.type('.html');
+   *     res.type('html');
+   *     res.type('json');
+   *     res.type('application/json');
+   *     res.type('png');
+   *
+   * @param {string} type
+   * @return {this}
+   * @public
+   */
   type(type: string): this {
     const mimeType = mime.contentType(type) || type
     this.setHeader('Content-Type', mimeType)
     return this
   }
 
+  /**
+   * Set Link header field with the given `links`.
+   *
+   * Examples:
+   *
+   *    res.links({
+   *      next: 'http://api.example.com/users?page=2',
+   *      last: 'http://api.example.com/users?page=5'
+   *    });
+   *
+   * @param {Record<string, string>} links
+   * @return {this}
+   * @public
+   */
   links(links: Record<string, string>): this {
     let linkHeader = this.getHeader('Link') || ''
     if (Array.isArray(linkHeader)) linkHeader = linkHeader.join(', ')
@@ -248,6 +398,14 @@ export class ExisResponse<TResponse = any> {
     return this
   }
 
+  /**
+   * Add `field` to Vary. If already present in the Vary set, then
+   * this call is simply ignored.
+   *
+   * @param {string} field
+   * @return {this}
+   * @public
+   */
   vary(field: string): this {
     if (!field) return this
 
@@ -269,6 +427,28 @@ export class ExisResponse<TResponse = any> {
     return this
   }
 
+  /**
+   * Set cookie `name` to `value`, with the given `options`.
+   *
+   * Options:
+   *    - `maxAge`   max-age in milliseconds, converted to `expires`
+   *    - `path`     cookie path, defaults to '/'
+   *    - `domain`   cookie domain
+   *    - `secure`   secure cookie
+   *    - `httpOnly` httponly cookie
+   *    - `sameSite` samesite cookie
+   *
+   * Examples:
+   *
+   *    res.cookie('rememberme', '1', { expires: new Date(Date.now() + 900000), httpOnly: true });
+   *    res.cookie('cart', '1234');
+   *
+   * @param {string} name
+   * @param {string} value
+   * @param {CookieOptions} options
+   * @return {this}
+   * @public
+   */
   cookie(name: string, value: string, options: CookieOptions = {}): this {
     const parts: string[] = [
       `${encodeURIComponent(name)}=${encodeURIComponent(value)}`,
@@ -290,6 +470,13 @@ export class ExisResponse<TResponse = any> {
     return this
   }
 
+  /**
+   * Clear cookie `name`.
+   *
+   * @param {string} name
+   * @return {this}
+   * @public
+   */
   clearCookie(name: string): this {
     return this.cookie(name, '', { expires: new Date(0), httpOnly: true })
   }

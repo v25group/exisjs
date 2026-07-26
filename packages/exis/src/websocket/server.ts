@@ -44,9 +44,11 @@ export class ExisWebSocketServer {
    */
   track(socket: ExisWebSocket): void {
     this.clients.add(socket)
-    socket.raw.once('close', () => {
-      this.clients.delete(socket)
-    })
+    if (socket.raw) {
+      socket.raw.once('close', () => {
+        this.clients.delete(socket)
+      })
+    }
   }
 
   /**

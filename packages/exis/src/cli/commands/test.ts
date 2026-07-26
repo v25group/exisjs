@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 
 export interface TestOptions {
   watch?: boolean
+  update?: boolean
   entry?: string
   files?: string[]
 }
@@ -58,11 +59,19 @@ export async function testCommand(options: TestOptions): Promise<void> {
     testArgs.push('--watch')
   }
 
+  if (options.update) {
+    testArgs.push('--test-update-snapshots')
+  }
+
   // Apply configs
   if (testConfig.concurrency) {
-    testArgs.push(typeof testConfig.concurrency === 'number' ? `--test-concurrency=${testConfig.concurrency}` : '--test-concurrency')
+    testArgs.push(
+      typeof testConfig.concurrency === 'number'
+        ? `--test-concurrency=${testConfig.concurrency}`
+        : '--test-concurrency'
+    )
   }
-  
+
   if (testConfig.coverage) {
     testArgs.push('--experimental-test-coverage')
   }
@@ -80,15 +89,7 @@ export async function testCommand(options: TestOptions): Promise<void> {
     testArgs.push(...testConfig.include)
   } else {
     // Prevent workspace symlink traversal by explicitly scoping to tests/ and test/ and src/
-    const defaultGlobs = []
-    if (fs.existsSync(path.join(cwd, 'tests'))) defaultGlobs.push('tests')
-    if (fs.existsSync(path.join(cwd, 'test'))) defaultGlobs.push('test')
-    
-    if (defaultGlobs.length > 0) {
-      testArgs.push(...defaultGlobs)
-    } else {
-      testArgs.push('**/*.test.ts', '**/*.spec.ts')
-    }
+    testArgs.push('tests/**/*.test.ts', 'tests/**/*.spec.ts')
   }
 
   const env: Record<string, string> = {
