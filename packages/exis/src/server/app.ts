@@ -833,17 +833,17 @@ export class App<TRoutes extends Record<string, any> = {}> {
                       })
                     } else if (
                       typeof pipe === 'object' &&
+                      typeof pipe.parse === 'function'
+                    ) {
+                      rawArg = await pipe.parse(rawArg)
+                    } else if (
+                      typeof pipe === 'object' &&
                       typeof pipe.transform === 'function'
                     ) {
                       rawArg = await pipe.transform(rawArg, {
                         type: param.type,
                         name: param.name,
                       })
-                    } else if (
-                      typeof pipe === 'object' &&
-                      typeof pipe.parse === 'function'
-                    ) {
-                      rawArg = await pipe.parse(rawArg)
                     } else if (typeof pipe === 'function') {
                       rawArg = await pipe(rawArg)
                     }
@@ -2256,7 +2256,33 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
     const fs = await import('node:fs/promises')
     const path = await import('node:path')
-    const jobsDir = path.join(root, 'src', 'jobs')
+
+    const isProd = process.env.NODE_ENV === 'production'
+    const searchDirs = isProd
+      ? [
+          path.join(root, '.exis', 'server', 'src', 'jobs'),
+          path.join(root, '.exis', 'server', 'jobs'),
+          path.join(root, 'dist', 'src', 'jobs'),
+          path.join(root, 'dist', 'jobs'),
+          path.join(root, 'src', 'jobs'),
+          path.join(root, 'jobs'),
+        ]
+      : [path.join(root, 'src', 'jobs'), path.join(root, 'jobs')]
+
+    let jobsDir = ''
+    for (const dir of searchDirs) {
+      try {
+        const stat = await fs.stat(dir)
+        if (stat.isDirectory()) {
+          jobsDir = dir
+          break
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!jobsDir) return
 
     try {
       const entries = await fs.readdir(jobsDir, { withFileTypes: true })

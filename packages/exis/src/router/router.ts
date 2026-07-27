@@ -197,7 +197,6 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       if (isZodLike) {
         const parser = schema.response.parse.bind(schema.response)
         routeInfo._serializer = (data: unknown) => {
-          console.log('[Router] _serializer received data:', data)
           return stringifier(parser(data))
         }
       } else if (stringifier !== JSON.stringify) {

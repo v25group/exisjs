@@ -10,6 +10,8 @@ interface BuildOptions {
 }
 
 export async function buildCommand(options: BuildOptions = {}): Promise<void> {
+  process.env.__EXIS_BUILD = 'true'
+
   process.on('SIGINT', () => {
     const time = new Date()
       .toLocaleTimeString('en-US', {

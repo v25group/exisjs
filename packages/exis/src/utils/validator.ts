@@ -48,7 +48,9 @@ export abstract class ValidatorType<T> {
   async _validateAsync(
     value: unknown,
     path: string
-  ): Promise<{ success: true; data: T } | { success: false; errors: ValidationError[] }> {
+  ): Promise<
+    { success: true; data: T } | { success: false; errors: ValidationError[] }
+  > {
     return this._validate(value, path)
   }
 
@@ -56,8 +58,7 @@ export abstract class ValidatorType<T> {
     value: unknown,
     path = ''
   ):
-    | { success: true; data: T }
-    | { success: false; errors: ValidationError[] } {
+    { success: true; data: T } | { success: false; errors: ValidationError[] } {
     if (this._hasDefault && value === undefined) {
       const def =
         typeof this.defaultValue === 'function'
@@ -71,7 +72,9 @@ export abstract class ValidatorType<T> {
   async validateAsync(
     value: unknown,
     path = ''
-  ): Promise<{ success: true; data: T } | { success: false; errors: ValidationError[] }> {
+  ): Promise<
+    { success: true; data: T } | { success: false; errors: ValidationError[] }
+  > {
     if (this._hasDefault && value === undefined) {
       const def =
         typeof this.defaultValue === 'function'
@@ -117,8 +120,7 @@ export class RefineValidator<T> extends ValidatorType<T> {
     value: unknown,
     path: string
   ):
-    | { success: true; data: T }
-    | { success: false; errors: ValidationError[] } {
+    { success: true; data: T } | { success: false; errors: ValidationError[] } {
     const res = this.base._validate(value, path)
     if (!res.success) return res
     if (res.data !== undefined) {
@@ -148,8 +150,7 @@ export class TransformValidator<T, U> extends ValidatorType<U> {
     value: unknown,
     path: string
   ):
-    | { success: true; data: U }
-    | { success: false; errors: ValidationError[] } {
+    { success: true; data: U } | { success: false; errors: ValidationError[] } {
     const res = this.base._validate(value, path)
     if (!res.success) return res
     if (res.data !== undefined) {
@@ -187,14 +188,15 @@ export class AsyncRefineValidator<T> extends ValidatorType<T> {
     _value: unknown,
     _path: string
   ):
-    | { success: true; data: T }
-    | { success: false; errors: ValidationError[] } {
+    { success: true; data: T } | { success: false; errors: ValidationError[] } {
     throw new Error('Async validation requires parseAsync() to be used')
   }
   async _validateAsync(
     value: unknown,
     path: string
-  ): Promise<{ success: true; data: T } | { success: false; errors: ValidationError[] }> {
+  ): Promise<
+    { success: true; data: T } | { success: false; errors: ValidationError[] }
+  > {
     const res = await this.base.validateAsync(value, path)
     if (!res.success) return res
     if (res.data !== undefined) {
@@ -483,7 +485,10 @@ export class ObjectValidator<
   async _validateAsync(
     value: unknown,
     path: string
-  ): Promise<{ success: true; data: { [K in keyof T]: ReturnType<T[K]['parse']> } } | { success: false; errors: ValidationError[] }> {
+  ): Promise<
+    | { success: true; data: { [K in keyof T]: ReturnType<T[K]['parse']> } }
+    | { success: false; errors: ValidationError[] }
+  > {
     if (value === undefined || value === null) {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
@@ -494,18 +499,23 @@ export class ObjectValidator<
     const errors: ValidationError[] = []
     const data: Record<string, unknown> = {}
 
-    await Promise.all(this._keys.map(async (key) => {
-      const validator = this.shape[key]
-      const fieldPath = path ? `${path}.${key}` : key
-      const result = await validator.validateAsync((value as never)[key], fieldPath)
-      if (result.success) {
-        if (result.data !== undefined) data[key] = result.data
-      } else {
-        for (const error of result.errors) {
-          errors.push(error)
+    await Promise.all(
+      this._keys.map(async (key) => {
+        const validator = this.shape[key]
+        const fieldPath = path ? `${path}.${key}` : key
+        const result = await validator.validateAsync(
+          (value as never)[key],
+          fieldPath
+        )
+        if (result.success) {
+          if (result.data !== undefined) data[key] = result.data
+        } else {
+          for (const error of result.errors) {
+            errors.push(error)
+          }
         }
-      }
-    }))
+      })
+    )
 
     if (errors.length > 0) return { success: false, errors }
     return { success: true, data: data as never }
@@ -649,8 +659,7 @@ export class LiteralValidator<
     value: unknown,
     path: string
   ):
-    | { success: true; data: T }
-    | { success: false; errors: ValidationError[] } {
+    { success: true; data: T } | { success: false; errors: ValidationError[] } {
     if (value === undefined || value === null) {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
@@ -879,6 +888,12 @@ export const v = {
   env: <T extends Record<string, ValidatorType<unknown>>>(
     schema: ObjectValidator<T>
   ): ReturnType<ObjectValidator<T>['parse']> => {
+    // Skip validation during build phase — env vars aren't available at build time
+    if (process.env.__EXIS_BUILD === 'true') {
+      return new Proxy({} as any, {
+        get: (_target, prop) => process.env[prop as string],
+      })
+    }
     const result = schema.validate(process.env, 'process.env')
     if (!result.success) {
       const messages = result.errors
