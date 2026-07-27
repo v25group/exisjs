@@ -130,13 +130,15 @@ const configSchema = v.object({
   keepAlive: v.union([v.boolean(), v.number()]).optional(),
   server: v.enum(['node', 'uws']).optional(),
   plugins: v.array(v.any()).optional(),
-  test: v.object({
-    include: v.array(v.string()).optional(),
-    exclude: v.array(v.string()).optional(),
-    setupFiles: v.array(v.string()).optional(),
-    concurrency: v.union([v.boolean(), v.number()]).optional(),
-    coverage: v.boolean().optional(),
-  }).optional(),
+  test: v
+    .object({
+      include: v.array(v.string()).optional(),
+      exclude: v.array(v.string()).optional(),
+      setupFiles: v.array(v.string()).optional(),
+      concurrency: v.union([v.boolean(), v.number()]).optional(),
+      coverage: v.boolean().optional(),
+    })
+    .optional(),
 })
 
 // ─── Config Loader (reads exis.config.ts at runtime) ───────────────────────
@@ -151,11 +153,20 @@ import {
 export async function loadConfig(
   cwd: string = process.cwd()
 ): Promise<ResolvedConfig> {
-  const candidates = [
-    path.join(cwd, 'exis.config.ts'),
-    path.join(cwd, 'exis.config.js'),
-    path.join(cwd, 'dist', 'exis.config.js'),
-  ]
+  const isProd = process.env.NODE_ENV === 'production'
+  const candidates = isProd
+    ? [
+        path.join(cwd, '.exis', 'server', 'exis.config.js'),
+        path.join(cwd, 'dist', 'exis.config.js'),
+        path.join(cwd, 'exis.config.js'),
+        path.join(cwd, 'exis.config.ts'),
+      ]
+    : [
+        path.join(cwd, 'exis.config.ts'),
+        path.join(cwd, 'exis.config.js'),
+        path.join(cwd, '.exis', 'server', 'exis.config.js'),
+        path.join(cwd, 'dist', 'exis.config.js'),
+      ]
 
   async function fileExists(p: string): Promise<boolean> {
     try {

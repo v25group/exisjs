@@ -21,6 +21,7 @@
     "examples/*/*"
   ],
   "scripts": {
+    "version": "changeset version && node scripts/update-templates.mjs",
     "build": "npm run build --workspace=packages/exis --workspace=packages/create-exis",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",

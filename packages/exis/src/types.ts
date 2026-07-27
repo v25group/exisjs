@@ -3,7 +3,6 @@ import type { ExisResponse } from './server/response'
 import type { ExisWebSocket } from './websocket/socket'
 import type { ExisSSE } from './server/sse'
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface Request<
   TBody = unknown,
   TQuery = Record<string, string>,

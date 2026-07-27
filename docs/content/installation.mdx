@@ -1,6 +1,6 @@
 ---
-nextUrl: "/docs/structure"
-nextTitle: "Project Structure"
+nextUrl: '/docs/structure'
+nextTitle: 'Project Structure'
 ---
 
 # Getting Started
@@ -8,7 +8,10 @@ nextTitle: "Project Structure"
 In this guide, you'll learn the core fundamentals of ExisJS. To get familiar with the essential building blocks, we'll scaffold a new project, explore the file structure, and create our very first API server.
 
 <Info title="Language Support">
-We highly recommend **TypeScript** for maximum type-safety and automatic frontend client generation. However, ExisJS perfectly supports vanilla JavaScript as well. ExisJS leverages ultra-fast bundlers under the hood, meaning you never have to manually run `tsc` to start your server.
+  We highly recommend **TypeScript** for maximum type-safety and automatic
+  frontend client generation. However, ExisJS perfectly supports vanilla
+  JavaScript as well. ExisJS leverages ultra-fast bundlers under the hood,
+  meaning you never have to manually run `tsc` to start your server.
 </Info>
 
 ## Prerequisites
@@ -41,11 +44,28 @@ The CLI will then create the `my-app` directory, install all required dependenci
 Once the installation is complete, your project directory will look something like this:
 
 <div className="bg-muted/30 border border-border/50 rounded-md p-4 mb-6 font-mono text-sm">
-  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">exis.config.ts</span> <span>The root configuration for your application (CORS, Logger, Port).</span></div>
-  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">src/env.ts</span> <span>Environment variable validation and typing.</span></div>
-  <div className="flex gap-4 mb-2"><span className="text-muted-foreground w-40 shrink-0">src/http/</span> <span>The file-system routing directory.</span></div>
-  <div className="flex gap-4 mb-2 pl-4"><span className="text-muted-foreground w-36 shrink-0">server.ts</span> <span>The strict entry point of your application.</span></div>
-  <div className="flex gap-4 pl-4"><span className="text-muted-foreground w-36 shrink-0">route.ts</span> <span>A basic GET endpoint mapped to the root route.</span></div>
+  <div className="flex gap-4 mb-2">
+    <span className="text-muted-foreground w-40 shrink-0">exis.config.ts</span>{' '}
+    <span>
+      The root configuration for your application (CORS, Logger, Port).
+    </span>
+  </div>
+  <div className="flex gap-4 mb-2">
+    <span className="text-muted-foreground w-40 shrink-0">src/env.ts</span>{' '}
+    <span>Environment variable validation and typing.</span>
+  </div>
+  <div className="flex gap-4 mb-2">
+    <span className="text-muted-foreground w-40 shrink-0">src/http/</span>{' '}
+    <span>The file-system routing directory.</span>
+  </div>
+  <div className="flex gap-4 mb-2 pl-4">
+    <span className="text-muted-foreground w-36 shrink-0">server.ts</span>{' '}
+    <span>The strict entry point of your application.</span>
+  </div>
+  <div className="flex gap-4 pl-4">
+    <span className="text-muted-foreground w-36 shrink-0">route.ts</span>{' '}
+    <span>A basic GET endpoint mapped to the root route.</span>
+  </div>
 </div>
 
 ## Your First Server
@@ -66,17 +86,15 @@ export default exis({
   async onStart(app) {
     // 1. Connect to your database
     // await db.connect()
-
     // 2. Register plugins
     // app.plugin(authPlugin)
-
     // The Exis CLI automatically boots the server and file-system routes
   },
-  
+
   async onClose(app) {
     // Gracefully close database connections here
     // await db.disconnect()
-  }
+  },
 })
 ```
 
@@ -92,13 +110,11 @@ export default class RootServer {
   async onStart(app: App) {
     // 1. Connect to your database
     // await db.connect()
-
     // 2. Register plugins
     // app.plugin(authPlugin)
-
     // The Exis CLI automatically boots the server and file-system routes
   }
-  
+
   async onClose(app: App) {
     // Gracefully close database connections here
     // await db.disconnect()
@@ -128,8 +144,8 @@ export default controller({
   welcome: route.get('/', {
     handle() {
       return { message: 'Welcome to Exis JS!' }
-    }
-  })
+    },
+  }),
 })
 ```
 
@@ -167,7 +183,7 @@ You will see the ultra-fast ExisJS server boot up in your terminal:
  EXIS v0.1.0 ready in 125 ms
 
  → Local:   http://localhost:4000/
- → Network: http://10.19.244.227:4000/
+ → Network: http://10.39.14.177:4000/
  → Environ: development
  → press h + enter to show help
 ```
