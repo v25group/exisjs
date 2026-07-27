@@ -235,6 +235,7 @@ export interface ExisConfig {
   http2?: boolean // Default true when SSL is provided
   redirectHttp?: boolean | number // If true, redirects port 80 to HTTPS port. If number, redirects that specific port.
   etag?: boolean // Default false. Set to true to enable ETag generation for all responses.
+  workers?: number | 'safe' | 'max' // Number of CPU workers for cluster. default 1. 'safe' caps to 2. 'max' uses all cores.
   /**
    * Optional. Server backend to use.
    * 'node' (default fallback) uses Node's native HTTP/HTTPS modules.

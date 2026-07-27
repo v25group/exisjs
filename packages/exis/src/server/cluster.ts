@@ -7,13 +7,14 @@ import process from 'node:process'
 export interface ClusterConfig {
   /**
    * Number of worker processes to spawn.
-   * - `true` or `'auto'` = use all available CPU cores
+   * - `'max'` = use all available CPU cores
+   * - `'safe'` = cap at 4 cores for safety
    * - A specific number = spawn exactly that many workers
    * - `false` or `0` = disable clustering (single-process mode)
    *
-   * @default 'auto'
+   * @default 'safe'
    */
-  workers?: number | boolean | 'auto'
+  workers?: number | boolean | 'safe' | 'max'
 
   /**
    * Whether to automatically respawn a worker if it crashes.
@@ -51,13 +52,19 @@ const c = {
 function resolveWorkerCount(config?: ClusterConfig): number {
   if (process.env.__EXIS_DEV_SERVER === '1') return 1
 
-  const raw = config?.workers ?? 'auto'
+  if (process.env.EXIS_WORKERS) {
+    const parsed = parseInt(process.env.EXIS_WORKERS, 10)
+    if (!isNaN(parsed) && parsed > 0) return Math.min(parsed, os.cpus().length)
+  }
+
+  const raw = config?.workers ?? 1
 
   if (raw === false || raw === 0) return 1
-  if (raw === true || raw === 'auto') return os.cpus().length
+  if (raw === 'max') return os.cpus().length
+  if (raw === true || raw === 'safe') return Math.min(2, os.cpus().length)
   if (typeof raw === 'number' && raw > 0) return Math.min(raw, os.cpus().length)
 
-  return os.cpus().length
+  return 1
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────────

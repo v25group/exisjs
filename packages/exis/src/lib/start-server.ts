@@ -109,6 +109,25 @@ async function start() {
 // The primary process forks workers across all CPU cores.
 // Each worker independently runs start() to boot its own HTTP server instance.
 // If a worker crashes, the cluster manager automatically respawns it.
-runInCluster(() => {
-  start()
-})
+async function bootstrap() {
+  let workers: number | 'safe' | 'max' = 1
+  try {
+    const { loadConfig } = await import('../utils/config.js')
+    const config = await loadConfig(process.cwd())
+    if (config.workers) {
+      workers = config.workers
+    }
+  } catch {
+    // Ignore config load error for primary process. The worker process will
+    // throw it properly with full trace if it actually fails.
+  }
+
+  runInCluster(
+    () => {
+      start()
+    },
+    { workers }
+  )
+}
+
+bootstrap()

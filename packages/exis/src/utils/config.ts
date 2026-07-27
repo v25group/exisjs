@@ -37,6 +37,7 @@ export const defaultConfig: ResolvedConfig = {
   queue: undefined as any,
   test: undefined as any,
   plugins: [],
+  workers: 1,
 }
 
 // ─── Deep merge ───────────────────────────────────────────────────────────────
@@ -129,6 +130,9 @@ const configSchema = v.object({
     .optional(),
   keepAlive: v.union([v.boolean(), v.number()]).optional(),
   server: v.enum(['node', 'uws']).optional(),
+  workers: v
+    .union([v.number(), v.literal('safe'), v.literal('max')])
+    .optional(),
   plugins: v.array(v.any()).optional(),
   test: v
     .object({

@@ -17,16 +17,13 @@
   <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
     <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-black.svg?style=for-the-badge&logo=github&labelColor=000000&color=000000&logoWidth=20">
   </a>
-  <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
-    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-black.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
-  </a>
 </p>
 
 ---
 
 ## The Core Framework
 
-This is the core package for **Exis JS**, providing the highly optimized zero-allocation HTTP engine, file-system routing utilities, native schema validation, and deep TypeScript integrations. 
+This is the core package for **Exis JS**, providing the highly optimized zero-allocation HTTP engine, file-system routing utilities, native schema validation, and deep TypeScript integrations.
 
 Exis JS gives you the raw performance of a minimal micro-framework and the end-to-end type safety of a typed RPC client—without forcing you to spend weeks plumbing different community tools together.
 

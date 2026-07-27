@@ -17,19 +17,13 @@
   <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
     <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-000000.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
   </a>
-  <a aria-label="License" href="https://github.com/v25group/exisjs/blob/main/LICENSE">
-    <img alt="" src="https://img.shields.io/npm/l/@exisjs/client.svg?style=for-the-badge&labelColor=000000">
-  </a>
-  <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
-    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-black.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
-  </a>
 </p>
 
 ---
 
 ## Description
 
-`@exisjs/client` is the official frontend proxy client for the [Exis JS Framework](https://github.com/v25group/exisjs). 
+`@exisjs/client` is the official frontend proxy client for the [Exis JS Framework](https://github.com/v25group/exisjs).
 
 It is designed to give you **magical, end-to-end type safety** in your frontend applications (React, Next.js, Vite, React Native) without bundling a single line of backend Node.js code.
 
@@ -44,7 +38,9 @@ npm install @exisjs/client
 ## Quick Start
 
 ### 1. Export your Router Type (Backend)
+
 First, export the type of your Exis JS router from your backend:
+
 ```typescript
 // backend/src/http/server.ts
 import { defineApp } from 'exisjs'
@@ -52,35 +48,39 @@ import { defineApp } from 'exisjs'
 const app = defineApp()
 // ... define routes ...
 
-export type AppRouter = typeof app.router 
+export type AppRouter = typeof app.router
 ```
 
 ### 2. Initialize the Client (Frontend)
+
 Use a **Type-Only Import** to bring your router signature into your frontend, and initialize the client:
+
 ```typescript
 // frontend/src/api.ts
 import { createClient } from '@exisjs/client'
 import type { AppRouter } from '../../backend/src/http/server'
 
 export const api = createClient<AppRouter>({
-  baseUrl: 'http://localhost:4000'
+  baseUrl: 'http://localhost:4000',
 })
 ```
 
 ### 3. Fetch with 100% Autocomplete!
+
 ```typescript
 // 100% Type-Safe! Your IDE knows exactly what URL this calls and what data it returns.
 const users = await api.api.v1.users.get()
 
 // Your IDE knows exactly what fields are required in the body payload!
 const newPost = await api.api.v1.posts.post({
-  title: 'Hello from the frontend!'
+  title: 'Hello from the frontend!',
 })
 ```
 
 ## Advanced Features
 
 ### Robust Error Handling (`ExisClientError`)
+
 If the server returns a non-200 status code (like `400 Bad Request`), the client automatically intercepts it and throws a structured `ExisClientError`. This allows your `try/catch` blocks or React Query handlers to work flawlessly.
 
 ```typescript
@@ -91,12 +91,13 @@ try {
 } catch (error) {
   if (error instanceof ExisClientError) {
     console.log(error.status) // e.g., 401
-    console.log(error.data)   // Parsed JSON error payload from the server
+    console.log(error.data) // Parsed JSON error payload from the server
   }
 }
 ```
 
 ### Lifecycle Interceptors
+
 You can define global hooks for intercepting requests and responses—perfect for injecting auth headers, logging, or handling token refreshes.
 
 ```typescript
@@ -110,17 +111,18 @@ const api = createClient<AppRouter>({
     if (res.status === 401) {
       console.error('Session expired!')
     }
-  }
+  },
 })
 ```
 
 ### Custom Fetch Injection
+
 Building for React Native or a specialized edge environment? You can completely override the internal `fetch` function:
 
 ```typescript
 const api = createClient<AppRouter>({
   baseUrl: 'https://api.myapp.com',
-  fetch: customFetchFunction // Inject your own fetch!
+  fetch: customFetchFunction, // Inject your own fetch!
 })
 ```
 
