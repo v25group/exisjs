@@ -112,6 +112,9 @@ async function start() {
 async function bootstrap() {
   let workers: number | 'safe' | 'max' = 1
   try {
+    const { loadEnv } = await import('../utils/env.js')
+    loadEnv(process.cwd())
+
     const { loadConfig } = await import('../utils/config.js')
     const config = await loadConfig(process.cwd())
     if (config.workers) {
