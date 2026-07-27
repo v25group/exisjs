@@ -1,5 +1,11 @@
 # exisjs
 
+## 0.1.9
+
+### Patch Changes
+
+- 2f440b2: fix: load .env variables before config validation to prevent Environment Validation Failed errors
+
 ## 0.1.6
 
 ### Patch Changes
