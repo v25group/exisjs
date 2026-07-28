@@ -2,20 +2,33 @@ name: Publish
 
 on:
   push:
-    branches:
-      - main
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
-  pull-requests: write
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Tests
+        run: npm test
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
@@ -26,7 +39,6 @@ jobs:
         with:
           node-version: 24.x
           registry-url: 'https://registry.npmjs.org'
-          always-auth: false
 
       - name: Install Dependencies
         run: npm install
@@ -35,49 +47,16 @@ jobs:
         run: npm run build
 
       - name: Publish exisjs
-        run: |
-          set +e
-          OUTPUT=$(npm publish --workspace=packages/exis --access public 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
-          if [ $EXIT_CODE -ne 0 ]; then
-            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
-              echo "::notice::exisjs already published, skipping"
-            else
-              exit $EXIT_CODE
-            fi
-          fi
+        run: npm publish --workspace=packages/exis --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/create
-        run: |
-          set +e
-          OUTPUT=$(npm publish --workspace=packages/create-exis --access public 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
-          if [ $EXIT_CODE -ne 0 ]; then
-            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
-              echo "::notice::@exisjs/create already published, skipping"
-            else
-              exit $EXIT_CODE
-            fi
-          fi
+        run: npm publish --workspace=packages/create-exis --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/client
-        run: |
-          set +e
-          OUTPUT=$(npm publish --workspace=packages/client --access public 2>&1)
-          EXIT_CODE=$?
-          echo "$OUTPUT"
-          if [ $EXIT_CODE -ne 0 ]; then
-            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
-              echo "::notice::@exisjs/client already published, skipping"
-            else
-              exit $EXIT_CODE
-            fi
-          fi
+        run: npm publish --workspace=packages/client --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

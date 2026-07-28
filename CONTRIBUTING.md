@@ -22,7 +22,7 @@ To maintain the architectural integrity and performance of Exis JS, please **do 
 
 1. **The Core HTTP & Routing Engine (`src/router` & `src/http`)**: Exis JS is built on a highly optimized, zero-allocation Radix Tree. Any changes to the core request lifecycle must be rigorously benchmarked by the maintainers.
 2. **Public API Signatures**: Do not introduce breaking changes to user-facing APIs (like `defineApp()`, `req`, `res`, or dependency injection).
-3. **Version Numbers (`package.json`)**: Do not manually bump version numbers in the `package.json` files. We use `Changesets` and GitHub Actions to handle automated semantic versioning.
+3. **Version Numbers (`package.json`)**: Do not manually bump version numbers in the `package.json` files. Version bumps and releases are handled exclusively by the maintainers using git tags (e.g., `git tag v0.4.0 && git push --tags`).
 4. **Generated Files**: Do not commit anything inside the `dist/`, `.exis/`, or `coverage/` directories. These are automatically generated during the build pipeline.
 
 ## Commit Message Guidelines
