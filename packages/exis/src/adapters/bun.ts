@@ -4,9 +4,16 @@ import type { App } from '../server/app'
  * Creates a Bun handler for an Exis App.
  * Can be used with Bun.serve(serverlessBun(app))
  */
-export function serverlessBun(app: App) {
+export function bun(app: App) {
+  let initialized = false
+
   return {
-    fetch(request: globalThis.Request, server: any) {
+    async fetch(request: globalThis.Request, server: any) {
+      if (!initialized) {
+        if (typeof app.create === 'function') await app.create()
+        if (typeof app.onStartHook === 'function') await app.onStartHook(app)
+        initialized = true
+      }
       return app.fetch(request, server)
     },
   }

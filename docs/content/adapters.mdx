@@ -9,88 +9,176 @@ ExisJS was engineered from the ground up using modern web standards (Fetch API, 
 
 To deploy your ExisJS application to serverless or edge environments, you simply wrap your `app` with the corresponding adapter from `exisjs/adapters`.
 
+Every adapter handles **lazy initialization** automatically—your routes, plugins, and lifecycle hooks (`onStart`) are bootstrapped on the very first incoming request (cold start), so you never have to worry about manual setup in serverless environments.
+
 ---
 
-## AWS Lambda
+## Available Adapters
 
-Deploying an ExisJS API as an AWS Lambda function (behind API Gateway) takes one line of code.
+| Adapter | Import | Environment |
+|---------|--------|-------------|
+| `vercel` | `exisjs/adapters` | Vercel Serverless Functions |
+| `aws` | `exisjs/adapters` | AWS Lambda + API Gateway |
+| `cloudflare` | `exisjs/adapters` | Cloudflare Workers |
+| `netlify` | `exisjs/adapters` | Netlify Edge Functions |
+| `deno` | `exisjs/adapters` | Deno Deploy / Deno.serve |
+| `bun` | `exisjs/adapters` | Bun.serve |
+| `fastly` | `exisjs/adapters` | Fastly Compute@Edge |
 
-```typescript filename="src/lambda.ts"
-import app from './http/server'
-import { serverlessAws } from 'exisjs/adapters'
-
-// Export the AWS Lambda handler
-export const handler = serverlessAws(app)
-```
+---
 
 ## Vercel
 
-Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Vercel, use the Vercel adapter inside `api/index.ts`.
+Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Vercel, create an `api/index.js` entrypoint that wraps your app with the `vercel` adapter.
 
-```typescript filename="api/index.ts"
+```javascript filename="api/index.js"
 import app from '../src/http/server'
-import { serverlessVercel } from 'exisjs/adapters'
+import { vercel } from 'exisjs/adapters'
 
-// Export the Vercel handler
-export default serverlessVercel(app)
+export default vercel(app)
 ```
 
-You'll also need a simple `vercel.json` to route all traffic to this function:
+Then configure `vercel.json` to route all traffic to this function and bundle the compiled `.exis` directory:
 
 ```json filename="vercel.json"
 {
+  "version": 2,
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/index.js": {
+      "includeFiles": ".exis/**/*"
+    }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.ts" }
+    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
 ```
 
+> **Note:** ExisJS compiles your application into the `.exis/` directory during `exisjs build`. The `includeFiles` configuration ensures Vercel bundles these compiled files alongside your serverless function. You also need a `public/` directory (even an empty one with a `.keep` file) to prevent Vercel's missing output directory error.
+
 ---
 
-## Edge Runtimes (Cloudflare, Deno, Bun)
+## AWS Lambda
 
-Because ExisJS is highly optimized and avoids bulky Node.js-only legacy dependencies, it works flawlessly on Edge runtimes like Cloudflare Workers, Deno, and Bun!
+Deploying an ExisJS API as an AWS Lambda function (behind API Gateway) takes one line of code. The `aws` adapter converts API Gateway events into native Node.js HTTP streams that ExisJS understands.
 
-### Cloudflare Workers
+```typescript filename="src/lambda.ts"
+import app from './http/server'
+import { aws } from 'exisjs/adapters'
+
+// Export the AWS Lambda handler
+export const handler = aws(app)
+```
+
+The adapter automatically handles:
+- Mapping `httpMethod`, `path`, and `queryStringParameters` from API Gateway events
+- Converting headers and request bodies
+- Collecting the response stream and returning a properly formatted `APIGatewayResult`
+- Base64 encoding for binary responses
+
+---
+
+## Cloudflare Workers
+
+Because ExisJS avoids bulky Node.js-only legacy dependencies, it works flawlessly on Cloudflare Workers using the Web Standard Fetch API.
 
 ```typescript filename="src/worker.ts"
 import app from './http/server'
-import { serverlessCloudflare } from 'exisjs/adapters'
+import { cloudflare } from 'exisjs/adapters'
 
-// Cloudflare expects an object with a fetch method
-export default {
-  fetch: serverlessCloudflare(app).fetch
-}
+export default cloudflare(app)
 ```
 
-### Bun
+The adapter returns an object with a `fetch` method that Cloudflare Workers expects. Your `env` and `ctx` (execution context) are automatically passed through to your route handlers.
 
-Bun provides a native, high-performance HTTP server. ExisJS provides a direct adapter to tie into Bun's `serve` function seamlessly.
+---
 
-```typescript filename="src/bun.ts"
-import app from './http/server'
-import { serverlessBun } from 'exisjs/adapters'
+## Netlify
 
-export default {
-  port: 3000,
-  fetch: serverlessBun(app).fetch
-}
+Netlify Edge Functions use the Web Standard Fetch API, making ExisJS a perfect fit.
+
+```typescript filename="netlify/edge-functions/api.ts"
+import app from '../../src/http/server'
+import { netlify } from 'exisjs/adapters'
+
+export default netlify(app)
 ```
 
-### Deno
+The adapter wraps your app and passes both the incoming `Request` and Netlify's `Context` object through to ExisJS.
 
-```typescript filename="src/deno.ts"
+---
+
+## Deno
+
+Deno natively supports the Web Standard Fetch API, so ExisJS runs on it without any compatibility layers.
+
+```typescript filename="src/main.ts"
 import app from './http/server'
-import { serverlessDeno } from 'exisjs/adapters'
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { deno } from 'exisjs/adapters'
 
-serve(serverlessDeno(app), { port: 8000 });
+Deno.serve({ port: 8000 }, deno(app))
 ```
 
 ---
 
-## Netlify & Fastly
+## Bun
 
-ExisJS also provides native adapters for `netlify` and `fastly`. The setup mirrors the examples above. 
+Bun provides a native, high-performance HTTP server. The `bun` adapter ties directly into Bun's `serve` function.
 
-No matter where you choose to host your application, ExisJS handles the translation layer effortlessly, ensuring your code remains 100% portable and vendor-agnostic!
+```typescript filename="src/main.ts"
+import app from './http/server'
+import { bun } from 'exisjs/adapters'
+
+Bun.serve({
+  port: 3000,
+  ...bun(app)
+})
+```
+
+---
+
+## Fastly Compute@Edge
+
+Fastly's Compute@Edge platform runs your code at the network edge. The `fastly` adapter integrates with Fastly's event-driven model.
+
+```typescript filename="src/index.ts"
+import app from './http/server'
+import { fastly } from 'exisjs/adapters'
+
+addEventListener('fetch', fastly(app))
+```
+
+---
+
+## The Fetch Adapter (Building Custom Adapters)
+
+Under the hood, ExisJS provides a universal **Fetch adapter** (`handleFetch`) that bridges the gap between the Web Standard `Request`/`Response` API and ExisJS's internal Node.js-style request pipeline.
+
+Every edge/serverless adapter (Cloudflare, Deno, Bun, Netlify, Fastly) ultimately calls `app.fetch()`, which internally uses `handleFetch` to:
+
+1. **Convert** a Web Standard `Request` into a Node.js-compatible `IncomingMessage` (via `FetchIncomingMessage`)
+2. **Route** the request through ExisJS's full middleware and routing pipeline
+3. **Collect** the response and convert it back into a Web Standard `Response` (via `FetchServerResponse`)
+
+This means you can create your own custom adapter for **any** runtime that supports the Fetch API:
+
+```typescript filename="src/my-custom-adapter.ts"
+import app from './http/server'
+
+// app.fetch() works anywhere that has the Web Standard Request/Response API
+const server = createMyCustomServer({
+  async handler(request: Request): Promise<Response> {
+    return app.fetch(request)
+  }
+})
+```
+
+The `app.fetch()` method accepts an optional `env` and `ctx` parameter, which are passed through to your route handlers—allowing platform-specific features (like Cloudflare's KV bindings or Deno's connection info) to be accessed from within your ExisJS routes.
+
+```typescript
+// Signature
+app.fetch(request: Request, env?: any, ctx?: any): Promise<Response>
+```
+
+This architecture ensures that ExisJS remains **100% portable and vendor-agnostic**. Your application code stays the same—only the deployment wrapper changes.

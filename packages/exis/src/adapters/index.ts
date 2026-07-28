@@ -1,13 +1,5 @@
-export {
-  serverlessAws,
-  type APIGatewayEvent,
-  type APIGatewayResult,
-} from './aws-lambda'
-export {
-  serverlessVercel,
-  type VercelRequest,
-  type VercelResponse,
-} from './vercel'
+export { aws, type APIGatewayEvent, type APIGatewayResult } from './aws-lambda'
+export { vercel, type VercelRequest, type VercelResponse } from './vercel'
 export * from './cloudflare'
 export * from './deno'
 export * from './fetch'

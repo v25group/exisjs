@@ -1112,6 +1112,10 @@ export class App<TRoutes extends Record<string, any> = {}> {
     env?: any,
     ctx?: any
   ): Promise<globalThis.Response> {
+    if (!this._routesMounted) {
+      if (typeof this.create === 'function') await this.create()
+      if (typeof this.onStartHook === 'function') await this.onStartHook(this)
+    }
     const { handleFetch } = await import('../adapters/fetch')
     return handleFetch(this, request, env, ctx)
   }

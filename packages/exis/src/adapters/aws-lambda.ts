@@ -22,8 +22,16 @@ export interface APIGatewayResult {
  * Creates an AWS Lambda handler for an Exis App.
  * Converts API Gateway events to native Node.js HTTP streams.
  */
-export function serverlessAws(app: App) {
+export function aws(app: App) {
+  let initialized = false
+
   return async (event: APIGatewayEvent): Promise<APIGatewayResult> => {
+    if (!initialized) {
+      if (typeof app.create === 'function') await app.create()
+      if (typeof app.onStartHook === 'function') await app.onStartHook(app)
+      initialized = true
+    }
+
     return new Promise((resolve) => {
       const socket = new Socket()
       const req = new IncomingMessage(socket)
