@@ -1,6 +1,6 @@
 {
   "name": "04-ai-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "exisjs": "^0.1.0",
+    "exisjs": "^0.2.0",
     "groq-sdk": "^1.4.0"
   },
   "devDependencies": {
