@@ -5,7 +5,9 @@ on:
     branches:
       - main
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -27,31 +29,55 @@ jobs:
           always-auth: false
 
       - name: Install Dependencies
-        run: |
-          npm install
-
-
+        run: npm install
 
       - name: Build
         run: npm run build
 
       - name: Publish exisjs
         run: |
-          PACKAGE_VERSION=$(node -p "require('./packages/exis/package.json').version")
-          npm view exisjs@$PACKAGE_VERSION version 2>/dev/null && echo "exisjs@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/exis --access public
+          set +e
+          OUTPUT=$(npm publish --workspace=packages/exis --access public 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
+              echo "::notice::exisjs already published, skipping"
+            else
+              exit $EXIT_CODE
+            fi
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/create
         run: |
-          PACKAGE_VERSION=$(node -p "require('./packages/create-exis/package.json').version")
-          npm view @exisjs/create@$PACKAGE_VERSION version 2>/dev/null && echo "@exisjs/create@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/create-exis --access public
+          set +e
+          OUTPUT=$(npm publish --workspace=packages/create-exis --access public 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
+              echo "::notice::@exisjs/create already published, skipping"
+            else
+              exit $EXIT_CODE
+            fi
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/client
         run: |
-          PACKAGE_VERSION=$(node -p "require('./packages/client/package.json').version")
-          npm view @exisjs/client@$PACKAGE_VERSION version 2>/dev/null && echo "@exisjs/client@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/client --access public
+          set +e
+          OUTPUT=$(npm publish --workspace=packages/client --access public 2>&1)
+          EXIT_CODE=$?
+          echo "$OUTPUT"
+          if [ $EXIT_CODE -ne 0 ]; then
+            if echo "$OUTPUT" | grep -q "Cannot publish over previously published version"; then
+              echo "::notice::@exisjs/client already published, skipping"
+            else
+              exit $EXIT_CODE
+            fi
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
