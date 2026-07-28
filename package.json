@@ -1,6 +1,6 @@
 {
   "name": "exis",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Exis workspace",
   "author": "V25 Group <support@v25group.com>",
@@ -28,7 +28,7 @@
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
     "lint": "eslint .",
     "prepare": "husky",
-    "release": "npm run build && npm publish --workspaces --access public",
+    "release": "npm run build && npm publish --workspace=packages/exis --workspace=packages/create-exis --workspace=packages/client --access public",
     "bench": "tsx bench/basic.ts",
     "bench:compare": "tsx bench/compare.ts",
     "bench:router": "tsx bench/router.ts"

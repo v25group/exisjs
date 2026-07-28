@@ -32,7 +32,26 @@ jobs:
 
 
 
-      - name: Publish to NPM
-        run: npm run release
+      - name: Build
+        run: npm run build
+
+      - name: Publish exisjs
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./packages/exis/package.json').version")
+          npm view exisjs@$PACKAGE_VERSION version 2>/dev/null && echo "exisjs@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/exis --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @exisjs/create
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./packages/create-exis/package.json').version")
+          npm view @exisjs/create@$PACKAGE_VERSION version 2>/dev/null && echo "@exisjs/create@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/create-exis --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @exisjs/client
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./packages/client/package.json').version")
+          npm view @exisjs/client@$PACKAGE_VERSION version 2>/dev/null && echo "@exisjs/client@$PACKAGE_VERSION already published, skipping" || npm publish --workspace=packages/client --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
