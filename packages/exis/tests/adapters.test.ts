@@ -1,6 +1,6 @@
 import { App } from '../src/server/app'
-import { serverlessAws, APIGatewayEvent } from '../src/adapters/aws-lambda'
-import { serverlessVercel } from '../src/adapters/vercel'
+import { aws, APIGatewayEvent } from '../src/adapters/aws-lambda'
+import { vercel } from '../src/adapters/vercel'
 import { describe, expect, it, ex } from '../src/testing'
 
 describe('Serverless Adapters', () => {
@@ -16,7 +16,7 @@ describe('Serverless Adapters', () => {
         })
       })
 
-      const handler = serverlessAws(app)
+      const handler = aws(app)
 
       const event: APIGatewayEvent = {
         httpMethod: 'POST',
@@ -52,7 +52,7 @@ describe('Serverless Adapters', () => {
         res.send(text) // Echo back the exact buffer string
       })
 
-      const handler = serverlessAws(app)
+      const handler = aws(app)
 
       const payload = 'Secret message'
       const event: APIGatewayEvent = {
@@ -71,16 +71,16 @@ describe('Serverless Adapters', () => {
   })
 
   describe('Vercel Adapter', () => {
-    it('returns a handler that invokes app.handle', () => {
+    it('returns a handler that invokes app.handle', async () => {
       const app = new App()
       const spy = ex.spyOn(app, 'handle').mockImplementation(async () => {})
 
-      const handler = serverlessVercel(app)
+      const handler = vercel(app)
 
       const req = {} as any
       const res = {} as any
 
-      handler(req, res)
+      await handler(req, res)
 
       expect(spy).toHaveBeenCalledWith(req, res)
       spy.mockRestore()
