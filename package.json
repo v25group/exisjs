@@ -21,14 +21,14 @@
     "examples/*/*"
   ],
   "scripts": {
-    "version": "changeset version && node scripts/update-templates.mjs",
+    "version": "node scripts/update-templates.mjs",
     "build": "npm run build --workspace=packages/exis --workspace=packages/create-exis",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
     "lint": "eslint .",
     "prepare": "husky",
-    "release": "npm run build && changeset publish",
+    "release": "npm run build && npm publish --workspaces --access public",
     "bench": "tsx bench/basic.ts",
     "bench:compare": "tsx bench/compare.ts",
     "bench:router": "tsx bench/router.ts"
@@ -40,7 +40,6 @@
     ]
   },
   "devDependencies": {
-    "@changesets/cli": "^2.31.1",
     "@eslint/js": "^10.0.1",
     "@hono/node-server": "^2.0.11",
     "@types/express": "^5.0.6",

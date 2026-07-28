@@ -71,14 +71,10 @@ How:
 
 ## Submitting a Pull Request
 
-We use Changesets for managing versions and changelogs.
-
-1. **Add a changeset**: Before committing your changes, run `npx changeset`.
-2. Follow the prompts to select which packages your PR modifies (e.g., `exis` or `create-exis`).
-3. Choose the semantic version bump (patch, minor, or major).
-4. Write a concise summary of your changes. This will appear in the final CHANGELOG.md.
-5. Commit the generated `.changeset/*.md` file along with your code.
-6. Push to your fork and submit a Pull Request.
+1. **Versioning**: Versioning and releasing are handled manually by the maintainers. Do not increment package versions in your PR.
+2. Ensure your code passes all tests (`npm test`).
+3. Write a concise summary of your changes in the PR description.
+4. Push to your fork and submit a Pull Request.
 
 ## Code of Conduct
 
