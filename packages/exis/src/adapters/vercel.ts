@@ -9,17 +9,21 @@ export interface VercelRequest extends IncomingMessage {
 
 export type VercelResponse = ServerResponse
 
+export interface VercelAdapterOptions {
+  cwd?: string
+}
+
 /**
  * Creates a Vercel Serverless handler for an Exis App.
  * Vercel already provides standard Node.js HTTP streams natively.
  */
-export function vercel(app: App) {
+export function vercel(app: App, options?: VercelAdapterOptions) {
   let initialized = false
 
   return async (req: VercelRequest, res: VercelResponse) => {
     if (!initialized) {
       if (typeof app.create === 'function') {
-        await app.create()
+        await app.create(options?.cwd)
       }
       if (typeof app.onStartHook === 'function') {
         await app.onStartHook(app)

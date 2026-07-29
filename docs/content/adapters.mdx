@@ -32,10 +32,14 @@ Every adapter handles **lazy initialization** automatically—your routes, plugi
 Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Vercel, create an `api/index.js` entrypoint that wraps your app with the `vercel` adapter.
 
 ```javascript filename="api/index.js"
-import app from '../src/http/server'
-import { vercel } from 'exisjs/adapters'
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import app from "../.exis/server/src/http/server.js";
+import { vercel } from "exisjs/adapters";
 
-export default vercel(app)
+const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+export default vercel(app, { cwd: projectRoot });
 ```
 
 Then configure `vercel.json` to route all traffic to this function and bundle the compiled `.exis` directory:
