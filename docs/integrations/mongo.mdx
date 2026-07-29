@@ -23,6 +23,41 @@ MONGODB_URI="mongodb://localhost:27017/my_database"
 
 ---
 
+## Mongoose (ODM)
+
+The `@exisjs/mongoose` plugin automatically manages your database connection lifecycle.
+
+### Basic Setup
+In your `server.ts` file, simply call `configureMongoose({})`:
+
+```typescript filename="src/http/server.ts"
+import { exis } from "exisjs";
+import { configureMongoose } from "exisjs/mongoose";
+
+export default exis({
+  async onStart(app) {
+    configureMongoose({});
+  }
+});
+```
+
+### Serverless Deployments (Vercel, AWS Lambda)
+
+When deploying to serverless platforms, bundlers (like `@vercel/node`) can accidentally create multiple unconnected instances of Mongoose in memory. To guarantee stability in serverless functions, we recommend importing Mongoose directly and passing it as the `client`:
+
+```typescript filename="src/http/server.ts"
+import { exis } from "exisjs";
+import mongoose from "mongoose";
+import { configureMongoose } from "exisjs/mongoose";
+
+export default exis({
+  async onStart(app) {
+    configureMongoose({ client: mongoose });
+  }
+});
+```
+
+---
 ## 1. Mongoose (Recommended)
 
 Mongoose provides a straight-forward, schema-based solution to model your application data. 

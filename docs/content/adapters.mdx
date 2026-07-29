@@ -34,10 +34,15 @@ Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Ve
 ```javascript filename="api/index.js"
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import app from "../.exis/server/src/http/server.js";
 import { vercel } from "exisjs/adapters";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+// We use a dynamic import with a file URL to prevent Vercel's bundler (@vercel/node)
+// from statically cloning dependencies (like Mongoose) into the entrypoint.
+// This ensures your dynamic routes and server use the exact same module instances.
+const serverPath = join(projectRoot, ".exis", "server", "src", "http", "server.js");
+const { default: app } = await import("file://" + serverPath);
 
 export default vercel(app, { cwd: projectRoot });
 ```

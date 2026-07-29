@@ -16,22 +16,27 @@ export function createMongooseClient(options?: any) {
     )
   }
 
-  let mongoose: any
+  let mongoose: any = options?.client
 
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createRequire } = require('node:module')
-    const requireFromCwd = createRequire(process.cwd() + '/package.json')
-    mongoose = requireFromCwd('mongoose')
-  } catch {
-    console.error('Failed to resolve mongoose from', process.cwd())
+  if (!mongoose) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createRequire } = require('node:module')
+      const requireFromCwd = createRequire(process.cwd() + '/package.json')
+      mongoose = requireFromCwd('mongoose')
+    } catch {
+      console.error('Failed to resolve mongoose from', process.cwd())
 
-    throw new Error('Missing dependencies. Please run: npm install mongoose')
+      throw new Error('Missing dependencies. Please run: npm install mongoose')
+    }
   }
 
   // Connect without awaiting. Mongoose natively buffers operations until connected.
+  const connectOptions = { ...options }
+  delete connectOptions.client // don't pass client to mongoose.connect
+
   const connectionPromise = mongoose
-    .connect(uri, options)
+    .connect(uri, connectOptions)
     .catch((err: Error) => {
       console.error('Zero-config Mongoose connection error:', err.message)
     })
