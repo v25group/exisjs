@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/client",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "End-to-End Type-Safe Client for ExisJS",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -393,10 +393,13 @@ export class NumberValidator extends ValidatorType<number> {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
     }
-    if (typeof value !== 'number') {
+    if (
+      typeof value === 'boolean' ||
+      (typeof value === 'string' && value.trim() === '')
+    ) {
       return { success: false, errors: [{ path, message: 'Expected number' }] }
     }
-    const num = value
+    const num = Number(value)
     if (isNaN(num))
       return {
         success: false,
@@ -470,6 +473,9 @@ export class BooleanValidator extends ValidatorType<boolean> {
       return { success: false, errors: [{ path, message: 'Required' }] }
     }
     if (typeof value === 'boolean') return { success: true, data: value }
+    if (value === 'true' || value === '1') return { success: true, data: true }
+    if (value === 'false' || value === '0')
+      return { success: true, data: false }
     return { success: false, errors: [{ path, message: 'Expected boolean' }] }
   }
 }
