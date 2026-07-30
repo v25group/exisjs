@@ -74,7 +74,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     }
 
     if (schema?.body) {
-      const bodyValidator = schema.body
+      const bodyValidator: any = schema.body
       actualHandlers.unshift(async (req, res, next) => {
         try {
           let body
@@ -110,7 +110,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     }
 
     if (schema?.query) {
-      const queryValidator = schema.query
+      const queryValidator: any = schema.query
       actualHandlers.unshift(async (req, res, next) => {
         try {
           if (typeof queryValidator.parse === 'function') {
@@ -141,7 +141,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     }
 
     if (schema?.params) {
-      const paramsValidator = schema.params
+      const paramsValidator: any = schema.params
       // Params validation runs as middleware AFTER the router sets req.params
       // So we push it (not unshift) to run after route matching populates params
       actualHandlers.unshift(async (req, res, next) => {

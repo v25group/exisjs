@@ -23,8 +23,8 @@ export class ExisRequest<
   public body!: TBody
   public files: import('../types').ExisFile[] = []
   public rawBody?: string
+  public user?: any
   public log!: Logger
-  public user?: Record<string, unknown>
   public session?: Record<string, any> | any
   public requestId?: string
   public tenantId?: string
@@ -438,6 +438,12 @@ export class ExisRequest<
     }
 
     if (contentType.includes('multipart/form-data')) {
+      if (!contentType.includes('boundary=')) {
+        throw HttpError.badRequest(
+          'Missing multipart boundary. Ensure you are not manually setting the Content-Type header in your client (e.g. Axios) so that the browser can auto-attach the boundary string.'
+        )
+      }
+
       return new Promise((resolve, reject) => {
         const fields: Record<string, string> = {}
 
@@ -507,8 +513,12 @@ export class ExisRequest<
           bb.on('error', reject)
 
           this.raw.pipe(bb)
-        } catch {
-          reject(HttpError.badRequest('Failed to parse multipart data'))
+        } catch (err: any) {
+          reject(
+            HttpError.badRequest(
+              err.message || 'Failed to parse multipart data'
+            )
+          )
         }
       })
     }

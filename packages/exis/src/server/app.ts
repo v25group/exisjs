@@ -691,6 +691,30 @@ export class App<TRoutes extends Record<string, any> = {}> {
             this.container.provide(ControllerClass, { useValue: instance })
           }
           try {
+            // 0. Enforce Route Permissions (Role Authorization)
+            const routeMetadata = routeMetadataMap[route.handlerName] || {}
+            const permissions = routeMetadata.permissions
+            if (permissions && permissions.length > 0) {
+              const userPerms =
+                req.user?.permissions || (req.user?.role ? [req.user.role] : [])
+              const hasPermission = permissions.some((p: string) =>
+                userPerms.includes(p)
+              )
+              if (!hasPermission) {
+                if (res) {
+                  res.status(403).json({
+                    success: false,
+                    error: {
+                      code: 'FORBIDDEN',
+                      message:
+                        'Insufficient permissions to access this resource',
+                    },
+                  })
+                }
+                return
+              }
+            }
+
             // 1. Run Guards
             const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
             const guards = routeLifecycle.guards || []
@@ -2370,6 +2394,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     let allMetadata: Record<string, any> = {}
     let allCors: any = undefined
     let allHeaders: Record<string, string> = {}
+    const activeGateways: string[] = []
 
     const dirsToCheck = [apiDir]
     let tempDir = apiDir
@@ -2388,6 +2413,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
         else if (await fs.stat(gwPathJs).catch(() => null)) targetGw = gwPathJs
 
         if (targetGw) {
+          activeGateways.push(targetGw)
           const gwUrl =
             process.env.VITEST || process.env.NODE_ENV === 'test'
               ? pathToFileURL(targetGw).href
@@ -2619,6 +2645,29 @@ export class App<TRoutes extends Record<string, any> = {}> {
     }
 
     const prefixMiddlewares: any[] = []
+
+    if (this.options.debugRouting) {
+      const pathLib = await import('node:path')
+      const relFile = pathLib
+        .relative(process.cwd(), filePath)
+        .replace(/\\/g, '/')
+      const gwStr =
+        activeGateways.length > 0
+          ? activeGateways
+              .map((g: string) =>
+                pathLib.relative(process.cwd(), g).replace(/\\/g, '/')
+              )
+              .join(' -> ') + ' -> '
+          : ''
+
+      prefixMiddlewares.push((req: any, res: any, next: any) => {
+        this.log.debug(
+          `[Request] ${req.method} ${req.path} -> ${gwStr}${relFile}`
+        )
+        next()
+      })
+    }
+
     if (allCors !== undefined) {
       if (allCors === true) prefixMiddlewares.push(cors({}))
       else if (allCors !== false) prefixMiddlewares.push(cors(allCors))
@@ -2737,6 +2786,38 @@ export class App<TRoutes extends Record<string, any> = {}> {
         }
 
         try {
+          // 0. Enforce Route Permissions (Role Authorization)
+          if (rc.permissions && rc.permissions.length > 0) {
+            if (!req.user) {
+              res.status(401).json({
+                success: false,
+                error: {
+                  code: 'UNAUTHORIZED',
+                  message: 'Unauthorized: User not found on request',
+                },
+              })
+              return
+            }
+            const userPerms =
+              req.user.permissions || req.user.roles || req.user.role || []
+            const permsArray = Array.isArray(userPerms)
+              ? userPerms
+              : [userPerms]
+            const hasPerm = rc.permissions.every((p: string) =>
+              permsArray.includes(p)
+            )
+            if (!hasPerm) {
+              res.status(403).json({
+                success: false,
+                error: {
+                  code: 'FORBIDDEN',
+                  message: 'Forbidden: Insufficient permissions',
+                },
+              })
+              return
+            }
+          }
+
           // 1. Run Guards
           const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
           for (const guard of routeGuards) {
@@ -2766,6 +2847,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
             res,
             app: this,
             socket: (req as any).ws,
+            state: executionContext.getStore()?.state || {},
             ...req, // Spread req to allow access to user, session, etc.
           }
 

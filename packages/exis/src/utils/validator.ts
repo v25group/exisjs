@@ -14,6 +14,8 @@ export abstract class ValidatorType<T> {
   protected isOptional = false
   protected _hasDefault = false
   protected defaultValue?: T | (() => T)
+  protected _isUnique = false
+  protected _index = false
 
   optional(): ValidatorType<T | undefined> {
     this.isOptional = true
@@ -27,6 +29,16 @@ export abstract class ValidatorType<T> {
     return this as never
   }
 
+  unique(): this {
+    this._isUnique = true
+    return this
+  }
+
+  index(): this {
+    this._index = true
+    return this
+  }
+
   refine(
     check: (val: T) => boolean,
     message: string | ((val: T) => string) = 'Invalid value'
@@ -38,7 +50,29 @@ export abstract class ValidatorType<T> {
     return new TransformValidator<T, U>(this, fn) as never
   }
 
+  or<U>(other: ValidatorType<U>): ValidatorType<T | U> {
+    return new UnionValidator([this, other]) as never
+  }
+
   abstract toOpenApi(): Record<string, unknown>
+
+  /**
+   * Converts this validator into a Mongoose-compatible schema field definition.
+   * Override in subclasses for specific type mappings.
+   */
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = { type: 'Mixed' as any }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) {
+      field.default =
+        typeof this.defaultValue === 'function'
+          ? this.defaultValue
+          : this.defaultValue
+    }
+    if (this._isUnique) field.unique = true
+    if (this._index) field.index = true
+    return field
+  }
 
   abstract _validate(
     value: unknown,
@@ -252,6 +286,18 @@ export class StringValidator extends ValidatorType<string> {
     return schema
   }
 
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = { type: String }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) field.default = this.defaultValue
+    if (this._isUnique) field.unique = true
+    if (this._index) field.index = true
+    if (this.minLen !== undefined) field.minlength = this.minLen
+    if (this.maxLen !== undefined) field.maxlength = this.maxLen
+    if (this.regexPattern) field.match = this.regexPattern
+    return field
+  }
+
   _validate(
     value: unknown,
     path: string
@@ -326,6 +372,17 @@ export class NumberValidator extends ValidatorType<number> {
     return schema
   }
 
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = { type: Number }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) field.default = this.defaultValue
+    if (this._isUnique) field.unique = true
+    if (this._index) field.index = true
+    if (this.minVal !== undefined) field.min = this.minVal
+    if (this.maxVal !== undefined) field.max = this.maxVal
+    return field
+  }
+
   _validate(
     value: unknown,
     path: string
@@ -336,15 +393,15 @@ export class NumberValidator extends ValidatorType<number> {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
     }
-    if (
-      typeof value === 'boolean' ||
-      (typeof value === 'string' && value.trim() === '')
-    ) {
+    if (typeof value !== 'number') {
       return { success: false, errors: [{ path, message: 'Expected number' }] }
     }
-    const num = Number(value)
+    const num = value
     if (isNaN(num))
-      return { success: false, errors: [{ path, message: 'Expected number' }] }
+      return {
+        success: false,
+        errors: [{ path, message: 'Expected valid number' }],
+      }
     if (this.minVal !== undefined && num < this.minVal)
       return {
         success: false,
@@ -369,10 +426,55 @@ export class NumberValidator extends ValidatorType<number> {
   }
 }
 
+export class CoerceNumberValidator extends NumberValidator {
+  _validate(
+    value: unknown,
+    path: string
+  ):
+    | { success: true; data: number }
+    | { success: false; errors: ValidationError[] } {
+    if (value === undefined || value === null) {
+      if (this.isOptional) return { success: true, data: undefined as never }
+      return { success: false, errors: [{ path, message: 'Required' }] }
+    }
+    if (
+      typeof value === 'boolean' ||
+      (typeof value === 'string' && value.trim() === '')
+    ) {
+      return { success: false, errors: [{ path, message: 'Expected number' }] }
+    }
+    const num = Number(value)
+    return super._validate(num, path)
+  }
+}
+
 export class BooleanValidator extends ValidatorType<boolean> {
   toOpenApi(): Record<string, unknown> {
     return { type: 'boolean' }
   }
+
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = { type: Boolean }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) field.default = this.defaultValue
+    return field
+  }
+  _validate(
+    value: unknown,
+    path: string
+  ):
+    | { success: true; data: boolean }
+    | { success: false; errors: ValidationError[] } {
+    if (value === undefined || value === null) {
+      if (this.isOptional) return { success: true, data: undefined as never }
+      return { success: false, errors: [{ path, message: 'Required' }] }
+    }
+    if (typeof value === 'boolean') return { success: true, data: value }
+    return { success: false, errors: [{ path, message: 'Expected boolean' }] }
+  }
+}
+
+export class CoerceBooleanValidator extends BooleanValidator {
   _validate(
     value: unknown,
     path: string
@@ -393,7 +495,9 @@ export class BooleanValidator extends ValidatorType<boolean> {
 
 export class ObjectValidator<
   T extends Record<string, ValidatorType<unknown>>,
-> extends ValidatorType<{ [K in keyof T]: ReturnType<T[K]['parse']> }> {
+> extends ValidatorType<{
+  [K in keyof T]: T[K] extends ValidatorType<infer U> ? U : never
+}> {
   private _keys: string[]
 
   constructor(private shape: T) {
@@ -449,11 +553,54 @@ export class ObjectValidator<
     return schema
   }
 
+  /**
+   * Converts this v.object() schema into a Mongoose-compatible schema definition.
+   * Pass the result directly to `new mongoose.Schema()`.
+   *
+   * @example
+   * const UserSchema = v.object({ name: v.string(), email: v.string().email().unique() })
+   * const User = mongoose.model('User', new mongoose.Schema(UserSchema.toMongoSchema()))
+   */
+  toMongoSchema(): {
+    [K in keyof T]: {
+      __typehint: T[K] extends ValidatorType<infer U> ? U : never
+      __rawDocTypeHint: T[K] extends ValidatorType<infer U> ? U : never
+      __hydratedDocTypeHint: T[K] extends ValidatorType<infer U> ? U : never
+    }
+  } {
+    const schemaDef: Record<string, unknown> = {}
+    for (const key of this._keys) {
+      const validator = this.shape[key]
+      schemaDef[key] = validator.toMongoField()
+    }
+    return schemaDef as {
+      [K in keyof T]: {
+        __typehint: T[K] extends ValidatorType<infer U> ? U : never
+        __rawDocTypeHint: T[K] extends ValidatorType<infer U> ? U : never
+        __hydratedDocTypeHint: T[K] extends ValidatorType<infer U> ? U : never
+      }
+    }
+  }
+
+  toMongoField(): Record<string, unknown> {
+    // Nested object — return the shape as a sub-document definition
+    const nested: Record<string, unknown> = {}
+    for (const key of this._keys) {
+      nested[key] = this.shape[key].toMongoField()
+    }
+    return nested
+  }
+
   _validate(
     value: unknown,
     path: string
   ):
-    | { success: true; data: { [K in keyof T]: ReturnType<T[K]['parse']> } }
+    | {
+        success: true
+        data: {
+          [K in keyof T]: T[K] extends ValidatorType<infer U> ? U : never
+        }
+      }
     | { success: false; errors: ValidationError[] } {
     if (value === undefined || value === null) {
       if (this.isOptional) return { success: true, data: undefined as never }
@@ -486,7 +633,12 @@ export class ObjectValidator<
     value: unknown,
     path: string
   ): Promise<
-    | { success: true; data: { [K in keyof T]: ReturnType<T[K]['parse']> } }
+    | {
+        success: true
+        data: {
+          [K in keyof T]: T[K] extends ValidatorType<infer U> ? U : never
+        }
+      }
     | { success: false; errors: ValidationError[] }
   > {
     if (value === undefined || value === null) {
@@ -553,6 +705,12 @@ export class ArrayValidator<
     if (this.minLen !== undefined) schema.minItems = this.minLen
     if (this.maxLen !== undefined) schema.maxItems = this.maxLen
     return schema
+  }
+
+  toMongoField(): Record<string, unknown> {
+    // Return as Mongoose array syntax: [{ type: String }]
+    const innerField = this.schema.toMongoField()
+    return [innerField] as any
   }
 
   _validate(
@@ -622,6 +780,18 @@ export class EnumValidator<
   }
   toOpenApi(): Record<string, unknown> {
     return { type: 'string', enum: this.values }
+  }
+
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = {
+      type: String,
+      enum: [...this.values],
+    }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) field.default = this.defaultValue
+    if (this._isUnique) field.unique = true
+    if (this._index) field.index = true
+    return field
   }
   _validate(
     value: unknown,
@@ -708,6 +878,14 @@ export class UnionValidator<
 export class DateValidator extends ValidatorType<Date> {
   toOpenApi(): Record<string, unknown> {
     return { type: 'string', format: 'date-time' }
+  }
+
+  toMongoField(): Record<string, unknown> {
+    const field: Record<string, unknown> = { type: Date }
+    if (!this.isOptional) field.required = true
+    if (this._hasDefault) field.default = this.defaultValue
+    if (this._index) field.index = true
+    return field
   }
   _validate(
     value: unknown,
@@ -905,6 +1083,10 @@ export const v = {
       process.exit(1)
     }
     return result.data
+  },
+  coerce: {
+    number: () => new CoerceNumberValidator(),
+    boolean: () => new CoerceBooleanValidator(),
   },
 }
 

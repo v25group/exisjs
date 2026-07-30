@@ -38,6 +38,7 @@ export const defaultConfig: ResolvedConfig = {
   test: undefined as any,
   plugins: [],
   workers: 1,
+  debugRouting: false,
 }
 
 // ─── Deep merge ───────────────────────────────────────────────────────────────

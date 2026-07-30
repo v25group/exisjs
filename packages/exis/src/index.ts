@@ -20,6 +20,17 @@ export {
   UnprocessableError,
   RateLimitError,
   InternalError,
+
+  // Exception Aliases
+  HttpException,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+  ConflictException,
+  UnprocessableException,
+  RateLimitException,
+  InternalException,
 } from './utils/errors'
 export { parseEnv, loadEnv } from './utils/env'
 

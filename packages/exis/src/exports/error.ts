@@ -10,4 +10,15 @@ export {
   InternalError,
   createErrorHandler,
   asyncHandler,
+
+  // Exception Aliases
+  HttpException,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+  ConflictException,
+  UnprocessableException,
+  RateLimitException,
+  InternalException,
 } from '../utils/errors'

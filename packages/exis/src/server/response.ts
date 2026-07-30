@@ -1,6 +1,7 @@
 import { ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import type { CookieOptions, Request as IRequest } from '../types'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -9,12 +10,13 @@ const contentDisposition = require('content-disposition')
 const mime = require('mime-types')
 
 function generateETag(content: Buffer): string {
-  let h = 0x811c9dc5
-  for (const byte of content) {
-    h ^= byte
-    h = (h * 0x01000193) >>> 0
-  }
-  return `W/"${content.length.toString(16)}-${h.toString(16)}"`
+  if (content.length === 0) return 'W/"0-2jmj7l5rsw0yVb/vlWAYkK/YBwk"'
+  const hash = crypto
+    .createHash('sha1')
+    .update(content)
+    .digest('base64')
+    .substring(0, 27)
+  return `W/"${content.length.toString(16)}-${hash}"`
 }
 
 export class ExisResponse<TResponse = any> {
@@ -239,12 +241,6 @@ export class ExisResponse<TResponse = any> {
       return
     }
 
-    if (this.req?.fresh) {
-      this.statusCode = 304
-      this.end()
-      return
-    }
-
     if (!this.raw.hasHeader('Content-Type')) {
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
     }
@@ -253,6 +249,12 @@ export class ExisResponse<TResponse = any> {
 
     if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
       this.raw.setHeader('ETag', generateETag(Buffer.from(str, 'utf8')))
+    }
+
+    if (this.req?.fresh) {
+      this.statusCode = 304
+      this.end()
+      return
     }
 
     this.raw.setHeader('Content-Length', byteLen)

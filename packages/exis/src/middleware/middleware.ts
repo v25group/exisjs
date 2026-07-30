@@ -278,10 +278,10 @@ export function validate(schema: ValidateSchema): Handler {
         req.body = schema.body.parse(req.body)
       }
       if (schema.query) {
-        req.query = schema.query.parse(req.query)
+        req.query = schema.query.parse(req.query) as Record<string, string>
       }
       if (schema.params) {
-        req.params = schema.params.parse(req.params)
+        req.params = schema.params.parse(req.params) as Record<string, string>
       }
       next()
     } catch (err: unknown) {
@@ -301,4 +301,13 @@ export function validate(schema: ValidateSchema): Handler {
   }
   Object.assign(handler, { schema })
   return handler
+}
+
+// ─── Conditional Get (ETag) ───────────────────────────────────────────────────
+
+export function conditionalGet(): Handler {
+  return (req, res, next) => {
+    res.etagEnabled = true
+    next()
+  }
 }

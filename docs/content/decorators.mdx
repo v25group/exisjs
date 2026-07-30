@@ -181,11 +181,12 @@ export default class ApiController {
 }
 ```
 
-### Available Response Decorators
+### Available Response & Metadata Decorators
 - `@HttpCode(code: number)`
 - `@Header(name: string, value: string)`
 - `@Redirect(url: string, statusCode?: number)`
 - `@Hosts(...hosts: string[])` - Restricts a route/controller to a specific Host header (e.g. `api.example.com`).
+- `@Permissions(...permissions: string[])` - Restricts a route/controller to users with specific permissions.
 
 ---
 

@@ -131,6 +131,17 @@ export class InternalError extends HttpError {
   }
 }
 
+// ─── Exception Aliases ────────────────────────────────────────────────────────
+export const HttpException = HttpError
+export const BadRequestException = BadRequestError
+export const UnauthorizedException = UnauthorizedError
+export const ForbiddenException = ForbiddenError
+export const NotFoundException = NotFoundError
+export const ConflictException = ConflictError
+export const UnprocessableException = UnprocessableError
+export const RateLimitException = RateLimitError
+export const InternalException = InternalError
+
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 
 function renderErrorHtml(err: Error, req: import('../types').Request): string {
@@ -192,16 +203,31 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       err.name === 'ValidatorError'
     ) {
       let message = err.message
-      
+
       // Normalize ZodError
-      if (err.name === 'ZodError' && 'errors' in err && Array.isArray((err as any).errors)) {
+      if (
+        err.name === 'ZodError' &&
+        'errors' in err &&
+        Array.isArray((err as any).errors)
+      ) {
         const zodErrors = (err as any).errors
-        message = 'Validation Error: ' + zodErrors.map((e: any) => `${e.path.join('.')}: ${e.message}`).join(', ')
+        message =
+          'Validation Error: ' +
+          zodErrors
+            .map((e: any) => `${e.path.join('.')}: ${e.message}`)
+            .join(', ')
       }
       // Normalize Yup ValidationError
-      else if (err.name === 'ValidationError' && 'inner' in err && Array.isArray((err as any).inner) && (err as any).inner.length > 0) {
+      else if (
+        err.name === 'ValidationError' &&
+        'inner' in err &&
+        Array.isArray((err as any).inner) &&
+        (err as any).inner.length > 0
+      ) {
         const yupErrors = (err as any).inner
-        message = 'Validation Error: ' + yupErrors.map((e: any) => `${e.path}: ${e.message}`).join(', ')
+        message =
+          'Validation Error: ' +
+          yupErrors.map((e: any) => `${e.path}: ${e.message}`).join(', ')
       }
 
       res.status(400).json({

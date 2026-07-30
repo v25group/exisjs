@@ -184,3 +184,59 @@ As your request moves through ExisJS Middlewares, various properties are attache
 - **`req.user`**: The authenticated user payload (via `JWT` auth middleware).
 - **`req.session`**: The stateful session object (via `session` middleware).
 - **`req.fresh`**: Returns `true` if the client's cache is still valid (ETag match), meaning you can send a 304 response.
+
+### Inline Context Typing (Per-Route)
+
+If you don't want to create a globally typed router with `createRouter`, ExisJS natively types `req.user` as `any` by default so you never get annoying compiler errors (e.g. `req.user.userId` just works!). 
+
+However, if you want **strict** type safety on a specific route without global configuration, you can pass your custom context directly to the route's 4th generic parameter:
+
+```typescript
+import { route } from "exisjs/router";
+
+export default route.get<any, any, any, { user: { userId: string } }>("/", {
+  async handle({ req }) {
+    // 100% typed! No "as any" needed!
+    const id = req.user.userId; 
+  }
+})
+```
+
+### Strongly-Typed Context & Native Destructuring (App-Wide)
+
+To provide the ultimate Developer Experience, ExisJS allows you to define a **custom typed context** for your application. This completely eliminates the need for global `.d.ts` augmentations and risky `as any` casts.
+
+To do this, create a custom router factory (e.g., `src/http/router.ts`) and define the exact shape of your application's context (like the user object, workspace, tenant ID, etc).
+
+```typescript filename="src/http/router.ts"
+import { createRouter } from "exisjs/router";
+
+// 1. Define everything your middlewares will attach to the request
+interface AppContext {
+  user: { id: string; role: string };
+  workspace: string;
+}
+
+// 2. Export a custom typed route and controller
+export const { route, controller } = createRouter<AppContext>();
+```
+
+Now, instead of importing from `exisjs/router`, import from your **local** router! Your handlers can natively destructure your custom properties perfectly typed!
+
+```typescript filename="src/http/users/route.ts"
+import { route, controller } from "../../router.ts";
+
+export default controller({
+  getProfile: route.get("/", {
+    async handle({ user, workspace }) {
+      // 100% strongly typed! 
+      // No more `req.user`, no more `as any`!
+      console.log(user.role, workspace);
+    }
+  })
+});
+```
+
+<Warning>
+**Important Middleware Rule:** In order for destructuring to work (e.g. `handle({ user })`), the `user` property MUST be populated **before** the handler executes. This means you must populate it inside a `middleware` instead of calling an inline function inside the handler.
+</Warning>

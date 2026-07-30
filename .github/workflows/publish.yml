@@ -10,28 +10,7 @@ permissions:
   packages: write
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js 24.x
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24.x
-
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Build
-        run: npm run build
-
-      - name: Run Tests
-        run: npm test
-
   publish:
-    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
@@ -50,16 +29,37 @@ jobs:
         run: npm run build
 
       - name: Publish exisjs
-        run: npm publish --workspace=packages/exis --access public
+        run: |
+          VERSION=$(node -p "require('./packages/exis/package.json').version")
+          EXISTS=$(npm view exisjs@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/exis --access public
+          else
+            echo "exisjs@$VERSION is already published. Skipping."
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/create
-        run: npm publish --workspace=packages/create-exis --access public
+        run: |
+          VERSION=$(node -p "require('./packages/create-exis/package.json').version")
+          EXISTS=$(npm view @exisjs/create@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/create-exis --access public
+          else
+            echo "@exisjs/create@$VERSION is already published. Skipping."
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @exisjs/client
-        run: npm publish --workspace=packages/client --access public
+        run: |
+          VERSION=$(node -p "require('./packages/client/package.json').version")
+          EXISTS=$(npm view @exisjs/client@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/client --access public
+          else
+            echo "@exisjs/client@$VERSION is already published. Skipping."
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

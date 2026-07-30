@@ -4,6 +4,7 @@ import type {
   Response,
   HookError,
   HookResponse,
+  RouteSchema,
 } from '../types'
 import { App } from './app'
 import type { ExisWebSocket } from '../websocket/socket'
@@ -19,16 +20,22 @@ import type { ExisSSE } from './sse'
  *   return { message: 'Hello World' }
  * }
  */
-export interface SuperContext<B = any, Q = any, P = any> {
+export type SuperContext<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = {
   body: B
   query: Q
   params: P
   headers: Record<string, string | string[] | undefined>
-  req: Request
+  req: Request<B, Q, P, TContext>
   res: Response
   app: App
+  state: Record<string, any>
   [key: string]: any
-}
+} & TContext
 
 /**
  * Configuration options for an individual route.
@@ -46,64 +53,79 @@ export interface SuperContext<B = any, Q = any, P = any> {
  *   })
  * })
  */
-export interface RouteConfig<B = any, Q = any, P = any> {
-  body?: any
-  query?: any
-  params?: any
-  response?: any
+
+export interface BaseRouteConfig<TContext = Record<string, any>> {
   cors?: any
-  middleware?: Handler[]
+  middleware?: Handler<any, any, any, any, TContext>[]
   filters?: any | any[]
   host?: string | string[]
-  handle: (ctx: SuperContext<B, Q, P>) => any | Promise<any>
 }
+
+export type RouteConfig<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = BaseRouteConfig<TContext> &
+  RouteSchema<B, Q, P, any, TContext> & {
+    handle: (ctx: SuperContext<B, Q, P, TContext>) => any | Promise<any>
+  }
 
 /**
  * The execution context for a WebSocket route.
  * Injects a fully-typed native `ExisWebSocket` instance.
  */
-export interface WsSuperContext<B = any, Q = any, P = any> extends SuperContext<
-  B,
-  Q,
-  P
-> {
+export type WsSuperContext<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = SuperContext<B, Q, P, TContext> & {
   socket: ExisWebSocket
 }
 
-export interface WsRouteConfig<B = any, Q = any, P = any> extends Omit<
-  RouteConfig<B, Q, P>,
-  'handle'
-> {
-  handle: (ctx: WsSuperContext<B, Q, P>) => any | Promise<any>
-}
+export type WsRouteConfig<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = BaseRouteConfig<TContext> &
+  RouteSchema<B, Q, P, any, TContext> & {
+    handle: (ctx: WsSuperContext<B, Q, P, TContext>) => any | Promise<any>
+  }
 
 /**
  * The execution context for a Server-Sent Events (SSE) route.
  * Injects a fully-typed native `ExisSSE` stream instance.
  */
-export interface SseSuperContext<
+export type SseSuperContext<
   B = any,
   Q = any,
   P = any,
-> extends SuperContext<B, Q, P> {
+  TContext = Record<string, any>,
+> = SuperContext<B, Q, P, TContext> & {
   stream: ExisSSE
 }
 
-export interface SseRouteConfig<B = any, Q = any, P = any> extends Omit<
-  RouteConfig<B, Q, P>,
-  'handle'
-> {
-  handle: (ctx: SseSuperContext<B, Q, P>) => any | Promise<any>
-}
+export type SseRouteConfig<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = BaseRouteConfig<TContext> &
+  RouteSchema<B, Q, P, any, TContext> & {
+    handle: (ctx: SseSuperContext<B, Q, P, TContext>) => any | Promise<any>
+  }
 
 /**
  * The final built route configuration object.
  */
-export type RouteDefinition<B = any, Q = any, P = any> = RouteConfig<
-  B,
-  Q,
-  P
-> & {
+export type RouteDefinition<
+  B = any,
+  Q = any,
+  P = any,
+  TContext = Record<string, any>,
+> = RouteConfig<B, Q, P, TContext> & {
   method: string
   path: string
 }
@@ -126,84 +148,148 @@ export const route = {
    * @param {RouteConfig} config
    * @public
    */
-  get: <B = any, Q = any, P = any>(
+  get: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'get', path, ...config }),
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'get', path, ...config }) as any,
 
-  /**
-   * Defines a POST route.
-   *
-   * Example:
-   *
-   *     route.post('/users', {
-   *       body: { name: v.string() },
-   *       handle({ body }) { return { success: true }; }
-   *     })
-   *
-   * @param {string} path
-   * @param {RouteConfig} config
-   * @public
-   */
-  post: <B = any, Q = any, P = any>(
+  post: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'post', path, ...config }),
-  /** Defines a PUT route. */
-  put: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'post', path, ...config }) as any,
+
+  put: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'put', path, ...config }),
-  /** Defines a DELETE route. */
-  delete: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'put', path, ...config }) as any,
+
+  delete: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'delete', path, ...config }),
-  /** Defines a PATCH route. */
-  patch: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'delete', path, ...config }) as any,
+
+  patch: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'patch', path, ...config }),
-  /** Defines an OPTIONS route. */
-  options: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'patch', path, ...config }) as any,
+
+  options: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'options', path, ...config }),
-  /** Defines a HEAD route. */
-  head: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'options', path, ...config }) as any,
+
+  head: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'head', path, ...config }),
-  /** Defines a CONNECT route. */
-  connect: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'head', path, ...config }) as any,
+
+  connect: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'connect', path, ...config }),
-  /** Defines a TRACE route. */
-  trace: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'connect', path, ...config }) as any,
+
+  trace: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'trace', path, ...config }),
-  /** Defines a custom QUERY route (e.g., for GraphQL-style operations). */
-  query: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'trace', path, ...config }) as any,
+
+  query: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'query', path, ...config }),
-  /** Defines a route that matches ALL HTTP methods. */
-  all: <B = any, Q = any, P = any>(
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'query', path, ...config }) as any,
+
+  all: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: RouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'all', path, ...config }),
+    config: RouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'all', path, ...config }) as any,
   /** Defines a WebSocket route. */
-  ws: <B = any, Q = any, P = any>(
+  ws: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: WsRouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'ws', path, ...(config as any) }),
+    config: WsRouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'ws', path, ...config }) as any,
   /** Defines a Server-Sent Events (SSE) route. */
-  sse: <B = any, Q = any, P = any>(
+  sse: <
+    B = unknown,
+    Q = Record<string, string>,
+    P = Record<string, string>,
+    TContext = Record<string, any>,
+  >(
     path: string,
-    config: SseRouteConfig<B, Q, P>
-  ): RouteDefinition<B, Q, P> => ({ method: 'sse', path, ...(config as any) }),
+    config: SseRouteConfig<B, Q, P, TContext>
+  ): RouteDefinition<B, Q, P, TContext> =>
+    ({ method: 'sse', path, ...config }) as any,
 }
 
 /**
@@ -249,4 +335,57 @@ export function controller<T extends ControllerConfig>(
     value: true,
     enumerable: false, // Hide from iteration
   }) as T & { __isController: true }
+}
+
+/**
+ * Creates a strongly-typed router and controller factory.
+ * This is the recommended way to type your context globally across an app.
+ *
+ * @example
+ * interface MyContext {
+ *   user: User;
+ *   workspace: Workspace;
+ * }
+ * export const { route, controller } = createRouter<MyContext>();
+ */
+export function createRouter<TContext = Record<string, any>>() {
+  return {
+    route: route as unknown as typeof route & {
+      get: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      post: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      put: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      patch: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      delete: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      all: <B = any, Q = any, P = any>(
+        path: string,
+        config: RouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      ws: <B = any, Q = any, P = any>(
+        path: string,
+        config: WsRouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+      sse: <B = any, Q = any, P = any>(
+        path: string,
+        config: SseRouteConfig<B, Q, P, TContext>
+      ) => RouteDefinition<B, Q, P, TContext>
+    },
+    controller: <T extends ControllerConfig>(
+      config: T
+    ): T & { __isController: true } => controller(config),
+  }
 }

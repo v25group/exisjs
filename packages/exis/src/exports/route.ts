@@ -1,4 +1,4 @@
-export { route, controller } from '../server/route'
+export { route, controller, createRouter } from '../server/route'
 export type {
   RouteConfig,
   ControllerConfig,

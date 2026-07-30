@@ -33,8 +33,10 @@ const safeData = userSchema.parse(rawInput)
 ExisJS supports a comprehensive set of strict validation primitives:
 
 - `v.string()` - String validation (supports `.min()`, `.max()`, `.email()`, `.regex()`).
-- `v.number()` - Strict number validation. It handles smart coercion (like converting `"123"` from a query string into `123`).
-- `v.boolean()` - Boolean validation (understands `"true"` and `"false"` from URLs).
+- `v.number()` - Strict number validation (fails if passed a string).
+- `v.boolean()` - Strict boolean validation.
+- `v.coerce.number()` - Automatically coerces incoming string representations (like `"123"` from query strings or form data) into native JavaScript numbers (`123`) before passing it downstream.
+- `v.coerce.boolean()` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
 - `v.array(schema)` - Validates an array of items.
 - `v.object({ ... })` - Validates structured JSON objects.
 - `v.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
@@ -69,6 +71,9 @@ const PublicUserSchema = UserSchema.omit(['password'])
 
 // Create a specialized schema
 const LoginSchema = UserSchema.pick(['email', 'password'])
+
+// Chain multiple schemas using .or()
+const FlexibleIdSchema = v.string().or(v.number())
 ```
 
 ### Asynchronous Validation
@@ -131,8 +136,9 @@ export default controller({
     }),
       
     // 2. Your handler only runs if validation succeeds!
-    async handle({ body, res }) {
-      // body and query are perfectly strongly-typed here!
+    async handle({ body, query, req, res }) {
+      // ✅ body and query are perfectly strongly-typed here!
+      // ✅ req.body and req.query are ALSO natively inferred! No `as any` required.
       await db.users.create(body)
       res.status(201).json({ success: true })
     }

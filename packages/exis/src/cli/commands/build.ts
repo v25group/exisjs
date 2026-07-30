@@ -2,7 +2,8 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { error, c } from '../utils'
-import { generateManifest } from '../manifest'
+import { generateManifest } from '../manifest.js'
+import { resolvePathAliases } from '../resolve-aliases.js'
 
 interface BuildOptions {
   outDir?: string
@@ -79,7 +80,8 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   }
 
   await new Promise<void>((resolve, reject) => {
-    const command = `"${tscBin}" --project "${tsconfigPath}" --outDir "${outDir}" --noEmit false`
+    const typeRootsDir = path.join(cwd, 'node_modules', '@types')
+    const command = `"${tscBin}" --project "${tsconfigPath}" --outDir "${outDir}" --noEmit false --typeRoots "${typeRootsDir}"`
     const child = spawn(command, {
       cwd,
       stdio: 'pipe',
@@ -129,7 +131,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     }
   })
 
-  // resolve path aliases if tsconfig-paths-fix is available
+  // resolve path aliases natively (no external deps)
   await fixPathAliases(cwd, outDir)
 
   // Generate the .exis/manifest.js route map
@@ -182,23 +184,12 @@ function findTsc(cwd: string): string | null {
   return 'tsc'
 }
 
-async function fixPathAliases(cwd: string, _outDir: string): Promise<void> {
-  process.stdout.write(`${c.dim}resolving aliases...${c.reset}`)
-
-  await new Promise<void>((resolve) => {
-    const child = spawn(
-      `npx tsc-alias -p tsconfig.json --outDir "${_outDir}" -f`,
-      {
-        cwd,
-        stdio: 'pipe',
-        shell: true,
-      }
+async function fixPathAliases(cwd: string, outDir: string): Promise<void> {
+  try {
+    await resolvePathAliases(cwd, outDir)
+  } catch (err: any) {
+    process.stdout.write(
+      `\n${c.yellow}⚠${c.reset} ${c.dim}alias resolution failed: ${err.message}${c.reset}\n`
     )
-    child.on('exit', () => {
-      process.stdout.write(
-        `\r${c.green}✓${c.reset} ${c.dim}resolved path aliases.${c.reset}\n`
-      )
-      resolve()
-    })
-  })
+  }
 }

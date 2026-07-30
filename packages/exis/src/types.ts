@@ -3,11 +3,12 @@ import type { ExisResponse } from './server/response'
 import type { ExisWebSocket } from './websocket/socket'
 import type { ExisSSE } from './server/sse'
 
-export interface Request<
+export type Request<
   TBody = unknown,
   TQuery = Record<string, string>,
   TParams = Record<string, string>,
-> extends ExisRequest<TBody, TQuery, TParams> {}
+  TContext = Record<string, any>,
+> = ExisRequest<TBody, TQuery, TParams> & TContext
 
 export type Response<TResponse = any> = ExisResponse<TResponse>
 
@@ -44,8 +45,9 @@ export type Handler<
   TQuery = Record<string, string>,
   TParams = Record<string, string>,
   TResponse = any,
+  TContext = Record<string, any>,
 > = (
-  req: Request<TBody, TQuery, TParams>,
+  req: Request<TBody, TQuery, TParams, TContext>,
   res: Response<TResponse>,
   next: NextFunction
 ) =>
@@ -59,14 +61,24 @@ export type ErrorHandler = (
   next: NextFunction
 ) => void | Promise<void>
 
-export type WsHandler<TBody = any, TQuery = any, TParams = any> = (
+export type WsHandler<
+  TBody = any,
+  TQuery = any,
+  TParams = any,
+  TContext = Record<string, any>,
+> = (
   ws: ExisWebSocket,
-  req: Request<TBody, TQuery, TParams>
+  req: Request<TBody, TQuery, TParams, TContext>
 ) => void | Promise<void>
 
-export type SseHandler<TBody = any, TQuery = any, TParams = any> = (
+export type SseHandler<
+  TBody = any,
+  TQuery = any,
+  TParams = any,
+  TContext = Record<string, any>,
+> = (
   sse: ExisSSE,
-  req: Request<TBody, TQuery, TParams>
+  req: Request<TBody, TQuery, TParams, TContext>
 ) => void | Promise<void>
 
 // ─── Route Types ─────────────────────────────────────────────────────────────
@@ -86,47 +98,48 @@ export type HttpMethod =
   | 'WS'
   | 'SSE'
 
+export type RouteValidator<T> =
+  | { parse: (val: unknown) => T; transform?: unknown }
+  | { parse?: unknown; transform: (val: unknown, meta?: any) => Promise<T> | T }
+
 export interface RouteSchema<
   TBody = unknown,
   TQuery = unknown,
   TParams = unknown,
   TResponse = unknown,
+  _TContext = Record<string, any>,
 > {
   response?: TResponse
-  body?:
-    | { parse: (val: unknown) => TBody }
-    | { transform: (val: unknown, meta?: any) => Promise<TBody> | TBody }
-    | any
-  query?:
-    | { parse: (val: unknown) => TQuery }
-    | { transform: (val: unknown, meta?: any) => Promise<TQuery> | TQuery }
-    | any
-  params?:
-    | { parse: (val: unknown) => TParams }
-    | { transform: (val: unknown, meta?: any) => Promise<TParams> | TParams }
-    | any
+  body?: RouteValidator<TBody>
+  query?: RouteValidator<TQuery>
+  params?: RouteValidator<TParams>
   host?: string | string[]
   filters?: any | any[]
   metadata?: Record<string, any>
+  permissions?: string[]
 }
 
-export type InferZod<S> = S extends { parse: (val: any) => infer U }
+export type InferZod<S> = S extends { parse: (val: unknown) => infer U }
   ? U
-  : unknown
-export type InferSchemaBody<S> = S extends { body: infer B }
-  ? B extends { parse: any }
-    ? InferZod<B>
+  : S extends { parse: (val: any) => infer U }
+    ? U
     : unknown
+export type InferSchemaBody<S> = S extends { body: infer B }
+  ? InferZod<B>
   : unknown
 export type InferSchemaQuery<S> = S extends { query: infer Q }
-  ? Q extends { parse: any }
-    ? InferZod<Q>
-    : Record<string, string>
+  ? InferZod<Q> extends unknown
+    ? unknown extends InferZod<Q>
+      ? Record<string, string>
+      : InferZod<Q>
+    : InferZod<Q>
   : Record<string, string>
 export type InferSchemaParams<S> = S extends { params: infer P }
-  ? P extends { parse: any }
-    ? InferZod<P>
-    : Record<string, string>
+  ? InferZod<P> extends unknown
+    ? unknown extends InferZod<P>
+      ? Record<string, string>
+      : InferZod<P>
+    : InferZod<P>
   : Record<string, string>
 export type InferSchemaResponse<S> = S extends { response: infer R }
   ? R extends { parse: any }
@@ -134,28 +147,31 @@ export type InferSchemaResponse<S> = S extends { response: infer R }
     : any
   : any
 
-export type InferHandler<S extends RouteSchema<any, any, any, any>> = Handler<
-  InferSchemaBody<S>,
-  InferSchemaQuery<S>,
-  InferSchemaParams<S>,
-  InferSchemaResponse<S>
->
+export type InferHandler<S extends RouteSchema<any, any, any, any, any>> =
+  Handler<
+    InferSchemaBody<S>,
+    InferSchemaQuery<S>,
+    InferSchemaParams<S>,
+    InferSchemaResponse<S>,
+    Record<string, any> // TContext is typically inferred at the route definition level
+  >
 
 export type RouteHandler<
   TBody = unknown,
   TQuery = Record<string, string>,
   TParams = Record<string, string>,
   TResponse = unknown,
+  TContext = Record<string, any>,
 > =
-  | Handler<TBody, TQuery, TParams>
-  | RouteSchema<TBody, TQuery, TParams, TResponse>
+  | Handler<TBody, TQuery, TParams, TResponse, TContext>
+  | RouteSchema<TBody, TQuery, TParams, TResponse, TContext>
 
 export interface Route {
   method: HttpMethod | 'ALL' | 'WS'
   path: string
-  handlers: Handler<any, any, any>[]
+  handlers: Handler<any, any, any, any, any>[]
   sourceFile?: string
-  schema?: RouteSchema<any, any, any, any>
+  schema?: RouteSchema<any, any, any, any, any>
   host?: string | string[]
   _serializer?: (data: unknown) => string
 }
@@ -236,6 +252,7 @@ export interface ExisConfig {
   redirectHttp?: boolean | number // If true, redirects port 80 to HTTPS port. If number, redirects that specific port.
   etag?: boolean // Default false. Set to true to enable ETag generation for all responses.
   workers?: number | 'safe' | 'max' // Number of CPU workers for cluster. default 1. 'safe' caps to 2. 'max' uses all cores.
+  debugRouting?: boolean // Enables detailed logging of the resolved route file and applied gateways for every incoming request
   /**
    * Optional. Server backend to use.
    * 'node' (default fallback) uses Node's native HTTP/HTTPS modules.

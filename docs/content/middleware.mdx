@@ -33,6 +33,30 @@ export default defineGateway({
 })
 ```
 
+### Middleware vs Inline Execution
+
+It is critical to understand that middleware executes **before** your route handler. If you are using [Custom Typed Contexts](/docs/requests#strongly-typed-context--native-destructuring) to destructure variables (e.g., `async handle({ user })`), you **must** use middleware to populate `req.user`.
+
+If you try to call an authentication function *inline* inside the handler, the `user` variable will be `undefined` because destructuring occurs at the moment the handler is invoked—before the inline function has a chance to execute!
+
+```typescript
+// ❌ BAD: Destructuring happens before requireAuth mutates the request!
+create: route.post('/', {
+  async handle({ user, req }) {
+    requireAuth(req); 
+    console.log(user); // undefined!
+  }
+})
+
+// ✅ GOOD: Middleware runs first, so `user` is fully populated and strongly typed!
+create: route.post('/', {
+  middleware: [requireAuth],
+  async handle({ user }) {
+    console.log(user); // Populated and 100% typed!
+  }
+})
+```
+
 #### Functional Paradigm
 
 ```typescript filename="src/http/route.ts"

@@ -154,26 +154,29 @@ export default class AdminGateway {}
 
 ## 3. Role-Based Access Control (RBAC)
 
-Once your user is authenticated and attached to `req.user`, you can lock down specific endpoints using the native `requireRole` middleware.
+Once your user is authenticated and their payload is attached to `req.user`, ExisJS provides native, declarative Role-Based Access Control right inside the route configuration! You don't need any custom middlewares for this.
 
 #### Functional Paradigm
 
 ```typescript filename="src/http/admin/route.ts"
 import { controller, route } from 'exisjs/router'
-import { requireRole } from 'exisjs/auth'
+import { parseUser } from '../middlewares/auth.js'
 
 export default controller({
-  // Only users with req.user.role === 'superadmin' can access this
+  // Intercepts the request and checks req.user.permissions (or req.user.role) 
+  // before the handler even executes. Throws 403 Forbidden if missing!
   deleteDatabase: route.delete('/db', {
-    middlewares: [requireRole('superadmin')],
+    permissions: ['superadmin'],
+    middleware: [parseUser()],
     handle() {
       return { success: true }
     }
   }),
   
-  // Accepts an array of allowed roles
+  // Accepts an array of allowed permissions
   viewDashboard: route.get('/dashboard', {
-    middlewares: [requireRole(['admin', 'superadmin', 'manager'])],
+    permissions: ['admin', 'superadmin', 'manager'],
+    middleware: [parseUser()],
     handle() {
       return { metrics: [] }
     }
@@ -184,20 +187,21 @@ export default controller({
 #### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/admin/route.ts"
-import { Controller, Delete, Get, Use } from 'exisjs/decorators'
-import { requireRole } from 'exisjs/auth'
+import { Controller, Delete, Get, Use, Permissions } from 'exisjs/decorators'
+import { parseUser } from '../middlewares/auth.js'
 
+@Use(parseUser())
 @Controller()
 export default class AdminController {
-  // Only users with req.user.role === 'superadmin' can access this
-  @Use(requireRole('superadmin'))
+  // Only users with superadmin permission can access this
+  @Permissions('superadmin')
   @Delete('/db')
   async deleteDatabase() {
     return { success: true }
   }
   
-  // Accepts an array of allowed roles
-  @Use(requireRole(['admin', 'superadmin', 'manager']))
+  // Accepts an array of allowed permissions
+  @Permissions(['admin', 'superadmin', 'manager'])
   @Get('/dashboard')
   async viewDashboard() {
     return { metrics: [] }

@@ -30,7 +30,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.4.1',
+      exisjs: '^0.4.2',
     },
   }
 
@@ -73,7 +73,6 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
         resolveJsonModule: true,
         isolatedModules: true,
         noEmit: true,
-        baseUrl: '.',
         paths: {
           [alias]: [aliasPath],
         },
@@ -89,7 +88,7 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
 export function exisConfigTemplate(useTypeScript: boolean): string {
   const importStatement = useTypeScript
     ? `import type { ExisConfig } from 'exisjs/config'\nimport { env } from './env'\n\nconst config: ExisConfig = {`
-    : `/** @type {import('exisjs/config').ExisConfig} */\nimport { env } from './env.js'\n\nconst config = {`
+    : `/** @type {import('exisjs/config').ExisConfig} */\nimport { env } from './env'\n\nconst config = {`
 
   return `${importStatement}
   port: Number(env.PORT) || 4000,

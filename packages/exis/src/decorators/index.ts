@@ -111,9 +111,16 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
         }
 
         // 3. Collect custom HttpCode / Header response metadata
-        const routeMetadata = fn[ROUTE_METADATA_PROP]
-        if (routeMetadata) {
-          proto[ROUTE_METADATA][key] = routeMetadata
+        const classRouteMetadata = proto[ROUTE_METADATA_PROP] || {}
+        const routeMetadata = fn[ROUTE_METADATA_PROP] || {}
+        if (
+          Object.keys(classRouteMetadata).length > 0 ||
+          Object.keys(routeMetadata).length > 0
+        ) {
+          proto[ROUTE_METADATA][key] = {
+            ...classRouteMetadata,
+            ...routeMetadata,
+          }
         }
 
         // 4. Collect Guards and Interceptors (merging class-level and method-level)
@@ -642,6 +649,20 @@ export const Redirect = (url: string, statusCode = 302): any => {
     const fn = target[propertyKey]
     fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
     fn[ROUTE_METADATA_PROP].redirect = { url, statusCode }
+  }
+}
+
+export const Permissions = (...permissions: string[]): any => {
+  return function (target: any, propertyKey?: string | symbol) {
+    if (propertyKey) {
+      const fn = target[propertyKey]
+      fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
+      fn[ROUTE_METADATA_PROP].permissions = permissions
+    } else {
+      const proto = typeof target === 'function' ? target.prototype : target
+      proto[ROUTE_METADATA_PROP] = proto[ROUTE_METADATA_PROP] || {}
+      proto[ROUTE_METADATA_PROP].permissions = permissions
+    }
   }
 }
 
