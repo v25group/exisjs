@@ -25,11 +25,11 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Tests
-        run: npm run test
-
       - name: Build
         run: npm run build
+
+      - name: Run Tests
+        run: npm run test
 
       - name: Publish exisjs
         run: |
