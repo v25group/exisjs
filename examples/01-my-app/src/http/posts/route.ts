@@ -20,9 +20,9 @@ export default controller({
   }),
 
   create: route.post('/', {
-    body: {
+    body: v.object({
       text: v.string().min(1)
-    },
+    }),
     handle({ body }) {
       const newPost = { id: posts.length + 1, text: body.text, userId: 1 }
       posts.push(newPost)
@@ -31,9 +31,9 @@ export default controller({
   }),
 
   getById: route.get('/:id', {
-    params: {
+    params: v.object({
       id: v.number().transform(Number)
-    },
+    }),
     handle({ params }) {
       const post = posts.find(p => p.id === params.id)
       if (!post) throw new NotFoundError('Post not found')

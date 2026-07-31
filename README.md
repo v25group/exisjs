@@ -109,26 +109,6 @@ The Node.js ecosystem is incredibly fragmented.
 
 ---
 
-## 📁 What's in the Box? (CLI Structure)
-
-When you run `npx @exisjs/create`, here is the beautiful architecture generated for you:
-
-```text
-my-backend/
-├── src/
-│   ├── http/
-│   │   ├── health/
-│   │   │   └── route.ts       # A fully functioning /health endpoint
-│   │   ├── route.ts           # The root / endpoint
-│   │   └── server.ts          # Global server lifecycle & plugins
-│   ├── env.ts                 # Type-safe environment variables (Zod)
-│   └── exis.config.ts         # Centralized configuration (CORS, Logger, etc)
-├── package.json
-└── tsconfig.json
-```
-
----
-
 ## 🧪 Sample Applications
 
 Nobody trusts an unproven framework. That's why we've built full-scale examples directly in our repository so you can see ExisJS in action:

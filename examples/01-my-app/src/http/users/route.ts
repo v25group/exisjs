@@ -44,7 +44,7 @@ export default controller({
 
   implicit: route.get('/:id/implicit', {
     params: UserParamsSchema,
-    body: { role: v.string() },
+    body: v.object({ role: v.string() }),
     async handle({ params, body }) {
       return {
         success: true,

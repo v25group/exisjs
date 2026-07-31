@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { error, c } from '../utils'
-import { generateManifest } from '../manifest.js'
+import { generateManifest, generateExisEnv } from '../manifest.js'
 import { resolvePathAliases } from '../resolve-aliases.js'
 
 interface BuildOptions {
@@ -71,6 +71,9 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
 
   process.stdout.write(`${c.dim}compiling...${c.reset}`)
   const start = Date.now()
+
+  // Ensure we generate the exis.d.ts file with optional fallback node types BEFORE tsc runs
+  await generateExisEnv(cwd)
 
   const tscBin = findTsc(cwd)
   if (!tscBin) {

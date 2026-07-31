@@ -17,10 +17,10 @@ let nextUserId = 1
 
 export default controller({
   login: route.post('/login', {
-    body: {
+    body: v.object({
       email: v.string().email(),
       password: v.string().min(6),
-    },
+    }),
     async handle({ body, req, app }) {
       after(() => {
         app.log.info(
@@ -55,11 +55,11 @@ export default controller({
   }),
 
   register: route.post('/register', {
-    body: {
+    body: v.object({
       name: v.string().min(2),
       email: v.string().email(),
       password: v.string().min(6),
-    },
+    }),
     async handle({ body, app }) {
       console.log('--- Incoming body in /auth/register ---', body)
       // 1. Check if user already exists

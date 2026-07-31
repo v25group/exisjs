@@ -46,6 +46,13 @@ export abstract class ValidatorType<T> {
     return new RefineValidator<T>(this, check, message) as never
   }
 
+  protected _sanitizers: ((val: any) => any)[] = []
+
+  sanitize(...sanitizers: ((val: T) => T)[]): this {
+    this._sanitizers.push(...sanitizers)
+    return this
+  }
+
   transform<U>(fn: (val: T) => U): ValidatorType<U> {
     return new TransformValidator<T, U>(this, fn) as never
   }
@@ -310,7 +317,9 @@ export class StringValidator extends ValidatorType<string> {
     }
     if (typeof value !== 'string')
       return { success: false, errors: [{ path, message: 'Expected string' }] }
-    if (this.minLen !== undefined && value.length < this.minLen)
+    let typedVal = value
+    for (const s of this._sanitizers) typedVal = s(typedVal)
+    if (this.minLen !== undefined && typedVal.length < this.minLen)
       return {
         success: false,
         errors: [
@@ -322,7 +331,7 @@ export class StringValidator extends ValidatorType<string> {
           },
         ],
       }
-    if (this.maxLen !== undefined && value.length > this.maxLen)
+    if (this.maxLen !== undefined && typedVal.length > this.maxLen)
       return {
         success: false,
         errors: [
@@ -333,18 +342,18 @@ export class StringValidator extends ValidatorType<string> {
           },
         ],
       }
-    if (this.isEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value))
+    if (this.isEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedVal))
       return {
         success: false,
         errors: [{ path, message: this.emailMsg ?? 'Invalid email' }],
       }
-    if (this.regexPattern !== undefined && !this.regexPattern.test(value))
+    if (this.regexPattern !== undefined && !this.regexPattern.test(typedVal))
       return {
         success: false,
         errors: [{ path, message: this.regexMsg ?? 'Invalid format' }],
       }
 
-    return { success: true, data: value }
+    return { success: true, data: typedVal }
   }
 }
 
@@ -472,8 +481,16 @@ export class BooleanValidator extends ValidatorType<boolean> {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
     }
-    if (typeof value === 'boolean') return { success: true, data: value }
-    if (value === 'true' || value === '1') return { success: true, data: true }
+    if (typeof value === 'boolean') {
+      let typedVal = value
+      for (const s of this._sanitizers) typedVal = s(typedVal)
+      return { success: true, data: typedVal }
+    }
+    if (value === 'true' || value === '1') {
+      let typedVal = true
+      for (const s of this._sanitizers) typedVal = s(typedVal)
+      return { success: true, data: typedVal }
+    }
     if (value === 'false' || value === '0')
       return { success: true, data: false }
     return { success: false, errors: [{ path, message: 'Expected boolean' }] }
@@ -491,8 +508,16 @@ export class CoerceBooleanValidator extends BooleanValidator {
       if (this.isOptional) return { success: true, data: undefined as never }
       return { success: false, errors: [{ path, message: 'Required' }] }
     }
-    if (typeof value === 'boolean') return { success: true, data: value }
-    if (value === 'true' || value === '1') return { success: true, data: true }
+    if (typeof value === 'boolean') {
+      let typedVal = value
+      for (const s of this._sanitizers) typedVal = s(typedVal)
+      return { success: true, data: typedVal }
+    }
+    if (value === 'true' || value === '1') {
+      let typedVal = true
+      for (const s of this._sanitizers) typedVal = s(typedVal)
+      return { success: true, data: typedVal }
+    }
     if (value === 'false' || value === '0')
       return { success: true, data: false }
     return { success: false, errors: [{ path, message: 'Expected boolean' }] }
@@ -811,6 +836,8 @@ export class EnumValidator<
     }
     if (typeof value !== 'string')
       return { success: false, errors: [{ path, message: 'Expected string' }] }
+    let typedVal = value
+    for (const s of this._sanitizers) typedVal = s(typedVal)
     if (!this.values.includes(value as T[number]))
       return {
         success: false,

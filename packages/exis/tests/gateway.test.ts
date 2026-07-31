@@ -78,10 +78,10 @@ describe('Gateway & Inline Config', () => {
 
     // Scan and mount manually to mimic autoMount since we are testing internals
     // @ts-expect-error private method access in tests
-    const routes = await app.scanDirectory(httpDir)
+    const routes = await app.routeScanner.scanDirectory(httpDir)
     for (const { filePath, routePath } of routes) {
       if (filePath.endsWith('route.js')) {
-        await app.mountRouteFile(filePath, routePath)
+        await app.routeScanner.mountRouteFile(filePath, routePath)
       }
     }
   })

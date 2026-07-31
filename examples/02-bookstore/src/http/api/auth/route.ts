@@ -3,6 +3,7 @@ import { User } from '@/models/User'
 import { JWT } from 'exisjs/auth'
 import { BadRequestError, UnauthorizedError, InternalError } from 'exisjs/error'
 import { v } from 'exisjs/validator'
+import { sanitize } from 'exisjs/sanitize'
 
 const generateToken = (userId: string) => {
   return JWT.signJWT({ userId }, process.env.JWT_SECRET as string, { expiresIn: 15 * 24 * 60 * 60 }) // 15 days
@@ -10,11 +11,11 @@ const generateToken = (userId: string) => {
 
 export default controller({
   register: route.post('/register', {
-    body: {
-      email: v.string().email(),
-      username: v.string().min(3),
+    body: v.object({
+      email: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).email(),
+      username: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).min(3),
       password: v.string().min(6)
-    },
+    }),
     async handle({ body }) {
       try {
         const { email, username, password } = body
@@ -63,10 +64,10 @@ export default controller({
   }),
 
   login: route.post('/login', {
-    body: {
-      email: v.string().email(),
+    body: v.object({
+      email: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).email(),
       password: v.string()
-    },
+    }),
     async handle({ body }) {
       try {
         const { email, password } = body

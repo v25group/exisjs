@@ -148,6 +148,10 @@
     "./supabase": {
       "types": "./dist/integrations/supabase.d.ts",
       "default": "./dist/integrations/supabase.js"
+    },
+    "./sanitize": {
+      "types": "./dist/exports/sanitize.d.ts",
+      "default": "./dist/exports/sanitize.js"
     }
   },
   "files": [
