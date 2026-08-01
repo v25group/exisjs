@@ -200,7 +200,7 @@
     "drizzle-orm": "*",
     "ioredis": "*",
     "mongodb": "*",
-    "mongoose": "*",
+    "mongoose": "^8.24.2",
     "openai": "*",
     "postgres": "*",
     "posthog-node": "*",
