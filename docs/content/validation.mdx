@@ -47,6 +47,65 @@ ExisJS supports a comprehensive set of strict validation primitives:
 - `v.file()` - Validates multipart file uploads natively!
 - `v.any()` - Accepts any value without validation.
 
+### Data Sanitization (Trimming & Formatting)
+
+Unlike standard validators that only check types, ExisJS allows you to mutate and sanitize incoming data in real-time before it reaches your controller. It includes a massive suite of built-in sanitizers for Strings, Numbers, Arrays, and Objects.
+
+**String Sanitizers**
+- `.trim()` - Removes leading and trailing whitespace.
+- `.lowercase()` / `.uppercase()` - Transforms string casing.
+- `.collapseWhitespace()` - Replaces multiple spaces with a single space.
+- `.stripHtml()` - Removes all HTML tags.
+- `.escape()` - Escapes HTML entities (e.g., `<` to `&lt;`) to prevent XSS.
+- `.normalizeUnicode()` - Normalizes unicode characters (NFC).
+- `.slugify()` - Converts text to a URL-friendly slug.
+- `.truncate(length)` - Truncates strings exceeding the specified length.
+- `.removeNonAlphanumeric()` - Strips out special characters.
+- `.normalizeLineEndings()` - Converts `\r\n` to `\n`.
+
+**Number Sanitizers**
+- `.round()` - Rounds numbers to the nearest integer.
+- `.clamp(min, max)` - Restricts a number between a minimum and maximum value.
+- `.defaultIfNaN(fallback)` - Provides a fallback if the number is `NaN`.
+
+**Array Sanitizers**
+- `.dedupe()` - Removes duplicate elements.
+- `.compact()` - Removes `null`, `undefined`, and empty strings.
+- `.trimElements()` - Trims all string elements inside the array.
+- `.limitLength(length)` - Slices the array to a maximum length.
+
+**Object Sanitizers**
+- `.deepTrimStringValues()` - Recursively trims all string values deeply nested within the object.
+
+```typescript filename="example.ts"
+const loginSchema = v.object({
+  // Automatically trim whitespace, convert to lowercase, and prevent HTML injections!
+  email: v.string().email().trim().lowercase().escape(),
+  password: v.string().min(8)
+})
+
+const articleSchema = v.object({
+  title: v.string().collapseWhitespace().truncate(100),
+  // Auto-generate slugs from the title using .slugify() !
+  slug: v.string().slugify(),
+  tags: v.array(v.string()).dedupe().compact().limitLength(5)
+})
+```
+
+### Standalone Usage
+
+Because the sanitization engine is designed as a collection of pure, independent functions, **you don't have to use it with the Validator**. If you ever need to manually sanitize data deep inside your services, background jobs, or generic Node.js scripts, you can import the engine directly:
+
+```typescript filename="src/services/formatter.ts"
+import { sanitize } from 'exisjs/sanitize'
+
+export function formatArticleTitle(rawInput: string) {
+  let clean = sanitize.stripHtml(rawInput)
+  clean = sanitize.collapseWhitespace(clean)
+  return sanitize.trim(clean)
+}
+```
+
 ## Advanced Features
 
 ExisJS validation isn't just about basic types. It comes packed with advanced features to handle complex real-world use cases seamlessly.

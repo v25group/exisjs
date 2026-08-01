@@ -72,6 +72,15 @@ export function cors(config: CorsConfig = {}): Handler {
         res.set('Access-Control-Max-Age', String(maxAge))
       }
 
+      if (!allowOrigin && reqOrigin) {
+        if (req.log && typeof req.log.warn === 'function') {
+          req.log.warn(
+            { origin: reqOrigin },
+            `[CORS] Rejected preflight request from origin '${reqOrigin}' (not in allowed origins)`
+          )
+        }
+      }
+
       if (config.preflightContinue) {
         next()
         return

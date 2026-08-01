@@ -657,7 +657,9 @@ export class ObjectValidator<
     }
 
     if (errors.length > 0) return { success: false, errors }
-    return { success: true, data: data as never }
+    let typedVal = data
+    for (const s of this._sanitizers) typedVal = s(typedVal)
+    return { success: true, data: typedVal as never }
   }
 
   async _validateAsync(
@@ -701,7 +703,9 @@ export class ObjectValidator<
     )
 
     if (errors.length > 0) return { success: false, errors }
-    return { success: true, data: data as never }
+    let typedVal = data
+    for (const s of this._sanitizers) typedVal = s(typedVal)
+    return { success: true, data: typedVal as never }
   }
 }
 
@@ -838,14 +842,14 @@ export class EnumValidator<
       return { success: false, errors: [{ path, message: 'Expected string' }] }
     let typedVal = value
     for (const s of this._sanitizers) typedVal = s(typedVal)
-    if (!this.values.includes(value as T[number]))
+    if (!this.values.includes(typedVal as T[number]))
       return {
         success: false,
         errors: [
           { path, message: `Expected one of: ${this.values.join(', ')}` },
         ],
       }
-    return { success: true, data: value as T[number] }
+    return { success: true, data: typedVal as T[number] }
   }
 }
 

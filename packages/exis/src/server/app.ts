@@ -660,6 +660,19 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
       this._configLoaded = true
 
+      if (this.options.env === 'development') {
+        const { getAvailablePort } = await import('../utils/port')
+        const requestedPort = this.options.port || 3000
+        const host = this.options.host || '0.0.0.0'
+        const availablePort = await getAvailablePort(requestedPort, host)
+        if (availablePort !== requestedPort) {
+          this.log.info(
+            `Port ${requestedPort} is in use, using ${availablePort} instead.`
+          )
+        }
+        this.options.port = availablePort
+      }
+
       if (
         (process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI) &&
         !process.env.__EXIS_REPL &&

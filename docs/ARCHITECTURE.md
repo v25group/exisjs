@@ -56,8 +56,8 @@ export async function createUser() {
 
 ## 5. Native Validation Engine (`v`)
 
-**What it is:** A built-in, Zod-like schema validator for request validation and RPC client generation.
-**How it's implemented:** Developed completely from scratch (`src/utils/validator.ts`) without external dependencies. It uses a class-based hierarchy (`ValidatorType`) implementing `parse`, `validate`, and `toOpenApi()`. It strictly parses types, aggregates a `ValidationError` array, and throws a specialized `ValidatorError` that the global error handler intercepts.
+**What it is:** A built-in, Zod-like schema validator with a robust real-time data sanitization engine.
+**How it's implemented:** Developed completely from scratch (`src/utils/validator.ts`) without external dependencies. It strictly parses types, aggregates a `ValidationError` array, and throws a specialized `ValidatorError`. Furthermore, it natively integrates a highly optimized Sanitization Engine (`src/utils/sanitize.ts`). Before validation checks are enforced, it mutates incoming payloads (applying `.trim()`, `.lowercase()`, `.escape()` for HTML entites, etc.) protecting business logic from dirty inputs effortlessly.
 
 ---
 
@@ -168,7 +168,10 @@ export async function createUser() {
 ## 20. Advanced CLI & Generators
 
 **What it is:** The `exis` CLI (`dev`, `build`, `start`, `routes`, `generate`).
-**How it's implemented:** Powered by `commander`. The `dev` command automatically detects TS runners (`tsx`, `ts-node-dev`) and listens to raw `stdin` for shortcuts (e.g., `r + enter` to restart). The `generate` command natively scaffolds complete MVC architectures (`route.ts`, `schema.ts`, `controller.ts`, `service.ts`). The `routes` command imports the compiled app and prints a beautiful color-coded table of all API endpoints and their middleware counts.
+**How it's implemented:** Powered by `commander`. 
+- The `build` command natively embeds **Esbuild** to compile TypeScript to highly optimized JavaScript instantaneously, dropping the slow `tsc` dependency. 
+- The `dev` command incorporates a smart Port Detection algorithm: if the requested port (e.g., `3000`) is bound by another process, it automatically increments and binds to the next available port without crashing `EADDRINUSE`.
+- The `routes` command prints a beautiful color-coded table of all API endpoints and their middleware counts.
 
 ---
 
@@ -223,6 +226,7 @@ export async function createUser() {
 **How it's implemented:**
 
 - **Helmet**: Sets static HTTP headers (`Strict-Transport-Security`, `X-XSS-Protection`).
+- **CORS Preflight Logging**: Intercepts `OPTIONS` requests natively. If a preflight request from a browser is rejected because the origin is disallowed, the framework transparently logs a `WARN` via Pino, ending the silent failures typical of browser CORS issues.
 - **CSRF**: Uses the Double Submit Cookie pattern. Drops a random UUID cookie on safe requests and validates that state-changing requests echo it back in a header.
 - **XSS & Mongo Sanitize**: Recursively traverses `req.body`, `req.query`, and `req.params` to escape HTML tags or strip MongoDB `$ ` operators.
 - **HPP**: Normalizes arrays in queries by picking the last element to prevent Parameter Pollution crashes.

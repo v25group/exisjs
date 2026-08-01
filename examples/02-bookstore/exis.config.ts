@@ -10,19 +10,19 @@ const config: ExisConfig = {
   },
 
   logger: {
-    level: 'info',
+    level: 'debug',
     pretty: process.env.NODE_ENV !== 'production',
   },
 
   queue: {
-    driver: 'memory'
+    driver: 'memory',
   },
 
   helmet: { enabled: true },
 
   test: {
-    include: ['tests/**/*.test.ts']
-  }
+    include: ['tests/**/*.test.ts'],
+  },
 }
 
 export default config

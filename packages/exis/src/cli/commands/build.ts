@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { error, c } from '../utils'
@@ -75,64 +74,64 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // Ensure we generate the exis.d.ts file with optional fallback node types BEFORE tsc runs
   await generateExisEnv(cwd)
 
-  const tscBin = findTsc(cwd)
-  if (!tscBin) {
-    error('TypeScript compiler not found.')
+  let ts: any
+  try {
+    const req = typeof require !== 'undefined' ? require : eval('require')
+    const tsPath = req.resolve('typescript', { paths: [cwd, __dirname] })
+    ts = req(tsPath)
+  } catch {
+    error('TypeScript compiler not found in project.')
     error('Install it: npm install -D typescript')
     process.exit(1)
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const typeRootsDir = path.join(cwd, 'node_modules', '@types')
-    const command = `"${tscBin}" --project "${tsconfigPath}" --outDir "${outDir}" --noEmit false --typeRoots "${typeRootsDir}"`
-    const child = spawn(command, {
-      cwd,
-      stdio: 'pipe',
-      shell: true,
+  // Normalize path for TS on Windows
+  const tsconfigPathForTs = tsconfigPath.replace(/\\/g, '/')
+  const configFile = ts.readConfigFile(tsconfigPathForTs, ts.sys.readFile)
+  if (configFile.error) {
+    error('Error reading tsconfig.json')
+    process.exit(1)
+  }
+
+  const parsedConfig = ts.parseJsonConfigFileContent(
+    configFile.config,
+    ts.sys,
+    path.dirname(tsconfigPathForTs)
+  )
+
+  const entryPoints = parsedConfig.fileNames.filter(
+    (f: string) => !f.endsWith('.d.ts')
+  )
+
+  let format = 'cjs'
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')
+    )
+    if (pkg.type === 'module') format = 'esm'
+  } catch {
+    // default to cjs if package.json is missing or unparseable
+  }
+
+  try {
+    const esbuild = await import('esbuild')
+    await esbuild.build({
+      entryPoints,
+      outdir: path.join(cwd, outDir),
+      platform: 'node',
+      format: format as 'cjs' | 'esm',
+      bundle: false,
+      logLevel: 'error',
     })
 
-    let stderr = ''
-    let stdout = ''
-
-    child.stdout?.on('data', (d: Buffer) => {
-      stdout += d.toString()
-    })
-    child.stderr?.on('data', (d: Buffer) => {
-      stderr += d.toString()
-    })
-
-    child.on('exit', (code) => {
-      if (code !== 0) {
-        // print TypeScript errors clearly
-        const output = stderr || stdout
-        if (output) {
-          console.log(`\n${c.red}TypeScript errors:${c.reset}`)
-          console.log(output)
-        }
-
-        reject(new Error(`BUILD_OPTIMIZATION_FAILED`))
-        return
-      }
-      process.stdout.write(
-        `\r${c.green}✓${c.reset} ${c.dim}compiled in ${Date.now() - start}ms.${c.reset}\n`
-      )
-      resolve()
-    })
-  }).catch((err) => {
+    process.stdout.write(
+      `\r${c.green}✓${c.reset} ${c.dim}compiled via esbuild in ${Date.now() - start}ms.${c.reset}\n`
+    )
+  } catch {
     console.error('')
-    if (
-      err instanceof Error &&
-      (err.message === 'BUILD_OPTIMIZATION_FAILED' ||
-        err.message === 'WEBPACK_ERRORS')
-    ) {
-      error(`> ${err.message}`)
-      process.exit(1)
-    } else {
-      console.error('> Build error occurred')
-      error(err instanceof Error ? err.message : String(err))
-      process.exit(1)
-    }
-  })
+    error(`> BUILD_OPTIMIZATION_FAILED`)
+    process.exit(1)
+  }
 
   // resolve path aliases natively (no external deps)
   await fixPathAliases(cwd, outDir)
@@ -168,24 +167,6 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function findTsc(cwd: string): string | null {
-  const local = path.join(cwd, 'node_modules', '.bin', 'tsc')
-  if (fs.existsSync(local)) return local
-
-  const cliLocal = path.join(
-    __dirname,
-    '..',
-    '..',
-    '..',
-    'node_modules',
-    '.bin',
-    'tsc'
-  )
-  if (fs.existsSync(cliLocal)) return cliLocal
-
-  return 'tsc'
-}
 
 async function fixPathAliases(cwd: string, outDir: string): Promise<void> {
   try {

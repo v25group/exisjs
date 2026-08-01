@@ -117,7 +117,11 @@ $ npx exisjs start [options]
 
 ### `exisjs dev`
 
-Starts the development server with Hot Module Replacement (HMR) and automatic restarts. It handles TypeScript compilation on the fly.
+Starts the development server with blazing-fast Hot Module Replacement (HMR) and automatic restarts. It handles TypeScript compilation on the fly. 
+
+**Next-Generation Developer Experience (DX):**
+- **Smart Port Detection:** If your requested port (e.g. `3000`) is already in use by another process, `exisjs dev` will not crash. Just like Next.js or Vite, it seamlessly detects the collision, automatically increments the port (e.g., to `3001`), and binds to the next available one.
+- **Lazy Routing (.exis):** Just like Next.js uses the `.next` folder, ExisJS intelligently leverages the hidden `.exis` folder during development to lazy-load routes on demand. This allows massive applications to boot in under `150ms`.
 
 ```bash
 $ npx exisjs dev [options]

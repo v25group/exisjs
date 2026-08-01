@@ -103,18 +103,9 @@ describe('CLI Commands', () => {
       await expect(buildCommand()).resolves.toBeUndefined()
     })
 
-    it('spawns tsc when tsconfig exists', async () => {
+    it('builds using esbuild when tsconfig exists', async () => {
       writeTempFile(tmpDir, 'tsconfig.json', '{}')
-
-      // Mock spawn to return a fake child process that exits with 0
-      const mockChild = {
-        stdout: { on: ex.fn() },
-        stderr: { on: ex.fn() },
-        on: ex.fn((event: string, cb: any) => {
-          if (event === 'exit') cb(0)
-        }),
-      }
-      mockSpawn.mockReturnValue(mockChild)
+      writeTempFile(tmpDir, 'src/test.ts', 'export const x = 1')
 
       try {
         await buildCommand({ outDir: 'dist' })
@@ -122,27 +113,24 @@ describe('CLI Commands', () => {
         if (e.message !== 'ProcessExited: 0') throw e
       }
 
-      expect(cp.spawn).toHaveBeenCalled()
-      const args = mockSpawn.mock.calls[0].arguments
-      expect(args[0]).toContain('tsc') // command string
-      expect(args[0]).toContain('--project') // command string arguments
+      expect(fs.existsSync(path.join(tmpDir, 'dist'))).toBe(true)
     })
 
-    it('rejects if tsc spawn fails with non-zero exit code', async () => {
-      writeTempFile(tmpDir, 'tsconfig.json', '{}')
-
-      const mockChild = {
-        stdout: { on: ex.fn() },
-        stderr: { on: ex.fn() },
-        on: ex.fn((event: string, cb: any) => {
-          if (event === 'exit') cb(1)
-        }),
-      }
-      mockSpawn.mockReturnValue(mockChild)
-
-      await expect(buildCommand({ outDir: 'dist' })).rejects.toThrow(
-        'ProcessExited: 1'
+    it('rejects if esbuild fails', async () => {
+      writeTempFile(
+        tmpDir,
+        'tsconfig.json',
+        '{ "compilerOptions": { "module": "invalid" } }'
       )
+      writeTempFile(tmpDir, 'src/test.ts', 'export const x = 1')
+      writeTempFile(tmpDir, 'tsconfig.json', 'invalid')
+
+      try {
+        await buildCommand({ outDir: 'dist' })
+        throw new Error('Should have thrown')
+      } catch (e: any) {
+        expect(e.message).toContain('ProcessExited: 1')
+      }
     })
   })
 
