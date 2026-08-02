@@ -44,6 +44,10 @@ export class ExisResponse<TResponse = any> {
     return this.raw.getHeader(name)
   }
 
+  getHeaders() {
+    return this.raw.getHeaders()
+  }
+
   setHeader(name: string, value: string | number | readonly string[]) {
     this.raw.setHeader(name, value)
   }
@@ -53,6 +57,7 @@ export class ExisResponse<TResponse = any> {
   }
 
   end(data?: unknown) {
+    if ((this.raw as any).writableEnded) return
     if (this._onFinish.length > 0) {
       this.raw.end(data, () => {
         // eslint-disable-next-line @typescript-eslint/prefer-for-of
@@ -234,7 +239,11 @@ export class ExisResponse<TResponse = any> {
       const useSerializer = this._serializer && this.statusCode < 400
       str = useSerializer ? this._serializer!(data) : JSON.stringify(data)
     } catch (err) {
-      console.error('[ExisJS] Serialization error:', err)
+      if (this.req && this.req.log) {
+        this.req.log.error({ err }, '[ExisJS] Serialization error')
+      } else {
+        console.error('[ExisJS] Serialization error:', err)
+      }
       this.statusCode = 500
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
       this.end('{"error":"Failed to serialize response"}')

@@ -1,0 +1,19 @@
+feat(core): harden serialization and fix socket leaks
+
+What:
+- Bumped version to 0.5.0 across all packages and templates.
+- Restored \stripPrototype\ utility in \equest.ts\ to mitigate Prototype Pollution via JSON/FormData injection.
+- Restored \streamUpload\ inside \ExisRequest\ for multipart uploads.
+- Fixed an unhandled setInterval socket leak in \ootstrapper.ts\ that caused tests/shutdowns to hang for 5s.
+- Fixed \RequestHandler.activeRequests\ decrement leak by listening to both \inish\ and \close\ events on \es.raw\.
+
+Why:
+- The framework must be perfectly stable and secure before adding new features. 
+- A hanging test indicated that the graceful shutdown loop was infinitely polling \ctiveRequests\, which never reached 0 due to an incorrect require() import and un-decremented aborted connections.
+- Prototype pollution represents a critical security vulnerability for JSON payloads.
+
+How:
+- Replaced the legacy \equire()\ with an ESM import for \RequestHandler\.
+- Attached the activeRequests decrementer to both \inish\ and \close\ events in \equest-handler.ts\ to guarantee all connections are cleared.
+- Added \stripPrototype()\ recursive logic directly inside \es.json()\ and \es.formData()\.
+

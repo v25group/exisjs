@@ -327,3 +327,109 @@ export default class UsersController {
   }
 }
 ```
+
+---
+
+## 9. Idempotency
+
+Idempotency ensures that retrying an identical request multiple times (e.g., due to network timeouts) will not result in duplicate operations on the server. ExisJS provides an ultra-fast, Redis-backed (or in-memory) idempotency engine.
+
+#### Functional Paradigm
+
+```typescript
+import { controller, route } from 'exisjs/router'
+import { IdempotentMiddleware } from 'exisjs/middleware'
+
+export default controller({
+  checkout: route.post('/checkout', {
+    middlewares: [IdempotentMiddleware({ ttl: 86400, headerName: 'Idempotency-Key' })],
+    handle(req, res) {
+      return { success: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript
+import { Controller, Post, Idempotent } from 'exisjs/decorators'
+
+@Controller()
+export default class CheckoutController {
+  @Idempotent({ ttl: 86400 }) // Caches the response for 24 hours based on the Idempotency-Key header
+  @Post('/checkout')
+  async checkout() {
+    return { success: true }
+  }
+}
+```
+
+---
+
+## 10. Cache Engine
+
+ExisJS provides an incredibly fast, built-in Cache Engine for `GET` requests. It allows you to dramatically reduce database load and response times for frequently requested data.
+
+#### Functional Paradigm
+
+```typescript
+import { controller, route } from 'exisjs/router'
+import { cache } from 'exisjs/middleware'
+
+export default controller({
+  popular: route.get('/popular', {
+    middlewares: [cache({ ttlMs: 60000 })], // Caches the response for 60 seconds
+    handle(req, res) {
+      return { success: true, books: [] }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript
+import { Controller, Get, Cache } from 'exisjs/decorators'
+
+@Controller()
+export default class BooksController {
+  @Cache({ ttlMs: 60000 }) // Caches the response for 60 seconds
+  @Get('/popular')
+  async getPopular() {
+    return { success: true, books: [] }
+  }
+}
+```
+
+---
+
+## 11. Compression (Gzip / Brotli / Deflate)
+
+ExisJS includes a highly optimized stream-based Compression middleware. It natively hooks into the `uWebSockets` C++ core and compresses JSON, streams, and text on-the-fly, reducing your outbound network bandwidth.
+
+The best practice is to configure Compression globally in your **`exis.config.ts`**. By default, if `compression: true` is passed, the framework will add the `compress` middleware for you automatically.
+
+```typescript filename="exis.config.ts"
+import type { ExisConfig } from 'exisjs/config'
+
+const config: ExisConfig = {
+  // Enables Gzip, Brotli, and Deflate compression globally for all routes
+  compression: true, 
+}
+
+export default config
+```
+
+If you prefer to manually apply it to specific routes or gateways instead of globally, you can import it:
+
+```typescript filename="src/http/api/gateway.ts"
+import { defineGateway } from 'exisjs/router'
+import { compress } from 'exisjs/middleware'
+
+export default defineGateway({
+  middlewares: [
+    compress() // Only compress responses within this Gateway
+  ]
+})
+```

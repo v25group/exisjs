@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.4.5",
+  "version": "0.5.0",
   "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -152,6 +152,10 @@
     "./sanitize": {
       "types": "./dist/exports/sanitize.d.ts",
       "default": "./dist/exports/sanitize.js"
+    },
+    "./storage": {
+      "types": "./dist/exports/storage.d.ts",
+      "default": "./dist/exports/storage.js"
     }
   },
   "files": [

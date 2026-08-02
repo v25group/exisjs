@@ -183,18 +183,23 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
     if (schema?.response) {
       const isZodLike = typeof schema.response.parse === 'function'
+      const isExisValidator = typeof schema.response.toOpenApi === 'function'
+
       const stringifier =
-        fastJsonStringify && !isZodLike
+        fastJsonStringify && (isExisValidator || !isZodLike)
           ? (() => {
               try {
-                return fastJsonStringify(schema.response)
+                const jsonSchema = isExisValidator
+                  ? schema.response.toOpenApi()
+                  : schema.response
+                return fastJsonStringify(jsonSchema)
               } catch {
                 return JSON.stringify
               }
             })()
           : JSON.stringify
 
-      if (isZodLike) {
+      if (isZodLike && !isExisValidator) {
         const parser = schema.response.parse.bind(schema.response)
         routeInfo._serializer = (data: unknown) => {
           return stringifier(parser(data))
@@ -491,15 +496,18 @@ export function runHandlers(
     const handler = handlers[index++]
 
     let result: unknown
+    let calledNext = false
+
+    const safeNext = async (err?: Error) => {
+      if (calledNext) return
+      calledNext = true
+      return next(err)
+    }
+
     try {
-      result = handler(req, res, next)
-      if (result instanceof Promise) {
-        result.catch((e) => {
-          next(e instanceof Error ? e : new Error(String(e)))
-        })
-      }
+      result = handler(req, res, safeNext)
     } catch (e) {
-      next(e instanceof Error ? e : new Error(String(e)))
+      safeNext(e instanceof Error ? e : new Error(String(e)))
       return
     }
 
@@ -511,7 +519,7 @@ export function runHandlers(
           }
         },
         (e: unknown) => {
-          next(e instanceof Error ? e : new Error(String(e)))
+          safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
     } else if (result !== undefined && result !== res && !res.headersSent) {

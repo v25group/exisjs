@@ -309,6 +309,77 @@ export function Use(...middlewares: any[]): any {
   }
 }
 
+/**
+ * Idempotency Decorator.
+ * Caches responses based on the provided Idempotency-Key header.
+ *
+ * Example:
+ *     @Post('/checkout')
+ *     @Idempotent()
+ *     checkout() {}
+ */
+export function Idempotent(
+  options: import('../middleware/idempotency').IdempotentOptions = {}
+): any {
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard =
+      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
+    const fn = isStandard ? target : descriptor.value
+
+    fn[METHOD_MIDDLEWARES] = fn[METHOD_MIDDLEWARES] || []
+
+    // Defer import to avoid circular dependencies
+    const middlewareProxy = async (req: any, res: any, next: any) => {
+      const { Idempotent: IdempotentMiddleware } =
+        await import('../middleware/idempotency')
+      const handler = IdempotentMiddleware(options)
+      return handler(req, res, next)
+    }
+
+    fn[METHOD_MIDDLEWARES].push(middlewareProxy)
+  }
+}
+
+/**
+ * Cache Decorator.
+ * Caches responses for GET requests.
+ *
+ * Example:
+ *     @Get('/popular')
+ *     @Cache({ ttlMs: 60000 })
+ *     getPopular() {}
+ */
+export function Cache(
+  options: import('../middleware/cache').CacheOptions | number = {}
+): any {
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard =
+      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
+    const fn = isStandard ? target : descriptor.value
+
+    fn[METHOD_MIDDLEWARES] = fn[METHOD_MIDDLEWARES] || []
+
+    const opts = typeof options === 'number' ? { ttlMs: options } : options
+
+    // Defer import to avoid circular dependencies
+    const middlewareProxy = async (req: any, res: any, next: any) => {
+      const { cacheMiddleware } = await import('../middleware/cache')
+      const handler = cacheMiddleware(opts)
+      return handler(req, res, next)
+    }
+
+    fn[METHOD_MIDDLEWARES].push(middlewareProxy)
+  }
+}
+
 // ─── Custom HTTP Status / Header Response Decorators ────────────────────────
 
 /**

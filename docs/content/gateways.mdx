@@ -29,6 +29,8 @@ export default defineGateway({
   // This middleware array runs before ANY route in /admin/*
   middleware: [
     helmet(),
+    compress(),
+    cache({ ttlMs: 60000 }),
     requireAuth
   ],
   
@@ -57,6 +59,8 @@ import { helmet } from 'exisjs/middleware'
   // This middleware array runs before ANY route in /admin/*
   middleware: [
     helmet(),
+    compress(),
+    cache({ ttlMs: 60000 }),
     requireAuth
   ],
   

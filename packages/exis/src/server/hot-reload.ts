@@ -18,6 +18,7 @@ interface HotReloaderOptions {
   router: Router
   routeMap: Map<string, string>
   mountRoute: (filePath: string, routePath: string) => Promise<void>
+  clearCache: () => void
 }
 
 export class HotReloader {
@@ -25,6 +26,7 @@ export class HotReloader {
   private router: Router
   private routeMap: Map<string, string>
   private mountRoute: (filePath: string, routePath: string) => Promise<void>
+  private clearCache: () => void
   private watcher: import('chokidar').FSWatcher | null = null
   private depGraph = new Map<string, Set<string>>()
 
@@ -33,6 +35,7 @@ export class HotReloader {
     this.router = opts.router
     this.routeMap = opts.routeMap
     this.mountRoute = opts.mountRoute
+    this.clearCache = opts.clearCache
   }
 
   async start(): Promise<void> {
@@ -219,6 +222,8 @@ export class HotReloader {
 
     // For ESM, we append a cache-busting query param on the import URL
     // This is handled in the mountRoute function
+
+    this.clearCache()
   }
 
   private filePathToRoutePath(filePath: string): string | null {

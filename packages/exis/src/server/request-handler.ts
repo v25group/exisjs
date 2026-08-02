@@ -11,6 +11,8 @@ import type { Handler } from '../types'
 export class RequestHandler {
   private _compiledPipeline?: Handler[]
 
+  public static activeRequests = 0
+
   constructor(private app: App<any>) {}
 
   public getCompiledPipeline(): Handler[] {
@@ -110,7 +112,10 @@ export class RequestHandler {
       diCache: new Map(),
     }
 
-    res.raw.on('finish', () => {
+    let reqCompleted = false
+    const onComplete = () => {
+      if (reqCompleted) return
+      reqCompleted = true
       for (const cb of store.afterCallbacks) {
         try {
           const promise = cb()
@@ -123,12 +128,18 @@ export class RequestHandler {
           this.app.log.error({ err }, 'Error in after() background task')
         }
       }
-    })
+      RequestHandler.activeRequests--
+    }
+
+    res.raw.on('finish', onComplete)
+    res.raw.on('close', onComplete)
 
     executionContext.run(store, execution)
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
+    RequestHandler.activeRequests++
+
     const res = new ExisResponse(rawRes)
     const req = new ExisRequest(
       rawReq,
@@ -149,7 +160,10 @@ export class RequestHandler {
         runHandlers(this.getCompiledPipeline(), req, res, (err) => {
           if (err) {
             this._runErrorHandlers(err, req, res).catch((e) => {
-              this.app.log.error({ err: e }, 'Error in error handler')
+              this.app.log.error(
+                { err: e, originalError: err },
+                'Error in error handler'
+              )
             })
           }
         })
@@ -184,7 +198,10 @@ export class RequestHandler {
         runHandlers(this.getCompiledPipeline(), req, res, (err) => {
           if (err) {
             this._runErrorHandlers(err, req, res).catch((e) => {
-              this.app.log.error({ err: e }, 'Error in error handler')
+              this.app.log.error(
+                { err: e, originalError: err },
+                'Error in error handler'
+              )
             })
           }
         })
@@ -226,7 +243,10 @@ export class RequestHandler {
       }
     } catch (err: any) {
       this._runErrorHandlers(err, req, res).catch((e) => {
-        this.app.log.error({ err: e }, 'Error in error handler')
+        this.app.log.error(
+          { err: e, originalError: err },
+          'Error in error handler'
+        )
       })
     }
   }

@@ -5,7 +5,7 @@ const app = exis({
   logger: false, // Fully disable logger to match bare fastify
   helmet: false, // Fastify/Hono don't run helmet by default
   cors: false, // Fastify/Hono don't run cors by default
-  server: 'auto',
+  server: 'node',
 })
 
 app.get(
@@ -27,8 +27,6 @@ app.get(
 app.listen({
   port: Number(process.env.PORT) || 3004,
   onListen: () => {
-    console.log(
-      `Exis listening on ${process.env.PORT || 3004} using auto`
-    )
-  }
+    console.log(`Exis listening on ${process.env.PORT || 3004} (node http)`)
+  },
 })

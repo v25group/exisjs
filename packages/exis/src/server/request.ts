@@ -14,6 +14,24 @@ const qs = require('fast-querystring')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
 
+function stripPrototype(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      obj[i] = stripPrototype(obj[i])
+    }
+    return obj
+  }
+  if ('__proto__' in obj) delete obj.__proto__
+  if ('constructor' in obj) delete obj.constructor
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      obj[key] = stripPrototype(obj[key])
+    }
+  }
+  return obj
+}
+
 export class ExisRequest<
   TBody = unknown,
   TQuery = Record<string, string>,
@@ -417,7 +435,7 @@ export class ExisRequest<
       return this.body as unknown as T
     }
     try {
-      this.body = JSON.parse(this.rawBody)
+      this.body = stripPrototype(JSON.parse(this.rawBody))
       return this.body as unknown as T
     } catch {
       throw HttpError.badRequest('Invalid JSON body')
@@ -433,8 +451,11 @@ export class ExisRequest<
     if (contentType.includes('application/x-www-form-urlencoded')) {
       if (!this.rawBody) await this.text()
       const fields = qs.parse(this.rawBody || '')
-      this.body = fields as unknown as TBody
-      return { fields: fields as Record<string, string>, files: {} }
+      this.body = stripPrototype(fields) as unknown as TBody
+      return {
+        fields: this.body as unknown as Record<string, string>,
+        files: {},
+      }
     }
 
     if (contentType.includes('multipart/form-data')) {
@@ -603,6 +624,104 @@ export class ExisRequest<
         this.rawBody = Buffer.concat(chunks).toString('utf8')
         done()
       })
+    })
+  }
+
+  async streamUpload(destDir: string): Promise<{
+    fields: Record<string, string>
+    files: {
+      fieldname: string
+      filename: string
+      mimetype: string
+      destPath: string
+      size: number
+    }[]
+  }> {
+    const contentType = this.get('content-type') ?? ''
+    if (!contentType.includes('multipart/form-data')) {
+      throw HttpError.badRequest('streamUpload requires multipart/form-data')
+    }
+    if (!contentType.includes('boundary=')) {
+      throw HttpError.badRequest('Missing multipart boundary.')
+    }
+
+    const fs = await import('node:fs')
+    const path = await import('node:path')
+    await fs.promises.mkdir(destDir, { recursive: true })
+
+    return new Promise((resolve, reject) => {
+      const fields: Record<string, string> = {}
+      const streamedFiles: {
+        fieldname: string
+        filename: string
+        mimetype: string
+        destPath: string
+        size: number
+      }[] = []
+
+      try {
+        const bb = busboy({ headers: this.raw.headers })
+
+        bb.on('field', (name: string, val: string) => {
+          fields[name] = val
+        })
+
+        bb.on(
+          'file',
+          (
+            name: string,
+            fileStream: import('node:stream').Readable,
+            info: any
+          ) => {
+            const filename = info.filename || 'unknown'
+            const ext = path.extname(filename)
+            const uniqueSuffix =
+              Date.now() + '-' + Math.round(Math.random() * 1e9)
+            const finalName = `${name}-${uniqueSuffix}${ext}`
+            const destPath = path.join(destDir, finalName)
+
+            const writeStream = fs.createWriteStream(destPath)
+            let size = 0
+
+            fileStream.on('data', (data: Buffer) => {
+              size += data.length
+            })
+
+            fileStream.pipe(writeStream)
+
+            fileStream.on('end', () => {
+              streamedFiles.push({
+                fieldname: name,
+                filename,
+                mimetype: info.mimeType || 'application/octet-stream',
+                destPath,
+                size,
+              })
+            })
+          }
+        )
+
+        bb.on('finish', () => {
+          this.body = stripPrototype(fields) as unknown as TBody
+          resolve({
+            fields: this.body as unknown as Record<string, string>,
+            files: streamedFiles,
+          })
+        })
+
+        bb.on('error', reject)
+
+        if (typeof this.raw.pipe === 'function') {
+          this.raw.pipe(bb)
+        } else {
+          this.raw.on('data', (chunk: any) => bb.write(chunk))
+          this.raw.on('end', () => bb.end())
+        }
+      } catch (err: any) {
+        reject(
+          HttpError.badRequest(err.message || 'Failed to stream multipart data')
+        )
+      }
     })
   }
 }

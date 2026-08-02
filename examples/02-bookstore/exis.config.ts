@@ -19,6 +19,7 @@ const config: ExisConfig = {
   },
 
   helmet: { enabled: true },
+  compression: true,
 
   test: {
     include: ['tests/**/*.test.ts'],

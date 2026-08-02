@@ -7,9 +7,9 @@ import { Router } from '../router/router'
 import {
   cors,
   helmet,
+  compress,
   requestId,
   requestLogger,
-  compression,
 } from '../middleware/middleware'
 import { createErrorHandler } from '../utils/errors'
 import { ExisWebSocketServer } from '../websocket/server'
@@ -545,7 +545,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     }
 
     if (compressionOpt) {
-      this.globalMiddleware.push(compression())
+      this.globalMiddleware.push(compress())
     }
 
     if (helmetOpt !== false) {
@@ -724,6 +724,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
         routeMap: this.routeScanner.routeMap,
         mountRoute: (filePath, routePath) =>
           this.routeScanner.mountRouteFile(filePath, routePath),
+        clearCache: () => this.container.clearCache(),
       })
       await this.hotReloader.start()
     }

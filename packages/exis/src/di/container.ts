@@ -1,7 +1,5 @@
 export type ProviderToken<T = any> =
-  | string
-  | symbol
-  | (new (...args: any[]) => T)
+  string | symbol | (new (...args: any[]) => T)
 
 export interface BaseProvider {
   scope?: 'singleton' | 'request'
@@ -20,10 +18,7 @@ export interface ClassProvider<T> extends BaseProvider {
 }
 
 export type ProviderDefinition<T> =
-  | ValueProvider<T>
-  | FactoryProvider<T>
-  | ClassProvider<T>
-  | T
+  ValueProvider<T> | FactoryProvider<T> | ClassProvider<T> | T
 
 export class Container {
   private providers = new Map<ProviderToken, any>()
@@ -32,6 +27,10 @@ export class Container {
   provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): void {
     this.providers.set(token, provider)
     this.singletonCache.delete(token)
+  }
+
+  clearCache(): void {
+    this.singletonCache.clear()
   }
 
   resolve<T>(

@@ -7,6 +7,7 @@ import type { Http2SecureServer } from 'node:http2'
 import { isUwsAvailable, createUwsApp } from './uws-adapter'
 import type { UwsListenToken } from './uws-adapter'
 import type { ListenOptions } from '../types'
+import { RequestHandler } from './request-handler'
 import type { App } from './app'
 
 export class ServerBootstrapper {
@@ -424,6 +425,7 @@ export class ServerBootstrapper {
         ).closeIdleConnections?.()
       }
 
+      let checkIdle: NodeJS.Timeout | undefined
       // Set timeout to force close active connections
       const timer = setTimeout(() => {
         this.app.log.warn(
@@ -438,12 +440,19 @@ export class ServerBootstrapper {
             this.server as { closeAllConnections?: () => void }
           ).closeAllConnections?.()
         }
+        if (checkIdle) clearInterval(checkIdle)
         finish() // Ensure finish is called on timeout
       }, timeout)
 
       const cleanupAndFinish = async () => {
-        clearTimeout(timer)
-        await finish()
+        checkIdle = setInterval(async () => {
+          const active = RequestHandler.activeRequests
+          if (active === 0) {
+            clearInterval(checkIdle)
+            clearTimeout(timer)
+            await finish()
+          }
+        }, 100)
       }
 
       this.app.wsServer.close()

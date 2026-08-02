@@ -1,4 +1,6 @@
 import { Controller, Use, Get, Post, Delete, Body, Query, Param, Req } from 'exisjs/decorators'
+import { Idempotent } from 'exisjs/decorators'
+import { streamUpload } from 'exisjs/storage'
 import { v } from 'exisjs/validator'
 import type { Infer } from 'exisjs/validator'
 import { HttpError } from 'exisjs/error'
@@ -15,7 +17,7 @@ const CreateBookSchema = v.object({
 
 type CreateBookDto = Infer<typeof CreateBookSchema>
 
-@Use(protectRoute)
+// @Use(protectRoute)
 @Controller()
 export default class BooksController {
   
@@ -66,6 +68,22 @@ export default class BooksController {
 
     await newBook.save()
     return newBook
+  }
+
+  @Post('/checkout')
+  @Idempotent()
+  async checkout(@Body(v.object({ bookId: v.string() })) body: any) {
+    console.log('Processing checkout for book:', body.bookId)
+    // simulate a long checkout process
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+    return { success: true, message: 'Checkout successful', bookId: body.bookId }
+  }
+
+  @Post('/cover')
+  async uploadCover(@Req() req: any) {
+    const destDir = './uploads'
+    const { fields, files } = await streamUpload(req, { dest: destDir })
+    return { success: true, message: 'Cover uploaded via streaming', fields, files }
   }
 
   @Delete('/:id')

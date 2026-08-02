@@ -147,6 +147,7 @@ export class UwsIncomingMessage {
 export class UwsServerResponse {
   public statusCode = 200
   public headersSent = false
+  public writableEnded = false
 
   private _headers = new Map<string, string>()
   private _aborted = false
@@ -178,7 +179,7 @@ export class UwsServerResponse {
   }
 
   write(chunk: string | Buffer): boolean {
-    if (this._aborted) return false
+    if (this._aborted || this.writableEnded) return false
 
     let result = false
     this._uwsRes.cork(() => {
@@ -201,22 +202,26 @@ export class UwsServerResponse {
       data = undefined
     }
 
-    if (this._aborted || this.headersSent) {
+    if (this._aborted || this.writableEnded) {
       if (callback) callback()
       return
     }
-    this.headersSent = true
+
+    this.writableEnded = true
 
     this._uwsRes.cork(() => {
-      // Write status
-      this._uwsRes.writeStatus(String(this.statusCode))
+      if (!this.headersSent) {
+        this.headersSent = true
+        // Write status
+        this._uwsRes.writeStatus(String(this.statusCode))
 
-      // Write all headers
-      for (const [key, value] of this._headers) {
-        if (key === 'content-length' && data !== undefined && data !== null) {
-          continue // uWebSockets automatically adds Content-Length for data
+        // Write all headers
+        for (const [key, value] of this._headers) {
+          if (key === 'content-length' && data !== undefined && data !== null) {
+            continue // uWebSockets automatically adds Content-Length for data
+          }
+          this._uwsRes.writeHeader(key, value)
         }
-        this._uwsRes.writeHeader(key, value)
       }
 
       // Write body and end
@@ -280,6 +285,11 @@ export class UwsWebSocketShim {
   terminate(): void {
     this.readyState = 3 // CLOSED
     this._uwsWs.close()
+  }
+
+  ping(message?: Buffer): void {
+    if (this.readyState !== 1) return
+    this._uwsWs.ping(message)
   }
 
   on(event: string, listener: (...args: any[]) => void): this {

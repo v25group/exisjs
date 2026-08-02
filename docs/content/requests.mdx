@@ -143,6 +143,57 @@ export default class UploadController {
 }
 ```
 
+#### High-Performance Streaming (`streamUpload`)
+
+If you are dealing with massive files (like gigabyte-sized videos) and don't want to buffer *anything* in memory, ExisJS provides a direct streaming helper. It pipes the multipart chunks directly to the disk in real-time.
+
+#### Functional Paradigm
+
+```typescript
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  uploadCover: route.post('/cover', {
+    async handle(req, res) {
+      // 1. Using the method on the request object
+      // const { fields, files } = await req.streamUpload('./uploads/covers')
+
+      // 2. Or using the exported helper from exisjs/storage
+      const { streamUpload } = await import('exisjs/storage')
+      const { fields, files } = await streamUpload(req, { dest: './uploads/covers' })
+      
+      return { 
+        success: true, 
+        uploadedFiles: files.map(f => f.filename),
+        customFields: fields 
+      }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript
+import { Controller, Post, Req } from 'exisjs/decorators'
+import { streamUpload } from 'exisjs/storage'
+
+@Controller()
+export default class UploadController {
+  @Post('/cover')
+  async uploadCover(@Req() req: any) {
+    // Both req.streamUpload() and the exported helper from exisjs/storage work!
+    const { fields, files } = await streamUpload(req, { dest: './uploads/covers' })
+    
+    return { 
+      success: true, 
+      uploadedFiles: files.map(f => f.filename),
+      customFields: fields 
+    }
+  }
+}
+```
+
 ---
 
 ## 4. HTTP Headers & Content Negotiation

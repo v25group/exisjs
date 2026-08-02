@@ -20,7 +20,9 @@ export function compression(): Handler {
     const originalWrite = res.raw.write.bind(res.raw)
     const originalEnd = res.raw.end.bind(res.raw)
     const originalRawSetHeader = res.raw.setHeader.bind(res.raw)
-    const originalRawWriteHead = res.raw.writeHead.bind(res.raw)
+    const originalRawWriteHead = res.raw.writeHead
+      ? res.raw.writeHead.bind(res.raw)
+      : undefined
 
     res.raw.setHeader = function (
       name: string,
@@ -32,26 +34,28 @@ export function compression(): Handler {
       return originalRawSetHeader(name, value)
     }
 
-    res.raw.writeHead = function (
-      statusCode: number,
-      reasonOrHeaders?: any,
-      headers?: any
-    ) {
-      const actualHeaders = headers || reasonOrHeaders
-      if (actualHeaders && typeof actualHeaders === 'object') {
-        const cleaned: any = {}
-        for (const [k, v] of Object.entries(actualHeaders)) {
-          if (k.toLowerCase() !== 'content-length') {
-            cleaned[k] = v
+    if (originalRawWriteHead) {
+      res.raw.writeHead = function (
+        statusCode: number,
+        reasonOrHeaders?: any,
+        headers?: any
+      ) {
+        const actualHeaders = headers || reasonOrHeaders
+        if (actualHeaders && typeof actualHeaders === 'object') {
+          const cleaned: any = {}
+          for (const [k, v] of Object.entries(actualHeaders)) {
+            if (k.toLowerCase() !== 'content-length') {
+              cleaned[k] = v
+            }
+          }
+          if (headers) {
+            reasonOrHeaders = cleaned
+          } else {
+            reasonOrHeaders = cleaned
           }
         }
-        if (headers) {
-          reasonOrHeaders = cleaned
-        } else {
-          reasonOrHeaders = cleaned
-        }
+        return originalRawWriteHead(statusCode, reasonOrHeaders, headers)
       }
-      return originalRawWriteHead(statusCode, reasonOrHeaders, headers)
     }
 
     let onFinishCallback: (() => void) | undefined
@@ -61,7 +65,6 @@ export function compression(): Handler {
 
       originalRawSetHeader('Content-Encoding', encoding as string)
       originalRawSetHeader('Vary', 'Accept-Encoding')
-      originalRawSetHeader('Transfer-Encoding', 'chunked')
 
       if (encoding === 'br') {
         stream = zlib.createBrotliCompress()

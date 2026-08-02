@@ -171,7 +171,7 @@ export const notFound: Handler = (req, res) => {
 
 // ─── Static File Serving ────────────────────────────────────────────────────────
 
-export { compression } from './compression'
+export { compression as compress } from './compression'
 export {
   helmet,
   csrf,
@@ -320,3 +320,5 @@ export function conditionalGet(): Handler {
     next()
   }
 }
+
+export * from './idempotency'
