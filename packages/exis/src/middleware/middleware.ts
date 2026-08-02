@@ -179,7 +179,6 @@ export {
   hpp,
   xss,
   mongoSanitize,
-  sqlSanitize,
   dbSanitize,
 } from './security'
 export { cacheMiddleware as cache } from './cache'

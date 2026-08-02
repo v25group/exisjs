@@ -119,6 +119,19 @@ When an `HttpError` is thrown, the client will automatically receive a perfectly
 
 If you throw an unhandled exception (like a database connection failure or a `TypeError`), ExisJS catches it and securely returns a `500 Internal Server Error`, hiding the stack trace from the client in production mode while logging the full trace to your internal logger.
 
+## Error Handling Decision Tree
+
+To keep your codebase clean and consistent, use this decision tree when deciding how to handle errors:
+
+1. **Is it a known client error (e.g., missing parameter, forbidden)?**
+   👉 **Throw an `HttpError` directly.** Let the framework format the 4xx response automatically.
+2. **Do you need to intercept an unexpected failure (e.g., Database Connection failure) globally?**
+   👉 **Use an Exception Filter (`catchError`) in `server.ts`.** Map the specific exception class to a 5xx response.
+3. **Do you need to intercept errors only for a specific route group (e.g., Admin Panel)?**
+   👉 **Use Local Error Hooks (`onError`) in the gateway/controller.** Keep the logic isolated to that specific module.
+4. **Is it standard 4-arg middleware from the Express ecosystem?**
+   👉 **Use `app.use(errorHandler)`** (where `errorHandler = (err, req, res, next) => {}`). ExisJS supports standard Connect/Express error middleware natively.
+
 ## Advanced Error Handling
 
 ExisJS provides incredibly powerful mechanisms for granular error handling, heavily inspired by the best features of NestJS (Exception Filters) and Fastify (Lifecycle Hooks).

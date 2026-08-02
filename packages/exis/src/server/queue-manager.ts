@@ -33,11 +33,16 @@ export class QueueManager {
       } as any)
       return
     }
-    this._queueWorker.registerJob({
+    const jobDef = {
       name,
       handler: handler as import('../queue/types').JobHandler<unknown>,
       ...options,
-    } as any)
+    } as any
+
+    this._queueWorker.registerJob(jobDef)
+    if (this._cronScheduler && jobDef.cron) {
+      this._cronScheduler.registerJob(jobDef)
+    }
   }
 
   public async enqueue<T = unknown>(
@@ -66,11 +71,13 @@ export class QueueManager {
       )
       this._queueWorker.start()
 
-      const redisClient = (this._queueWorker as any).redis || null
+      const driver = this._queueClient.getDriver()
+      const redisClient = driver?.getRedis ? driver.getRedis() : null
       this._cronScheduler = new CronScheduler(
         this._queueWorker,
         redisClient,
-        this.app.log
+        this.app.log,
+        qConfig.prefix || 'exis:q'
       )
       this._cronScheduler.start()
     }

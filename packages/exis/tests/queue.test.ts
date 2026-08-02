@@ -90,6 +90,41 @@ describe('Exis Native Queue', () => {
 
         await app.close()
       })
+
+      it('should execute cron jobs via scheduler tick', async () => {
+        if (driver !== 'redis') return // Cron is Redis-only in Exis currently
+
+        const redis = new RedisMock()
+        const app = new App({ queue: { driver, redis, prefix: 'testq' } })
+
+        let cronTicks = 0
+        app.queue(
+          'cron-job',
+          async () => {
+            cronTicks++
+          },
+          {
+            cron: '* * * * *',
+          }
+        )
+
+        await new Promise<void>((resolve) => {
+          app.listen(0, () => resolve())
+        })
+
+        // Manually trigger the tick
+        const scheduler = (app as any)._cronScheduler
+        if (scheduler) {
+          await scheduler.tick()
+        }
+
+        // Wait for worker to poll and process
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+
+        expect(cronTicks).toBe(1)
+
+        await app.close()
+      })
     })
   }
 })

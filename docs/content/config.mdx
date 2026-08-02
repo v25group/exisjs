@@ -181,3 +181,19 @@ export default defineConfig({
   ]
 })
 ```
+
+---
+
+## 8. Process Model & Multi-Tenancy
+
+ExisJS expects a **One App Per Process** architecture. 
+
+### Zero-Config Singletons
+ExisJS's highly ergonomic integrations (e.g., `redis.ts`, `prisma.ts`, `s3.ts`) are implemented using ES6 Proxies that cache the underlying clients at the module level. This means they are **process-wide singletons**.
+If you attempt to mount multiple `App` instances inside a single Node.js process to serve different tenants, they will **share the exact same database connections, redis pools, and caches**.
+
+### Multi-Tenant Guidance
+If you are building a multi-tenant B2B application, do not boot multiple ExisJS `App` instances per tenant. Instead, use one of the following standard approaches:
+1. **Row-Level Tenancy (Recommended)**: Run a single `App` connected to a single database. Use request context or middleware to inject the `tenantId` and scope all queries via Prisma/SQL.
+2. **Factory-Based Clients**: If you need true database-per-tenant isolation, do not use the zero-config singleton exports (like `import { db } from 'exisjs/prisma'`). Instead, manually construct the client factories inside a tenant-resolution middleware and attach them to the request context (`req.tenantDb`).
+3. **Containerized Deployments**: Run separate Node.js processes (Docker containers) for each tenant, passing tenant-specific `DATABASE_URL`s to each container.

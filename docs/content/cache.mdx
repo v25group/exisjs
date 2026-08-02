@@ -74,6 +74,19 @@ cache({
 })
 ```
 
+> [!WARNING]
+> **Authentication Leak Hazard**: When using `cache()` on authenticated routes, you **must** include the user's ID or session token in your `keyGenerator`. Failing to do so will result in User B receiving a cached response generated for User A.
+
+```typescript
+cache({
+  ttlMs: 60000,
+  keyGenerator: (req) => {
+    // SAFE: The cache key includes the user ID
+    return `${req.path}?user=${req.user?.id}`
+  }
+})
+```
+
 ---
 
 ## 3. Tag-Based Revalidation (On-Demand)
@@ -219,4 +232,8 @@ await store.set('/custom-key', { data: 'hello' }, [], 60000)
 If you are building your own Custom Cache Store, ExisJS exports the required interfaces:
 - `CacheStore`: The interface you must implement (`get`, `set`, `revalidateTag`, `getTags`).
 - `CacheItem`: The expected shape of a cached response (`data`, `tags`, `createdAt`).
-- `FileSystemCacheStore`: The default implementation used by the framework.
+- `FileSystemCacheStore`: The default implementation used by the framework (safe for multi-process cluster mode).
+- `MemoryCacheStore`: An in-memory implementation.
+
+> [!IMPORTANT]
+> **MemoryCacheStore Cluster Limitations**: The `MemoryCacheStore` is strictly process-local. If you are running in cluster mode (`workers > 1`) or multi-instance deployments, calling `revalidateTag()` on one worker will **not** invalidate the cache held in memory by sibling workers. For any multi-process setup, use `FileSystemCacheStore` (for a single server) or `RedisCacheStore` (for multiple servers).

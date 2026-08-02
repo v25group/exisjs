@@ -7,6 +7,8 @@
  *   npm install @prisma/client
  */
 
+import { getActiveApp } from '../server/app'
+
 export function prisma() {
   let PrismaClient: any
 
@@ -23,6 +25,17 @@ export function prisma() {
   // Create a singleton instance
   // Since we assume `process.env.DATABASE_URL` is available, Prisma natively picks it up
   const client = new PrismaClient()
+
+  try {
+    const app = getActiveApp()
+    if (app) {
+      app.onClose(async () => {
+        await client.$disconnect()
+      })
+    }
+  } catch {
+    // Ignore if called outside app context
+  }
 
   return client
 }

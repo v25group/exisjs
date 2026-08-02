@@ -3,14 +3,18 @@ import type { Handler, Request, Response, NextFunction } from '../types'
 export interface DedupeOptions {
   /**
    * Function to generate a unique key for the request.
-   * Defaults to `req.method + ':' + req.path`.
+   * MUST be provided to prevent cross-user data leaks.
    */
-  keyGenerator?: (req: Request) => string
+  keyGenerator: (req: Request) => string
 }
 
-export function dedupeMiddleware(options: DedupeOptions = {}): Handler {
-  const keyGenerator =
-    options.keyGenerator ?? ((req) => `${req.method}:${req.path || '/'}`)
+export function dedupeMiddleware(options: DedupeOptions): Handler {
+  if (!options || typeof options.keyGenerator !== 'function') {
+    throw new Error(
+      'dedupeMiddleware: keyGenerator option is required to prevent cross-user data leaks.'
+    )
+  }
+  const keyGenerator = options.keyGenerator
 
   // Stores pending requests: Map of key -> Array of { res, next } waiting for the result
   const pendingRequests = new Map<

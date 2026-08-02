@@ -51,7 +51,12 @@ export function mergeConfig(
 
   for (const key of Object.keys(override) as (keyof ExisConfig)[]) {
     const val = override[key]
-    if (val === false) {
+    if (val === null) {
+      console.warn(
+        `\x1b[33m[Exis Warning]\x1b[0m Config override for '${key}' is null. Treating as false (disabled).`
+      )
+      ;(result as Record<string, unknown>)[key] = false
+    } else if (val === false) {
       // user explicitly disabled this feature
       ;(result as Record<string, unknown>)[key] = false
     } else if (typeof val === 'object' && !Array.isArray(val) && val !== null) {

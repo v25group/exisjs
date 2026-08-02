@@ -26,6 +26,12 @@ export interface TestContext {
 export type TestFunction = (t: TestContext) => void | Promise<void>
 export type HookFunction = () => void | Promise<void>
 
+const userCleanupHooks: (() => Promise<void> | void)[] = []
+
+export function registerCleanup(fn: () => Promise<void> | void): void {
+  userCleanupHooks.push(fn)
+}
+
 export interface TestApi {
   (name: string, fn?: TestFunction): void
   (name: string, options: TestOptions, fn?: TestFunction): void
@@ -209,10 +215,6 @@ export function createTestContext(appInput: any): TestApp {
       const { createRequire } = require('node:module')
       const requireFromCwd = createRequire(process.cwd() + '/package.json')
       const mongoose = requireFromCwd('mongoose')
-      console.log(
-        'mongoose.__connectionPromise exists:',
-        !!mongoose.__connectionPromise
-      )
       if (mongoose.__connectionPromise) {
         await mongoose.__connectionPromise
       } else if (mongoose.connection && mongoose.connection.readyState === 2) {
@@ -230,8 +232,6 @@ export function createTestContext(appInput: any): TestApp {
 
   after(async () => {
     // Attempt graceful shutdown of database connections to let event loop exit
-    console.log('Testing: executing after hook')
-
     // Mongoose
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -241,13 +241,10 @@ export function createTestContext(appInput: any): TestApp {
       if (mongoose.connection && mongoose.connection.readyState !== 0) {
         if (mongoose.connection.readyState === 2) {
           // 2 = connecting
-          console.log('Testing: awaiting mongoose connection')
           // eslint-disable-next-line @typescript-eslint/no-empty-function
           await mongoose.connection.asPromise().catch(() => {})
         }
-        console.log('Testing: disconnecting mongoose')
         await mongoose.disconnect()
-        console.log('Testing: disconnected mongoose')
       }
     } catch {
       // mongoose not installed or used
@@ -255,13 +252,22 @@ export function createTestContext(appInput: any): TestApp {
 
     // Prisma
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-require-imports
-      const { PrismaClient } = require('@prisma/client')
-      // Currently, we don't have a direct reference to the user's Prisma instance,
-      // but developers typically export it or handle it. For Exis zero-config,
-      // we might need to rely on the user for now unless we cache it similarly.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { prisma } = require('../integrations/prisma') as any
+      if (prisma && typeof prisma.$disconnect === 'function') {
+        await prisma.$disconnect()
+      }
     } catch {
       // Prisma not used
+    }
+
+    // User-registered cleanups (e.g. Prisma $disconnect)
+    for (const hook of userCleanupHooks) {
+      try {
+        await hook()
+      } catch (err) {
+        console.error('Testing: user cleanup hook failed', err)
+      }
     }
 
     // Redis
@@ -269,7 +275,6 @@ export function createTestContext(appInput: any): TestApp {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { redis } = require('../integrations/redis') as any
       if (redis && typeof redis.quit === 'function') {
-        console.log('Testing: disconnecting redis')
         await redis.quit()
       }
     } catch {
@@ -279,9 +284,7 @@ export function createTestContext(appInput: any): TestApp {
     // Call the built-in graceful shutdown which cleans up the queue,
     // cron jobs, database connections, and running servers.
     if (typeof app.close === 'function') {
-      console.log('Testing: app.close()')
       await app.close()
-      console.log('Testing: app.close() finished')
     }
   })
 

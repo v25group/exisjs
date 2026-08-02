@@ -9,7 +9,8 @@ export const jwt = {
     if (!secret) {
       throw new Error('process.env.JWT_SECRET is missing')
     }
-    return signJWT(payload, secret, options)
+    const secrets = secret.split(',').map((s) => s.trim())
+    return signJWT(payload, secrets, options)
   },
 
   /**
@@ -20,6 +21,7 @@ export const jwt = {
     if (!secret) {
       throw new Error('process.env.JWT_SECRET is missing')
     }
-    return verifyJWT<T>(token, secret)
+    const secrets = secret.split(',').map((s) => s.trim())
+    return verifyJWT<T>(token, secrets)
   },
 }

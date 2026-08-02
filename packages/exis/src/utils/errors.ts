@@ -144,9 +144,21 @@ export const InternalException = InternalError
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 
+function escapeHtml(str: string): string {
+  if (typeof str !== 'string') return String(str)
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function renderErrorHtml(err: Error, req: import('../types').Request): string {
   const stack = err.stack
-    ? err.stack.replace(/\n/g, '<br/>').replace(/ {2}/g, '&nbsp;&nbsp;')
+    ? escapeHtml(err.stack)
+        .replace(/\n/g, '<br/>')
+        .replace(/ {2}/g, '&nbsp;&nbsp;')
     : 'No stack trace available.'
   return `
 <!DOCTYPE html>
@@ -168,10 +180,10 @@ function renderErrorHtml(err: Error, req: import('../types').Request): string {
 <body>
   <div class="container">
     <h1>Unhandled Server Error</h1>
-    <div class="message">${err.message || 'Unknown Error'}</div>
+    <div class="message">${escapeHtml(err.message || 'Unknown Error')}</div>
     <div class="code-block">${stack}</div>
     <div class="req-info">
-      <strong>Request:</strong> <span class="highlight">${req.method}</span> ${req.path}
+      <strong>Request:</strong> <span class="highlight">${escapeHtml(req.method)}</span> ${escapeHtml(req.path)}
     </div>
   </div>
 </body>

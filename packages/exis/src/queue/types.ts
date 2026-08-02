@@ -1,9 +1,7 @@
-import type Redis from 'ioredis'
-
 export interface QueueConfig {
-  driver?: 'redis' | 'memory' | 'database'
+  driver?: 'redis' | 'memory'
   redisUrl?: string
-  redis?: Redis
+  redis?: any
   concurrency?: number
   maxConcurrent?: number
   maxQueue?: number
@@ -40,6 +38,15 @@ export interface JobDefinition<T = unknown> {
   cron?: string // Standard cron expression (e.g. "0 * * * *")
   schema?: { parse: (val: unknown) => T }
   defaultOptions?: JobOptions
+
+  // Observability hooks
+  onJobStart?: (payload: JobPayload<T>) => Promise<void> | void
+  onJobSuccess?: (payload: JobPayload<T>) => Promise<void> | void
+  onJobFailed?: (payload: JobPayload<T>, error: Error) => Promise<void> | void
+  onJobFailedPermanently?: (
+    payload: JobPayload<T>,
+    error: Error
+  ) => Promise<void> | void
 }
 
 export interface QueueDriver {
@@ -52,8 +59,10 @@ export interface QueueDriver {
     jobDef: JobDefinition,
     jobId: string,
     payload: JobPayload,
-    maxAttempts: number
+    maxAttempts: number,
+    error: Error
   ): Promise<void>
   sweep(jobs: Map<string, JobDefinition>): Promise<void>
   close(): Promise<void>
+  getRedis?(): any
 }

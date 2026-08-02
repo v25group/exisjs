@@ -7,6 +7,25 @@ export interface SwaggerOptions {
   components?: any
 }
 
+function escapeHtml(str: string): string {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escapeJsString(str: string): string {
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r')
+    .replace(/</g, '\\x3c') // prevents </script> breakout
+}
+
 export function serveSwagger(app: App, options: SwaggerOptions = {}) {
   const uiPath = options.path || '/docs'
   const jsonPath = `${uiPath}/json`
@@ -144,7 +163,7 @@ export function serveSwagger(app: App, options: SwaggerOptions = {}) {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="SwaggerUI" />
-  <title>${title}</title>
+  <title>${escapeHtml(title)}</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.11.0/swagger-ui.css" />
   <style>
     html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
@@ -159,7 +178,7 @@ export function serveSwagger(app: App, options: SwaggerOptions = {}) {
   <script>
     window.onload = () => {
       window.ui = SwaggerUIBundle({
-        url: '${jsonPath}',
+        url: '${escapeJsString(jsonPath)}',
         dom_id: '#swagger-ui',
         presets: [
           SwaggerUIBundle.presets.apis,

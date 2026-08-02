@@ -354,7 +354,7 @@ export function Idempotent(
  *     getPopular() {}
  */
 export function Cache(
-  options: import('../middleware/cache').CacheOptions | number = {}
+  options: import('../middleware/cache').CacheOptions
 ): any {
   return function (
     target: any,
@@ -367,7 +367,7 @@ export function Cache(
 
     fn[METHOD_MIDDLEWARES] = fn[METHOD_MIDDLEWARES] || []
 
-    const opts = typeof options === 'number' ? { ttlMs: options } : options
+    const opts = options
 
     // Defer import to avoid circular dependencies
     const middlewareProxy = async (req: any, res: any, next: any) => {

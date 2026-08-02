@@ -5,7 +5,11 @@ export {
   hpp,
   xss,
   mongoSanitize,
-  sqlSanitize,
   dbSanitize,
 } from '../middleware/security'
-export type { CsrfOptions, TimeoutOptions, DbSanitizeOptions } from '../middleware/security'
+export { rateLimit } from '../middleware/rate-limit'
+export type {
+  CsrfOptions,
+  TimeoutOptions,
+  DbSanitizeOptions,
+} from '../middleware/security'

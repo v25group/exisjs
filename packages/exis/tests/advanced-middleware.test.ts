@@ -21,7 +21,11 @@ describe('Advanced Middleware', () => {
   describe('Cache Middleware', () => {
     it('caches GET responses in memory', async () => {
       const store = new MemoryCacheStore()
-      const middleware = cacheMiddleware({ store, ttlMs: 1000 })
+      const middleware = cacheMiddleware({
+        store,
+        ttlMs: 1000,
+        keyGenerator: (req: any) => req.path,
+      })
 
       let callCount = 0
 
@@ -67,11 +71,70 @@ describe('Advanced Middleware', () => {
       expect(getResponseBody(res3)).toEqual({ hello: 'world' })
       expect(callCount).toBe(1) // still 1
     })
+
+    it('separates cache by identity if keyGenerator includes user ID', async () => {
+      const store = new MemoryCacheStore()
+      const middleware = cacheMiddleware({
+        store,
+        ttlMs: 1000,
+        keyGenerator: (req: any) => `${req.user?.id}:${req.path}`,
+      })
+
+      let callCount = 0
+
+      // User A requests /data
+      const reqA = createMockRequest({ method: 'GET', url: '/data' })
+      ;(reqA as any).user = { id: 'user-a' }
+      const resA = createMockResponse()
+
+      // User B requests /data
+      const reqB = createMockRequest({ method: 'GET', url: '/data' })
+      ;(reqB as any).user = { id: 'user-b' }
+      const resB = createMockResponse()
+
+      await new Promise<void>((resolve) => {
+        middleware(reqA, resA, () => {
+          callCount++
+          resA.json({ data: 'A' })
+          resolve()
+        })
+      })
+
+      await new Promise<void>((resolve) => {
+        middleware(reqB, resB, () => {
+          callCount++
+          resB.json({ data: 'B' })
+          resolve()
+        })
+      })
+
+      expect(callCount).toBe(2)
+      expect(getResponseHeader(resA, 'x-exis-cache')).toBe('MISS')
+      expect(getResponseHeader(resB, 'x-exis-cache')).toBe('MISS')
+      expect(getResponseBody(resA)).toEqual({ data: 'A' })
+      expect(getResponseBody(resB)).toEqual({ data: 'B' })
+
+      // User A requests again
+      const resA2 = createMockResponse()
+      await new Promise<void>((resolve) => {
+        middleware(reqA, resA2, () => {
+          callCount++ // Shouldn't be called
+        })
+        resolve()
+      })
+      // Delay slightly for Promise.resolve
+      await new Promise((r) => setTimeout(r, 10))
+
+      expect(callCount).toBe(2)
+      expect(getResponseHeader(resA2, 'x-exis-cache')).toBe('HIT')
+    })
   })
 
   describe('Deduplication Middleware', () => {
     it('deduplicates concurrent requests', async () => {
-      const middleware = dedupeMiddleware()
+      const middleware = dedupeMiddleware({
+        keyGenerator: (req: any) => req.path,
+      })
       let callCount = 0
 
       const req1 = createMockRequest({ method: 'GET', url: '/slow' })
@@ -107,6 +170,47 @@ describe('Advanced Middleware', () => {
       expect(callCount).toBe(1)
       expect(getResponseBody(res1)).toEqual({ data: 42 })
       expect(getResponseBody(res2)).toEqual({ data: 42 })
+    })
+
+    it('does not deduplicate concurrent requests from different identities', async () => {
+      const middleware = dedupeMiddleware({
+        keyGenerator: (req: any) => `${req.user?.id}:${req.path}`,
+      })
+      let callCount = 0
+
+      const reqA = createMockRequest({ method: 'GET', url: '/slow' })
+      ;(reqA as any).user = { id: 'user-a' }
+      const reqB = createMockRequest({ method: 'GET', url: '/slow' })
+      ;(reqB as any).user = { id: 'user-b' }
+
+      const resA = createMockResponse()
+      const resB = createMockResponse()
+
+      const pA = new Promise<void>((resolve) => {
+        middleware(reqA, resA, () => {
+          callCount++
+          setTimeout(() => {
+            resA.json({ data: 'A' })
+            resolve()
+          }, 20)
+        })
+      })
+
+      const pB = new Promise<void>((resolve) => {
+        middleware(reqB, resB, () => {
+          callCount++
+          setTimeout(() => {
+            resB.json({ data: 'B' })
+            resolve()
+          }, 20)
+        })
+      })
+
+      await Promise.all([pA, pB])
+
+      expect(callCount).toBe(2)
+      expect(getResponseBody(resA)).toEqual({ data: 'A' })
+      expect(getResponseBody(resB)).toEqual({ data: 'B' })
     })
   })
 

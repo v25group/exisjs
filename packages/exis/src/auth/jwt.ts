@@ -26,9 +26,10 @@ function fromBase64url(str: string): string {
  */
 export function signJWT(
   payload: Record<string, unknown>,
-  secret: string,
+  secret: string | string[],
   options?: JWTOptions
 ): string {
+  const actualSecret = Array.isArray(secret) ? secret[0] : secret
   const header = { alg: 'HS256', typ: 'JWT' }
 
   const expPayload = { ...payload }
@@ -39,7 +40,7 @@ export function signJWT(
   const encodedHeader = base64url(JSON.stringify(header))
   const encodedPayload = base64url(JSON.stringify(expPayload))
 
-  const signature = createHmac('sha256', secret)
+  const signature = createHmac('sha256', actualSecret)
     .update(`${encodedHeader}.${encodedPayload}`)
     .digest()
 
@@ -57,7 +58,10 @@ export class TokenExpiredError extends HttpError {
  * Verify a JWT token and extract its payload.
  * Throws HttpError(401) if the token is invalid or TokenExpiredError if expired.
  */
-export function verifyJWT<T = unknown>(token: string, secret: string): T {
+export function verifyJWT<T = unknown>(
+  token: string,
+  secret: string | string[]
+): T {
   if (!token || typeof token !== 'string') {
     throw HttpError.unauthorized('Invalid token format')
   }
@@ -69,19 +73,29 @@ export function verifyJWT<T = unknown>(token: string, secret: string): T {
 
   const [encodedHeader, encodedPayload, encodedSignature] = parts
 
-  const expectedSignature = base64url(
-    createHmac('sha256', secret)
-      .update(`${encodedHeader}.${encodedPayload}`)
-      .digest()
-  )
+  const secrets = Array.isArray(secret) ? secret : [secret]
+  let isValid = false
 
-  const expectedBuf = Buffer.from(expectedSignature)
-  const actualBuf = Buffer.from(encodedSignature)
+  for (const s of secrets) {
+    const expectedSignature = base64url(
+      createHmac('sha256', s)
+        .update(`${encodedHeader}.${encodedPayload}`)
+        .digest()
+    )
 
-  if (
-    expectedBuf.length !== actualBuf.length ||
-    !timingSafeEqual(expectedBuf, actualBuf)
-  ) {
+    const expectedBuf = Buffer.from(expectedSignature)
+    const actualBuf = Buffer.from(encodedSignature)
+
+    if (
+      expectedBuf.length === actualBuf.length &&
+      timingSafeEqual(expectedBuf, actualBuf)
+    ) {
+      isValid = true
+      break
+    }
+  }
+
+  if (!isValid) {
     throw HttpError.unauthorized('Invalid token signature')
   }
 

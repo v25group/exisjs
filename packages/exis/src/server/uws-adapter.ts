@@ -378,6 +378,20 @@ export function createUwsApp(
         ws.exisWs.raw = ws.shim // Make sure ExisWebSocket uses our shim
       }
       ws.shim.emit('open')
+
+      if (ws.finalHandler && ws.req && ws.res) {
+        Promise.resolve(
+          ws.finalHandler(ws.req, ws.res, () => {
+            /* noop */
+          })
+        ).catch((err) => {
+          if (ws.req.log) {
+            ws.req.log.error({ err }, 'Error in uWS WebSocket handler')
+          } else {
+            console.error('[Exis] Error in uWS WebSocket handler', err)
+          }
+        })
+      }
     },
 
     message: (ws: any, message: ArrayBuffer, isBinary: boolean) => {

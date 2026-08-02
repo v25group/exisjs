@@ -7,12 +7,10 @@ import Module from 'module'
 
 // Mock external modules using Module._load interception
 const mockModules: Record<string, any> = {
-  ioredis: {
-    default: class MockRedis {
-      constructor(public url: string) {}
-      set() {}
-      get() {}
-    },
+  ioredis: class MockRedis {
+    constructor(public url: string) {}
+    set() {}
+    get() {}
   },
   '@aws-sdk/client-s3': {
     S3Client: class MockS3 {
@@ -65,9 +63,9 @@ describe('Zero-Config Integrations', () => {
       expect(() => createRedisClient()).toThrow('missing')
     })
 
-    it.skip('creates client with REDIS_URL', () => {
+    it('creates client with REDIS_URL', () => {
       process.env.REDIS_URL = 'redis://localhost:6379'
-      const client = createRedisClient()
+      const client = createRedisClient() as any
       expect(client.url).toBe('redis://localhost:6379')
     })
   })
@@ -78,12 +76,12 @@ describe('Zero-Config Integrations', () => {
       expect(() => createS3Client()).toThrow('missing')
     })
 
-    it.skip('creates client with correct config', () => {
+    it('creates client with correct config', () => {
       process.env.AWS_REGION = 'us-east-1'
       process.env.AWS_ACCESS_KEY_ID = 'key'
       process.env.AWS_SECRET_ACCESS_KEY = 'secret'
 
-      const client = createS3Client()
+      const client = createS3Client() as any
       expect(client.config.region).toBe('us-east-1')
       expect(client.config.credentials.accessKeyId).toBe('key')
     })

@@ -201,14 +201,6 @@ export class WsOrchestrator {
             context
           )
         })
-
-        Promise.resolve(
-          userData.finalHandler(req, res, () => {
-            /* noop */
-          })
-        ).catch((e) => {
-          this.app.log.error({ err: e }, 'Error in uWS WebSocket handler')
-        })
       })
     })
   }

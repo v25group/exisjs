@@ -308,6 +308,6 @@ As mentioned in the [Middleware Guide](/docs/middleware), you should strongly co
 
 - `helmet()`: Enforces Strict-Transport-Security (HSTS), X-Content-Type-Options (nosniff), and prevents Clickjacking (`X-Frame-Options: DENY`).
 - `xss()`: Recursively sanitizes JSON payloads, stripping malicious HTML tags.
-- `dbSanitize({ sql: true, mongo: true })`: A powerful universal scraper that strips NoSQL operators (`$where`) and neuters SQL injection meta-characters (like `--`, `UNION`) to provide robust defense-in-depth for any database.
+- `dbSanitize({ mongo: true })`: A powerful universal scraper that strips NoSQL operators (`$where`) to provide robust defense-in-depth for MongoDB databases.
 - `csrf()`: Enforces the Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE).
 - `hpp()`: HTTP Parameter Pollution protection (removes duplicate array keys).

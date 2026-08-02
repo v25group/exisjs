@@ -5,12 +5,21 @@ export interface CacheOptions {
   store?: CacheStore
   ttlMs?: number
   tags?: string[] | ((req: Request) => string[])
-  keyGenerator?: (req: Request) => string
+  /**
+   * Function to generate a unique key for the request.
+   * MUST be provided to prevent cross-user data leaks.
+   */
+  keyGenerator: (req: Request) => string
 }
 
-export function cacheMiddleware(options: CacheOptions = {}): Handler {
+export function cacheMiddleware(options: CacheOptions): Handler {
+  if (!options || typeof options.keyGenerator !== 'function') {
+    throw new Error(
+      'cacheMiddleware: keyGenerator option is required to prevent cross-user data leaks.'
+    )
+  }
   const ttlMs = options.ttlMs
-  const keyGenerator = options.keyGenerator ?? ((req) => req.path || '/')
+  const keyGenerator = options.keyGenerator
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') {

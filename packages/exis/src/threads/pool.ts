@@ -19,6 +19,7 @@ export class ThreadPool {
     { resolve: (value: unknown) => void; reject: (reason?: any) => void }
   >()
   private runnerPath: string
+  private execArgv: string[]
 
   constructor(poolSize = Math.max(1, os.cpus().length - 1)) {
     // Determine path based on environment
@@ -29,10 +30,10 @@ export class ThreadPool {
 
     // Handle TS execution in dev via tsx if needed (tsx registers automatically on the main process,
     // but workers spawn fresh node instances, so we pass the tsx/cli loader if running ts)
-    const execArgv = ext === '.ts' ? ['--import', 'tsx'] : []
+    this.execArgv = ext === '.ts' ? ['--import', 'tsx'] : []
 
     for (let i = 0; i < poolSize; i++) {
-      const worker = new Worker(this.runnerPath, { execArgv })
+      const worker = new Worker(this.runnerPath, { execArgv: this.execArgv })
       this.setupWorker(worker)
       this.workers.push(worker)
       this.idleWorkers.push(worker)
@@ -66,7 +67,7 @@ export class ThreadPool {
       this.workers = this.workers.filter((w) => w !== worker)
       this.idleWorkers = this.idleWorkers.filter((w) => w !== worker)
 
-      const newWorker = new Worker(this.runnerPath)
+      const newWorker = new Worker(this.runnerPath, { execArgv: this.execArgv })
       this.setupWorker(newWorker)
       this.workers.push(newWorker)
       this.idleWorkers.push(newWorker)

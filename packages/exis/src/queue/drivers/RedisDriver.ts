@@ -126,7 +126,8 @@ export class RedisQueueDriver implements QueueDriver {
     jobDef: JobDefinition,
     jobId: string,
     payload: JobPayload,
-    maxAttempts: number
+    maxAttempts: number,
+    error: Error
   ): Promise<void> {
     const processingKey = `${this.prefix}:${jobDef.name}:processing`
     const pendingKey = `${this.prefix}:${jobDef.name}:pending`
@@ -143,11 +144,21 @@ export class RedisQueueDriver implements QueueDriver {
         .zadd(pendingKey, nextRun, jobId)
         .exec()
     } else {
+      const deadLetterKey = `${this.prefix}:${jobDef.name}:dead`
       await this.redis
         .pipeline()
         .zrem(processingKey, jobId)
         .hdel(hashKey, jobId)
+        .hset(deadLetterKey, jobId, JSON.stringify(payload))
         .exec()
+
+      if (jobDef.onJobFailedPermanently) {
+        Promise.resolve(jobDef.onJobFailedPermanently(payload, error)).catch(
+          () => {
+            /* ignore */
+          }
+        )
+      }
     }
   }
 
@@ -170,5 +181,9 @@ export class RedisQueueDriver implements QueueDriver {
 
   async close(): Promise<void> {
     await this.redis.quit()
+  }
+
+  getRedis(): any {
+    return this.redis
   }
 }

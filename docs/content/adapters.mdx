@@ -25,6 +25,12 @@ Every adapter handles **lazy initialization** automatically—your routes, plugi
 | `bun` | `exisjs/adapters` | Bun.serve |
 | `fastly` | `exisjs/adapters` | Fastly Compute@Edge |
 
+> [!WARNING]
+> **Edge Limitations**: When deploying to Edge runtimes (Cloudflare Workers, Vercel Edge, Netlify Edge, Fastly), some Node.js specific features will not function. Specifically:
+> - **Queues & Cron**: Background jobs and scheduled tasks require a long-running process and are unsupported on Edge.
+> - **WebSockets**: State-heavy WebSockets are not supported via the standard Edge Fetch adapters.
+> - **FileSystem Cache**: `FileSystemCacheStore` cannot write to a filesystem on Edge. You must configure a `RedisCacheStore` if you need caching on the Edge.
+
 ---
 
 ## Vercel

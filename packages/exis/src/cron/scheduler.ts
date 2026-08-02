@@ -12,14 +12,18 @@ export class CronScheduler {
   private logger: { error: LogFn; info: LogFn; debug: LogFn }
   private prefix = 'exis:cron'
 
+  private queuePrefix: string
+
   constructor(
     worker: ExisWorker | null,
     redis: Redis | null,
-    logger: { error: LogFn; info: LogFn; debug: LogFn }
+    logger: { error: LogFn; info: LogFn; debug: LogFn },
+    queuePrefix = 'exis:q'
   ) {
     this.worker = worker
     this.redis = redis
     this.logger = logger
+    this.queuePrefix = queuePrefix
   }
 
   registerJob(job: JobDefinition) {
@@ -95,9 +99,24 @@ export class CronScheduler {
                 data: {},
                 attemptsMade: 0,
               }
-              await this.redis.rpush(
-                `exis:queue:${job.name}:pending`,
-                JSON.stringify(payload)
+              const zsetKey = `${this.queuePrefix}:${job.name}:pending`
+              const hashKey = `${this.queuePrefix}:${job.name}:payloads`
+              const payloadStr = JSON.stringify(payload)
+              const score = Date.now()
+
+              const luaScript = `
+                redis.call("ZADD", KEYS[1], ARGV[1], ARGV[2])
+                redis.call("HSET", KEYS[2], ARGV[2], ARGV[3])
+                return 1
+              `
+              await this.redis.eval(
+                luaScript,
+                2,
+                zsetKey,
+                hashKey,
+                score,
+                payload.id,
+                payloadStr
               )
             } else if (this.worker) {
               // Fallback for completely memory-based setups without Redis

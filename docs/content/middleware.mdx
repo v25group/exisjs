@@ -228,7 +228,7 @@ ExisJS bundles the most critical security middlewares directly. (We will cover t
 - **`helmet()`**: Automatically sets 14+ secure HTTP headers.
 - **`xss()`**: Sanitizes incoming user payloads to prevent Cross-Site Scripting.
 - **`hpp()`**: Prevents HTTP Parameter Pollution attacks.
-- **`dbSanitize()`**: A universal scraper that protects against both NoSQL (`$where`) and SQL injection patterns.
+- **`dbSanitize()`**: A universal scraper that protects against NoSQL injection patterns (`$where` and other malicious operators).
 - **`timeout(ms)`**: Kills requests that hang longer than a specified duration.
 - **`ipFilter()`**: Restricts access based on IP Whitelists/Blacklists.
 
@@ -237,7 +237,7 @@ import { helmet, xss, timeout, dbSanitize } from 'exisjs/middleware'
 
 app.use(helmet())
 app.use(xss())
-app.use(dbSanitize({ sql: true, mongo: true }))
+app.use(dbSanitize({ mongo: true }))
 app.use(timeout(5000)) // 5 second timeout
 ```
 
@@ -247,9 +247,12 @@ app.use(timeout(5000)) // 5 second timeout
 
 These middlewares push ExisJS beyond traditional HTTP frameworks into the realm of enterprise-grade Edge Gateways.
 
-- **`cache()`**: An in-memory route caching engine.
-- **`dedupe()`**: Request deduplication (In-flight request collapsing). If 1,000 users hit a heavy `/stats` route at the exact same millisecond, ExisJS will only compute it **once**, and send the same response to all 1,000 users simultaneously.
+- **`cache()`**: An in-memory route caching engine. Requires a `keyGenerator` to prevent data leaks.
+- **`dedupe()`**: Request deduplication (In-flight request collapsing). If 1,000 users hit a heavy `/stats` route at the exact same millisecond, ExisJS will only compute it **once**, and send the same response to all 1,000 users simultaneously. Requires a `keyGenerator`.
 - **`backpressure()`**: Protects your server from traffic spikes by shedding load or queuing requests when the Node.js Event Loop lags.
+
+> [!WARNING]
+> **Authentication Leak Hazard**: When using `cache()` or `dedupe()` on authenticated routes, you **must** include the user's ID or session token in your `keyGenerator`. Failing to do so will result in User B receiving a cached/deduped response generated for User A.
 
 ---
 
@@ -379,7 +382,12 @@ import { cache } from 'exisjs/middleware'
 
 export default controller({
   popular: route.get('/popular', {
-    middlewares: [cache({ ttlMs: 60000 })], // Caches the response for 60 seconds
+    middlewares: [
+      cache({
+        ttlMs: 60000,
+        keyGenerator: (req) => req.url // Critical: Define how cache keys are built
+      })
+    ], 
     handle(req, res) {
       return { success: true, books: [] }
     }
@@ -394,7 +402,7 @@ import { Controller, Get, Cache } from 'exisjs/decorators'
 
 @Controller()
 export default class BooksController {
-  @Cache({ ttlMs: 60000 }) // Caches the response for 60 seconds
+  @Cache({ ttlMs: 60000, keyGenerator: (req) => req.url }) // Caches the response for 60 seconds
   @Get('/popular')
   async getPopular() {
     return { success: true, books: [] }

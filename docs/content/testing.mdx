@@ -107,3 +107,33 @@ describe('Billing API', () => {
   })
 })
 ```
+
+---
+
+## Test Isolation
+
+One of the most common pitfalls when testing backend frameworks is **test bleed**—where the state from one test unexpectedly affects the next. ExisJS provides the tools to prevent this, but you must be intentional about state isolation.
+
+### 1. Dependency Injection Cleanup
+If you rely heavily on singletons in the ExisJS Dependency Injection container, you may want to reset the container's state between tests. 
+
+```typescript filename="tests/setup.ts"
+import { beforeEach } from 'exisjs/testing'
+import { getActiveApp } from 'exisjs/app'
+
+beforeEach(() => {
+  const app = getActiveApp()
+  if (app) {
+    app.container.clearCache() // Purges all instantiated singletons
+  }
+})
+```
+
+### 2. Zero-Config Singletons (Redis, Prisma, etc.)
+ExisJS provides zero-config integrations (`redis.ts`, `prisma.ts`, etc.) which act as **process-wide singletons**. 
+Because they use proxy-based caching at the module level, running multiple test suites concurrently in the same Node.js process means they will all share the **exact same database connections and state**. 
+
+If your tests write to the database or queue, ensure you either:
+1. Run your test runner in a mode that isolates processes per file.
+2. Manually clear database tables or flush Redis in a `beforeEach` block.
+3. Use database transactions that rollback after each test.

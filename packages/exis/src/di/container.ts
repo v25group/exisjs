@@ -60,7 +60,7 @@ export class Container {
               throw new Error(
                 `Cannot resolve request-scoped provider '${String(
                   token
-                )}' outside of a request context.`
+                )}' outside of a request context. This usually happens if you try to resolve a request-scoped dependency during app startup, inside a background job, or without passing the request context cache.`
               )
             }
             requestCache.set(token, instance)
@@ -68,8 +68,12 @@ export class Container {
             this.singletonCache.set(token, instance)
           }
           return instance
-        } catch {
-          throw new Error(`Cannot resolve provider for token: ${String(token)}`)
+        } catch (err: any) {
+          const error = new Error(
+            `Cannot resolve provider for token: ${String(token)}`
+          )
+          ;(error as any).cause = err
+          throw error
         }
       }
       throw new Error('Provider not found for token: ' + String(token))
@@ -101,7 +105,7 @@ export class Container {
         throw new Error(
           `Cannot resolve request-scoped provider '${String(
             token
-          )}' outside of a request context.`
+          )}' outside of a request context. This usually happens if you try to resolve a request-scoped dependency during app startup, inside a background job, or without passing the request context cache.`
         )
       }
       requestCache.set(token, resolvedValue)

@@ -151,6 +151,12 @@ export class ExisWorker {
         `Processing job ${payload.name}:${payload.id} in Thread Pool`
       )
 
+      if (jobDef.onJobStart) {
+        Promise.resolve(jobDef.onJobStart(payload)).catch(() => {
+          /* ignore */
+        })
+      }
+
       if (jobDef.handler) {
         await jobDef.handler(payload)
       } else if (jobDef.filePath && this.threadPool) {
@@ -160,19 +166,28 @@ export class ExisWorker {
       }
 
       this.logger.info(`Completed job ${payload.name}:${payload.id}`)
+      if (jobDef.onJobSuccess) {
+        Promise.resolve(jobDef.onJobSuccess(payload)).catch(() => {
+          /* ignore */
+        })
+      }
 
       if (this.driver) {
         await this.driver.acknowledge(jobDef.name, jobId)
       }
-    } catch (err) {
+    } catch (err: any) {
       this.logger.error({ err, job: payload }, `Failed job ${jobDef.name}`)
       if (this.driver && payload) {
-        await this.driver.fail(
-          jobDef,
-          jobId,
-          payload,
+        const maxAttempts =
           payload.opts?.attempts ?? jobDef.defaultOptions?.attempts ?? 1
-        )
+
+        if (payload.attemptsMade < maxAttempts && jobDef.onJobFailed) {
+          Promise.resolve(jobDef.onJobFailed(payload, err)).catch(() => {
+            /* ignore */
+          })
+        }
+
+        await this.driver.fail(jobDef, jobId, payload, maxAttempts, err)
       }
     }
   }

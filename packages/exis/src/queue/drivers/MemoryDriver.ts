@@ -9,6 +9,7 @@ interface MemoryJob {
 export class MemoryQueueDriver implements QueueDriver {
   private pending = new Map<string, MemoryJob[]>()
   private processing = new Map<string, MemoryJob[]>()
+  private deadLetter = new Map<string, MemoryJob[]>()
 
   private getList(map: Map<string, MemoryJob[]>, key: string): MemoryJob[] {
     if (!map.has(key)) {
@@ -87,7 +88,8 @@ export class MemoryQueueDriver implements QueueDriver {
     jobDef: JobDefinition,
     jobId: string,
     payload: JobPayload,
-    maxAttempts: number
+    maxAttempts: number,
+    error: Error
   ): Promise<void> {
     const processingList = this.getList(this.processing, jobDef.name)
     const index = processingList.findIndex((j) => j.id === jobId)
@@ -106,6 +108,20 @@ export class MemoryQueueDriver implements QueueDriver {
         score,
       })
       pendingList.sort((a, b) => a.score - b.score)
+    } else {
+      const deadLetterList = this.getList(this.deadLetter, jobDef.name)
+      deadLetterList.push({
+        id: jobId,
+        payloadStr: JSON.stringify(payload),
+        score: Date.now(),
+      })
+      if (jobDef.onJobFailedPermanently) {
+        Promise.resolve(jobDef.onJobFailedPermanently(payload, error)).catch(
+          () => {
+            /* ignore */
+          }
+        )
+      }
     }
   }
 

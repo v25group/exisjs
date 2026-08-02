@@ -252,57 +252,24 @@ export function mongoSanitize(): Handler {
   }
 }
 
-// ─── SQL Injection Protection ─────────────────────────────────────────────────
-
-const SQL_INJECTION_REGEX = /(?:\b(?:UNION|SELECT|INSERT|UPDATE|DELETE|DROP|EXEC|ALTER|TRUNCATE)\b)|(?:--|;)/i
-
-function sanitizeSql(obj: unknown): unknown {
-  if (typeof obj === 'string') {
-    return obj.replace(new RegExp(SQL_INJECTION_REGEX, 'gi'), '[FILTERED]')
-  }
-  if (Array.isArray(obj)) return obj.map(sanitizeSql)
-  if (obj && typeof obj === 'object') {
-    const sanitized: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(obj)) {
-      sanitized[k] = sanitizeSql(v)
-    }
-    return sanitized
-  }
-  return obj
-}
-
-export function sqlSanitize(): Handler {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.body) req.body = sanitizeSql(req.body)
-    if (Object.keys(req.query).length > 0)
-      req.query = sanitizeSql(req.query) as Record<string, string>
-    if (Object.keys(req.params).length > 0)
-      req.params = sanitizeSql(req.params) as Record<string, string>
-    next()
-  }
-}
-
 // ─── Universal Database Sanitizer ──────────────────────────────────────────────
 
 export interface DbSanitizeOptions {
   mongo?: boolean
-  sql?: boolean
 }
 
-export function dbSanitize(options: DbSanitizeOptions = { mongo: true, sql: false }): Handler {
+export function dbSanitize(
+  options: DbSanitizeOptions = { mongo: true }
+): Handler {
   return (req: Request, res: Response, next: NextFunction) => {
     if (options.mongo) {
       if (req.body) req.body = sanitizeMongo(req.body)
-      if (Object.keys(req.query).length > 0) req.query = sanitizeMongo(req.query) as Record<string, string>
-      if (Object.keys(req.params).length > 0) req.params = sanitizeMongo(req.params) as Record<string, string>
+      if (Object.keys(req.query).length > 0)
+        req.query = sanitizeMongo(req.query) as Record<string, string>
+      if (Object.keys(req.params).length > 0)
+        req.params = sanitizeMongo(req.params) as Record<string, string>
     }
-    
-    if (options.sql) {
-      if (req.body) req.body = sanitizeSql(req.body)
-      if (Object.keys(req.query).length > 0) req.query = sanitizeSql(req.query) as Record<string, string>
-      if (Object.keys(req.params).length > 0) req.params = sanitizeSql(req.params) as Record<string, string>
-    }
-    
+
     next()
   }
 }

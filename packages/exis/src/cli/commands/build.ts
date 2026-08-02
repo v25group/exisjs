@@ -139,7 +139,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // Generate the .exis/manifest.js route map
   await generateManifest(cwd, outDir)
 
-  process.stdout.write(`${c.dim}running production optimizers...${c.reset}`)
+  process.stdout.write(`${c.dim}running experimental optimizers...${c.reset}`)
   try {
     const { optimizeRoutes } = await import('../optimizers/aot-routes')
     const { treeShakeMiddleware } = await import('../optimizers/tree-shake')
@@ -150,12 +150,12 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     await treeShakeMiddleware(cwd, outDir)
     await precompileSerializers(cwd, outDir)
     process.stdout.write(
-      `\r${c.green}✓${c.reset} ${c.dim}production optimizers applied.${c.reset}\n`
+      `\r${c.yellow}⚠${c.reset} ${c.dim}experimental optimizers applied (not yet wired to runtime).${c.reset}\n`
     )
   } catch (err) {
     console.error(err)
     process.stdout.write(
-      `\r${c.yellow}⚠${c.reset} ${c.dim}some optimizers failed, falling back to dynamic boot.${c.reset}\n`
+      `\r${c.yellow}⚠${c.reset} ${c.dim}some experimental optimizers failed.${c.reset}\n`
     )
   }
 

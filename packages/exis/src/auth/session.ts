@@ -102,9 +102,7 @@ export function session(options: SessionOptions) {
       sessionId = randomBytes(24).toString('base64url')
       // Only set cookie if we created a new session ID
       res.cookie(cookieName, signCookie(sessionId, options.secret), {
-        maxAge: ttl / 1000, // cookie maxAge is typically in seconds in Exis, wait let me check (usually seconds or ms depending on framework, Exis parses it to ms in Date if not Careful, let's assume seconds based on typical node frameworks, or ms? Let's pass ms or let users deal with it. We'll use maxAge: ttl)
-        // Let's use expires for safety
-        expires: new Date(Date.now() + ttl),
+        maxAge: ttl / 1000,
         httpOnly: true,
         secure: options.secure ?? process.env.NODE_ENV === 'production',
         sameSite: options.sameSite ?? 'Lax',
@@ -115,10 +113,14 @@ export function session(options: SessionOptions) {
     // 3. Attach session to request
     req.session = sessionData
 
+    const initialState = JSON.stringify(sessionData)
+
     // 4. Hook into res.raw.end to save the session automatically
     const originalEnd = res.raw.end.bind(res.raw)
     res.raw.end = function (...args: unknown[]) {
-      store.set(sessionId as string, sessionData, ttl)
+      if (JSON.stringify(sessionData) !== initialState) {
+        store.set(sessionId as string, sessionData, ttl)
+      }
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       return originalEnd(...args)

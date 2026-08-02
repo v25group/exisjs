@@ -37,20 +37,18 @@ export class UsersService {
 }
 ```
 
-Now that we have a service class to retrieve users, let's use it inside the `UsersController`:
+Now that we have a service class to retrieve users, let's use it inside the `UsersController`. ExisJS provides a powerful `inject()` primitive that automatically resolves dependencies from the current context.
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Body } from 'exisjs/decorators'
-import { getContext } from 'exisjs/router'
+import { inject } from 'exisjs/di'
 import { UsersService, User } from './service'
 
 @Controller('users')
 export default class UsersController {
   
-  // Resolve dependencies manually or via context
-  private get usersService() {
-    return getContext<{ container: any }>().container.resolve(UsersService)
-  }
+  // Clean, ergonomic dependency injection
+  private usersService = inject(UsersService)
 
   @Post()
   async create(@Body() user: User) {
@@ -66,13 +64,23 @@ export default class UsersController {
 ```
 
 <Info title="Note on Dependency Injection">
-ExisJS utilizes an ultra-fast runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a zero-overhead footprint. Dependencies can be smoothly resolved via the Context API or manually pulling from the app container.
+ExisJS utilizes an ultra-fast runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a zero-overhead footprint. The `inject()` function is the primary and recommended way to resolve dependencies smoothly.
 </Info>
+
+### Advanced: Manual Resolution
+If you are operating completely outside of an ExisJS controller or route (for example, in a background worker, CRON job, or a raw script like a database seeder), you can manually resolve dependencies as an escape hatch via the app container:
+
+```typescript filename="scripts/seed.ts"
+import { getActiveApp } from 'exisjs/app'
+import { UsersService } from './service'
+
+const app = getActiveApp()
+const usersService = app.container.resolve(UsersService)
+```
 
 ## Custom Providers
 
 ExisJS's DI container is extremely flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
-
 <Tabs defaultValue="functional" className="mb-6 w-full">
   <TabsList className="grid w-[300px] grid-cols-2">
     <TabsTrigger value="functional">Functional</TabsTrigger>
@@ -142,3 +150,6 @@ However, there are edge-cases when request-based lifetime may be the desired beh
 
 - **Singleton (Default)**: A single instance of the provider is shared across the entire application.
 - **Request**: A new instance of the provider is created exclusively for each incoming request, and garbage collected afterward.
+
+> [!WARNING]
+> **Request Scope Constraints**: A provider marked as `scope: 'request'` **must** be resolved within the lifecycle of an active HTTP request. If you try to `inject()` or resolve a request-scoped provider during application startup, inside a background queue worker, or from a cron job, the container will throw a runtime error.
