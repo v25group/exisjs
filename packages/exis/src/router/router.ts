@@ -469,7 +469,10 @@ export function runHandlers(
     const safeNext = (err?: Error) => {
       if (calledNext) return
       calledNext = true
-      if (done) done(err)
+      if (done) {
+        if (err !== undefined) done(err)
+        else done()
+      }
     }
 
     let result: unknown
@@ -491,8 +494,10 @@ export function runHandlers(
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
-    } else if (result !== undefined && result !== res && !res.headersSent) {
-      res.json(result)
+    } else {
+      if (result !== undefined && result !== res && !res.headersSent) {
+        res.json(result)
+      }
     }
     return
   }

@@ -112,6 +112,20 @@ export class RequestHandler {
         diCache: new Map(),
       }
 
+      res._onFinish.push(() => {
+        for (const cb of store.afterCallbacks) {
+          try {
+            const r = cb()
+            if (r instanceof Promise)
+              r.catch(() => {
+                /* noop */
+              })
+          } catch (e) {
+            this.app.log.error({ err: e }, 'Error in after() callback')
+          }
+        }
+      })
+
       executionContext.run(store, execution)
     } else {
       execution()
