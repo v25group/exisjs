@@ -393,10 +393,13 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     res: Response,
     fallthrough?: (err?: Error) => void
   ): void {
-    const host =
-      typeof (req as any).hostname === 'string'
-        ? (req as any).hostname
-        : req.header('host')?.split(':')[0]
+    let host: string | undefined
+    if (this.tree.hasHostRoutes) {
+      host =
+        typeof (req as any).hostname === 'string'
+          ? (req as any).hostname
+          : req.header('host')?.split(':')[0]
+    }
 
     const matched = this.match(req.method, req.path, host)
 
@@ -463,26 +466,30 @@ export function runHandlers(
   let index = 0
   const total = handlers.length
 
-  const next = async (err?: Error): Promise<void> => {
+  const next = (err?: Error): void | Promise<void> => {
     if (err) {
       if (filters && filters.length > 0) {
-        for (const filter of filters) {
-          try {
-            if (typeof filter === 'function' && filter.prototype?.catch) {
-              const filterInstance = new filter()
-              await filterInstance.catch(err, { req, res })
-              return
-            } else if (
-              typeof filter === 'object' &&
-              typeof filter.catch === 'function'
-            ) {
-              await filter.catch(err, { req, res })
-              return
+        // We handle filter catching asynchronously since filters might be async
+        return (async () => {
+          for (const filter of filters) {
+            try {
+              if (typeof filter === 'function' && filter.prototype?.catch) {
+                const filterInstance = new filter()
+                await filterInstance.catch(err, { req, res })
+                return
+              } else if (
+                typeof filter === 'object' &&
+                typeof filter.catch === 'function'
+              ) {
+                await filter.catch(err, { req, res })
+                return
+              }
+            } catch {
+              // Ignore filter errors and continue to next or fallback
             }
-          } catch {
-            // Ignore filter errors and continue to next or fallback
           }
-        }
+          done?.(err)
+        })()
       }
       done?.(err)
       return
@@ -498,7 +505,7 @@ export function runHandlers(
     let result: unknown
     let calledNext = false
 
-    const safeNext = async (err?: Error) => {
+    const safeNext = (err?: Error) => {
       if (calledNext) return
       calledNext = true
       return next(err)

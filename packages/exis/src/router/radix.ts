@@ -111,7 +111,9 @@ class RadixNode {
     if (!Array.isArray(routes)) {
       if (routes.host) {
         if (!host) return null
-        const hostList = Array.isArray(routes.host) ? routes.host : [routes.host]
+        const hostList = Array.isArray(routes.host)
+          ? routes.host
+          : [routes.host]
         let matched = false
         let hostParams = undefined
         for (const h of hostList) {
@@ -136,7 +138,7 @@ class RadixNode {
     for (const route of routes) {
       if (!route.host) return { route } // fallback matches any host
       if (!host) continue
-      
+
       const hostList = Array.isArray(route.host) ? route.host : [route.host]
       for (const h of hostList) {
         if ((route as any)._hostRegexes && (route as any)._hostRegexes[h]) {
@@ -175,13 +177,23 @@ class RadixNode {
 
 export class RadixTree {
   root: RadixNode = new RadixNode()
-  private cache = new Map<string, RouteMatch | null>()
+  hasHostRoutes = false
+  private cache: Record<string, Record<string, RouteMatch | null>> = {
+    GET: Object.create(null),
+    POST: Object.create(null),
+    PUT: Object.create(null),
+    DELETE: Object.create(null),
+    PATCH: Object.create(null),
+    OPTIONS: Object.create(null),
+    HEAD: Object.create(null),
+  }
   private cacheSize = 0
   private maxCacheSize = 1000
 
   // ─── Insert ──────────────────────────────────────────────────────────────────
 
   insert(method: string, path: string, route: Route): void {
+    if (route.host) this.hasHostRoutes = true
     let current = this.root
     const len = path.length
 
@@ -238,7 +250,19 @@ export class RadixTree {
 
     current.setRoute(method, route)
     // Clear cache when new routes are inserted
-    this.cache.clear()
+    this._clearCache()
+  }
+
+  private _clearCache() {
+    this.cache = {
+      GET: Object.create(null),
+      POST: Object.create(null),
+      PUT: Object.create(null),
+      DELETE: Object.create(null),
+      PATCH: Object.create(null),
+      OPTIONS: Object.create(null),
+      HEAD: Object.create(null),
+    }
     this.cacheSize = 0
   }
 
@@ -247,39 +271,50 @@ export class RadixTree {
   // Falls back to backtracking only when param/wildcard children exist.
 
   search(method: string, path: string, host?: string): RouteMatch | null {
-    const cacheKey = method + '|' + path + '|' + (host || '')
+    const cachePath = host ? host + path : path
+    const methodCache =
+      this.cache[method] || (this.cache[method] = Object.create(null))
 
-    const cached = this.cache.get(cacheKey)
-    if (cached !== undefined) return cached
+    if (methodCache[cachePath] !== undefined) {
+      return methodCache[cachePath]
+    }
 
     const len = path.length
 
     // Fast-path 1: try the direct static walk first (zero allocations)
     let result = this._staticWalk(method, path, len, host)
     if (result) {
-      this._addToCache(cacheKey, result)
+      this._addToCache(methodCache, cachePath, result)
       return result
     }
 
     // Fast-path 2: linear walk for simple param/wildcard routes
     result = this._linearWalk(method, path, len, host)
     if (result) {
-      this._addToCache(cacheKey, result)
+      this._addToCache(methodCache, cachePath, result)
       return result
     }
 
     // Slow-path: full backtracking search
     result = this._backtrackSearch(method, path, len, host)
-    this._addToCache(cacheKey, result)
+    this._addToCache(methodCache, cachePath, result)
     return result
   }
 
-  private _addToCache(key: string, result: RouteMatch | null): void {
+  private _addToCache(
+    methodCache: Record<string, RouteMatch | null>,
+    path: string,
+    result: RouteMatch | null
+  ): void {
     if (this.cacheSize >= this.maxCacheSize) {
-      this.cache.clear()
-      this.cacheSize = 0
+      this._clearCache()
+      // If we cleared, we must re-assign methodCache as the old one was tossed
+      const newCache = this.cache
+      for (const m in newCache) {
+        if (newCache[m]) methodCache = newCache[m]
+      }
     }
-    this.cache.set(key, result)
+    methodCache[path] = result
     this.cacheSize++
   }
 

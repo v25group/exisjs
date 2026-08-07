@@ -16,6 +16,7 @@ const config: ExisConfig = {
   },
 
   helmet: { enabled: true },
+  asyncContext: true,
 }
 
 export default config

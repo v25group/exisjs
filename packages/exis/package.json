@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -208,8 +208,7 @@
     "openai": "*",
     "postgres": "*",
     "posthog-node": "*",
-    "resend": "*",
-    "uWebSockets.js": "*"
+    "resend": "*"
   },
   "peerDependenciesMeta": {
     "uWebSockets.js": {
@@ -258,15 +257,13 @@
     "@types/mime-types": "^3.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.1.1",
-    "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
     "find-my-way": "^9.7.0",
     "ioredis-mock": "^8.13.1",
-    "mitata": "^1.0.34",
-    "supertest": "^7.2.2"
+    "mitata": "^1.0.34"
   },
   "optionalDependencies": {
     "ioredis": "^5.11.1",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0"
   }
 }

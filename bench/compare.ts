@@ -87,7 +87,7 @@ async function runTrial(
 ): Promise<TrialResult | null> {
   const serverPath = path.join(__dirname, 'servers', serverInfo.file)
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
-    'node',
+    process.execPath,
     [serverPath],
     {
       stdio: ['ignore', 'pipe', 'pipe'],

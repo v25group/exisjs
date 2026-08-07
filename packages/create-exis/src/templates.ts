@@ -30,7 +30,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.5.2',
+      exisjs: '^0.5.3',
     },
   }
 
@@ -105,6 +105,9 @@ export function exisConfigTemplate(useTypeScript: boolean): string {
   },
 
   helmet: { enabled: true },
+
+  // Set to true if you need to use getContext() globally in production
+  asyncContext: false,
 
   test: {
     include: ['tests/**/*.test.ts']

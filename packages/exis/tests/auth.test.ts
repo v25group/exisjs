@@ -3,7 +3,7 @@ import { signJWT, verifyJWT } from '../src/auth/jwt'
 import { requireRole } from '../src/auth/rbac'
 import { MemorySessionStore, session } from '../src/auth/session'
 import { App } from '../src/server/app'
-import request from 'supertest'
+import { createTestApp } from '../src/testing/client'
 import type { Request, Response } from '../src/types'
 import { describe, expect, it } from '../src/testing'
 
@@ -66,7 +66,7 @@ describe('Auth Module', () => {
         res.status(200).send('Welcome admin')
       })
 
-      await request(app.getServer()).get('/admin').expect(200, 'Welcome admin')
+      await createTestApp(app).get('/admin').expect(200).expect('Welcome admin')
     })
 
     it('blocks access if user lacks required role', async () => {
@@ -82,7 +82,7 @@ describe('Auth Module', () => {
       })
 
       // We expect 403 Forbidden because error handler catches HttpError
-      await request(app.getServer()).get('/admin').expect(403)
+      await createTestApp(app).get('/admin').expect(403)
     })
   })
 
@@ -105,17 +105,19 @@ describe('Auth Module', () => {
         res.status(200).send(`User ID: ${req.session.userId}`)
       })
 
-      const loginRes = await request(app.getServer())
+      const loginRes = await createTestApp(app)
         .post('/login')
-        .expect(200, 'Logged in')
+        .expect(200)
+        .expect('Logged in')
 
       const cookie = loginRes.headers['set-cookie']
       expect(cookie).toBeDefined()
 
-      await request(app.getServer())
+      await createTestApp(app)
         .get('/profile')
-        .set('Cookie', cookie)
-        .expect(200, 'User ID: 456')
+        .set('Cookie', cookie?.[0] ?? '')
+        .expect(200)
+        .expect('User ID: 456')
     })
   })
 })

@@ -30,8 +30,18 @@ export class ServerBootstrapper {
         isUwsAvailable() &&
         app.options.env !== 'test')
     ) {
-      this._useUws = true
-      // Don't init Node server — we'll create the uWS app at listen() time
+      if (isUwsAvailable()) {
+        this._useUws = true
+        // Don't init Node server - we'll create the uWS app at listen() time
+      } else {
+        if (app.explicitOptions.server === 'uws') {
+          app.log.warn(
+            "server: 'uws' was requested, but uWebSockets.js could not be loaded. This usually means it is not installed or the installed version doesn't support your Node.js platform/version. Falling back to the native Node.js HTTP server."
+          )
+        }
+        this._useUws = false
+        this.server = this._initServer()
+      }
     } else {
       this._useUws = false
       this.server = this._initServer()

@@ -1,11 +1,11 @@
 import { exis } from '../src'
 import { getContext, setContext, after } from '../src/exports/route'
-import request from 'supertest'
+import { createTestApp } from '../src/testing/client'
 import { describe, expect, it, ex } from '../src/testing'
 
 describe('Context API & after()', () => {
   it('should isolate context state across requests', async () => {
-    const app = exis()
+    const app = exis({ asyncContext: true })
 
     const mockService = () => {
       const state = getContext<{ userId: string }>()
@@ -22,11 +22,11 @@ describe('Context API & after()', () => {
       }, 10)
     })
 
-    const server = app.getServer()
+    const server = createTestApp(app)
 
     const [res1, res2] = await Promise.all([
-      request(server).get('/user/1'),
-      request(server).get('/user/2'),
+      server.get('/user/1'),
+      server.get('/user/2'),
     ])
 
     expect(res1.body.contextId).toBe('1')
@@ -34,7 +34,7 @@ describe('Context API & after()', () => {
   })
 
   it('should run after() callbacks when the response finishes', async () => {
-    const app = exis()
+    const app = exis({ asyncContext: true })
 
     let afterExecuted = false
 
@@ -45,10 +45,10 @@ describe('Context API & after()', () => {
       res.json({ success: true })
     })
 
-    const server = app.getServer()
-    const res = await request(server).get('/background')
+    const server = createTestApp(app)
+    const res = await server.get('/background')
 
-    expect(res.statusCode).toBe(200)
+    expect(res.status).toBe(200)
 
     // Wait a brief moment to allow the 'finish' event to trigger the after callback
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -57,10 +57,10 @@ describe('Context API & after()', () => {
 
   it('should throw an error if called outside a request', () => {
     expect(() => getContext()).toThrow(
-      'getContext() can only be called inside an active Exis request handler.'
+      'getContext() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
     expect(() => after(() => {})).toThrow(
-      'after() can only be called inside an active Exis request handler.'
+      'after() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
   })
 })

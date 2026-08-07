@@ -23,7 +23,7 @@ export function getContext<T = ExisContext>(): T {
   const store = executionContext.getStore()
   if (!store) {
     throw new Error(
-      'getContext() can only be called inside an active Exis request handler.'
+      'getContext() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
   }
   return store.state as unknown as T
@@ -76,7 +76,7 @@ export function after(callback: () => void | Promise<void>): void {
   const store = executionContext.getStore()
   if (!store) {
     throw new Error(
-      'after() can only be called inside an active Exis request handler.'
+      'after() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
   }
   store.afterCallbacks.push(callback)

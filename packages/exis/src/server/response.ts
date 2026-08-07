@@ -197,7 +197,6 @@ export class ExisResponse<TResponse = any> {
     }
 
     const isBuffer = Buffer.isBuffer(body)
-    const content = isBuffer ? body : Buffer.from(body, 'utf8')
 
     if (!this.raw.hasHeader('Content-Type')) {
       this.raw.setHeader(
@@ -207,17 +206,28 @@ export class ExisResponse<TResponse = any> {
     }
 
     if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
-      this.raw.setHeader('ETag', generateETag(content))
+      const buf = isBuffer
+        ? (body as Buffer)
+        : Buffer.from(body as string, 'utf8')
+      this.raw.setHeader('ETag', generateETag(buf))
     }
 
-    if (this.req && this.req.fresh) {
+    if (
+      this.req &&
+      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
+      this.req.fresh
+    ) {
       this.statusCode = 304
       this.end()
       return
     }
 
-    this.raw.setHeader('Content-Length', content.length)
-    this.end(content)
+    // Rely on Node.js core to automatically calculate Content-Length
+    // for strings in res.end() rather than creating a Buffer here.
+    if (isBuffer && !this.raw.hasHeader('Content-Length')) {
+      this.raw.setHeader('Content-Length', (body as Buffer).length)
+    }
+    this.end(body)
   }
 
   /**
@@ -254,19 +264,21 @@ export class ExisResponse<TResponse = any> {
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
     }
 
-    const byteLen = Buffer.byteLength(str, 'utf8')
-
     if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
-      this.raw.setHeader('ETag', generateETag(Buffer.from(str, 'utf8')))
+      const buf = Buffer.from(str, 'utf8')
+      this.raw.setHeader('ETag', generateETag(buf))
     }
 
-    if (this.req?.fresh) {
+    if (
+      this.req &&
+      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
+      this.req.fresh
+    ) {
       this.statusCode = 304
       this.end()
       return
     }
 
-    this.raw.setHeader('Content-Length', byteLen)
     this.end(str)
   }
 
@@ -285,9 +297,7 @@ export class ExisResponse<TResponse = any> {
     if (!this.hasHeader('Content-Type')) {
       this.setHeader('Content-Type', 'text/html; charset=utf-8')
     }
-    const buf = Buffer.from(content, 'utf8')
-    this.setHeader('Content-Length', buf.length)
-    this.end(buf)
+    this.end(content)
   }
 
   /**

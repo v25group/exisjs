@@ -217,7 +217,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (fs.existsSync(tsconfigPath)) {
     let tscPath: string
     try {
-      tscPath = require.resolve('typescript/bin/tsc')
+      const req = typeof require !== 'undefined' ? require : eval('require')
+      tscPath = req.resolve('typescript/bin/tsc', { paths: [cwd] })
     } catch {
       error('TypeScript compiler not found in project.')
       error('Install it: npm install -D typescript')

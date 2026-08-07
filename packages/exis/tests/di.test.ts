@@ -4,13 +4,13 @@ import { describe, it, expect } from '../src/testing'
 
 describe('Dependency Injection', () => {
   it('should provide and resolve a value provider globally', () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     app.provide('API_KEY', { useValue: '12345' })
     expect(app.resolve('API_KEY')).toBe('12345')
   })
 
   it('should provide and resolve a factory provider globally', () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     let count = 0
     app.provide('Counter', {
       useFactory: () => {
@@ -26,7 +26,7 @@ describe('Dependency Injection', () => {
   })
 
   it('should provide and resolve a class provider globally', () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     class Database {
       url = 'postgres://localhost'
     }
@@ -42,7 +42,7 @@ describe('Dependency Injection', () => {
   })
 
   it('should auto-instantiate a class if provided directly as a token', () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     class Logger {
       log() {
         return 'logged'
@@ -58,14 +58,14 @@ describe('Dependency Injection', () => {
   })
 
   it('should throw if token is not found', () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     expect(() => app.resolve('UNKNOWN')).toThrow(
       'Provider not found for token: UNKNOWN'
     )
   })
 
   it('should resolve via inject() inside a request context', async () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
     app.provide('MESSAGE', { useValue: 'Hello from DI!' })
 
     app.get('/', (req, res) => {
@@ -85,7 +85,7 @@ describe('Dependency Injection', () => {
   })
 
   it('should support request-scoped providers', async () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
 
     let singletonInstantiations = 0
     let requestInstantiations = 0

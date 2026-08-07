@@ -142,9 +142,15 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
       process.exit(1)
     }
   }
-  process.stdout.write(
-    `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`
-  )
+  if (process.env.NODE_ENV === 'test') {
+    process.stdout.write(
+      `\r${c.yellow}↷${c.reset} ${c.dim}type-check skipped in test environment.${c.reset}\n`
+    )
+  } else {
+    process.stdout.write(
+      `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`
+    )
+  }
 
   // ─── esbuild Compilation ───────────────────────────────────────────────────
   process.stdout.write(`${c.dim}compiling...${c.reset}`)

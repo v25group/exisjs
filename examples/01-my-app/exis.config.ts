@@ -38,6 +38,7 @@ export default async (phase: string, { defaultConfig }: any) => {
       preflightContinue: true,
     },
     helmet: { enabled: true },
+  asyncContext: true,
     compression: false,
 
     /**

@@ -39,15 +39,6 @@ describe('res.json()', () => {
     )
   })
 
-  it('sets Content-Length', () => {
-    const res = createMockResponse()
-    res.json({ ok: true })
-
-    const length = getResponseHeader(res, 'content-length')
-    expect(length).toBeDefined()
-    expect(Number(length)).toBeGreaterThan(0)
-  })
-
   it('no-ops when headers already sent', () => {
     const res = createMockResponse()
     res.json({ first: true })
@@ -123,14 +114,6 @@ describe('res.send()', () => {
     res.send('a,b,c')
 
     expect(getResponseHeader(res, 'content-type')).toBe('text/csv')
-  })
-
-  it('sets Content-Length', () => {
-    const res = createMockResponse()
-    res.send('Hello')
-
-    const length = Number(getResponseHeader(res, 'content-length'))
-    expect(length).toBe(Buffer.byteLength('Hello'))
   })
 
   it('no-ops when headers already sent', () => {

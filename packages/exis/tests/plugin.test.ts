@@ -1,6 +1,6 @@
 import { App } from '../src/server/app'
 import { definePlugin } from '../src/exports/plugin'
-import request from 'supertest'
+import { createTestApp } from '../src/testing/client'
 import { describe, expect, it } from '../src/testing'
 
 describe('Plugin System', () => {
@@ -33,7 +33,7 @@ describe('Plugin System', () => {
       headerValue: 'Success',
     })
 
-    const res = await request(app.getServer()).get('/plugin-route')
+    const res = await createTestApp(app).get('/plugin-route')
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({ fromPlugin: true })

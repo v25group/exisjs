@@ -253,6 +253,7 @@ export interface ExisConfig {
   etag?: boolean // Default false. Set to true to enable ETag generation for all responses.
   workers?: number | 'safe' | 'max' // Number of CPU workers for cluster. default 1. 'safe' caps to 2. 'max' uses all cores.
   debugRouting?: boolean // Enables detailed logging of the resolved route file and applied gateways for every incoming request
+  asyncContext?: boolean // Enables AsyncLocalStorage for global getContext() (adds ~10% overhead). Default false.
   /**
    * Optional. Server backend to use.
    * 'node' (default fallback) uses Node's native HTTP/HTTPS modules.

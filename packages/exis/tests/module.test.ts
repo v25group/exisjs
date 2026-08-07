@@ -6,7 +6,7 @@ import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 
 describe('Modular Architecture', () => {
   it('should register standalone module providers and deduplicate imports', async () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
 
     let dbInitCount = 0
     const DatabaseModule = defineModule({
@@ -47,7 +47,7 @@ describe('Modular Architecture', () => {
   })
 
   it('should support defineGateway as a module in file-based routing', async () => {
-    const app = new App()
+    const app = new App({ asyncContext: true })
 
     const DatabaseModule = defineModule({
       name: 'DatabaseModule',

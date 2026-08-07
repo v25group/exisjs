@@ -19,6 +19,7 @@ const config: ExisConfig = {
   },
 
   helmet: { enabled: true },
+  asyncContext: true,
   compression: true,
 
   test: {

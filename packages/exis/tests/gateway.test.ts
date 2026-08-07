@@ -2,9 +2,9 @@ import { App } from '../src/server/app'
 import { defineGateway, controller, route } from '../src/exports/route'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import request from 'supertest'
-import os from 'node:os'
+import { createTestApp } from '../src/testing/client'
 import { describe, it, expect, beforeEach, afterEach } from '../src/testing'
+import os from 'node:os'
 
 describe('Gateway & Inline Config', () => {
   let app: App
@@ -92,7 +92,7 @@ describe('Gateway & Inline Config', () => {
 
   it('cascades gateways and inline config', async () => {
     // The route is at /api
-    const res = await request((app as any).server).get('/api')
+    const res = await createTestApp(app).get('/api')
 
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)

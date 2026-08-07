@@ -103,38 +103,51 @@ export class RequestHandler {
     res: ExisResponse,
     execution: () => void
   ): void {
-    const store: import('./context').InternalContext = {
-      state: {},
-      afterCallbacks: [],
-      req: req as unknown as import('../types').Request,
-      res: res as unknown as import('../types').Response,
-      app: this.app as any,
-      diCache: new Map(),
-    }
-
-    let reqCompleted = false
-    const onComplete = () => {
-      if (reqCompleted) return
-      reqCompleted = true
-      for (const cb of store.afterCallbacks) {
-        try {
-          const promise = cb()
-          if (promise instanceof Promise) {
-            promise.catch((err) => {
-              this.app.log.error({ err }, 'Error in after() background task')
-            })
-          }
-        } catch (err) {
-          this.app.log.error({ err }, 'Error in after() background task')
-        }
+    if (this.app.options.asyncContext) {
+      const store: import('./context').InternalContext = {
+        state: {},
+        afterCallbacks: [],
+        req: req as unknown as import('../types').Request,
+        res: res as unknown as import('../types').Response,
+        app: this.app as any,
+        diCache: new Map(),
       }
-      RequestHandler.activeRequests--
+
+      let reqCompleted = false
+      const onComplete = () => {
+        if (reqCompleted) return
+        reqCompleted = true
+        for (const cb of store.afterCallbacks) {
+          try {
+            const promise = cb()
+            if (promise instanceof Promise) {
+              promise.catch((err) => {
+                this.app.log.error({ err }, 'Error in after() background task')
+              })
+            }
+          } catch (err) {
+            this.app.log.error({ err }, 'Error in after() background task')
+          }
+        }
+        RequestHandler.activeRequests--
+      }
+
+      res.raw.on('finish', onComplete)
+      res.raw.on('close', onComplete)
+
+      executionContext.run(store, execution)
+    } else {
+      let reqCompleted = false
+      const onComplete = () => {
+        if (reqCompleted) return
+        reqCompleted = true
+        RequestHandler.activeRequests--
+      }
+      res.raw.on('finish', onComplete)
+      res.raw.on('close', onComplete)
+
+      execution()
     }
-
-    res.raw.on('finish', onComplete)
-    res.raw.on('close', onComplete)
-
-    executionContext.run(store, execution)
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
