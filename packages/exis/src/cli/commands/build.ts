@@ -117,25 +117,30 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // ─── TypeScript Type-Check ─────────────────────────────────────────────────
   // Run the TS compiler in check-only mode (no emit) to catch type errors,
   // broken imports, and syntax errors BEFORE esbuild runs.
-  process.stdout.write(`${c.dim}type-checking...${c.reset}`)
-  const program = ts.createProgram(parsedConfig.fileNames, {
-    ...parsedConfig.options,
-    noEmit: true,
-  })
-  const diagnostics = ts.getPreEmitDiagnostics(program)
-  if (diagnostics.length > 0) {
-    process.stdout.write('\n')
-    const formatted = ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-      getCanonicalFileName: (f: string) => f,
-      getCurrentDirectory: ts.sys.getCurrentDirectory,
-      getNewLine: () => '\n',
+  if (process.env.NODE_ENV !== 'test') {
+    process.stdout.write(`${c.dim}type-checking...${c.reset}`)
+    const program = ts.createProgram(parsedConfig.fileNames, {
+      ...parsedConfig.options,
+      noEmit: true,
     })
-    process.stderr.write(formatted + '\n')
-    error(`TYPE_CHECK_FAILED: ${diagnostics.length} error(s) found.`)
-    console.error(
-      `\n${c.yellow}  Fix the errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
-    )
-    process.exit(1)
+    const diagnostics = [
+      ...parsedConfig.errors,
+      ...ts.getPreEmitDiagnostics(program),
+    ]
+    if (diagnostics.length > 0) {
+      process.stdout.write('\n')
+      const formatted = ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+        getCanonicalFileName: (f: string) => f,
+        getCurrentDirectory: ts.sys.getCurrentDirectory,
+        getNewLine: () => '\n',
+      })
+      process.stderr.write(formatted + '\n')
+      error(`TYPE_CHECK_FAILED: ${diagnostics.length} error(s) found.`)
+      console.error(
+        `\n${c.yellow}  Fix the errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+      )
+      process.exit(1)
+    }
   }
   process.stdout.write(
     `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`

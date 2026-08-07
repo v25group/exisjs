@@ -215,7 +215,14 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   await generateManifest(cwd, '', true)
 
   if (fs.existsSync(tsconfigPath)) {
-    const tscPath = require.resolve('typescript/bin/tsc')
+    let tscPath: string
+    try {
+      tscPath = require.resolve('typescript/bin/tsc')
+    } catch {
+      error('TypeScript compiler not found in project.')
+      error('Install it: npm install -D typescript')
+      process.exit(1)
+    }
     const tscProcess = spawn(
       process.execPath,
       [tscPath, '--noEmit', '--watch', '--preserveWatchOutput'],

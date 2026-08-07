@@ -262,7 +262,7 @@ describe('Advanced Middleware', () => {
 
   describe('IP Filter Middleware', () => {
     it('allows valid IP', () => {
-      const middleware = ipFilterMiddleware({ allowlist: ['192.168.1.1'] })
+      const middleware = ipFilterMiddleware({ allow: ['192.168.1.1'] })
       const req = createMockRequest({
         socket: { remoteAddress: '192.168.1.1' } as any,
       })
@@ -274,7 +274,7 @@ describe('Advanced Middleware', () => {
     })
 
     it('blocks invalid IP', () => {
-      const middleware = ipFilterMiddleware({ allowlist: ['192.168.1.1'] })
+      const middleware = ipFilterMiddleware({ allow: ['192.168.1.1'] })
       const req = createMockRequest({
         socket: { remoteAddress: '10.0.0.1' } as any,
       })

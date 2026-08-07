@@ -15,6 +15,7 @@ import {
   afterAll,
   afterEach,
 } from '../src/testing'
+import * as ts from 'typescript'
 
 describe('CLI Commands', () => {
   let tmpDir: string

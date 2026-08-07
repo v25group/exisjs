@@ -22,7 +22,7 @@ program
   .command('dev')
   .description('Start the development server with hot reload')
   .option('-p, --port <port>', 'Port to listen on')
-  .option('-h, --host <host>', 'Host to bind to')
+  .option('-H, --host <host>', 'Host to bind to')
   .option('-e, --entry <file>', 'Custom entry file path')
   .action(async (options) => {
     await devCommand(options)
@@ -45,7 +45,7 @@ program
   .command('start')
   .description('Start the production server')
   .option('-p, --port <port>', 'Port to listen on')
-  .option('-h, --host <host>', 'Host to bind to')
+  .option('-H, --host <host>', 'Host to bind to')
   .option('-e, --entry <file>', 'Custom entry file path')
   .action(async (options) => {
     await startCommand(options)

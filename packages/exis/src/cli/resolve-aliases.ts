@@ -191,8 +191,6 @@ export async function resolvePathAliases(
   outDir: string
 ): Promise<number> {
   const aliases = parseAliases(cwd)
-  if (aliases.length === 0) return 0
-
   const absoluteOutDir = path.resolve(cwd, outDir)
   const files = collectJsFiles(absoluteOutDir)
 

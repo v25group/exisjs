@@ -21,11 +21,10 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
   const keyGenerator =
     options.keyGenerator ||
     ((req: Request) => {
-      // Respect X-Forwarded-For for apps behind a reverse proxy (Nginx, Cloudflare, etc.)
-      // Take the leftmost IP which is the true client IP
-      const forwarded = req.get('x-forwarded-for')
-      if (forwarded) return forwarded.split(',')[0].trim()
-      return req.ip || req.get('x-real-ip') || 'unknown'
+      // By default, use req.ip which represents the remote socket address.
+      // Do not blindly trust x-forwarded-for headers as they can be spoofed by clients to bypass rate limits.
+      // If the app is behind a reverse proxy, the user should configure the proxy settings on the app instance.
+      return req.ip || 'unknown'
     })
 
   const hits = new Map<string, { count: number; resetTime: number }>()

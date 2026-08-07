@@ -15,9 +15,9 @@ export interface CacheOptions {
 
 export function cacheMiddleware(options: CacheOptions): Handler {
   const ttlMs = options.ttlMs
-  // Default to method + path — safe for public, non-user-specific endpoints
+  // Default to method + url (which includes query) — safe for public, non-user-specific endpoints
   const keyGenerator =
-    options.keyGenerator ?? ((req: Request) => `${req.method}:${req.path}`)
+    options.keyGenerator ?? ((req: Request) => `${req.method}:${req.url}`)
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') {
