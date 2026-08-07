@@ -111,11 +111,20 @@ describe('Auth Module', () => {
         .expect('Logged in')
 
       const cookie = loginRes.headers['set-cookie']
-      expect(cookie).toBeDefined()
+
+      let cookieStr = ''
+      if (Array.isArray(cookie)) {
+        cookieStr = cookie[0]
+      } else if (typeof cookie === 'string') {
+        cookieStr = cookie
+      }
+      cookieStr = cookieStr.split(';')[0]
+
+      expect(cookieStr).not.toBe('')
 
       await createTestApp(app)
         .get('/profile')
-        .set('Cookie', cookie?.[0] ?? '')
+        .set('Cookie', cookieStr)
         .expect(200)
         .expect('User ID: 456')
     })
