@@ -1,0 +1,91 @@
+---
+title: "Data Loader"
+description: "Strict API Reference for the N+1 batching utility."
+---
+
+# Data Loader (`exisjs/dataloader`)
+
+This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/dataloader` module. For high-level guides on solving N+1 query problems, see the [Data Loader Guide](/docs/dataloader).
+
+---
+
+## `Dataloader<K, V, C>` Class
+
+The `Dataloader` class batches and caches requests to a backend data source.
+
+```typescript
+import { Dataloader } from 'exisjs/dataloader'
+
+class Dataloader<K, V, C = K> {
+  constructor(batchFn: BatchLoadFn<K, V>, options?: DataloaderOptions<K, C>)
+
+  // Enqueues a key to be batched, returning a Promise that resolves to the value
+  load(key: K): Promise<V>
+
+  // Loads multiple keys, returning an array of Promises
+  loadMany(keys: readonly K[]): Promise<V[]>
+
+  // Clears the value at `key` from the cache
+  clear(key: K): this
+
+  // Clears all values from the cache
+  clearAll(): this
+
+  // Primes the cache with a predefined value or Error for a specific key
+  prime(key: K, value: V | Error): this
+}
+```
+
+### `BatchLoadFn<K, V>`
+
+The function responsible for loading the batched keys. **It must return an array of values (or Errors) that are precisely the same length and in the exact same order as the provided keys array.**
+
+```typescript
+type BatchLoadFn<K, V> = (
+  keys: readonly K[]
+) => Promise<readonly (V | Error)[]>
+```
+
+### `DataloaderOptions<K, C>`
+
+```typescript
+interface DataloaderOptions<K, C = K> {
+  // Whether to cache resolved keys within this Dataloader instance. Default: true
+  cache?: boolean
+
+  // The maximum number of keys to include in a single batch. Default: 1000
+  maxBatchSize?: number
+
+  // A function to generate a unique cache key from the provided load key
+  cacheKeyFn?: (key: K) => C
+}
+```
+
+---
+
+## Context Registry (`defineLoaders`)
+
+Because `Dataloader` instances are inherently stateful (they cache data), they **must not** be shared across different HTTP requests, or else users might read each other's cached data.
+
+The `defineLoaders` function securely isolates Dataloader instances per-request by binding them to the ExisJS asynchronous context.
+
+```typescript
+import { defineLoaders } from 'exisjs/dataloader'
+
+function defineLoaders<
+  T extends Record<string, () => Dataloader<any, any>>
+>(factories: T): {
+  // Middleware to register onto your router/app
+  loaderMiddleware: (req, res, next) => void;
+  
+  // Hook to retrieve the isolated loaders anywhere in the request lifecycle
+  getLoaders: () => { [K in keyof T]: ReturnType<T[K]> }
+}
+```
+
+### Usage Signature
+```typescript
+const { loaderMiddleware, getLoaders } = defineLoaders({
+  userLoader: () => new Dataloader(async (keys) => { /* ... */ })
+})
+```

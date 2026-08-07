@@ -113,10 +113,25 @@ function primaryProcess(workerCount: number, config?: ClusterConfig) {
 
   // Fork workers
   for (let i = 0; i < workerCount; i++) {
-    cluster.fork()
+    const worker = cluster.fork()
+    setupWorkerIpc(worker)
   }
 
   let isShuttingDown = false
+
+  function setupWorkerIpc(worker: import('node:cluster').Worker) {
+    worker.on('message', (msg) => {
+      // Broadcast cache revalidation to all OTHER workers
+      if (msg && msg.type === 'exis:cache:revalidate') {
+        for (const id in cluster.workers) {
+          const w = cluster.workers[id]
+          if (w && w.id !== worker.id) {
+            w.send(msg)
+          }
+        }
+      }
+    })
+  }
 
   // ─── Worker crash recovery ────────────────────────────────────────────────
   cluster.on('exit', (worker, code, signal) => {
@@ -162,6 +177,7 @@ function primaryProcess(workerCount: number, config?: ClusterConfig) {
     }
 
     const newWorker = cluster.fork()
+    setupWorkerIpc(newWorker)
     console.log(
       `  ${c.green}↻${c.reset} Replacement worker started ${c.dim}(PID ${newWorker.process.pid})${c.reset}`
     )

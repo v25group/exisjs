@@ -6,6 +6,7 @@ import { error, c } from '../utils'
 interface StartOptions {
   entry?: string
   port?: string
+  host?: string
 }
 
 export async function startCommand(options: StartOptions = {}): Promise<void> {
@@ -21,6 +22,9 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
 
   if (options.port) {
     process.env.PORT = options.port
+  }
+  if (options.host) {
+    process.env.HOST = options.host
   }
 
   const startServerPath = path.join(__dirname, '../../lib/start-server.js')

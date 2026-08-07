@@ -1,0 +1,168 @@
+---
+title: "Context & Requests"
+description: "API Reference for ExisJS Context, Requests, and Async Hooks."
+---
+
+# Context & Requests
+
+ExisJS leverages Node.js `AsyncLocalStorage` to provide request-scoped state without needing to manually pass request objects down through your entire service layer. This enables globally accessible contextual data anywhere in your application lifecycle.
+
+---
+
+## Global Request & Response
+
+In deeply nested utilities (like DataLoaders or generic services), it is often cumbersome to pass the `req` object through every function call. ExisJS allows you to pull the active HTTP Request and Response objects directly from the asynchronous context.
+
+### `getRequest()`
+
+Returns the active ExisJS `Request` object.
+
+```typescript filename="src/loaders/index.ts"
+import { defineLoaders, Dataloader } from 'exisjs/dataloader'
+import { getRequest } from 'exisjs/router'
+
+export const { loaderMiddleware, getLoaders } = defineLoaders({
+  user: () => new Dataloader(
+    async (keys: readonly string[]) => {
+      // Access the request deep inside the dataloader!
+      const req = getRequest()
+      console.log(`Batch fetching users for RequestId: ${req.requestId}`)
+      
+      return keys.map(key => db.users.find(key))
+    }
+  )
+})
+```
+
+### `getResponse()`
+
+Returns the active ExisJS `Response` object.
+
+```typescript filename="src/utils/auth.ts"
+import { getResponse } from 'exisjs/router'
+
+export function forceLogout() {
+  const res = getResponse()
+  res.clearCookie('session_id')
+}
+```
+
+### `getActiveApp()`
+
+Returns the active ExisJS `App` instance processing the request. This is useful for resolving dependencies or accessing the application logger from deep within a service.
+
+```typescript filename="src/services/billing.ts"
+import { getActiveApp } from 'exisjs/app'
+
+export function processRefund(transactionId: string) {
+  const app = getActiveApp()
+  const stripe = app.resolve('StripeClient')
+  
+  app.log.info(`Processing refund for ${transactionId}`)
+  return stripe.refunds.create({ charge: transactionId })
+}
+```
+
+---
+
+## Async Context API
+
+The core context API allows you to read and write arbitrary state associated with the current HTTP request. 
+
+### `setContext(key, value)`
+
+Sets a value in the current request's state object. This is typically used by middleware to attach parsed data, user sessions, or tenant IDs.
+
+```typescript filename="src/middleware/tenant.ts"
+import { setContext } from 'exisjs/router'
+
+export async function tenantMiddleware(req, res, next) {
+  const tenantId = req.headers['x-tenant-id']
+  
+  // Store the tenant ID in the async context
+  setContext('tenantId', tenantId)
+  next()
+}
+```
+
+### `getContext<T>()`
+
+Retrieves the current request's state object.
+
+```typescript filename="src/services/database.ts"
+import { getContext } from 'exisjs/router'
+
+function getTenantDatabase() {
+  // Retrieve the state set by the middleware!
+  const state = getContext<{ tenantId: string }>()
+  
+  return new DatabaseConnection({ schema: state.tenantId })
+}
+```
+
+---
+
+## Background Tasks
+
+### `after(callback)`
+
+Queues a function to execute in the background **after** the response has been completely sent to the client. This is the perfect place to put non-blocking tasks like sending welcome emails, flushing analytics, or writing audit logs.
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { after } from 'exisjs/router'
+import { v } from 'exisjs/validator'
+
+export default controller({
+  createUser: route.post('/', {
+    body: { email: v.string().email() },
+    async handle({ body }) {
+      
+      // Respond to the client immediately
+      after(async () => {
+        // This runs after the client has received the HTTP response
+        await emailService.sendWelcome(body.email)
+      })
+
+      return { success: true, email: body.email }
+    }
+  })
+})
+```
+
+
+> [!NOTE]
+> Tasks queued with `after()` do not block the HTTP request. If the task throws an error, it will be logged by the application logger, but it will not crash the server or affect the already-completed client response.
+
+---
+
+## Class-Based Context (OOP)
+
+If you are using the Object-Oriented paradigm, ExisJS provides dedicated decorators to inject the request and response directly into your controller methods. This removes the need to manually call `getRequest()` or `getResponse()` in the controller layer.
+
+### `@Req()` & `@Res()`
+
+Inject the raw ExisJS request or response objects.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Req, Res } from 'exisjs/decorators'
+import type { Request, Response } from 'exisjs/router'
+
+@Controller('/users')
+export default class UserController {
+  
+  @Get('/ip')
+  getIp(@Req() req: Request) {
+    return { ip: req.ip }
+  }
+
+  @Get('/logout')
+  logout(@Res() res: Response) {
+    res.clearCookie('session_id')
+    res.json({ success: true })
+  }
+}
+```
+
+> [!TIP]
+> For deep services inside an OOP architecture, you can still seamlessly use `getContext()`, `getRequest()`, or `after()` from `exisjs/router` to access the async context without prop-drilling!

@@ -38,7 +38,6 @@ export async function exportsCommand() {
         { path: 'exisjs/error', desc: 'Global exception formatting' },
         { path: 'exisjs/plugin', desc: 'Plugin isolation wrapper' },
         { path: 'exisjs/response', desc: 'Standardized JSON responses' },
-        { path: 'exisjs/security', desc: 'CSRF and XSS sanitization' },
         { path: 'exisjs/circuit-breaker', desc: 'Service protection layer' },
       ],
     },

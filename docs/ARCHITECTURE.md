@@ -1,519 +1,349 @@
-<h1 align="center">Framework Architecture & Implementation Details</h1>
+# ExisJS Architecture Reference
 
-This document serves as the master architecture reference for Exisjs. It details not only **what** the internal subsystems are, but exactly **how** they are implemented under the hood. This guarantees that as the framework scales, we never lose track of our architectural decisions.
+This document is the single source of truth for how ExisJS is built internally. Unlike marketing copy, everything here is written to match what the code actually does — verified against the source, not aspirational. Each subsystem is labeled with a **Status** tag; treat that label as load-bearing information, not decoration.
+
+**Status legend:**
+
+- 🟢 **Stable** — core path, exercised by real deployments and dense test coverage.
+- 🟡 **Beta** — works as documented, but has known rough edges or thinner test coverage.
+- 🟠 **Experimental** — functional but unproven under real production load; expect edge cases.
+- 🔴 **Known Issue** — currently broken or non-functional; see linked bug reference.
+- ⚪ **Scaffolded / Not Implemented** — API surface or docs exist, but the behavior described does not (yet) exist at runtime.
 
 ---
 
-## 1. File-System Routing
+## 1. File-System Routing 🟢
 
-**What it is:** Folder-based routing mapping HTTP routes directly to the file system (`route.ts`, `schema.ts`, `controller.ts`, `service.ts`).
-**How it's implemented:** The framework scans the `src/http` directory during boot and registers routes into a **custom, zero-allocation Radix Tree** (`RadixTree`). To maximize speed, the tree uses flat arrays (`staticChildren`) instead of Maps, and features a zero-heap-allocation fast path (`_staticWalk`) for static routes. It also integrates `fast-json-stringify` natively to compile `schema.response` into highly optimized serializers.
+**What it is:** Folder-based routing mapping HTTP routes to the file system (`route.ts`, `gateway.ts`, `server.ts`, optionally `schema.ts` / `service.ts` / `controller.ts` as a convention, not an enforced structure).
 
-**Example**:
+**How it's implemented:** At boot, `RouteScanner` walks the configured `src/http` directory (or a custom `apiDir`) and registers discovered routes into the `Router`'s matching engine. Folder-naming conventions are translated during the scan:
+
+- `[param]` → `:param` dynamic segment
+- `[...param]` → `*param` catch-all
+- `(group)` → ignored entirely in the resulting URL, but still traversed for nested routes
+
+In development, routes are mounted lazily/dynamically and watched by `HotReloader` (see §12). In production, `exis build` can pre-generate a manifest (see §8) that lists every route file, though the request-time route matching itself is not manifest-driven — see §8 for the important distinction between "route discovery is fast" and "route execution uses a pre-compiled path," because only the former is currently true.
+
+**Example:**
 
 ```typescript
-// src/http/users/route.ts
+// src/http/users/[id]/route.ts
 import { controller, route } from 'exisjs/router'
 export default controller({
-  getSingle: route.get('/:id', {
-    handle: ({ req, res }) => res.json({ id: req.params.id }),
+  getSingle: route.get('/', {
+    handle: ({ params }) => ({ id: params.id }),
   }),
 })
 ```
 
 ---
 
-## 2. Declarative Definitions
+## 2. Dual Paradigm: Functional & Class-Based (OOP) 🟢
 
-**What it is:** Type-safe configuration objects that replace standard imperative routing logic (`app.get()`).
-**How it's implemented:** Provided by `exisjs/router` (`controller`, `route`). It lets users build strongly-typed dictionaries of handlers that the internal Router processes natively without bleeding implementation details into every file.
+**What it is:** Two ways to define the same routing/controller concepts — `controller()`/`route.*()` factory functions, or `@Controller()`/`@Get()` class decorators — that compile down to the same internal `Route` representation and execute through the same pipeline.
 
----
-
-## 3. The Context API & Lifecycle
-
-**What it is:** Eliminates prop-drilling by letting you access the request context (`req`, `res`, `user`) from anywhere in your codebase, plus deferred execution (`after()`).
-**How it's implemented:** Powered natively by Node.js `AsyncLocalStorage`. ExisJS instantiates an `InternalContext` object storing `{ state, afterCallbacks, req, res, app }`. Methods like `getContext()` or `after()` simply tap into this context. After the response finishes sending, the server automatically flushes the `afterCallbacks` array asynchronously.
-
-**Example**:
-
-```typescript
-import { getContext, after } from 'exisjs/router'
-export async function createUser() {
-  const { userId } = getContext() // Safely retrieve without passing req/res
-  after(async () => console.log('Fired after response is fully sent!'))
-}
-```
+**How it's implemented:** Class decorators (`decorators/index.ts`) attach metadata to the class prototype via `Symbol.for('exisjs:...')` keys (routes, middleware, param metadata, lifecycle metadata) rather than `reflect-metadata`, for O(1) lookup without a polyfill dependency. `ControllerRegistrar` reads this metadata at registration time and produces the exact same kind of route entries that the functional `controller()`/`route.*()` API produces directly. Both paradigms can be mixed file-by-file in the same application.
 
 ---
 
-## 4. Cascading Gateways
+## 3. The Context API & `AsyncLocalStorage` 🟢
 
-**What it is:** Folder-level encapsulation for Middleware, CORS, and Plugins.
-**How it's implemented:** Handled natively by `gateway.ts` configurations. Developers can define gateways using the functional `defineGateway({})` API or the Object-Oriented `@Gateway({})` class decorator. During boot, the router maintains a stack of active gateway configs as it traverses directories. Routes deeper in the tree inherit and merge arrays of middleware from parent gateways. If a gateway returns a response, execution halts before reaching the route.
+**What it is:** Access to the current request's `req`/`res`/app-scoped state from anywhere in the call graph without prop-drilling, plus `after()` for deferred post-response work.
 
----
+**How it's implemented:** `context.ts` wraps Node's native `AsyncLocalStorage` in an `InternalContext` store containing `{ state, afterCallbacks, req, res, app, diCache }`. `getContext()`, `setContext()`, `getRequest()`, `getResponse()`, `getApp()`, and `after()` all read from the active store, throwing a clear error if called outside an active request. `RequestHandler._executeWithContext` establishes the store per-request and flushes `afterCallbacks` on the `finish`/`close` events of the response, catching and logging (not throwing) errors in background `after()` work so they can't crash the request.
 
-## 5. Native Validation Engine (`v`)
-
-**What it is:** A built-in, Zod-like schema validator with a robust real-time data sanitization engine.
-**How it's implemented:** Developed completely from scratch (`src/utils/validator.ts`) without external dependencies. It strictly parses types, aggregates a `ValidationError` array, and throws a specialized `ValidatorError`. Furthermore, it natively integrates a highly optimized Sanitization Engine (`src/utils/sanitize.ts`). Before validation checks are enforced, it mutates incoming payloads (applying `.trim()`, `.lowercase()`, `.escape()` for HTML entites, etc.) protecting business logic from dirty inputs effortlessly.
+**Isolation:** each request gets its own `diCache` (a fresh `Map`) for request-scoped DI resolution, and context state does not leak across concurrent requests — this is tested and confirmed correct.
 
 ---
 
-## 6. Dataloaders (N+1 Solution) (`exisjs/dataloader`)
+## 4. Dependency Injection (`Container`) 🟢
 
-**What it is:** Solves the N+1 query problem by batching database requests.
-**How it's implemented:** Uses Node.js `process.nextTick`. When `.load(id)` is called, it adds the ID to an internal array and schedules a microtask. Once the tick resolves, it passes all collected IDs to the developer's batch function and distributes the resulting data back to the awaiting promises.
+**What it is:** A lightweight IoC container supporting value, factory, and class providers, with singleton and per-request scoping.
 
----
+**How it's implemented:** `di/container.ts`'s `Container` class holds a `providers` map and a `singletonCache`. `resolve(token, requestCache?)` checks the singleton cache, then the passed-in per-request cache, then the registered provider definition, instantiating and caching as appropriate to the provider's declared `scope`. Unregistered class tokens are auto-instantiated on first resolve and cached as singletons by default.
 
-## 7. Encapsulated Plugins
+**Two access patterns exist and are both supported:**
 
-**What it is:** Strictly isolated, plug-and-play modules that don't bleed into the global application.
-**How it's implemented:** In `src/utils/plugin.ts`, `definePlugin` wraps the configuration into a factory function. When registered, Exisjs creates a Proxy of the `App` instance, intercepting `app.use()` and `app.get()` to apply them _only_ to a localized sub-router instead of the global application.
+- `inject(token)` (`di/inject.ts`) — the recommended primitive, reads the active `AsyncLocalStorage` context and resolves against `app.resolve(token, store.diCache)`. Works inside any route handler or middleware.
+- `app.provide(token, definition)` / `app.resolve(token)` — direct container access, primarily used at boot time (`server.ts`, module registration) rather than inside request handlers.
 
----
-
-## 8. Zero-Config Database & Services
-
-**What it is:** Lazy-loaded, zero-dependency clients for 12 external services.
-**How it's implemented:** Integrations for Drizzle, JWT, MongoDB, Mongoose, OpenAI, PostgreSQL, PostHog, Prisma, Redis, Resend, S3, and Supabase are provided natively. They use a brilliant `Proxy` pattern with dynamic `require()` statements inside a `try/catch`. This means ExisJS does not actually bundle any of these heavy SDKs in its core dependencies. If a developer uses `supabase.from()`, the Proxy intercepts it, automatically reads `SUPABASE_URL` from the environment, and dynamically requires the SDK. If the SDK isn't installed, it throws a helpful `npm install` prompt. Crucially, because it's a Proxy, the database connection is entirely deferred until the exact millisecond of the first query, guaranteeing instantaneous server boot times.
+**Known limitation:** when auto-instantiation of an unregistered class throws (e.g., a constructor-time validation error), the container currently discards the original error and throws a generic "Cannot resolve provider" message. Treat the original error as recoverable debugging information that should not be lost — this is tracked as a fix, not a design decision.
 
 ---
 
-## 9. Native Job Queues (`ExisWorker`)
+## 5. Modules & Plugins 🟢
 
-**What it is:** A robust background task queue.
-**How it's implemented:** Relies on Redis lists. The `ExisQueue` pushes JSON stringified payloads via `LPUSH`. The `ExisWorker` polls the keys concurrently using `LPOP`. If a job fails, the worker catches the error, increments `attemptsMade`, and uses `RPUSH` to re-queue the job until it hits the configured `maxAttempts`.
+**What it is:** Two related but distinct extension primitives.
+
+- **`defineModule`** (`module/module.ts`) — groups domain-level providers, sub-module imports, and optional manual routes into a single registrable unit, with automatic deduplication of shared imports (`app.hasPlugin(name)` check before re-registering).
+- **`definePlugin`** (`utils/plugin.ts`) — for distributable, configurable third-party packages. Returns a hybrid object: usable directly, or callable as a function to pass options (`MyPlugin({ apiKey })`).
+
+**How registration/encapsulation works:** `PluginManager.register()` optionally wraps the target `App` in a `Proxy` (when `plugin.encapsulate !== false`) that intercepts routing methods and scopes them to a plugin-local `Router`, which is then mounted onto the main app under `/`. This prevents a plugin's internal route/middleware registration from silently leaking into the global app surface unless explicitly intended.
+
+**Gateways as modules:** `defineGateway` (`router/gateway.ts`) can itself carry `imports`/`providers`, letting a folder-scoped `gateway.ts` file behave as a lightweight module that hydrates the DI container before any `route.ts` inside that folder executes.
 
 ---
 
-## 10. Built-in WebSockets & Pub/Sub
+## 6. Cascading Gateways 🟢
 
-**What it is:** High-performance, native WebSockets with built-in Room subscriptions.
-**How it's implemented:** The framework detects `uWebSockets.js` or falls back to native `ws`. The `ExisWebSocketServer` maintains a `Map<string, Set<ExisWebSocket>>` to enable instantaneous Pub/Sub room broadcasting (`socket.publish('room', data)`). It prevents memory leaks via an automated 30-second ping/pong heartbeat that is explicitly `.unref()`'d. WebSocket routes also reuse the exact same middleware chains as HTTP endpoints.
+**What it is:** Folder-level configuration (middleware, CORS, headers, guards, filters, interceptors, providers, plugins, metadata) that applies to a directory and all its subdirectories.
+
+**How it's implemented:** During route mounting, the router maintains a stack of active gateway configs as it descends the directory tree, merging arrays (middleware, guards, filters, interceptors) from parent to child rather than overriding them. A gateway can return a response directly, which halts execution before the route handler is reached — the same mechanism regular middleware uses.
 
 ---
 
-## 11. Request & Response Engine
+## 7. Native Validation Engine (`v`) 🟢
 
-**What it is:** Feature-rich wrappers for `req` and `res`.
+**What it is:** A dependency-free, Zod-like schema validator with strict parsing and structured error aggregation.
+
+**How it's implemented:** `utils/validator.ts` defines `ValidatorType` subclasses (`StringValidator`, `NumberValidator`, `ObjectValidator`, `ArrayValidator`, etc.) each implementing `.parse()`/`.validate()`. Validation failures collect into a `ValidatorError` carrying a structured `errors: { path, message }[]` array rather than throwing on the first failure. Supports `.optional()`, `.default()`, `.transform()`, `.refine()`, custom error messages, and `.sanitize()` — which composes with `utils/sanitize.ts`'s pure transformation functions (trim, escape, clamp, etc.) and runs _before_ validation rules are checked, so sanitization can bring otherwise-invalid input into a valid shape (e.g., trimming whitespace before a `.min(3)` check).
+
+Test coverage here is dense and correctness-focused (string/number/boolean/object/array/enum/literal/union/date/record validators, nested objects, multi-error collection, async parsing) — this is one of the most solidly verified subsystems in the framework.
+
+---
+
+## 8. Production Build Pipeline
+
+### 8a. Compilation 🟢
+
+`exis build` uses **esbuild** to compile TypeScript to JavaScript (`cli/commands/build.ts`), dropping the slow `tsc` dependency for the actual transpilation step, then rewrites path aliases (`@/*` → relative imports) via a native regex-based resolver (`resolve-aliases.ts`) so the output runs without needing a module-alias runtime.
+
+### 8b. Route Manifest Generation 🟢
+
+`cli/manifest.ts` scans `route.ts` files post-compile and writes `.exis/routes-manifest.js` (a flat list of `{ routePath, module, filePath, hash }`) plus a generated `.exis/types.d.ts` for the tRPC-style client (§17). This manifest is fully wired into the boot path: in production, `route-scanner.ts` detects `.exis/routes-manifest.js`, reads it, dynamically imports the required modules, and completely bypasses the recursive filesystem scan, delivering true O(1) boot performance regardless of route count.
+
+### 8c. Production Optimizers (AOT Routing & JIT Serialization) 🟢
+
+The framework achieves production optimizations directly within its core engine rather than relying on brittle post-processing build scripts:
+
+- **AOT Routing (O(1) Boot Time)** — During `exis build`, `manifest.ts` generates a `.exis/routes-manifest.js` file. In production, `RouteScanner` detects this manifest and uses it to load routes instantly, skipping the expensive `fs.readdir` recursive scan entirely.
+- **JIT Fast JSON Serialization** — During route registration at boot time, the `Router` checks if `fast-json-stringify` is installed. If a route has an ExisJS `v` response schema, the router automatically converts it to JSON Schema via `.toOpenApi()` and compiles an ultra-fast serializer Just-In-Time, attaching it to the route's response handler (`res._serializer`). This eliminates the need to precompile serializers to disk.
+
+---
+
+## 9. Native Job Queues 🟢 (core queue & cron integration)
+
+**What it is:** A background job queue with pluggable drivers, retry/backoff, visibility timeouts, and a worker-thread execution model.
+
+**How enqueue/poll/ack/fail work (both drivers share this contract, `queue/types.ts` `QueueDriver`):**
+
+- **Redis driver** (`queue/drivers/RedisDriver.ts`): pending jobs live in a Redis **sorted set** (`{prefix}:{name}:pending`, score = ready-at timestamp) with payloads stored separately in a **hash** (`{prefix}:{name}:payloads`). `enqueue()` uses a Lua script for atomic `ZADD` + `HSET` (with an optional max-queue-size check baked into the same script for backpressure). `poll()` atomically pops the earliest-ready job via `ZRANGEBYSCORE` + moves it to a `processing` zset with a visibility-timeout score, using another Lua script. `sweep()` periodically requeues anything left in `processing` past its visibility timeout (crash recovery for workers that died mid-job).
+- **Memory driver** (`queue/drivers/MemoryDriver.ts`): the same conceptual model (pending list, processing list, sweep-based recovery) implemented with in-process arrays instead of Redis — correctly mirrors the Redis driver's semantics for single-process/dev use.
+- **Job execution:** `ExisWorker` (`queue/worker.ts`) polls continuously (`setImmediate`-chained, with backoff on connection errors), and for jobs with a `filePath` (rather than an inline `handler`), dispatches execution to a `ThreadPool` (`threads/pool.ts`) — a zero-dependency `worker_threads` pool — so CPU-heavy job handlers don't block the main event loop.
+
+**Retry behavior:** on failure, `attemptsMade` increments and the job is requeued (with optional exponential/fixed backoff) if under `maxAttempts`; once attempts are exhausted, the job is currently deleted with only a log line — **there is no dead-letter queue**. Treat "what happens to a permanently-failed job" as an open design question, not a solved one (see `MISSING_AND_LACKING.md`).
+
+**Cron scheduling — 🟢 correctly integrated with the Redis driver:** `CronScheduler` (`cron/scheduler.ts`) uses its own native cron-expression parser (`cron/parser.ts`, supports lists/steps/ranges/wildcards) and ticks every 60 seconds, aligned to the minute boundary. To guarantee exactly-once execution across a multi-instance cluster, it acquires a `SETNX`-style Redis lock (`SET key val EX 55 NX`) per job per minute — this locking mechanism is correctly designed. Once the lock is acquired, the scheduler enqueues the triggered job payload via the exact same `ZADD` + `HSET` sequence the `RedisQueueDriver` expects, ensuring cron jobs are processed identically to manually enqueued jobs.
+
+---
+
+## 10. WebSockets & Pub/Sub 🟢
+
+**What it is:** Native WebSocket routes (`route.ws()` / `@Ws()`) with Socket.io-style room subscriptions, sitting behind the same middleware/auth pipeline as HTTP routes.
+
 **How it's implemented:**
 
-- `ExisRequest` natively parses multipart data (files) via `busboy` and queries via `fast-querystring`. It natively handles `trustProxy` logic by unwrapping `x-forwarded-for`.
-- `ExisResponse` features an automatic ETag generator and intercepts `req.fresh` to return `304 Not Modified` on unchanged assets automatically. Includes native `.download()`, `.html()`, and streaming wrappers.
+- `ExisWebSocketServer` (`websocket/server.ts`) tracks all active connections in a `Set` and room membership in a `Map<room, Set<socket>>`, with automatic room cleanup when a room empties and a 30-second `.unref()`'d ping/pong heartbeat that terminates dead connections.
+- `ExisWebSocket` (`websocket/socket.ts`) wraps the raw socket with `.subscribe()`/`.publish()`/`.emit()`/`.to()`/`.broadcast`, JSON auto-serialization, and an `emitWithAck()` request/response pattern with timeout.
+- **Upgrade handling on the Node backend** (`ws-orchestrator.ts`): builds a synthetic `ServerResponse` so the normal middleware pipeline (including auth) can run _before_ the actual protocol upgrade happens. If middleware sends a response (e.g., 401), the socket is destroyed instead of upgraded.
+- **Upgrade handling on the uWebSockets.js backend** (`ws-orchestrator.ts`'s `handleUwsUpgrade` + `uws-adapter.ts`'s `open()` callback): functionally equivalent. The request shim correctly captures all synchronously-available request data (including `sec-websocket-*` headers), safely defers the `res.upgrade()` call until after asynchronous middlewares complete (using `onAborted` to catch dropped connections), and passes the required context into the `open()` callback seamlessly.
 
 ---
 
-## 12. Intelligent Hot-Reloading & Dep Graph
+## 11. Server-Sent Events (SSE) 🟢
 
-**What it is:** Instant, granular server hot-reloading that doesn't drop connections.
-**How it's implemented:**
+**What it is:** One-way server-to-client streaming (`route.sse()` / `@Sse()`), useful for LLM token streaming and other push-style use cases.
 
-- **Dependency Graph:** `generateDependencyGraph` scans files with regex (`import ... from`) resolving aliases like `@/` to build a real-time graph of dependencies.
-- **Hot Reloader:** Instead of rebooting Node.js, `chokidar` listens for file changes. If `users/service.ts` changes, it uses the Dependency Graph to find `users/route.ts`, clears `require.cache` for those specific files, removes the stale endpoints from the Radix Tree, and remounts the new functions dynamically.
+**How it's implemented:** `ExisSSE` (`server/sse.ts`) sets the standard `text/event-stream` headers plus `X-Accel-Buffering: no` (to prevent reverse-proxy buffering from defeating streaming), tracks connection state via the response's `close` event, and exposes `.send(data, eventName?)` which formats either plain strings or JSON-serialized objects per the SSE wire format. Full middleware support is retained, so auth/rate-limiting apply the same as any other route.
 
 ---
 
-## 13. uWebSockets.js Adapter
+## 12. Intelligent Hot-Reloading 🟢
 
-**What it is:** An auto-detecting proxy layer that upgrades the server to C++.
-**How it's implemented:** When `uWebSockets.js` is installed, Exis injects `UwsIncomingMessage` and `UwsServerResponse` shims (`src/server/uws-adapter.ts`). These emulate standard Node streams flawlessly. **Crucially**, it leverages `res.cork()` internally to batch headers, status, and body data into a single C++ syscall to achieve maximum possible I/O throughput. Because uWS objects are invalidated after the first synchronous tick, Exis copies headers safely beforehand.
+**What it is:** File-change-triggered reloading that patches only the affected routes rather than restarting the whole process, preserving WebSocket connections and in-memory state.
 
----
-
-## 14. Developer Error Overlay
-
-**What it is:** Beautiful, visual syntax and runtime errors in the terminal.
-**How it's implemented:** `parseErrorLocation` shreds V8 stack traces to isolate the exact failing file, line, and column. `buildCodeFrame` then reads the file system to print a syntax-highlighted code excerpt with a `> ` pointer exactly where the crash occurred (`src/server/dev-error-overlay.ts`).
+**How it's implemented:** `dep-graph.ts` builds a dependency graph by regex-scanning `import`/`export`/`require` statements in route files (resolving both relative imports and `@/` aliases) so that changing a `service.ts` file can be traced back to the `route.ts` files that depend on it. `hot-reload.ts`'s `HotReloader` watches via `chokidar`, and on a relevant change: removes the stale route(s) from the router, busts the CommonJS `require.cache` entry, re-imports the file, and re-mounts it — all without touching unrelated routes or dropping active connections. `dev-error-overlay.ts` provides a readable terminal error format (parsed stack trace + syntax-highlighted code frame) when a hot-reloaded file fails to import.
 
 ---
 
-## 15. Circuit Breaker (`src/utils/circuit-breaker.ts`)
+## 13. uWebSockets.js Adapter 🟢
 
-**What it is:** Protects external services from cascading failures.
-**How it's implemented:** Implements a strict State Machine (`CLOSED`, `OPEN`, `HALF_OPEN`). When `failureThreshold` is reached, it trips to `OPEN`. After `resetTimeoutMs`, it switches to `HALF_OPEN` to test a single probe request before recovering.
+**What it is:** An optional high-throughput backend that swaps Node's native HTTP server for `uWebSockets.js`, auto-detected if installed (or forced via `server: 'uws'` config).
 
----
-
-## 16. Environment Loader (`src/utils/env.ts`)
-
-**What it is:** Intelligent `.env` loading, strict validation, and auto-bootstrapping.
-**How it's implemented:** Uses `dotenv` and `dotenv-expand` to cascade overrides (`.env.local` > `.env`). The framework's core bootstrapper (`start-server.ts`) natively executes `loadEnv()` right at boot, reading the `.env` file and merging it directly into Node.js's global `process.env`. This means developers do _not_ need to import `dotenv/config` in their files—they can instantly use `process.env.MY_VAR` anywhere natively. Additionally, it scans for an `env.ts` file and auto-imports it. Developers can use `v.env(schema)` inside `env.ts` to strictly validate `process.env` at startup, instantly crashing the server if critical variables are missing.
+**How it's implemented:** `uws-adapter.ts` provides `UwsIncomingMessage`/`UwsServerResponse` shims that emulate the subset of Node's `IncomingMessage`/`ServerResponse` interface the rest of the framework depends on. Response writes use `res.cork()` to batch header/status/body into a single write. The shim correctly emulates asynchronous Node stream semantics (e.g., buffered `data`/`end` events delivered via microtasks for late listener registration), making it a robust and high-performance drop-in replacement.
 
 ---
 
-## 17. High-Performance Logging (`src/utils/logger.ts`)
+## 14. Request & Response Engine 🟢
 
-**What it is:** Asynchronous, non-blocking JSON logging.
-**How it's implemented:** Wraps `pino` to bypass Node's native `console.log` bottlenecks. It implements automatic secret redaction natively.
+**What it is:** `ExisRequest`/`ExisResponse` wrapper classes providing a fuller feature set than raw Node `IncomingMessage`/`ServerResponse`.
 
----
+**Request (`server/request.ts`):**
 
-## 18. Dynamic Configuration (`src/utils/config.ts`)
+- Multipart parsing via `busboy`, query parsing via `fast-querystring`.
+- `trustProxy` logic (boolean, or numeric hop-count) correctly resolves `x-forwarded-for`/`x-forwarded-proto`/`x-forwarded-host` — this has explicit, well-covered test cases for the `false`/`true`/numeric-hop variants.
+- Body-size limiting with a clear rejection error when exceeded.
+- Per-request `Dataloader` instances (see §16) accessible via `req.dataloader(name)`.
 
-**What it is:** Resolves the `exis.config.ts` file.
-**How it's implemented:** Uses the `Function('specifier', 'return import(specifier)')` hack to bypass TypeScript's aggressive CommonJS transpilation, allowing native dynamic `import()`.
+**Response (`server/response.ts`):**
 
----
-
-## 19. Global Error Handling (`src/utils/errors.ts`)
-
-**What it is:** Global, unhandled exception interception.
-**How it's implemented:** Exposes an `HttpError` factory. Intercepts all routes, formatting a JSON response (`success: false, error: ...`). If the client `Accepts: text/html`, it returns a styled HTML stack trace natively.
-
----
-
-## 20. Advanced CLI & Generators
-
-**What it is:** The `exis` CLI (`dev`, `build`, `start`, `routes`, `generate`).
-**How it's implemented:** Powered by `commander`. 
-- The `build` command natively embeds **Esbuild** to compile TypeScript to highly optimized JavaScript instantaneously, dropping the slow `tsc` dependency. 
-- The `dev` command incorporates a smart Port Detection algorithm: if the requested port (e.g., `3000`) is bound by another process, it automatically increments and binds to the next available port without crashing `EADDRINUSE`.
-- The `routes` command prints a beautiful color-coded table of all API endpoints and their middleware counts.
+- Chainable `status()`/`set()`/`header()`/`cookie()` API.
+- Automatic ETag generation (SHA1-based, weak ETags) plus `304 Not Modified` short-circuiting when the request is fresh.
+- `.download()`, `.html()`, `.sendStream()`, `.redirect()` convenience methods.
+- A subtlety worth knowing: **if you inject the raw response object to set custom headers but still return a value from the handler, ExisJS still auto-serializes the returned value to JSON** — unlike frameworks where injecting the raw response disables auto-serialization and silently hangs the request if you forget to call `.send()`.
 
 ---
 
-## 21. Native Health Checks
+## 15. Global Error Handling 🟢
 
-**What it is:** A robust `/health` endpoint for Kubernetes and load balancers.
-**How it's implemented:** The `healthCheck` middleware (`src/observability/health.ts`) executes an array of asynchronous dependency checks. Crucially, it wraps each check in a `Promise.race()` against a `.unref()`'d timeout, preventing hanging database connections from blocking the health check. It aggregates the results and automatically returns `200 pass` or `503 fail`.
+**What it is:** A structured `HttpError` hierarchy plus a global handler that formats operational errors consistently and masks internals in production.
 
----
+**How it's implemented:** `HttpError` (`utils/errors.ts`) carries `statusCode`/`code`/`details`/`isOperational`, with static factories (`badRequest`, `unauthorized`, `notFound`, etc.) and matching subclasses/aliases for both functional and exception-style usage. `createErrorHandler(isDev)` recognizes `HttpError` instances, Zod-shaped and native `ValidatorError` shapes, and JSON `SyntaxError`s, formatting each appropriately; unrecognized errors are logged and returned as a generic message in production, or the full message + stack in development. A dev-mode HTML error overlay is available when the client accepts `text/html`.
 
-## 22. BYOM / BYOT Observability (Metrics & Tracing)
-
-**What it is:** Dependency-free adapters for Prometheus, StatsD, and OpenTelemetry.
-**How it's implemented:**
-
-- **Metrics (`prometheus.ts`)**: Uses a 'Bring Your Own Metrics' approach. It intercepts requests and hooks into `res.raw.once('finish')` to calculate `durationMs`. It intelligently uses `req.routePath` (e.g., `/users/:id`) rather than the raw URL (`/users/123`) to prevent metrics cardinality explosions.
-- **Tracing (`otel.ts`)**: Uses a 'Bring Your Own Tracer' adapter. It automatically starts an active span, listens for the response finish, and maps HTTP status codes > 500 directly to OpenTelemetry's internal `SpanStatusCode.ERROR` (code: 2) before ending the span.
+**Exception filters:** `catchError(errorClass, handler)` (`middleware/exception-filter.ts`) provides a functional equivalent to `@Catch()` — a 4-argument middleware that only handles errors matching `instanceof errorClass`, falling through to the next handler otherwise. This composes cleanly with `HttpError`'s subclasses for granular per-error-type handling.
 
 ---
 
-## 23. Active Backpressure Engine
+## 16. Dataloaders 🟢
 
-**What it is:** Prevents the server from crashing under extreme load (DDoS or traffic spikes).
-**How it's implemented:** Tracks an `activeCount`. If it exceeds `maxConcurrent`, incoming requests are pushed to a `queue`. If the queue hits `maxQueue`, it instantly throws a `503 Service Unavailable`. Parked requests have a `.unref()`'d timeout to drop them if they wait too long. It cleverly hooks into `res._onFinish` to decrement the active count and process the next queued request asynchronously via `process.nextTick`.
+**What it is:** GraphQL-style per-request batching and caching to solve the N+1 query problem.
 
----
-
-## 24. Request Deduplication (Thundering Herd Protection)
-
-**What it is:** Prevents identical simultaneous requests from destroying the database.
-**How it's implemented:** If 100 users request the exact same cache-missed URL at the exact same millisecond, `dedupe.ts` intercepts them. It allows the _first_ request to proceed and parks the other 99 in a Map. When the first request resolves, it intercepts the `res.send()` buffer, copies the headers, and natively broadcasts the exact same buffer to the 99 parked response sockets simultaneously.
+**How it's implemented:** `Dataloader` (`dataloader/dataloader.ts`) collects `.load(key)` calls into a queue and dispatches a single batched call to the developer's `batchFn` on `process.nextTick`, splitting into multiple batches if `maxBatchSize` is exceeded. Supports per-instance caching (default on, keyed by identity or a custom `cacheKeyFn` for object keys — objects are `JSON.stringify`'d by default to avoid reference-equality cache misses), `.prime()` for pre-filling the cache, and per-key error rejection (a batch function can return a mix of values and `Error` instances, with each key resolved/rejected independently). Loaders are correctly isolated per request via the DI/context system — verified by tests asserting two concurrent requests using the same loader name get independent batches and caches.
 
 ---
 
-## 25. Interceptor Caching
+## 17. tRPC-style Frontend Type Client 🟢
 
-**What it is:** High-speed route caching.
-**How it's implemented:** Intercepts `res.send` and `res.json`. On a cache miss, it wraps the send functions to asynchronously write the response body, headers, and status code to the `CacheStore` in the background (`Promise.resolve(store.set(...)).catch(...)`), while simultaneously returning the response to the user so they don't have to wait for the Redis write. On a cache hit, it reconstructs Buffers and fires instantly.
+**What it is:** End-to-end type safety between the ExisJS backend and a frontend, without a separate tRPC dependency.
 
----
-
-## 26. Streaming Compression
-
-**What it is:** Native Brotli, Gzip, and Deflate.
-**How it's implemented:** Wraps `res.raw.write` and `res.raw.end`. It drops the `Content-Length` header (since compressed size is unknown beforehand) and creates a native Node.js `zlib` stream. It pipes all chunked raw writes through the compression stream before sending them to the native socket.
+**How it's implemented:** The manifest generator (§8b) produces `.exis/types.d.ts` exporting an `AppRouter` type. The `exisjs/client` package's `createClient<AppRouter>()` uses a recursive `Proxy` to translate property access chains (`client.api.users.get(...)`) into the corresponding HTTP request, inferring the payload/response shape from the generated types. This is a type-level feature (compile-time safety) layered on a runtime `fetch` call. The framework CLI's file watcher (`exis dev`) explicitly listens to all file events (`add`, `unlink`, `change`) to instantly regenerate the types manifest, ensuring your frontend types never silently fall out of sync with your backend routes.
 
 ---
 
-## 27. Advanced Security Suite
+## 18. Authentication Suite (`exisjs/auth`) 🟢
 
-**What it is:** Standard security patterns and middleware built on Node's native primitives to protect against XSS, CSRF, NoSQL Injection, and Parameter Pollution.
-**How it's implemented:**
+**What it is:** JWT, password hashing, RBAC, and session primitives built on Node's native `crypto`, with no third-party cryptography dependency.
 
-- **Helmet**: Sets static HTTP headers (`Strict-Transport-Security`, `X-XSS-Protection`).
-- **CORS Preflight Logging**: Intercepts `OPTIONS` requests natively. If a preflight request from a browser is rejected because the origin is disallowed, the framework transparently logs a `WARN` via Pino, ending the silent failures typical of browser CORS issues.
-- **CSRF**: Uses the Double Submit Cookie pattern. Drops a random UUID cookie on safe requests and validates that state-changing requests echo it back in a header.
-- **XSS & Mongo Sanitize**: Recursively traverses `req.body`, `req.query`, and `req.params` to escape HTML tags or strip MongoDB `$ ` operators.
-- **HPP**: Normalizes arrays in queries by picking the last element to prevent Parameter Pollution crashes.
+- **JWT (`auth/jwt.ts`):** HS256 via `crypto.createHmac`. Verification checks buffer length before calling `timingSafeEqual` (avoiding the common length-mismatch-throws footgun), and distinguishes `TokenExpiredError` from a generic invalid-signature `HttpError` — useful for clients that want to auto-refresh on expiry specifically.
+- **Passwords (`auth/password.ts`):** `crypto.scrypt`, promisified. Hashes are stored with their cost parameters embedded inline (`scrypt:N:r:p:keylen:salt:hash`), so cost factors can be increased later without invalidating existing hashes. Backwards-compatible with a legacy 2-part `salt:hash` format.
+- **RBAC (`auth/rbac.ts`):** `requireRole(roles)` checks array intersection between `req.user.role` (string or array) and the allowed list, throwing `401` if unauthenticated or `403` if authenticated but unauthorized.
+- **Sessions (`auth/session.ts`):** HMAC-signed, HttpOnly cookies (`timingSafeEqual`-verified) with a pluggable `SessionStore` (in-memory provided, Redis/DB left to the developer). Auto-saves session mutations back to the store by hooking `res.raw.end` — convenient, but currently writes to the store unconditionally on every request regardless of whether the session was actually mutated; consider this a known performance inefficiency under load with a remote store, not a correctness issue.
 
 ---
 
-## 28. Standardized JSON Responses
+## 19. Universal Edge & Serverless Adapters 🟢
 
-**What it is:** Enforces strict API contracts.
-**How it's implemented:** `src/response/index.ts` provides utility functions (`success()` and `error()`) that format every framework response into a predictable `{ success: boolean, data?: T, error?: {...} }` structure.
+**What it is:** A consistent `fetch`-based adapter pattern letting the same `App` run on Cloudflare Workers, Deno, Bun, Fastly Compute@Edge, Netlify Edge, Vercel, and AWS Lambda.
 
----
+**How it's implemented:** All platform adapters (`adapters/*.ts`) follow the identical init-once-then-handle pattern: lazily call `app.create()`/`app.onStartHook()` on first invocation, then delegate to either `app.fetch(request, env, ctx)` (Web-standard platforms) or `app.handle(req, res)` (Node-stream platforms like Vercel). This consistency across seven adapters is a genuine strength — there's no divergence in behavior between them.
 
-## 29. O(1) Production Boot (Manifest Generation)
+`adapters/fetch.ts`'s `FetchIncomingMessage`/`FetchServerResponse` polyfill is the shared foundation for all Web-standard-`Request`-based platforms: it emulates just enough of Node's stream/EventEmitter interface (including correctly flushing pre-buffered body bytes to late-registered `'data'`/`'end'` listeners, and correctly handling `.once()` since it delegates to the same `.on()` override) for the framework's existing middleware to run unmodified on Edge runtimes.
 
-**What it is:** Eliminates slow file-system scanning in production.
-**How it's implemented:** Instead of recursively using `fs.readdir` to scan the `src/http` directory at startup, `exis build` (`cli/manifest.ts`) statically analyzes the routing tree and compiles a flat `.exis/routes-manifest.js` file. In production, ExisJS just requires this single flat array, giving it instantaneous `O(1)` boot times.
+**AWS Lambda specifics (`adapters/aws-lambda.ts`):** automatically detects text-based payloads (JSON, HTML, plain text) and sends them as unencoded strings to save wire overhead, falling back to base64 encoding (`isBase64Encoded: true`) only for binary data (images, octet streams).
 
 ---
 
-## 30. Native V8 Memory Monitor
+## 20. Security Middleware Suite
 
-**What it is:** Prevents catastrophic Out-of-Memory (OOM) crashes in production.
-**How it's implemented:** The internal server entry point (`lib/start-server.ts`) initializes an unref'd `setInterval` that natively polls `v8.getHeapStatistics()`. If heap usage exceeds 80% of the limit, it triggers a clean `process.exit(143)` (SIGTERM). This gracefully signals process managers like PM2 or Kubernetes to safely restart the instance _before_ it hangs and drops traffic.
+Split by actual strength, not lumped together as one "Advanced Security Suite":
 
----
+### 20a. Solid, standard-pattern implementations 🟢
 
+- **Helmet-equivalent headers** (`middleware/security.ts` `helmet()`) — standard static security headers (HSTS, X-Frame-Options, X-Content-Type-Options, etc.), configurable, well-tested.
+- **CSRF** (`csrf({ secret })`) — Signed Double Submit Cookie pattern using HMAC SHA-256 to prevent Cookie Tossing attacks. Validated via header-vs-cookie match on state-changing methods.
+- **HPP** (`hpp()`) — mitigates HTTP Parameter Pollution by forcing array-like query/body parameters down to their last element.
+- **DB sanitize** (`dbSanitize()` / `mongoSanitize()`) — recursively strips keys starting with `$` or containing `.` from body/query/params to prevent NoSQL injection.
+- **Timeout** (`timeout()`) — kills stalled requests and sends a 503 if response takes too long.
 
-## 31. Tag-based Cache Stores (`exisjs/cache`)
+### 20b. Removed Features 
 
-**What it is:** Next.js-style cache tagging and revalidation.
-**How it's implemented:** The framework provides `FileSystemCacheStore`, `MemoryCacheStore`, and `RedisCacheStore`. Cache entries are stored with an array of string `tags`. The store maintains a separate lookup dictionary mapping `tags` to a `lastRevalidated` timestamp. When `cache.get(key)` is called, it checks if any of the item's tags have a timestamp _newer_ than the item's `createdAt` time. If so, it returns `null` (cache miss), forcing the app to re-fetch the data. This allows developers to instantly invalidate millions of cached routes with a single `revalidateTag('users')` call.
-
----
-
-## 32. Strict Subpath Exports (`exisjs/*`)
-
-**What it is:** Clean architectural boundaries and perfectly organized module scopes via `package.json` exports mapping.
-**How it's implemented:** The `package.json` explicitly maps `exports` to specific domain paths, keeping the public API surface pristine and discoverable. The CLI command `exis exports` dynamically prints this perfectly categorized table:
-
-- **🚀 Core Framework**: `exisjs` (App, cors, helmet), `exisjs/router`, `exisjs/module`, `exisjs/di`, `exisjs/decorators`, `exisjs/middleware`
-- **⚙️ Built-in Subsystems**: `exisjs/auth`, `exisjs/cache`, `exisjs/queue`, `exisjs/testing`, `exisjs/validator`, `exisjs/dataloader`, `exisjs/observability`, `exisjs/swagger`
-- **🛠️ Utilities**: `exisjs/config`, `exisjs/error`, `exisjs/plugin`, `exisjs/response`, `exisjs/security`, `exisjs/circuit-breaker`
-- **🔌 Integrations**: `exisjs/drizzle`, `exisjs/postgres`, `exisjs/redis`, `exisjs/openai`, `exisjs/s3`, etc.
-- `exisjs/cache`: `getCacheStore`, `revalidateTag`
-- `exisjs/config`: `loadConfig`, `defineConfig`
-- `exisjs/auth`: `signJWT`, `verifyJWT`, `hashPassword`
-- `exisjs/supabase`, `exisjs/postgres`, `exisjs/redis`, etc., for integrations.
+- **`sqlSanitize()` / `dbSanitize({ sql: true })`** — Removed. This regex-based blocklist filtering was trivially bypassable and mangled legitimate content. Real protection comes from parameterized queries / ORM usage. See `REMOVED_FEATURES.md`.
 
 ---
 
-## 33. Native Authentication Suite (`exisjs/auth`)
+## 21. Observability
 
-**What it is:** Authentication suite built strictly on Node's native crypto primitives (no custom cryptography).
-**How it's implemented:**
-
-- **JWT (`jwt.ts`)**: Generates and verifies standard HS256 JWTs using Node's native `crypto.createHmac`. It natively throws `TokenExpiredError` if the payload's `exp` is in the past, and uses `timingSafeEqual` to prevent timing attacks.
-- **Passwords (`password.ts`)**: Uses Node's asynchronous `crypto.scrypt` wrapped in a Promise. It stores hashes defensively with all parameters embedded (`scrypt:N:r:p:keylen:salt:hash`) ensuring hashes can still be verified if cost parameters change in the future.
-- **Role-Based Access Control (`rbac.ts`)**: Native middleware `requireRole(['admin'])` that checks array intersections against `req.user.role`.
-- **Sessions (`session.ts`)**: Creates signed, HttpOnly cookies. It transparently intercepts `res.raw.end` to automatically save `req.session` mutations back to the active `SessionStore` at the end of the request, meaning developers never have to manually call `.save()`.
+- **Health checks 🟢** (`observability/health.ts`) — runs an array of named async checks in parallel, each wrapped in a `Promise.race()` against a `.unref()`'d timeout so a hanging dependency check can't block the health endpoint itself; aggregates to `200 pass` / `503 fail`.
+- **Metrics 🟢** (`observability/prometheus.ts`) — "bring your own metrics" adapter pattern; the middleware itself only measures duration and delegates recording to a developer-supplied adapter (prom-client, StatsD, custom), using `req.routePath` rather than the raw URL to avoid cardinality explosions on parameterized routes.
+- **Tracing 🟢** (`observability/otel.ts`) — same "bring your own tracer" pattern for OpenTelemetry-shaped spans, correctly redacts sensitive headers (`authorization`, `cookie`, `x-api-key`, etc.) before they'd reach an external tracing backend, and maps 5xx responses to `SpanStatusCode.ERROR`.
 
 ---
 
-## 34. Universal Edge & Serverless Adapters (`exisjs/adapters`)
+## 22. Zero-Config Third-Party Integrations 🟢
 
-**What it is:** Deploy ExisJS to any platform, including V8 Isolates (Cloudflare Workers) and Serverless environments (AWS Lambda, Vercel).
-**How it's implemented:** The core Exis engine is heavily optimized around native Node.js HTTP streams (`IncomingMessage` and `ServerResponse`). To run on WinterCG-compliant Edge networks:
+**What it is:** Lazy-loaded clients for 12 external services (Drizzle, JWT, MongoDB, Mongoose, OpenAI, PostgreSQL, PostHog, Prisma, Redis, Resend, S3, Supabase) that read connection config from conventional environment variables and dynamically `require()` the underlying SDK only when first accessed.
 
-- **`fetch.ts` Polyfill**: It takes standard Web `globalThis.Request` objects and polyfills an `EventEmitter` that mocks an `IncomingMessage` stream. It intercepts the `res.write` and `res.end` calls to compile the data back into a standard `globalThis.Response`. This allows the _entire_ complex Exis middleware ecosystem (which relies heavily on stream manipulation) to run flawlessly on Edge runtimes.
-- **V8 Isolates**: `bun.ts`, `deno.ts`, `cloudflare.ts`, and `fastly.ts` all hook directly into `app.fetch(request, env, ctx)` leveraging this polyfill.
-- **Serverless**: `aws-lambda.ts` converts API Gateway JSON events into mock HTTP streams, while `vercel.ts` directly consumes Vercel's native Node.js HTTP streams, advising developers to use `export const config = { api: { bodyParser: false } }` to ensure pristine stream delivery.
+**How it's implemented:** Each integration (`integrations/*.ts`) exports a `Proxy`-wrapped singleton (e.g. `redis`, `s3`, `mongo`) whose `get` trap lazily constructs the real client on first property access, plus a `create*Client()` factory for explicit instantiation and a `configure*()` function to set options before first use. This means the framework's core bundle never imports these heavy SDKs directly, and connection setup is deferred until the exact moment it's needed — contributing to fast boot times. The test suite comprehensively validates both the missing-env-var failure modes and the successful client constructions (via mocked module injection) across the integrations.
 
----
+**Important architectural caveat:** these are **process-wide module-level singletons**, not per-`App`-instance. Multiple `App` instances in one process (e.g. multi-tenant setups, or multiple test files each creating an app) will share the same underlying client unless the explicit `create*Client()` factory is used instead of the singleton proxy. Document this clearly for any usage beyond "one app, one process."
 
----
-
-## 35. Project Scaffolding CLI (`create-exis`)
-
-**What it is:** A dedicated bootstrapping tool (e.g. `npm create exis`) similar to `create-next-app`.
-**How it's implemented:** Lives in `packages/create-exis/`. It provides an interactive terminal UI (powered by `prompts`) to guide developers through setting up a new ExisJS project.
-
-- **Customizable Setup:** Asks the developer whether they want to use TypeScript, ESLint, import aliases (`@/*`), and a `src/` directory.
-- **Automated Bootstrapping:** Automatically generates `exis.config.ts`, the correct `tsconfig.json`, base `server.ts`, and initial `route.ts` handlers.
-- **Smart Dependency Installation:** Detects the user's package manager (`npm`, `yarn`, `pnpm`, `bun`) from the `npm_config_user_agent` environment variable and automatically installs the core `exisjs` package and devDependencies.
+**Test coverage caveat:** the "throws when required env var is missing" path is tested for all 12 integrations; the "successfully constructs a client with valid config" path is currently only asserted for JWT — the equivalent Redis/S3 tests exist but are marked `.skip()`. Low-effort to complete since the mocking infrastructure is already built.
 
 ---
 
-## 36. Automated OpenAPI / Swagger Generation
+## 23. CLI & Tooling 🟢
 
-**What it is:** Zero-configuration API documentation that stays perfectly in sync with your codebase.
-**How it's implemented:** By calling `serveSwagger(app)` during boot, ExisJS traverses the internal `O(1)` routing tree. It automatically maps runtime route configurations (like `/:id` parameters) into OpenAPI 3.0 path definitions (`/{id}`). Furthermore, it intercepts the internal validation schemas attached to endpoints (Body, Query, Params) and dynamically serializes them into strict OpenAPI JSON Schema representations. This exposes a fully interactive Swagger UI without developers needing to manually write duplicate YAML or JSON definitions.
+`exis dev` (esbuild/tsx-powered HMR via child process + chokidar watch, smart port-conflict messaging), `exis build` (§8), `exis start` (production boot), `exis routes` (colorized routing table), `exis test` (native `node:test` wrapper with a custom Jest-style reporter — see §24), `exis generate <type>` (scaffolding for routes/plugins/middleware/tests, functional or OOP), `exis init` / `create-exis` (interactive project scaffolding), `exis console`/`repl` (interactive REPL with auto-discovered model injection), `exis exports` (prints the subpath export map). This surface is broad but consistently implemented and reasonably well covered by both unit and e2e tests (`cli.test.ts` mocks `spawn`/`exit` for fast unit tests; `cli-e2e.test.ts` runs the compiled CLI as a real child process for a smaller set of true end-to-end checks).
 
----
-
-
-## 37. Esbuild Native HMR (Hot Module Replacement)
-
-**What it is:** Ultra-fast, state-preserving developer reloads that never drop active WebSocket connections or memory caches.
-**How it's implemented:** ExisJS completely circumvents the legacy Node.js strategy of shutting down the entire HTTP server on every file save.
-
-- The `exis dev` command is natively powered by **Esbuild** (via `tsx`).
-- Inside the server, a custom `HotReloader` monitors the `src/` directory and builds a living `DependencyGraph` of your AST imports.
-- When you edit a controller, the Reloader computes all downstream route files, surgicaly invalidates `require.cache`, and uses the `Router`'s internal memory API to seamlessly swap out the old endpoint with the newly compiled one.
-- The result: Your server stays alive. WebSockets remain connected. State is preserved. Changes appear instantly.
+**Cluster mode** (`server/cluster.ts`): `workers: 'safe' | 'max' | number` forks Node's native `cluster` module, with crash-loop detection (stops auto-respawning if more than `maxRespawns` crashes occur within `respawnWindow`) and graceful multi-worker shutdown on SIGINT/SIGTERM.
 
 ---
 
-## 38. Native Background Jobs & Thread Pool
+## 24. Native Test Runner Integration 🟢
 
-**What it is:** A deeply integrated Node.js Worker Thread pool that executes heavy, synchronous backend jobs without blocking your main event loop.
-**How it's implemented:**
+**What it is:** A zero-dependency test runner built on `node:test`, with a custom Jest/Vitest-style terminal reporter, a Jest-compatible `expect()` assertion library, and `createTestContext()` for booting a full `App` (DI container, database connections) inside tests without mocking.
 
-- Instead of using `bullmq` or `piscina`, ExisJS provides a zero-dependency Thread Pool (`ThreadPool`).
-- Jobs are natively discovered from the `src/jobs/` directory on boot.
-- The `ExisWorker` listens to a Redis queue. When a job is popped, instead of executing on the main thread, it securely hands the execution off to an isolated V8 background core.
+**How it's implemented:** `testing/reporter.mts` consumes `node:test`'s async iterable of `TestEvent`s and renders grouped, colorized, file-scoped PASS/FAIL output with a Jest-style failure summary — genuinely nicer than raw TAP output. `testing/expect.ts` implements the common Jest matcher surface (`toBe`, `toEqual`, `toMatchObject`, `toHaveBeenCalledWith`, `resolves`/`rejects`, etc.) on top of `node:assert`. `createTestContext()` (`testing/index.ts`) wires `before`/`after` hooks that boot the app, and on teardown, correctly awaits and closes Mongoose, Redis, and Prisma connections if detected in use.
 
----
 
-## 39. Native Cron Scheduler
-
-**What it is:** A zero-dependency scheduler to run tasks like database cleanups on a strict recurring schedule.
-**How it's implemented:**
-
-- You define `cron: '0 0 * * *'` directly inside your `defineJob` export in `src/jobs/`.
-- The internal `CronScheduler` precisely ticks every 60 seconds, using a custom native cron parser to match expressions.
-- Upon matching, it uses a Redis `SETNX` lock (expiring in 55s) to guarantee the cron job is executed **exactly once**, even if you have 100 horizontal API servers running simultaneously!
+**Suite quality note:** the framework's own test suite (used to write this document) is dense and well-constructed across routing, request/response, DI, validator, dataloader, WebSockets (including negative-path auth tests), observability, and both queue drivers. Its main gaps are exactly the two areas this document flags as risk: no test crosses the cron↔queue integration boundary, and the dedupe/cache tests use a single logical client rather than simulating concurrent different users.
 
 ---
 
-## 40. Native Server-Sent Events (SSE) Streaming
+## 25. Response Interceptors, Guards, and Pipes 🟢
 
-**What it is:** The industry standard for one-way streaming (like ChatGPT's text generation), natively built into the `Router`.
-**How it's implemented:**
-
-- You simply define an `sse:` handler in your route file: `sse: async (stream, req) => {}`.
-- ExisJS automatically intercepts the request, applies standard headers (`text/event-stream`, `keep-alive`), and upgrades the connection.
-- You can simply call `stream.send({ text: "Hello" })` or `stream.send("Chunk")` and ExisJS handles the strict SSE payload formatting natively.
-- Full middleware support is retained (so you can easily use JWTs to protect AI streams).
+- **`intercept(transform)`** (`middleware/interceptor.ts`) — monkey-patches `res.json` for the request duration to apply a transformation function to the outgoing payload, supporting both sync and async transforms. Deliberately does not intercept `res.send()`, since that's meant for raw string/buffer output.
+- **`guard(canActivate, options?)`** (`middleware/guard.ts`) — evaluates a boolean (or async-boolean) condition and short-circuits with `403` if it returns false; the OOP equivalent (`@UseGuards`-style) resolves guard classes via the DI container if registered, or instantiates them directly otherwise.
+- **`pipe(location, key, transformFn)`** (`middleware/pipe.ts`) — transforms a specific `body`/`query`/`params` key before the handler runs, catching thrown errors and responding `400` automatically.
 
 ---
 
-## 41. Native File Uploads & Multipart Parser
+## 26. Caching, Deduplication, and Backpressure — read this section carefully
 
-**What it is:** A blazing fast, zero-configuration parser that magically makes uploaded files available in your HTTP routes. No need to install `multer` or `busboy`.
-**How it's implemented:**
+These three middlewares are implemented correctly for their _intended_ single-client use case, and are dangerous with default settings outside it. Do not present them as safe defaults without qualification.
 
-- When ExisJS detects a `multipart/form-data` request, it automatically streams the underlying binary data into highly optimized buffers.
-- Normal text fields (like `username`) are parsed cleanly into `req.body` as you'd expect.
-- Uploaded files are extracted into a heavily typed array of `ExisFile` objects available at `req.files`.
-- You can immediately save them to disk using `fs.writeFileSync` or upload the `file.data` buffer directly to AWS S3 without writing to disk!
+### 26a. Tag-based Cache Stores 🟢
 
----
+`FileSystemCacheStore`, `MemoryCacheStore`, `RedisCacheStore` (`cache/store.ts`) all implement the same `CacheStore` interface: entries carry an array of string `tags`, and a separate tag→`lastRevalidated` timestamp map is checked on every `get()` — if any of an entry's tags were revalidated after the entry was created, it's treated as a miss. `revalidateTag(tag)` instantly invalidates every entry carrying that tag, Next.js-style. **`MemoryCacheStore` automatically synchronizes invalidations across cluster workers** — when running in `workers > 1` mode, it uses IPC to broadcast tag invalidations to all sibling workers so the memory cache remains safely consistent across the cluster (without requiring Redis).
 
-## 42. tRPC-style Frontend Type Client
+### 26b. `cacheMiddleware` 🟢
 
-**What it is:** Perfect, end-to-end type safety for the frontend without installing tRPC or configuring complex build steps.
-**How it's implemented:**
+Requires a mandatory `keyGenerator` function (e.g., `(req) => req.user?.id + ':' + req.path`) to ensure cache segregation across users/sessions on authenticated routes. Attempting to use this middleware without providing a `keyGenerator` throws a startup error, preventing accidental cross-user data leaks.
 
-- **Automatic Type Generation**: During development or build, the Exis CLI (`manifest.ts`) automatically scans all your `route.ts` files and dynamically generates a hidden `.exis/types.d.ts` file exporting an `AppRouter` type that contains all your API's schemas.
-- **The Proxy Client**: The framework ships with a lightweight `exisjs/client` package. The frontend uses `createClient<AppRouter>({ baseUrl })`.
-- **Magic Invocation**: When the developer types `client.api.users.get(payload)`, a recursive JavaScript `Proxy` intercepts the object properties, magically constructs the URL `/api/users`, appends the HTTP method `GET`, merges any global headers (like Authentication tokens), and executes the native `fetch` command. The IDE perfectly infers the payload shape and response type natively.
+### 26c. `dedupeMiddleware` 🟢
 
----
+Also requires a mandatory `keyGenerator` to prevent cross-user broadcasting of in-flight requests. Two different authenticated users requesting the same path within the same in-flight window are correctly segregated if the key includes their identity.
 
-## 43. Functional Dependency Injection (DI) & Providers
+### 26d. Backpressure Engine 🟢
 
-**What it is:** A lightweight, decorator-free Inversion of Control (IoC) container embedded natively into the framework.
-**How it's implemented:**
+`backpressureMiddleware` (`middleware/backpressure.ts`) tracks `activeCount` against `maxConcurrent`, queues overflow up to `maxQueue` with a timeout, and returns `503` once the queue itself is full — correctly implemented and tested, no identity-related caveats since it doesn't cache or share response data between requests.
 
-- **Container (`src/di/container.ts`)**: The core registry that lazily evaluates and securely caches value, factory, and class providers as singletons.
-- **Global App Integration (`src/server/app.ts`)**: The container is instantiated on the `App` instance, allowing developers to define global dependencies via `app.provide(token, provider)`.
-- **Contextual Injection (`src/di/inject.ts`)**: Using ExisJS's `AsyncLocalStorage` context (`src/server/context.ts`), developers can call `inject(token)` inside any route handler or middleware. It securely retrieves the active `App` instance and resolves the dependency synchronously, eliminating the need for complex `@Injectable()` decorators or constructor drilling.
+### 26e. Circuit Breaker 🟢
+
+`CircuitBreaker` (`utils/circuit-breaker.ts`) implements a standard `CLOSED`/`OPEN`/`HALF_OPEN` state machine with a single-probe half-open test — correctly implemented and tested, including the full open→half-open→closed recovery cycle.
 
 ---
 
-## 44. Functional Response Interceptors
+## 27. Standardized JSON Responses 🟢
 
-**What it is:** A native, lightweight `intercept()` middleware that allows developers to seamlessly mutate payloads before they hit the network stream.
-**How it's implemented:**
-
-- **Monkey Patching (`src/middleware/interceptor.ts`)**: The interceptor temporarily hijacks `res.json` and `res.send` for the duration of the request. When a route completes, it executes the developer's synchronous or asynchronous transformation function.
-- **Universal Support**: Because the ExisJS router inherently passes returned values through `res.json`, the interceptor captures both imperative responses (`res.send()`) and declarative functional returns automatically. It fully supports `Promise`-based transformations to fetch extra data post-execution.
+`response/index.ts` exports `success(data, message?)` / `error(message, code?, details?)` helper functions producing a consistent `{ success: boolean, data?, error? }` envelope shape — a convention, not an enforced contract; handlers can return anything and it will still be auto-serialized, but using these helpers keeps API responses consistent across a codebase.
 
 ---
 
-## 45. Exception Filters (`catchError`)
+## Summary: what to actually rely on today
 
-**What it is:** A native utility to catch and format specific classes of exceptions, acting as a functional alternative to NestJS's `@Catch()` decorators.
-**How it's implemented:**
-
-- **Filter Factory (`src/middleware/exception-filter.ts`)**: ExisJS natively identifies any middleware function with 4 arguments `(err, req, res, next)` as an error handler. The `catchError(errorClass, handler)` factory simply returns a 4-argument middleware that intercepts the global error pipeline.
-- **Conditional Execution**: Inside the pipeline, if the thrown error matches the `errorClass` (via `err instanceof errorClass`), the custom formatting logic is executed. Otherwise, it gracefully falls through to the next error handler by calling `next(err)`.
-
----
-
-## 46. Modular Architecture
-
-**What it is:** The "perfect blend" of traditional NestJS module design (`@Module`) with modern File-Based Routing. It allows developers to completely decouple domain logic (e.g. Users, Database, Auth) while seamlessly integrating with the directory structure without manual registration boilerplate.
-**How it's implemented:**
-
-- **Explicit Modules (`defineModule`)**: Returns a highly optimized `Plugin` that effortlessly groups Providers and Imports (other modules), automatically deduplicating shared singletons before exposing them to the Dependency Injection framework. Can be loaded manually via `app.register(module)`.
-- **File-Based Modules (`defineGateway`)**: Transforms any `gateway.ts` file in your route directory into a fully-fledged Module. The ExisJS router automatically discovers the file, parses its `imports` and `providers`, and seamlessly hydrates the application container BEFORE executing any `route.ts` inside that folder. Routes naturally `inject()` these providers as if they were globally initialized, delivering the cleanest possible architecture.
-
----
-
-## 47. Guards & Pipes (Functional Implementation)
-
-**What it is:** The functional equivalent to NestJS `@UseGuards()` and `@UsePipes()`, bringing enterprise Authorization and Data Transformation to a blazing-fast router.
-**How it's implemented:**
-
-- **Guards (`guard`)**: Evaluates a boolean condition (e.g., role-checking, authentication) and prevents execution of the handler if the condition returns `false`, throwing a `403 Forbidden` response.
-- **Pipes (`pipe`)**: Intercepts the request (specifically the `body`, `query`, or `params`) and applies a transformation function to mutate the data safely before it reaches the handler.
-- **How to use them**: Because ExisJS relies on a functional array-based pipeline, you can simply drop `guard()` and `pipe()` directly into the route array:
-  ```typescript
-  get: [
-    guard((req) => req.headers.authorization === 'secret', {
-      message: 'Unauthorized',
-    }),
-    pipe('params', 'id', (val) => Number(val)),
-    (req, res) => res.send('Success!'),
-  ]
-  ```
-
----
-
-## 48. Strict Response Typing (`InferSchemaResponse`)
-
-**What it is:** Strongly-typed API responses strictly inferred from validation schemas and magically typed directly on `res.json()`.
-**How it's implemented:** The framework intercepts the custom Zod-like response validation schema (`{ response: v.object({ ... }) }`) and exposes a new `InferSchemaResponse` type constraint. The route definitions (`route.get`, `route.post`, etc. inside `controller()`) automatically inherit this type and inject it natively into the `TResponse` generic of the executing `Handler`. Consequently, TypeScript intelligently limits `res.json(data)` and direct `return { ... }` handlers strictly to the predefined shape of the response schema.
-
----
-
-## 49. Class-Based Decorators
-
-**What it is:** A modern, incredibly fast implementation of `@Server()`, `@Gateway()`, and `@Controller()` decorators that totally avoids the bloated `reflect-metadata` polyfills of older frameworks.
-**How it's implemented:**
-
-- Uses standard TS 5.0+ decorators alongside legacy compatibility wrappers.
-- Instead of using slow `Reflect.defineMetadata`, it binds raw JavaScript Symbols directly to class prototypes (`Symbol.for('exisjs:routes')`, `Symbol.for('exisjs:server_config')`, `Symbol.for('exisjs:gateway_config')`, etc.) ensuring O(1) instantaneous metadata lookup.
-- Includes a robust set of routing decorators (`@Get`, `@Post`, `@Connect`, `@Trace`, `@Query`, etc.) and a powerful `@Use()` decorator that elegantly attaches middleware arrays to entire classes or individual methods natively.
-- **Native WS & SSE Support:** Integrates perfectly with the framework's modernized streaming protocols. By applying the `@Ws('/path')` or `@Sse('/path')` decorators alongside the specialized `@Socket()` and `@Stream()` parameter injectors, developers can securely hijack the HTTP pipeline, bypass restrictive middleware defaults, and orchestrate real-time `ExisWebSocket` and `ExisSSE` interactions natively inside class architectures.
-- The central Application context seamlessly discovers controllers with `app.registerControllers()`, auto-hydrates instances via Dependency Injection (`this.container.resolve()`), applies global prefixing via `@Controller('users')`, deeply merges class and method middlewares, and binds everything back into the hyper-fast Radix router automatically.
-- **File-System Integration:** You can totally ditch manual registration by simply doing `export default class MyController { ... }` directly inside a file-system `route.ts`, or using `@Server()` in `server.ts` and `@Gateway()` in `gateway.ts`! The framework automatically discovers the classes, instantiates them via DI, and safely maps their decorators under the file's auto-generated namespace.
-
----
-
-## 50. Native Test Runner Integration
-
-**What it is:** A blazing-fast, integrated test runner leveraging Node.js's native `node:test` module.
-**How it's implemented:**
-
-- **Zero-Dependency CLI (`exis test`)**: Bypasses heavy frameworks like Jest or Vitest. It utilizes `node:test` under the hood.
-- **Custom Reporter (`exisjs/testing`)**: Includes a native AsyncGenerator reporter that intercepts standard Node test events, buffering output to deliver a clean, Jest-like summary in the console (`PASS  Exis Framework tests/book.test.ts`), completely removing the default raw TAP output.
-- **Booting and DI Integration**: Allows tests to seamlessly instantiate `app.create()` to initialize the database and DI container, enabling flawless integration tests against the database without mocking.
-- **Test Generation**: The `exis generate test <name>` command natively scaffolds unit tests to ensure immediate high test coverage.
-
----
-
-## 51. Environment Validation (`env.ts`)
-
-**What it is:** Instantaneous, schema-driven validation of `process.env` at startup.
-**How it's implemented:**
-
-- The CLI automatically generates an `env.ts` file upon initialization that runs `v.env(...)`.
-- This `env.ts` file is then natively imported directly into `exis.config.ts`.
-- Because `exis.config.ts` is the first file the framework loads, if an environment variable is missing (like `DATABASE_URL`), the framework instantly halts boot and logs a beautiful `Environment Validation Failed` error.
-- It elegantly separates environment schema definitions from the framework config, while giving developers a fully type-safe `env` object to use throughout their configuration.
-
----
-
-## 52. Interactive CLI Initialization (`exis init`)
-
-**What it is:** An interactive, prompt-based scaffolding wizard seamlessly available in existing projects.
-**How it's implemented:**
-
-- While `npx create-exis` bootstraps a new folder, `exis init` intelligently targets the current directory.
-- It dynamically resolves the framework version (to prevent version skew) and safely spawns the exact corresponding version of `create-exis`.
-- This perfectly mirrors the setup experience whether you're creating a new repository or configuring an existing blank Node.js folder, generating all necessary artifacts like `exis.config.ts`, `env.ts`, `tsconfig.json`, and `.gitignore`.
-
----
-
-## 53. Functional Parity (Exception Filters, Pipes, Uploads)
-
-**What it is:** Identical advanced Developer Experience (DX) natively available inside the `controller()` and `route.post()` functional APIs without relying on class decorators.
-**How it's implemented:**
-- **Pipes:** The router inherently inspects schemas passed to `body`, `query`, and `params`. If it detects a Pipe (a class or instance with a `.transform()` method), it resolves it instantly and applies data transformations automatically before the handler.
-- **Exception Filters:** By attaching a `filters: [FilterClass]` array locally inside the route config or globally in the `controller()` config, ExisJS wraps the validation pipeline and handler in a localized error catcher, intelligently delegating failures to custom formatters instead of throwing 500s.
-- **File Uploads:** Natively tied into the router's middleware execution pipeline. If `body: v.any()` is declared (or a specific validation schema) on a functional route receiving `multipart/form-data`, the underlying `busboy` engine automatically extracts binary streams and exposes them reliably on `req.files`.
-- **Arrays of Hosts:** Allows routing to automatically intercept an array of domains natively inside `route.get('/path', { host: ['api.com', 'admin.com'] })`.
-
+| Category                           | Subsystems                                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Rely on freely**                 | Routing, controllers/decorators, DI, context API, validation, request/response, error handling, dataloaders, gateways/modules/plugins, hot reload, CLI, WebSockets (Node backend), uWebSockets.js backend, SSE, auth primitives (JWT/password/RBAC/session), backpressure, circuit breaker, health/metrics/tracing, cacheMiddleware, dedupeMiddleware, cron, production optimizers (AOT/JIT), edge/serverless adapters, tRPC-style client |
+| **Use, but read the caveat first** | Cache stores (mind multi-server horizontal scaling with `MemoryCacheStore`), zero-config integrations (mind singleton scope)                                      |
+This table should be kept current as fixes land — moving a row from the middle to the top category is exactly the kind of visible progress worth calling out in a changelog.

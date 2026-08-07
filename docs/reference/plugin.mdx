@@ -1,0 +1,113 @@
+---
+title: "Plugins"
+description: "API Reference for ExisJS Plugins (`exisjs/plugin`)."
+---
+
+# Plugins (`exisjs/plugin`)
+
+ExisJS utilizes a highly optimized, encapsulated plugin architecture. Every major feature in ExisJS (Routing, WebSockets, Validation, Cron Jobs) is implemented as a Plugin under the hood. 
+
+The `exisjs/plugin` module exposes everything you need to author, type, and distribute your own ExisJS plugins.
+
+---
+
+## `definePlugin(plugin)`
+
+The `definePlugin` helper is the primary way to construct an ExisJS plugin. 
+
+It wraps your plugin object and returns a hybrid factory. This allows your users to either register the plugin directly (e.g., `app.register(myPlugin)`) or invoke it as a function to pass options (e.g., `app.register(myPlugin({ key: 'val' }))`).
+
+### Basic Usage
+
+```typescript filename="src/plugins/logger.ts"
+import { definePlugin } from 'exisjs/plugin'
+
+export const loggerPlugin = definePlugin({
+  name: 'my-logger-plugin',
+  version: '1.0.0',
+  
+  // The register function is called when app.register() is executed
+  async register(app) {
+    app.use((req, res, next) => {
+      console.log(`[${req.method}] ${req.path}`)
+      next()
+    })
+  }
+})
+```
+
+### With Options (Generics)
+
+To make your plugin configurable, pass an interface to `definePlugin<TOptions>`. The options will automatically be injected as the second argument to your `register` function.
+
+```typescript filename="src/plugins/database.ts"
+import { definePlugin } from 'exisjs/plugin'
+
+interface DatabaseOptions {
+  url: string
+  poolSize?: number
+}
+
+export const databasePlugin = definePlugin<DatabaseOptions>({
+  name: 'my-database-plugin',
+  
+  async register(app, options) {
+    if (!options?.url) throw new Error('Database URL is required')
+    
+    const db = new DatabaseConnection(options.url, options.poolSize)
+    await db.connect()
+
+    // Expose the database globally through the DI container
+    app.provide('DB_CONNECTION', { useValue: db })
+
+    // Clean up when the app closes
+    app.onClose(async () => {
+      await db.disconnect()
+    })
+  }
+})
+```
+
+**Usage in Application:**
+```typescript filename="src/server.ts"
+import { exis } from 'exisjs'
+import { databasePlugin } from './plugins/database'
+
+const app = exis()
+
+// The hybrid factory allows passing options directly!
+app.register(databasePlugin({ 
+  url: 'postgres://localhost:5432/mydb',
+  poolSize: 10 
+}))
+```
+
+---
+
+## `ExisPlugin<TOptions>` Interface
+
+If you prefer building plugins using classes or pure objects without the `definePlugin` helper, you can directly implement the `ExisPlugin` TypeScript interface.
+
+### Properties
+
+- **`name`** *(string, required)*: The unique identifier for your plugin. ExisJS uses this to prevent duplicate registrations.
+- **`register`** *(function, required)*: The lifecycle method called during application boot. Receives the `App` instance and any options provided by the user. Can be `async`.
+- **`version`** *(string, optional)*: The version of your plugin.
+- **`dependencies`** *(string[], optional)*: An array of plugin names that *must* be registered before this plugin. If a dependency is missing, ExisJS will throw a fatal error during boot.
+- **`encapsulate`** *(boolean, optional)*: Determines if this plugin should create a scoped, isolated child container. (Useful for massive plugins that shouldn't leak routes or DI providers into the global scope).
+
+### Example
+
+```typescript filename="src/plugins/mailer.ts"
+import type { ExisPlugin } from 'exisjs/plugin'
+import type { App } from 'exisjs'
+
+export class MailerPlugin implements ExisPlugin {
+  name = 'exisjs-mailer'
+  dependencies = ['my-database-plugin'] // Requires DB to load first
+
+  async register(app: App) {
+    app.provide('Mailer', { useClass: SmtpService })
+  }
+}
+```

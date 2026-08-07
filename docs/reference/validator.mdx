@@ -1,0 +1,229 @@
+---
+title: "Validation"
+description: "API Reference for ExisJS built-in Schema Validator (v)."
+---
+
+# Validation (`v`)
+
+ExisJS ships with a blazingly fast, zero-dependency validation library out of the box, exposed as `v` from `exisjs/validator`. It is designed to be fully isomorphic, deeply integrated with TypeScript, and natively interoperable with MongoDB (Mongoose) and OpenAPI (Swagger).
+
+---
+
+## Core Types
+
+The `v` object provides factory functions for every common primitive and data structure.
+
+- `v.string()`: Validates a string.
+- `v.number()`: Validates a number.
+- `v.boolean()`: Validates a boolean.
+- `v.date()`: Validates a Date object (or a string/number that can be parsed into a Date).
+- `v.any()`: Allows any value (bypasses validation).
+- `v.literal(value)`: Validates an exact, strictly-typed literal value.
+- `v.enum(['A', 'B'])`: Validates against a specific set of allowed strings.
+
+### Objects & Arrays
+
+- `v.object({ ... })`: Validates an object against a strict shape.
+- `v.array(schema)`: Validates an array of items matching the given schema.
+- `v.record(schema)`: Validates an object where all keys map to values of the given schema.
+- `v.union([schemaA, schemaB])`: Validates if the value matches *any* of the provided schemas.
+
+```typescript
+const UserProfile = v.object({
+  id: v.string(),
+  tags: v.array(v.string()).max(5),
+  settings: v.record(v.boolean()), // e.g. { "darkMode": true, "notifications": false }
+  status: v.union([v.literal('active'), v.literal('suspended')])
+})
+```
+
+---
+
+## Usage in Routes
+
+ExisJS tightly integrates the `v` validator directly into its routing layer, providing immediate TypeScript inference for `ctx.body`, `@Body()`, and other parameters.
+
+**Class-Based (OOP)**
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+
+const CreateUserSchema = v.object({ email: v.string().email() })
+
+@Controller('/users')
+export default class UserController {
+  @Post('/', { body: CreateUserSchema })
+  createUser(@Body() body: any) {
+    return { success: true, email: body.email }
+  }
+}
+```
+
+**Functional**
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { v } from 'exisjs/validator'
+
+const CreateUserSchema = v.object({ email: v.string().email() })
+
+export default controller({
+  createUser: route.post('/users', {
+    body: CreateUserSchema,
+    async handle(ctx) {
+      // ctx.body is strictly inferred as { email: string }
+      return { success: true, email: ctx.body.email }
+    }
+  })
+})
+```
+
+---
+
+## Type Modifiers (Chaining)
+
+All validators inherit from a base `ValidatorType` which provides universal chaining modifiers.
+
+- `.optional()`: Marks the field as optional (allows `undefined`).
+- `.default(value)`: Provides a fallback value if the field is omitted. Can be a function for dynamic defaults (e.g., `() => Date.now()`).
+- `.or(otherSchema)`: A shorthand for union validation.
+- `.unique()`: Marks the field as unique (Used by Mongoose integration).
+- `.index()`: Marks the field for indexing (Used by Mongoose integration).
+
+---
+
+## Type-Specific Modifiers
+
+Certain types have specific validation chains available:
+
+### String Modifiers
+- `.min(length, msg?)`: Enforces a minimum string length.
+- `.max(length, msg?)`: Enforces a maximum string length.
+- `.email(msg?)`: Validates standard email formatting.
+- `.regex(pattern, msg?)`: Validates against a custom Regular Expression.
+
+### Number & Array Modifiers
+- `.min(value, msg?)`: Enforces a minimum numeric value or array length.
+- `.max(value, msg?)`: Enforces a maximum numeric value or array length.
+
+### Object Modifiers
+- `.partial()`: Returns a new object validator where all fields are marked as optional.
+- `.pick(['keyA', 'keyB'])`: Returns a new object validator containing only the selected keys.
+- `.omit(['keyC'])`: Returns a new object validator excluding the selected keys.
+
+```typescript
+const User = v.object({ id: v.string(), email: v.string(), password: v.string() })
+
+// Only requires email and password
+const CreateUser = User.omit(['id']) 
+
+// All fields become optional
+const UpdateUser = User.partial() 
+```
+
+### File Validation
+ExisJS provides native `multipart/form-data` file validation:
+- `v.file()`: Validates an uploaded file object.
+- `.maxSize(bytes)`: Enforces a maximum file size constraint.
+- `.mimeTypes(['image/png'])`: Restricts the file to specific MIME types.
+
+---
+
+## Coercion
+
+Sometimes data comes in as a string (e.g., from URL query parameters) but needs to be evaluated as another type.
+
+- `v.coerce.number()`: Safely attempts to parse the input into a number before validating.
+- `v.coerce.boolean()`: Safely attempts to parse `'true'`, `'false'`, `'1'`, or `'0'` into a boolean before validating.
+
+---
+
+## Custom Refinement & Transformation
+
+### `.refine(checkFn, message)`
+Adds a custom, synchronous or asynchronous validation rule.
+
+```typescript
+const UserSchema = v.object({
+  username: v.string().refine(
+    async (val) => await db.users.isAvailable(val), 
+    'Username is already taken'
+  )
+})
+```
+
+### `.transform(fn)`
+Mutates the data as it passes through the validator. The resulting TypeScript type will automatically infer the return type of the transformation function.
+
+```typescript
+const DateSchema = v.string().transform((val) => new Date(val))
+// Infer<typeof DateSchema> resolves strictly to `Date`
+```
+
+### `.sanitize(...fns)`
+Runs one or more synchronous sanitization functions over the data before validation executes.
+
+```typescript
+const CleanString = v.string().sanitize((val) => val.trim().toLowerCase())
+```
+
+---
+
+## Type Inference
+
+You can extract the raw TypeScript interface directly from any schema using the `Infer` utility.
+
+```typescript
+import { v, type Infer } from 'exisjs/validator'
+
+const ProfileSchema = v.object({
+  name: v.string(),
+  age: v.number().optional()
+})
+
+// Resolves to: { name: string; age?: number | undefined }
+type Profile = Infer<typeof ProfileSchema>
+```
+
+---
+
+## Integrations
+
+Because the ExisJS Validator is native to the framework, it is tightly coupled with our database and documentation adapters.
+
+### `schema.toOpenApi()`
+Automatically converts the validation schema into a strictly compliant OpenAPI/Swagger JSON schema. This powers the zero-config ExisJS Swagger integration.
+
+### `schema.toMongoSchema()`
+ExisJS object validators can be passed directly to Mongoose to instantly generate Database Schemas, avoiding duplicating definitions!
+
+```typescript filename="src/models/User.ts"
+import mongoose from 'mongoose'
+import { v } from 'exisjs/validator'
+
+export const UserValidator = v.object({
+  email: v.string().email().unique(),
+  password: v.string().min(8),
+  role: v.enum(['admin', 'user']).default('user')
+})
+
+// Pass the ExisJS Validator directly into Mongoose!
+export const User = mongoose.model('User', new mongoose.Schema(UserValidator.toMongoSchema()))
+```
+
+---
+
+## Environment Validation
+
+The `v` object includes a highly specialized `v.env()` method for strictly validating `process.env` at startup.
+
+```typescript filename="env.ts"
+import { v } from 'exisjs/validator'
+
+// Validates process.env synchronously. Crashes the app on boot with a 
+// beautiful CLI error message if validation fails.
+export const env = v.env(v.object({
+  PORT: v.coerce.number().default(3000),
+  DATABASE_URL: v.string().regex(/^postgres:\/\//),
+  JWT_SECRET: v.string().min(32)
+}))
+```

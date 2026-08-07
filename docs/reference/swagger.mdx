@@ -1,0 +1,132 @@
+---
+title: "Swagger & OpenAPI"
+description: "API Reference for ExisJS auto-generated Swagger UI (`exisjs/swagger`)."
+---
+
+# Swagger / OpenAPI (`exisjs/swagger`)
+
+ExisJS ships with native, zero-configuration OpenAPI 3.0 generation.
+
+Because ExisJS routes strongly integrate with `exisjs/validator`, the framework automatically introspects your validators (`v.object`, `v.string`, etc.) across all controllers and automatically generates a fully interactive Swagger UI!
+
+---
+
+## 1. Global Setup (`exis.config.ts`)
+
+Because the Swagger engine needs to read all registered routes at boot time, you mount it globally using a Plugin.
+
+Create a new file in your `plugins` directory:
+
+```typescript filename="src/plugins/swagger.ts"
+import { definePlugin } from 'exisjs/plugin'
+import { serveSwagger } from 'exisjs/swagger'
+
+export const swaggerPlugin = definePlugin({
+  name: 'swagger-ui',
+  register(app) {
+    serveSwagger(app, {
+      path: '/docs',               // The URL where the UI will be served
+      title: 'My ExisJS API',
+      version: '1.0.0',
+      
+      // Optionally attach global OpenAPI components (like Bearer Auth definitions)
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+          }
+        }
+      }
+    })
+  }
+})
+```
+
+Then, natively register your plugin in `exis.config.ts`:
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+import { swaggerPlugin } from './src/plugins/swagger'
+
+export default defineConfig({
+  plugins: [
+    swaggerPlugin()
+  ]
+})
+```
+
+---
+
+## 2. Automatic Schema Inference
+
+You do not need to write YAML files or manually define your request bodies in Swagger. ExisJS reads the schemas directly from your code!
+
+### Functional Architecture
+
+When using the `route.*` functions, anything you pass to `schema.body`, `schema.query`, or `schema.response` is instantly injected into the Swagger documentation.
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { v } from 'exisjs/validator'
+
+export default controller({
+  createUser: route.post('/', {
+    schema: {
+      // ExisJS automatically builds an OpenAPI schema from this validator!
+      body: v.object({
+        email: v.string().email(),
+        age: v.number().min(18)
+      }),
+      response: v.object({
+        id: v.string(),
+        success: v.boolean()
+      })
+    },
+    async handle(ctx) {
+      return { id: '123', success: true }
+    }
+  })
+})
+```
+
+### Class-Based (OOP) Architecture
+
+If you are using OOP Decorators, ExisJS achieves the exact same result by reading your `@Body()`, `@Query()`, and `@Returns()` decorators.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body, Returns } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+
+const CreateUserSchema = v.object({
+  email: v.string().email(),
+  age: v.number().min(18)
+})
+
+const ResponseSchema = v.object({
+  id: v.string(),
+  success: v.boolean()
+})
+
+@Controller('/users')
+export default class UserController {
+  
+  @Post('/')
+  @Returns(ResponseSchema)
+  async createUser(@Body(CreateUserSchema) body: any) {
+    return { id: '123', success: true }
+  }
+}
+```
+
+---
+
+## 3. Accessing the UI
+
+Once you boot your application, simply navigate to the `path` you defined in your plugin:
+
+- **Swagger UI**: `http://localhost:4000/docs`
+- **Raw OpenAPI JSON**: `http://localhost:4000/docs/json`
+
+The generated Swagger UI is fully interactive, meaning you can authenticate and test your API directly from the browser!

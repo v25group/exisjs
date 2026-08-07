@@ -1,0 +1,130 @@
+---
+title: "Adapters"
+description: "Strict API Reference for all Serverless and Edge adapters."
+---
+
+# Adapters (`exisjs/adapters`)
+
+This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/adapters` module. For high-level deployment guides, see the [Adapters Guide](/docs/adapters).
+
+---
+
+## `aws`
+
+Converts API Gateway events into a native Node.js HTTP stream.
+
+```typescript
+function aws(app: App): (event: APIGatewayEvent) => Promise<APIGatewayResult>
+```
+
+### `APIGatewayEvent`
+```typescript
+interface APIGatewayEvent {
+  httpMethod: string;
+  path: string;
+  headers: Record<string, string | undefined>;
+  body: string | null;
+  isBase64Encoded: boolean;
+  queryStringParameters?: Record<string, string | undefined>;
+}
+```
+
+### `APIGatewayResult`
+```typescript
+interface APIGatewayResult {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+  isBase64Encoded: boolean;
+}
+```
+
+---
+
+## `vercel`
+
+Provides a bridge between Vercel's Node.js Serverless runtime and ExisJS.
+
+```typescript
+function vercel(
+  app: App, 
+  options?: { cwd?: string }
+): (req: VercelRequest, res: VercelResponse) => void | Promise<void>
+```
+
+### `VercelRequest` & `VercelResponse`
+These are re-exported from `@vercel/node`. The adapter intercepts these and patches the internal socket state to satisfy the ExisJS pipeline.
+
+---
+
+## `fetch`
+
+The universal Web Standard adapter. Converts standard Web `Request` objects into internal HTTP pipelines and resolves back to a Web `Response`.
+
+```typescript
+function fetch(
+  app: App
+): (request: Request, env?: any, ctx?: any) => Promise<Response>
+```
+
+*Note: The `env` and `ctx` arguments are seamlessly injected into the ExisJS routing context, allowing you to access platform-specific bindings (e.g. Cloudflare KV).*
+
+---
+
+## `cloudflare`
+
+A dedicated wrapper for Cloudflare Workers that returns the expected ES Module format.
+
+```typescript
+function cloudflare(
+  app: App
+): { fetch: (request: Request, env: any, ctx: ExecutionContext) => Promise<Response> }
+```
+
+---
+
+## `bun`
+
+A dedicated wrapper for the `Bun.serve()` configuration object.
+
+```typescript
+function bun(
+  app: App
+): { fetch: (request: Request) => Promise<Response> }
+```
+
+---
+
+## `deno`
+
+A dedicated wrapper for `Deno.serve()`.
+
+```typescript
+function deno(
+  app: App
+): (request: Request) => Promise<Response>
+```
+
+---
+
+## `netlify`
+
+A dedicated wrapper for Netlify Edge Functions.
+
+```typescript
+function netlify(
+  app: App
+): (request: Request, context: NetlifyContext) => Promise<Response>
+```
+
+---
+
+## `fastly`
+
+A dedicated wrapper for Fastly Compute@Edge which binds to the global `addEventListener` fetch event.
+
+```typescript
+function fastly(
+  app: App
+): (event: FetchEvent) => void
+```

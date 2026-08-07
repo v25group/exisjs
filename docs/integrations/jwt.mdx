@@ -5,7 +5,7 @@ nextTitle: "Swagger OpenAPI"
 
 # JWT Authentication
 
-ExisJS comes with a native, zero-config JSON Web Token (JWT) integration. You do **not** need to install any external dependencies like `jsonwebtoken`. It is built natively into the framework and optimized for edge environments.
+ExisJS comes with a native JSON Web Token (JWT) integration. You do **not** need to install external dependencies like `jsonwebtoken`. It is built natively into the framework and optimized for edge environments.
 
 ---
 
@@ -15,21 +15,21 @@ The JWT integration securely reads your secret key from your `.env` file.
 Before using the plugin, ensure you have your JWT secret set:
 
 ```bash filename=".env"
-# Your extremely secure JWT signing secret
-JWT_SECRET="super_secret_key_123!"
+# Your JWT signing secret
+JWT_SECRET="super_secret_key_123"
 ```
 
 ---
 
 ## Usage
 
-Simply import the `jwt` object from `exisjs/jwt`. It automatically pulls your `JWT_SECRET` from the environment on the fly to sign or verify tokens!
+Import the `JWT` object from `exisjs/auth` and use `JWT.signJWT()` or `JWT.verifyJWT()`. You will need to explicitly pass your secret key.
 
 #### Functional Paradigm
 
 ```typescript filename="src/http/auth/route.ts"
 import { controller, route } from 'exisjs/router'
-import { jwt } from 'exisjs/jwt'
+import { JWT } from 'exisjs/auth'
 import { db, users } from '../../db'
 
 export default controller({
@@ -42,8 +42,8 @@ export default controller({
         return { error: 'Invalid credentials' }
       }
 
-      // Automatically signs the token using process.env.JWT_SECRET!
-      const token = jwt.sign({ userId: user.id }, { expiresIn: '7d' })
+      // Sign the token using process.env.JWT_SECRET
+      const token = JWT.signJWT({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: 604800 })
       
       return { token }
     }
@@ -54,8 +54,8 @@ export default controller({
       try {
         const token = req.headers.authorization?.split(' ')[1]
         
-        // Automatically verifies using process.env.JWT_SECRET
-        const decoded = jwt.verify<{ userId: string }>(token)
+        // Verify using process.env.JWT_SECRET
+        const decoded = JWT.verifyJWT<{ userId: string }>(token, process.env.JWT_SECRET!)
         
         return { userId: decoded.userId }
       } catch (err) {
@@ -71,7 +71,7 @@ export default controller({
 
 ```typescript filename="src/http/auth/route.ts"
 import { Controller, Post, Get, Body, Req, Res } from 'exisjs/decorators'
-import { jwt } from 'exisjs/jwt'
+import { JWT } from 'exisjs/auth'
 import { db, users } from '../../db'
 
 @Controller('/auth')
@@ -85,8 +85,8 @@ export default class AuthController {
       return { error: 'Invalid credentials' }
     }
 
-    // Automatically signs the token using process.env.JWT_SECRET!
-    const token = jwt.sign({ userId: user.id }, { expiresIn: '7d' })
+    // Sign the token using process.env.JWT_SECRET
+    const token = JWT.signJWT({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: 604800 })
     
     return { token }
   }
@@ -96,8 +96,8 @@ export default class AuthController {
     try {
       const token = req.headers.authorization?.split(' ')[1]
       
-      // Automatically verifies using process.env.JWT_SECRET
-      const decoded = jwt.verify<{ userId: string }>(token)
+      // Verify using process.env.JWT_SECRET
+      const decoded = JWT.verifyJWT<{ userId: string }>(token, process.env.JWT_SECRET!)
       
       return { userId: decoded.userId }
     } catch (err) {
@@ -112,12 +112,12 @@ export default class AuthController {
 
 ## Using JWT in Middleware & Gateways
 
-While you can manually verify tokens directly in your routes, ExisJS's JWT integration shines when used inside Middlewares to protect entire folders using **Gateways**!
+While you can verify tokens directly in your routes, ExisJS's JWT integration works well inside Middlewares to protect entire folders using **Gateways**.
 
 First, create your middleware outside of your routing tree:
 
 ```typescript filename="src/middlewares/auth.ts"
-import { jwt } from 'exisjs/jwt'
+import { JWT } from 'exisjs/auth'
 
 export function requireAuth(req: any, res: any, next: any) {
   const token = req.headers.authorization?.split(' ')[1]
@@ -128,7 +128,7 @@ export function requireAuth(req: any, res: any, next: any) {
   }
 
   try {
-    const decoded = jwt.verify<{ userId: string }>(token)
+    const decoded = JWT.verifyJWT<{ userId: string }>(token, process.env.JWT_SECRET!)
     // Attach the decoded payload to the request for the route to use
     req.user = decoded
     next()
@@ -138,14 +138,14 @@ export function requireAuth(req: any, res: any, next: any) {
 }
 ```
 
-Now, effortlessly apply it to an entire domain using a Gateway. This prevents you from having to protect every single route manually!
+Now, apply it to an entire domain using a Gateway. This prevents you from having to protect every route manually.
 
 ```typescript filename="src/http/api/gateway.ts"
 import { defineGateway } from 'exisjs/router'
 import { requireAuth } from '../../middlewares/auth'
 
 export default defineGateway({
-  // Intercepts and protects every single route inside the /api folder!
+  // Intercepts and protects every route inside the /api folder
   middleware: [requireAuth]
 })
 ```

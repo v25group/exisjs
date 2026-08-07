@@ -1,0 +1,116 @@
+---
+title: "Storage & Uploads"
+description: "API Reference for ExisJS Storage and File Uploads (`exisjs/storage`)."
+---
+
+# Storage & Uploads (`exisjs/storage`)
+
+ExisJS provides native, extremely memory-efficient support for handling `multipart/form-data` file uploads.
+
+Instead of buffering large files into RAM (which can easily crash Node.js servers under heavy load), ExisJS streams file chunks directly from the network socket into the disk using a highly optimized Busboy integration.
+
+---
+
+## How it Works
+
+When you invoke `streamUpload`, ExisJS takes over the raw socket stream. As bytes come in from the network, they are instantly piped to the disk. 
+
+Because ExisJS parses the multipart stream on the fly:
+1. Your Node.js RAM footprint stays incredibly flat, even when users upload massive 10GB video files.
+2. Form text fields are extracted in real-time. Once the upload finishes, ExisJS automatically merges all text fields directly into `req.body` so your subsequent logic (or validators) can treat them like a normal JSON payload!
+
+---
+
+## 1. Functional Example (`streamUpload`)
+
+If you are using the Functional architecture, import the `streamUpload` helper from `exisjs/storage` and pass it your request context.
+
+### Example Usage
+
+```typescript filename="src/http/upload/route.ts"
+import { controller, route } from 'exisjs/router'
+import { streamUpload } from 'exisjs/storage'
+import { HttpError } from 'exisjs/error'
+
+export default controller({
+  uploadAvatar: route.post('/avatar', {
+    async handle(ctx) {
+      try {
+        const { files, fields } = await streamUpload(ctx.req, {
+          dest: './storage/avatars'
+        })
+
+        if (files.length === 0) {
+          throw HttpError.badRequest('No file provided')
+        }
+
+        const uploadedFile = files[0]
+        
+        // Log the fields submitted with the form
+        console.log('User ID associated with upload:', fields.userId)
+
+        return {
+          success: true,
+          filename: uploadedFile.filename,
+          savedAt: uploadedFile.destPath,
+          size: uploadedFile.size,
+          mimetype: uploadedFile.mimetype
+        }
+      } catch (err) {
+        // streamUpload throws HttpErrors if the request isn't valid multipart/form-data
+        throw err
+      }
+    }
+  })
+})
+```
+
+### Return Value
+
+`streamUpload` resolves a Promise containing an object with two properties:
+
+#### 1. `fields` (`Record<string, string>`)
+An object containing all the non-file text fields submitted in the `multipart/form-data` payload. Note that `streamUpload` automatically populates `ctx.req.body` with these fields as well upon completion.
+
+#### 2. `files` (`Array<object>`)
+An array of successfully streamed files. Each object contains:
+- **`fieldname`**: The name of the HTML form field (e.g., `avatar`).
+- **`filename`**: The original name of the file uploaded by the user.
+- **`mimetype`**: The MIME type of the file (e.g., `image/png`).
+- **`destPath`**: The absolute path on your server's disk where the file was safely saved. *Note: ExisJS appends a randomized unique suffix to the filename to prevent overwrites.*
+- **`size`**: The total file size in bytes.
+
+---
+
+## 2. Class-Based Example (`req.streamUpload`)
+
+If you are using Object-Oriented `@Controller` classes, ExisJS natively extends the Request object. You do not even need to import `streamUpload`! 
+
+Simply inject the Request object via the `@Req()` decorator and call `req.streamUpload(dest)` directly.
+
+```typescript filename="src/http/upload/route.ts"
+import { Controller, Post, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs'
+import { HttpError } from 'exisjs/error'
+
+@Controller('/upload')
+export default class UploadController {
+  
+  @Post('/avatar')
+  async handleUpload(@Req() req: Request) {
+    // Exactly identical to streamUpload(req, { dest: ... })
+    // We pass the destination path directly into the Request method
+    const { files, fields } = await req.streamUpload('./storage/avatars')
+    
+    if (!files.length) throw HttpError.badRequest('Missing file')
+    
+    // Remember: fields are also populated into req.body!
+    console.log(req.body.userId === fields.userId) // true!
+    
+    return { 
+      message: 'Upload successful', 
+      files 
+    }
+  }
+}
+```

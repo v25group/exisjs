@@ -5,7 +5,7 @@ nextTitle: "Routing"
 
 # Configuration (`exis.config.ts`)
 
-ExisJS uses an extremely powerful, fully typed configuration engine that closely resembles Vite or Next.js.
+ExisJS uses a fully typed configuration engine that closely resembles Vite or Next.js.
 
 By placing an `exis.config.ts` file in the root of your project, you gain complete control over the underlying server (Node.js or uWebSockets), middleware (CORS, Helmet, Compression), SSL, and the Plugin ecosystem.
 
@@ -13,7 +13,7 @@ By placing an `exis.config.ts` file in the root of your project, you gain comple
 
 ## 1. Basic Configuration
 
-A basic configuration simply exports the result of `defineConfig`. This provides flawless TypeScript autocomplete for all available options!
+A basic configuration simply exports the result of `defineConfig`. This provides TypeScript autocomplete for all available options.
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
@@ -116,7 +116,7 @@ export default defineConfig({
 
 ## 5. The Underlying Server Engine
 
-By default, ExisJS uses the native Node.js HTTP/HTTPS modules. However, you can seamlessly switch the underlying engine to **uWebSockets.js (uWS)** for significantly higher throughput and performance!
+By default, ExisJS uses the native Node.js HTTP/HTTPS modules. However, you can seamlessly switch the underlying engine to **uWebSockets.js (uWS)** for significantly higher throughput.
 
 ```typescript filename="exis.config.ts"
 export default defineConfig({
@@ -147,8 +147,15 @@ Here is a full breakdown of the configuration schema:
 
 ### Performance & Security
 - `bodyLimit` *(number)*: The maximum allowed size (in bytes) for incoming request bodies. (Default: `1MB`)
-- `trustProxy` *(boolean)*: If true, respects `X-Forwarded-For` and `X-Forwarded-Host` headers (essential for apps deployed behind NGINX, Cloudflare, or AWS ELB).
+- `trustProxy` *(boolean | number)*: If true, respects `X-Forwarded-For` and `X-Forwarded-Host` headers (essential for apps deployed behind NGINX, Cloudflare, or AWS ELB). If a number, trusts that many hops.
 - `keepAlive` *(object | boolean)*: Tunes the Keep-Alive timeout and Header timeout limits.
+- `workers` *(number | 'safe' | 'max')*: Number of CPU workers for cluster mode. Defaults to 1. 'safe' caps to 2. 'max' uses all available cores.
+
+### Execution & Debugging
+- `env` *(string)*: Overrides the environment. Can be 'development', 'production', or 'test'.
+- `server` *('auto' | 'node' | 'uws')*: Server backend to use. Defaults to 'node'.
+- `debugRouting` *(boolean)*: Enables detailed logging of the resolved route file and applied gateways for every incoming request.
+- `test` *(object)*: Configuration for the native test runner (`include`, `exclude`, `setupFiles`, `concurrency`, `coverage`).
 
 ### Queues & Plugins
 - `queue` *(object)*: Configures the Global Job Queue driver (`memory` or `redis`) and backpressure settings.

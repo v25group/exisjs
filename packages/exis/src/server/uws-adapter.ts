@@ -81,13 +81,18 @@ export class UwsIncomingMessage {
     this._listeners[event].push(listener)
 
     if (event === 'data' && this._bufferedData.length > 0) {
-      for (const chunk of this._bufferedData) {
-        listener(chunk)
-      }
-      this._bufferedData = []
+      const chunksToFlush = [...this._bufferedData]
+      this._bufferedData = [] // Clear buffer immediately so it's not flushed twice
+      queueMicrotask(() => {
+        for (const chunk of chunksToFlush) {
+          listener(chunk)
+        }
+      })
     }
     if (event === 'end' && this._hasEnded) {
-      listener()
+      queueMicrotask(() => {
+        listener()
+      })
     }
 
     return this
@@ -447,13 +452,19 @@ export function createUwsApp(
       host: string,
       cb: (token: UwsListenToken | null) => void
     ): void {
-      app.listen(host, port, (token: unknown) => {
+      const onListen = (token: unknown) => {
         if (token) {
           cb({ token, port })
         } else {
           cb(null)
         }
-      })
+      }
+
+      if (typeof uWS.LIBUS_LISTEN_EXCLUSIVE_PORT !== 'undefined') {
+        app.listen(host, port, uWS.LIBUS_LISTEN_EXCLUSIVE_PORT, onListen)
+      } else {
+        app.listen(host, port, onListen)
+      }
     },
     close(token: unknown): void {
       if (token) {

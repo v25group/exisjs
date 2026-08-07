@@ -3,9 +3,7 @@ import type { ExisResponse } from '../server/response'
 import type { ExisRequest } from '../server/request'
 
 export interface IdempotencyStore {
-  get(
-    key: string
-  ): Promise<{
+  get(key: string): Promise<{
     statusCode: number
     headers: Record<string, string>
     body: any
@@ -13,7 +11,7 @@ export interface IdempotencyStore {
   set(
     key: string,
     data: { statusCode: number; headers: Record<string, string>; body: any },
-    ttl?: number
+    ttlMs?: number
   ): Promise<void>
 }
 
@@ -30,8 +28,8 @@ export class MemoryIdempotencyStore implements IdempotencyStore {
     return item.data
   }
 
-  async set(key: string, data: any, ttl = 86400000) {
-    this.cache.set(key, { data, expiry: Date.now() + ttl })
+  async set(key: string, data: any, ttlMs = 86400000) {
+    this.cache.set(key, { data, expiry: Date.now() + ttlMs })
   }
 }
 
@@ -40,7 +38,8 @@ const defaultStore = new MemoryIdempotencyStore()
 export interface IdempotentOptions {
   store?: IdempotencyStore
   headerName?: string
-  ttl?: number
+  /** Time-to-live in milliseconds for cached idempotent responses. Default: 86400000 (24h) */
+  ttlMs?: number
 }
 
 /**
@@ -48,10 +47,10 @@ export interface IdempotentOptions {
  * Caches responses based on the provided Idempotency-Key header.
  * Ideal for preventing duplicate checkout charges or identical mutations.
  */
-export function Idempotent(options: IdempotentOptions = {}): Handler {
+export function idempotent(options: IdempotentOptions = {}): Handler {
   const store = options.store || defaultStore
   const headerName = (options.headerName || 'Idempotency-Key').toLowerCase()
-  const ttl = options.ttl || 86400000 // 24 hours
+  const ttlMs = options.ttlMs ?? 86400000 // 24 hours
 
   return async (
     req: ExisRequest<any, any, any>,
@@ -95,7 +94,7 @@ export function Idempotent(options: IdempotentOptions = {}): Handler {
                 headers: { 'content-type': 'application/json; charset=utf-8' },
                 body: interceptedBody,
               },
-              ttl
+              ttlMs
             )
             .catch(console.error)
         }
@@ -121,3 +120,6 @@ export function Idempotent(options: IdempotentOptions = {}): Handler {
     next()
   }
 }
+
+/** @deprecated Use `idempotent` (camelCase) instead */
+export const Idempotent = idempotent

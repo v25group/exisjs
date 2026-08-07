@@ -5,9 +5,9 @@ nextTitle: "Dataloader"
 
 # Route Caching
 
-ExisJS comes with a powerful, built-in Caching Engine heavily inspired by modern frontend frameworks. It provides Next.js-style **Tag-based Revalidation** directly in your backend API.
+ExisJS comes with a built-in Caching Engine. It provides Next.js-style **Tag-based Revalidation** directly in your backend API.
 
-By default, ExisJS uses an ultra-fast local File System cache (`.exis/cache`), meaning you get persistent, server-side caching with absolutely **zero configuration** required. 
+By default, ExisJS uses a local File System cache (`.exis/cache`), meaning you get persistent, server-side caching with **zero configuration** required. 
 
 ---
 
@@ -26,7 +26,7 @@ export default controller({
   list: route.get('/', {
     middlewares: [cache({ ttlMs: 60000 })],
     handle(req, res) {
-      // This heavy database query only runs once a minute!
+      // This database query only runs once a minute
       const products = await db.products.findMany()
       return products
     }
@@ -46,7 +46,7 @@ export default class ProductsController {
   @Use(cache({ ttlMs: 60000 }))
   @Get('/')
   async list() {
-    // This heavy database query only runs once a minute!
+    // This database query only runs once a minute
     const products = await db.products.findMany()
     return products
   }
@@ -191,11 +191,11 @@ cache({
 
 ## 4. Custom Cache Stores (Redis)
 
-By default, ExisJS uses the local File System (`.exis/cache`) to store responses. This works flawlessly for single-server setups. 
+By default, ExisJS uses the local File System (`.exis/cache`) to store responses. This works well for single-server setups. 
 
-If you are deploying horizontally across a cluster (e.g. Kubernetes, AWS ECS) or Serverless (AWS Lambda), you will want a distributed cache. ExisJS exposes the `CacheStore` interface, making it trivial to plug in Redis.
+If you are deploying horizontally across a cluster (e.g. Kubernetes, AWS ECS) or Serverless (AWS Lambda), you will want a distributed cache. ExisJS exposes the `CacheStore` interface, making it possible to plug in Redis.
 
-*(Note: The official `exisjs/redis` integration provides a robust Redis Cache Store out of the box, which we will cover in the Integrations documentation!)*
+*(Note: The official `exisjs/redis` integration provides a Redis Cache Store out of the box, which we will cover in the Integrations documentation.)*
 
 ---
 

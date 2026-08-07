@@ -63,6 +63,10 @@ export class HttpError extends Error {
     return new HttpError(message, 503, 'SERVICE_UNAVAILABLE')
   }
 
+  static gatewayTimeout(message = 'Gateway timeout'): HttpError {
+    return new HttpError(message, 504, 'GATEWAY_TIMEOUT')
+  }
+
   toJSON(): object {
     return {
       success: false,
@@ -131,6 +135,20 @@ export class InternalError extends HttpError {
   }
 }
 
+export class ServiceUnavailableError extends HttpError {
+  constructor(message = 'Service unavailable') {
+    super(message, 503, 'SERVICE_UNAVAILABLE')
+    this.name = 'ServiceUnavailableError'
+  }
+}
+
+export class GatewayTimeoutError extends HttpError {
+  constructor(message = 'Gateway timeout') {
+    super(message, 504, 'GATEWAY_TIMEOUT')
+    this.name = 'GatewayTimeoutError'
+  }
+}
+
 // ─── Exception Aliases ────────────────────────────────────────────────────────
 export const HttpException = HttpError
 export const BadRequestException = BadRequestError
@@ -141,6 +159,8 @@ export const ConflictException = ConflictError
 export const UnprocessableException = UnprocessableError
 export const RateLimitException = RateLimitError
 export const InternalException = InternalError
+export const ServiceUnavailableException = ServiceUnavailableError
+export const GatewayTimeoutException = GatewayTimeoutError
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 

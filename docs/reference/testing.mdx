@@ -1,0 +1,145 @@
+---
+title: "Testing"
+description: "Strict API Reference for all Testing utilities and mocking objects."
+---
+
+# Testing (`exisjs/testing`)
+
+This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/testing` module. For high-level testing guides, see the [Testing Guide](/docs/testing).
+
+---
+
+## Native Node Runner Exports
+
+ExisJS fully re-exports the native `node:test` runner methods, ensuring maximum IDE compatibility while providing powerful internal enhancements (like `.each()`).
+
+```typescript
+export function test(name: string, fn?: TestFunction): void
+export function test(name: string, options: TestOptions, fn?: TestFunction): void
+
+export function describe(name: string, fn?: TestFunction): void
+export function it(name: string, fn?: TestFunction): void
+
+export function before(fn: HookFunction): void
+export function after(fn: HookFunction): void
+export function beforeEach(fn: HookFunction): void
+export function afterEach(fn: HookFunction): void
+```
+
+### Parametrized Tests (`.each`)
+All test blocks (`test`, `describe`, `it`) support a Jest-like `.each()` signature.
+
+```typescript
+test.each([
+  [1, 1, 2],
+  [2, 3, 5]
+])('adds %d and %d to equal %d', (a, b, expected) => {
+  assert.equal(a + b, expected)
+})
+```
+
+---
+
+## Context Management
+
+### `createTestContext`
+Automatically handles booting an ExisJS `App`, processing its startup hooks, and safely closing all database and worker connections. Returns a `TestApp` client for performing HTTP requests.
+
+```typescript
+function createTestContext(app: App | typeof Class): TestApp
+```
+
+### `registerCleanup`
+Allows third-party plugins or custom test setups to register a global cleanup function that will be executed when the test runner terminates.
+
+```typescript
+function registerCleanup(fn: () => Promise<void> | void): void
+```
+
+---
+
+## HTTP Client (TestApp & TestRequest)
+
+The `TestApp` interface provides a fluent API for making HTTP requests directly against your application without binding to a network port.
+
+### `TestApp`
+```typescript
+interface TestApp {
+  get(path: string): TestRequest
+  post(path: string): TestRequest
+  put(path: string): TestRequest
+  patch(path: string): TestRequest
+  delete(path: string): TestRequest
+  options(path: string): TestRequest
+  head(path: string): TestRequest
+  request(method: string, path: string): TestRequest
+}
+```
+
+### `TestRequest`
+Supports chaining headers, bodies, and assertions. Once `.execute()` is called (or awaited), it returns a `TestResponse`.
+
+```typescript
+class TestRequest {
+  send(body: unknown): this
+  set(header: string, value: string): this
+  
+  // Assertions
+  expect(status: number): this
+  expect(header: string, value: string | RegExp): this
+  expect(body: unknown): this
+  
+  // Execution
+  execute(): Promise<TestResponse>
+  then<T>(onfulfilled: (res: TestResponse) => T): Promise<T>
+}
+```
+
+### `TestResponse`
+```typescript
+interface TestResponse {
+  status: number
+  headers: Record<string, string | string[] | undefined>
+  body: any      // The parsed JSON payload (if applicable)
+  text: string   // The raw string response
+}
+```
+
+---
+
+## Mocks & Spies (`ex`)
+
+The `ex` object provides a Jest-compatible API wrapper over the native `node:test` mocking utilities.
+
+```typescript
+const ex = {
+  // Spies
+  fn: (impl?: Function) => MockFunction,
+  spyOn: (obj: any, methodName: string) => MockFunction,
+  
+  // Modules
+  mock: (specifier: string, factory?: () => any) => void,
+  
+  // Timers
+  setSystemTime: (time: number | Date) => void,
+  advanceTimersByTime: (ms: number) => void,
+  useFakeTimers: () => void,
+  useRealTimers: () => void,
+  
+  clearAllMocks: () => void
+}
+```
+
+### `MockFunction` Extensions
+ExisJS extends the native `MockFunction` returned by `ex.fn()` and `ex.spyOn()` with Jest-like helpers:
+
+```typescript
+interface MockFunction {
+  mockRestore(): void
+  mockImplementation(impl: Function): this
+  mockResolvedValue(val: any): this
+  mockReturnValue(val: any): this
+  mockRejectedValue(err: any): this
+  mockClear(): void
+}
+```

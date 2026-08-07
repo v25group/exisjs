@@ -5,7 +5,7 @@ nextTitle: "Redis"
 
 # Database (NoSQL)
 
-ExisJS provides zero-config, native integrations for MongoDB. Just like our SQL plugins, you do **NOT** need to register the database in your `server.ts` file. The connection pools are lazily initialized the exact moment you first execute a query.
+ExisJS provides native integrations for MongoDB. You do **NOT** need to register the database in your `server.ts` file. The connection pools are lazily initialized when you first execute a query.
 
 The framework provides first-class plugins for **Mongoose** (the ODM) and the raw **MongoDB Node.js Driver** (`mongodb`).
 
@@ -70,7 +70,7 @@ npm install mongoose
 
 ### Usage
 
-Simply import the `mongoose` proxy from `exisjs/mongoose`. ExisJS will instantly connect to your database behind the scenes (Mongoose natively buffers operations until connected, so you don't even need to wait).
+Import the `mongoose` proxy from `exisjs/mongoose`. ExisJS will connect to your database behind the scenes (Mongoose natively buffers operations until connected).
 
 ```typescript filename="src/models/user.ts"
 import { mongoose } from 'exisjs/mongoose'
@@ -119,7 +119,7 @@ export default class UsersController {
 
 ## 2. Raw MongoDB (`mongodb`)
 
-If you don't want to use an ODM and prefer working with raw BSON documents for maximum performance, ExisJS bundles a zero-config integration for the native `mongodb` driver.
+If you don't want to use an ODM and prefer working with raw BSON documents, ExisJS provides an integration for the native `mongodb` driver.
 
 ### Installation
 
@@ -129,7 +129,7 @@ npm install mongodb
 
 ### Usage
 
-Import `mongo` from `exisjs/mongodb`. The first time you interact with it, ExisJS will instantly boot up a MongoClient connection pool using your `MONGODB_URI`.
+Import `mongo` from `exisjs/mongodb`. The first time you interact with it, ExisJS will boot up a MongoClient connection pool using your `MONGODB_URI`.
 
 #### Functional Paradigm
 

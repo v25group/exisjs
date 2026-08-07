@@ -5,13 +5,13 @@ nextTitle: "RPC Client"
 
 # Cron Jobs
 
-ExisJS ships with a highly accurate, distributed Cron Scheduler. Because the cron engine is deeply integrated with the [Job Queue](/docs/queues) system, you can turn any standard background job into a recurring cron task with a single line of code.
+ExisJS ships with a distributed Cron Scheduler. Because the cron engine is integrated with the [Job Queue](/docs/queues) system, you can turn any standard background job into a recurring cron task with a single line of code.
 
 ---
 
 ## 1. Defining a Cron Job
 
-To schedule a recurring task, simply add the `cron` property to any Job definition (`defineJob`) or inline `queue()` handler using standard 5-part cron syntax (`minute hour day month day-of-week`).
+To schedule a recurring task, add the `cron` property to any Job definition (`defineJob`) or inline `queue()` handler using standard 5-part cron syntax (`minute hour day month day-of-week`).
 
 ### Using `defineJob`
 ```typescript filename="src/jobs/cleanup.ts"
@@ -47,11 +47,11 @@ queue('sync-metrics', async () => {
 
 ## 2. Distributed Locking (Cluster Safe)
 
-In modern web architecture, you rarely run a single NodeJS process. If you run your application across 10 load-balanced servers, a traditional `setInterval` or standard node-cron library would execute your scheduled task 10 times simultaneously!
+In modern web architecture, you rarely run a single NodeJS process. If you run your application across 10 load-balanced servers, a traditional `setInterval` or standard node-cron library would execute your scheduled task 10 times simultaneously.
 
 ExisJS solves this natively through **Distributed Locking**.
 
-When you configure your Queue system to use the `redis` driver, the ExisJS Cron Scheduler automatically utilizes a highly optimized `SETNX` (Set if Not Exists) Redis lock.
+When you configure your Queue system to use the `redis` driver, the ExisJS Cron Scheduler automatically utilizes a `SETNX` (Set if Not Exists) Redis lock.
 
 ### How it works:
 1. Every 60 seconds, all 10 of your servers will attempt to trigger the cron job.
@@ -59,13 +59,13 @@ When you configure your Queue system to use the `redis` driver, the ExisJS Cron 
 3. The other 9 servers see the lock and silently skip execution.
 4. The winning server instantly enqueues the job into the standard ExisJS Queue.
 
-This guarantees that **your cron job will only ever execute exactly once per minute**, regardless of how many servers or Docker containers you spin up!
+This guarantees that **your cron job will only execute exactly once per minute**, regardless of how many servers or Docker containers you spin up.
 
 ---
 
 ## 3. Supported Cron Syntax
 
-ExisJS implements a powerful, zero-dependency cron parser that supports all standard operations:
+ExisJS implements a zero-dependency cron parser that supports all standard operations:
 
 - `*` - Any value (e.g., run every minute)
 - `,` - Value list (e.g., `1,15,30` to run on the 1st, 15th, and 30th minute)
@@ -78,3 +78,32 @@ ExisJS implements a powerful, zero-dependency cron parser that supports all stan
 - `0 0 * * *`: Every day at midnight
 - `0 9 * * 1-5`: At 9:00 AM on Monday through Friday
 - `0 12 1,15 * *`: At 12:00 PM on the 1st and 15th of every month
+
+---
+
+## 4. Important Considerations
+
+### Empty Payloads
+Because cron jobs are triggered by the system clock rather than a user action, they are always dispatched with an empty payload (`{}`). Your job handler should not expect dynamic data to be passed into the `data` property when triggered via cron.
+
+### Retries & Error Handling
+Cron jobs are standard background jobs under the hood. This means they fully support your `defaultOptions`. If a cron job throws an error, it will automatically be retried according to the `attempts` and `backoff` settings defined in the job.
+
+```typescript filename="src/jobs/cleanup.ts"
+export default defineJob({
+  name: 'database-cleanup',
+  cron: '0 2 * * *', 
+  defaultOptions: {
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5000 }
+  },
+  async handler(job) {
+    // If this fails, it will retry 3 times, backing off exponentially
+  }
+})
+```
+
+### Redis Requirement
+Because ExisJS is designed for cluster-safe, distributed deployments, **the Cron Scheduler strictly requires the `redis` queue driver**. 
+
+If you attempt to run a cron job while using the `memory` driver, ExisJS will skip execution and log an error. This is a deliberate design choice to prevent you from accidentally triggering scheduled jobs multiple times simultaneously across a load-balanced cluster.

@@ -6,20 +6,18 @@ export interface CacheOptions {
   ttlMs?: number
   tags?: string[] | ((req: Request) => string[])
   /**
-   * Function to generate a unique key for the request.
-   * MUST be provided to prevent cross-user data leaks.
+   * Function to generate a unique key per request.
+   * Defaults to `req.method + req.path`.
+   * Override this for user-scoped caching (e.g. `(req) => req.user.id + req.path`).
    */
-  keyGenerator: (req: Request) => string
+  keyGenerator?: (req: Request) => string
 }
 
 export function cacheMiddleware(options: CacheOptions): Handler {
-  if (!options || typeof options.keyGenerator !== 'function') {
-    throw new Error(
-      'cacheMiddleware: keyGenerator option is required to prevent cross-user data leaks.'
-    )
-  }
   const ttlMs = options.ttlMs
-  const keyGenerator = options.keyGenerator
+  // Default to method + path — safe for public, non-user-specific endpoints
+  const keyGenerator =
+    options.keyGenerator ?? ((req: Request) => `${req.method}:${req.path}`)
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') {

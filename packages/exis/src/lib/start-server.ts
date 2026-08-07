@@ -98,6 +98,32 @@ async function start() {
         await app.onStartHook(app)
       }
       await app.listen()
+
+      // ─── Graceful Shutdown ───────────────────────────────────────────────────
+      // On SIGTERM (Kubernetes, Docker stop) or SIGINT (Ctrl+C), close the
+      // server cleanly rather than hard-killing it — this allows in-flight
+      // requests to complete and prevents data loss.
+      const shutdown = async (signal: string) => {
+        const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
+        if (!isCLI) {
+          console.error(
+            `\n[exis] ${signal} received. Shutting down gracefully...`
+          )
+        }
+        try {
+          if (typeof app.close === 'function') {
+            await app.close()
+          }
+          if (!isCLI) console.error('[exis] Server closed cleanly.')
+          process.exit(0)
+        } catch (err) {
+          if (!isCLI) console.error('[exis] Error during shutdown:', err)
+          process.exit(1)
+        }
+      }
+
+      process.once('SIGTERM', () => shutdown('SIGTERM'))
+      process.once('SIGINT', () => shutdown('SIGINT'))
     }
   } catch (err) {
     console.error(err)

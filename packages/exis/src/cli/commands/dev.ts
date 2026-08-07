@@ -38,6 +38,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (options.port) {
     process.env.PORT = options.port
   }
+  if (options.host) {
+    process.env.HOST = options.host
+  }
 
   // Build environment
   const env: Record<string, string> = {
@@ -96,6 +99,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     console.log(
       `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
     )
+
+    // Also need to declare tscProcess up at the top
+    if ((global as any)._tscProcess) {
+      try {
+        ;(global as any)._tscProcess.kill()
+      } catch {
+        /* ignore */
+      }
+    }
 
     if (child && child.pid) {
       const exitTimeout = setTimeout(() => {
@@ -190,8 +202,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         ],
       })
 
-      watcher.on('change', async (file: string) => {
-        log(`Reloading due to change in ${c.cyan}${file}${c.reset}`)
+      watcher.on('all', async (eventName: string, file: string) => {
+        log(`Reloading due to ${eventName} in ${c.cyan}${file}${c.reset}`)
         await generateManifest(cwd, '', true)
         startProcess()
       })
@@ -201,6 +213,33 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   // Generate dev manifest for O(1) booting
   const { generateManifest } = await import('../manifest')
   await generateManifest(cwd, '', true)
+
+  if (fs.existsSync(tsconfigPath)) {
+    const tscPath = require.resolve('typescript/bin/tsc')
+    const tscProcess = spawn(
+      process.execPath,
+      [tscPath, '--noEmit', '--watch', '--preserveWatchOutput'],
+      { cwd, env: process.env }
+    )
+    ;(global as any)._tscProcess = tscProcess
+
+    tscProcess.stdout?.on('data', (data) => {
+      const lines = data.toString().trim().split('\n')
+      for (const line of lines) {
+        if (!line) continue
+        if (line.includes('Found 0 errors')) {
+          console.log(`\n${c.green}✓ type-check passed.${c.reset}`)
+        } else if (line.includes('error TS')) {
+          console.error(`\n${c.yellow}[tsc]${c.reset} ${line}`)
+        } else if (
+          !line.includes('Starting compilation in watch mode') &&
+          !line.includes('File change detected')
+        ) {
+          console.error(`${c.yellow}[tsc]${c.reset} ${line}`)
+        }
+      }
+    })
+  }
 
   startProcess()
 

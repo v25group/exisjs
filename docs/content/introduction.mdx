@@ -5,73 +5,79 @@ nextTitle: 'Installation'
 
 # Introduction
 
-Exis (ExisJS) is a batteries-included backend framework for Node.js. It brings the file-based, convention-over-configuration developer experience of modern frontend meta-frameworks to backend API development — folders and files instead of manual wiring, with the essentials (routing, validation, queues, WebSockets, cron, DI) built in rather than assembled from a dozen separate packages.
+Exis (ExisJS) is a batteries-included backend framework for Node.js. It brings the file-based, convention-over-configuration developer experience of modern frontend meta-frameworks to backend API development: folders and files instead of manual wiring, with the essentials (routing, validation, queues, WebSockets, cron, DI) built in rather than assembled from a dozen separate packages.
 
-Routing is handled by a radix-tree matcher, and the framework supports two ways to define the same routes: **Functional** (factory functions) and **Class-Based / OOP** (decorators, in the style of Angular/NestJS). Both compile to the same internal route representation, run through the same middleware pipeline, and can be mixed file-by-file in the same project — pick whichever fits a given part of your codebase.
+Routing is handled by a radix-tree matcher, and the framework supports two ways to define the same routes: **Functional** (factory functions) and **Class-Based / OOP** (decorators, in the style of Angular/NestJS). Both compile to the same internal route representation, run through the same middleware pipeline, and can be mixed file-by-file in the same project. Pick whichever fits a given part of your codebase.
 
 ## Philosophy
 
 Frontend frameworks like Next.js, Remix, and Nuxt improved developer productivity significantly through file-based routing and convention-over-configuration architecture. Good tools exist for Node.js backends too, but assembling them into a coherent application still typically means a lot of manual wiring and architectural boilerplate.
 
-Exis aims to provide that out-of-the-box application architecture for backends: create a folder, get a route; create a `gateway.ts`, get folder-scoped middleware; import a module, get its providers registered. Job queues, WebSockets, cron scheduling, and schema validation are part of the standard library rather than bring-your-own dependencies — so a new project starts with a coherent structure instead of a blank `index.js` and a pile of choices to make first.
+Exis aims to provide that out-of-the-box application architecture for backends: create a folder, get a route; create a `gateway.ts`, get folder-scoped middleware; import a module, get its providers registered. Job queues, WebSockets, cron scheduling, and schema validation are part of the standard library rather than bring-your-own dependencies. This means a new project starts with a coherent structure instead of a blank `index.js` and a pile of choices to make first.
 
 ## Installation
 
 The fastest way to start is the Exis CLI, which scaffolds a new project directory with the core files and a conventional base structure already in place. This is the recommended path for first-time users.
 
 <div className="my-6 max-w-lg">
-  <CopyCommand command="npx @exisjs/create@latest project-name" />
+  <CopyCommand command="npx @exisjs/create@latest my-backend" />
 </div>
 
 <Hint>
   The CLI walks you through initial project setup (TypeScript config, import
-  aliases, and package manager selection — it detects npm, yarn, pnpm, or bun
+  aliases, and package manager selection: it detects npm, yarn, pnpm, or bun
   automatically). See [Installation](/docs/installation) for the full list of
   prompts and options.
 </Hint>
 
 ## Quick Start
 
-Both paradigms are shown throughout these docs side by side — pick whichever you're using, or mix them across your project.
+Both paradigms are shown throughout these docs side by side. Pick whichever you're using, or mix them across your project.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional API
 
-```typescript filename="src/http/route.ts"
+```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  welcome: route.get('/', {
-    handle() {
-      return { message: 'Welcome to ExisJS!' }
+  getUsers: route.get('/', {
+    handle(req) {
+      // Return a realistic response structure
+      return { 
+        data: [
+          { id: 1, name: 'Alice' },
+          { id: 2, name: 'Bob' }
+        ],
+        total: 2 
+      }
     },
   }),
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) API
 
-```typescript filename="src/http/route.ts"
-import { Controller, Get } from 'exisjs/decorators'
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs'
 
 @Controller()
-export default class RootController {
+export default class UsersController {
   @Get('/')
-  welcome() {
-    return { message: 'Welcome to ExisJS!' }
+  getUsers(@Req() req: Request) {
+    // Return a realistic response structure
+    return { 
+      data: [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' }
+      ],
+      total: 2 
+    }
   }
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
-Save this as `src/http/route.ts`, run `exis dev`, and `GET /` will return `{ "message": "Welcome to ExisJS!" }`.
+Save this as `src/http/users/route.ts`, run `exis dev`, and `GET /users` will return your mocked users list.
 
 ## Adding to an existing project
 
@@ -81,10 +87,10 @@ You can also add Exis to an existing Node.js project instead of scaffolding a ne
   <CopyCommand command="npm install exisjs" />
 </div>
 
-In this case you'll set up the project structure yourself — an `exis.config.ts` at the project root and a `src/http` directory for your routes. See [Structure](/docs/structure) for the conventions the framework expects.
+In this case you'll set up the project structure yourself: an `exis.config.ts` at the project root and a `src/http` directory for your routes. See [Structure](/docs/structure) for the conventions the framework expects.
 
 ## What's next
 
-- [Installation](/docs/installation) — CLI setup and project scaffolding in detail.
-- [Structure](/docs/structure) — the folder conventions Exis expects and why.
-- [Routing](/docs/routing) — how file-based routing, dynamic segments, and gateways work together.
+- [Installation](/docs/installation): CLI setup and project scaffolding in detail.
+- [Structure](/docs/structure): the folder conventions Exis expects and why.
+- [Routing](/docs/routing): how file-based routing, dynamic segments, and gateways work together.

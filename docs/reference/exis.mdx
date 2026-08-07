@@ -1,0 +1,124 @@
+---
+title: "exis()"
+description: "API Reference for the exis() application builder."
+---
+
+# Application Instance (exis)
+
+The `exis()` function is the primary entry point for configuring and booting your ExisJS application. It defines your core configuration, middleware, plugins, and lifecycle hooks.
+
+It returns a configured `App` instance that the CLI or deployment platform will automatically discover and run. The framework's auto-discovery mechanism effortlessly handles both **Functional** and **Class-Based (OOP)** routes inside your `src/http` directory.
+
+## Usage
+
+ExisJS supports both Functional and Class-Based (OOP) paradigms for configuring your application entry point.
+
+### 1. Functional Setup
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { cors } from 'exisjs/middleware'
+
+export default exis({
+  port: 3000,
+  helmet: true,
+  cors: {
+    origin: '*',
+  },
+  middlewares: [
+    cors()
+  ],
+  async onStart(app) {
+    app.log.info("Server is starting up!")
+  }
+})
+```
+
+---
+
+### 2. Class-Based Setup (OOP)
+
+If you prefer an Object-Oriented approach, you can define your application entry point using the `@Server()` decorator.
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import type { App } from 'exisjs'
+
+@Server({
+  plugins: [
+    // You can register plugins or configuration directly in the decorator options
+  ]
+})
+export default class RootServer {
+  async onStart(app: App) {
+    app.log.info("Server is starting up!")
+  }
+  
+  async onClose(app: App) {
+    app.log.info("Server is shutting down!")
+  }
+}
+```
+
+---
+
+## Configuration Options
+
+The `exis()` function takes an `ExisConfig` object.
+
+### `port`
+- **Type**: `number`
+- **Default**: `3000` (or `process.env.PORT`)
+- The port the server will listen on during development or manual instantiation.
+
+### `host`
+- **Type**: `string`
+- **Default**: `'0.0.0.0'` (or `process.env.HOST`)
+- The host the server will bind to.
+
+### `env`
+- **Type**: `'development' | 'production' | 'test'`
+- **Default**: Auto-detected via `NODE_ENV`.
+- The current environment of the application.
+
+### `logger`
+- **Type**: `boolean | LoggerConfig`
+- **Default**: `true`
+- Toggles the built-in Pino logger. You can pass a custom configuration object to set the log level, redact sensitive fields, or output JSON.
+
+### `helmet`
+- **Type**: `boolean`
+- **Default**: `true`
+- Automatically applies security headers to every response. Set to `false` to disable.
+
+### `cors`
+- **Type**: `boolean | CorsConfig`
+- **Default**: `false`
+- Automatically injects CORS headers into the request pipeline. You can pass a configuration object to specify allowed origins, methods, and credentials.
+
+### `compression`
+- **Type**: `boolean`
+- **Default**: `true` (if applicable)
+- Automatically compresses HTTP responses (gzip/brotli).
+
+### `middlewares`
+- **Type**: `Handler[]`
+- **Default**: `[]`
+- An array of global middleware functions that will run on every single request.
+
+### `plugins`
+- **Type**: `ExisPlugin[]`
+- **Default**: `[]`
+- An array of ExisJS plugins to register.
+
+---
+
+## Lifecycle Hooks
+
+You can define async hooks that execute at specific stages of the application's lifecycle.
+
+### `onStart(app: App)`
+Fired after configuration is loaded but before the server starts accepting connections. This is the ideal place to connect to databases, initialize singletons, or run startup migrations.
+
+### `onClose(app: App)`
+Fired when the server receives a shutdown signal (e.g., `SIGINT`, `SIGTERM`). Use this to gracefully close database connections, flush analytics events, or tear down background workers.

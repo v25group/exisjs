@@ -8,12 +8,12 @@ nextTitle: "Controllers"
 Routes are responsible for handling incoming requests and sending responses back to the client. The routing mechanism determines which handler will process each request.
 
 <Info title="Functional vs OOP">
-ExisJS natively supports both a highly optimized **Functional Paradigm** (fastest execution, minimal boilerplate) and a robust **Class-Based OOP Paradigm** (ideal for dependency injection and decorators). You can mix and match them effortlessly throughout your application!
+ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP Paradigm** (for dependency injection and decorators). You can mix and match them throughout your application.
 </Info>
 
 ## Folder-Based Routing
 
-ExisJS takes a radically different approach to routing compared to traditional Node.js frameworks like Express or Fastify. Instead of declaring routes programmatically in a giant `server.ts` file, ExisJS utilizes **folder-based file-system routing** (heavily inspired by modern meta-frameworks like Next.js).
+ExisJS uses **folder-based file-system routing** instead of programmatic route declaration in a single entry file.
 
 For a folder to become an accessible API endpoint, it must contain a `route.ts` file that exports a route definition. 
 
@@ -27,7 +27,7 @@ The ExisJS file-system router natively supports advanced folder naming conventio
 
 - **Dynamic Parameters (`[param]`)**: A folder named `[id]` creates a dynamic route segment (e.g., `/:id`). The value is accessible in your handler via `ctx.params.id`.
 - **Catch-all Routes (`[...param]`)**: A folder named `[...slug]` catches all subsequent URL segments, matching anything that follows (e.g., `/*slug`).
-- **Route Groups (`(group)`)**: A folder wrapped in parentheses (e.g., `(admin)`) is entirely ignored in the final URL path. This is incredibly useful for grouping related routes or applying shared controller-level middleware without adding `/admin` to the URL.
+- **Route Groups (`(group)`)**: A folder wrapped in parentheses (e.g., `(admin)`) is ignored in the final URL path. This is useful for grouping related routes or applying shared controller-level middleware without adding `/admin` to the URL.
 
 ### The Application Entry Point (`server.ts`)
 
@@ -164,14 +164,18 @@ import { controller, route } from 'exisjs/router'
 export default controller({
   list: route.get('/', {
     handle() {
-      // Fetch all users
-      return []
+      // Fetch all users from database
+      return [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' }
+      ]
     }
   }),
   create: route.post('/', {
-    handle(ctx) {
-      // Create a new user
-      return { success: true }
+    handle({ req }) {
+      // Create a new user with parsed payload
+      const payload = req.body
+      return { id: 3, ...payload }
     }
   }),
   preflight: route.options('/', {
@@ -220,20 +224,23 @@ export default controller({
     </div>
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Post } from 'exisjs/decorators'
+import { Controller, Get, Post, Body } from 'exisjs/decorators'
 
 @Controller()
 export default class UsersController {
   @Get('/')
   list() {
-    // Fetch all users
-    return []
+    // Fetch all users from database
+    return [
+      { id: 1, name: 'Alice' },
+      { id: 2, name: 'Bob' }
+    ]
   }
 
   @Post('/')
-  create() {
-    // Create a new user
-    return { success: true }
+  create(@Body() data: any) {
+    // Create a new user with parsed payload
+    return { id: 3, ...data }
   }
 }
 ```
@@ -241,7 +248,7 @@ export default class UsersController {
 
 ## Sub-Paths in a Single File
 
-While folder-based routing is powerful, you don't *have* to create a new folder for every single route variant. A single `route.ts` file can define multiple sub-paths. This is incredibly useful when you want to group related endpoints.
+While folder-based routing is standard, you can also define multiple sub-paths in a single `route.ts` file to group related endpoints.
 
 #### Functional Paradigm
 
@@ -341,10 +348,10 @@ export default controller({
   profile: route.get('/profile', {
     handle({ req, res }) {
       // Read Request details
-      console.log('IP:', req.ip)
-      console.log('Headers:', req.headers)
+      const ip = req.ip
+      const headers = req.headers
 
-      // Chain Response methods elegantly!
+      // Chain Response methods
       res
         .status(202)
         .cookie('session', 'xyz123', { httpOnly: true, secure: true })
@@ -368,10 +375,10 @@ export default class ProfileController {
   @Get('/profile')
   profile(@Req() req: Request, @Res() res: Response) {
     // Read Request details
-    console.log('IP:', req.ip)
-    console.log('Headers:', req.headers)
+    const ip = req.ip
+    const headers = req.headers
 
-    // Chain Response methods elegantly!
+    // Chain Response methods
     res
       .status(202)
       .cookie('session', 'xyz123', { httpOnly: true, secure: true })
@@ -442,7 +449,7 @@ export default class SearchController {
 
 ## The Context API (Advanced)
 
-For developers who hate passing `(req, res)` arguments through endless service layers, ExisJS offers an elegant, Next.js-inspired approach: **The Context API**. Powered by Node.js `AsyncLocalStorage`, ExisJS exposes hooks that magically allow you to access the current request state from anywhere in your codebase.
+For applications where passing `(req, res)` arguments through multiple service layers becomes tedious, ExisJS offers a Next.js-inspired approach: **The Context API**. Powered by Node.js `AsyncLocalStorage`, ExisJS provides hooks to access the current request state from anywhere in the execution context.
 
 #### Functional Paradigm
 
@@ -453,14 +460,14 @@ import { controller, route, getContext, getRequest, getResponse, after } from 'e
 export default controller({
   create: route.post('/', {
     async handle() {
-      // Magically access request/response without prop-drilling
+      // Access request/response without prop-drilling
       const req = getRequest()
       const res = getResponse()
       
-      // Access data injected by gateways!
+      // Access data injected by gateways
       const { userId } = getContext<{ userId: string }>()
       
-      // Run heavy background tasks AFTER sending response to client
+      // Run background tasks after sending response to client
       after(async () => {
         await sendNotificationEmail(userId)
       })

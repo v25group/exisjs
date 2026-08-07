@@ -157,21 +157,6 @@ export class ServerBootstrapper {
           }
         }
 
-        if (this.app.options.env === 'production') {
-          const handleShutdown = async () => {
-            this.app.log.info('Received shutdown signal (SIGTERM/SIGINT)')
-            try {
-              await this.close()
-              process.exit(0)
-            } catch (err) {
-              this.app.log.error({ err }, 'Error during graceful shutdown')
-              process.exit(1)
-            }
-          }
-          process.once('SIGTERM', handleShutdown)
-          process.once('SIGINT', handleShutdown)
-        }
-
         // ─── onReady Hook ───
         for (const hook of this.app.hooks.ready) {
           await hook()
@@ -231,21 +216,6 @@ export class ServerBootstrapper {
 
     this.server.listen(port, host, async () => {
       const address = { port, host }
-
-      if (this.app.options.env === 'production') {
-        const handleShutdown = async () => {
-          this.app.log.info('Received shutdown signal (SIGTERM/SIGINT)')
-          try {
-            await this.close()
-            process.exit(0)
-          } catch (err) {
-            this.app.log.error({ err }, 'Error during graceful shutdown')
-            process.exit(1)
-          }
-        }
-        process.once('SIGTERM', handleShutdown)
-        process.once('SIGINT', handleShutdown)
-      }
 
       // ─── onReady Hook ───
       for (const hook of this.app.hooks.ready) {

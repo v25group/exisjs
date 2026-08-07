@@ -1,0 +1,183 @@
+---
+title: "Authentication"
+description: "API Reference for ExisJS Authentication utilities (`exisjs/auth`)."
+---
+
+# Authentication (`exisjs/auth`)
+
+ExisJS ships with a completely native, dependency-free `auth` module that covers the most critical security implementations: Scrypt Password Hashing, JWT (JSON Web Tokens), Session Management, and Role-Based Access Control (RBAC).
+
+---
+
+## 1. Password Hashing (Scrypt)
+
+ExisJS natively uses Node's highly secure `scrypt` algorithm to hash passwords. It automatically generates a cryptographically secure salt and stores the parameters in a single string format (`scrypt:N:r:p:keylen:salt:hash`) so you never have to manage them separately.
+
+```typescript filename="src/services/AuthService.ts"
+import { Password } from 'exisjs/auth'
+
+// Hashing a new password
+const hashedPassword = await Password.hashPassword('my-super-secret-password', {
+  cost: 16384, // Higher cost = harder to brute force, but slower to compute
+})
+
+// Verifying a login attempt
+const isValid = await Password.verifyPassword('my-super-secret-password', hashedPassword)
+```
+
+---
+
+## 2. JSON Web Tokens (JWT)
+
+You can instantly sign and verify JWTs without needing third-party libraries like `jsonwebtoken`.
+
+```typescript
+import { JWT } from 'exisjs/auth'
+
+// Sign a token valid for 2 hours
+const token = JWT.signJWT(
+  { userId: '123', role: 'admin' }, 
+  process.env.JWT_SECRET,
+  { expiresIn: 2 * 60 * 60 } 
+)
+
+try {
+  // Verifying token returns the exact typed payload
+  const payload = JWT.verifyJWT<{ userId: string, role: string }>(token, process.env.JWT_SECRET)
+  console.log(payload.userId)
+} catch (err) {
+  if (err.name === 'TokenExpiredError') {
+    // Handle expired token
+  }
+}
+```
+
+---
+
+## 3. Session Middleware
+
+If you prefer stateful authentication, ExisJS provides extremely robust session middleware out of the box. It leverages signed HTTP-only cookies to track users and automatically synchronizes session state back to the store (Memory, Redis, etc.) when the request ends.
+
+### Global Setup via Plugin (`exis.config.ts`)
+
+Because ExisJS utilizes a file-based architecture with no manual server entry point, global middlewares like `session` should be attached using a Plugin.
+
+```typescript filename="src/plugins/session.ts"
+import { definePlugin } from 'exisjs/plugin'
+import { session } from 'exisjs/auth'
+
+export const sessionPlugin = definePlugin({
+  name: 'global-session',
+  register(app) {
+    app.use(session({
+      secret: process.env.SESSION_SECRET || 'fallback-secret-minimum-32-chars-long!',
+      cookieName: 'exis_sid',
+      ttl: 86400 * 1000, // 1 day in milliseconds
+      // store: new RedisSessionStore(...) 
+    }))
+  }
+})
+```
+
+Then, natively register your plugin in `exis.config.ts`:
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+import { sessionPlugin } from './src/plugins/session'
+
+export default defineConfig({
+  plugins: [
+    sessionPlugin()
+  ]
+})
+```
+
+Once registered, you can read and write to `req.session` anywhere in your application!
+
+### Functional Example
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
+import { HttpError } from 'exisjs/error'
+
+export default controller({
+  login: route.post('/login', {
+    async handle(ctx) {
+      const user = await db.users.findByEmail(ctx.body.email)
+      if (!user) throw HttpError.unauthorized('Invalid credentials')
+
+      // Login the user by attaching data to the session
+      ctx.req.session.userId = user.id
+      ctx.req.session.role = user.role
+      
+      return { success: true }
+    }
+  })
+})
+```
+
+### Class-Based (OOP) Example
+
+```typescript filename="src/http/auth/route.ts"
+import { Controller, Post, Body, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs'
+
+@Controller('/auth')
+export default class AuthController {
+  
+  @Post('/login')
+  async login(@Body() body: any, @Req() req: Request) {
+    const user = await db.users.findByEmail(body.email)
+    
+    // Attach to session
+    req.session.userId = user.id
+    req.session.role = user.role
+    
+    return { success: true }
+  }
+}
+```
+
+---
+
+## 4. Role-Based Access Control (RBAC)
+
+The `requireRole` middleware checks if the current authenticated user has the necessary permissions to access a route.
+
+*Note: This middleware expects that `req.user.role` was populated by an earlier authentication middleware (like a JWT Verifier or a Session Restorer).*
+
+### Functional Example
+
+```typescript filename="src/http/admin/route.ts"
+import { controller, route } from 'exisjs/router'
+import { requireRole } from 'exisjs/auth'
+
+export default controller({
+  getDashboard: route.get('/dashboard', {
+    middleware: [
+      // Only users with 'admin' or 'superadmin' roles can access this route
+      requireRole(['admin', 'superadmin'])
+    ],
+    async handle() {
+      return { metrics: [] }
+    }
+  })
+})
+```
+
+### Class-Based (OOP) Example
+
+```typescript filename="src/http/admin/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { requireRole } from 'exisjs/auth'
+
+@Controller('/admin')
+export default class AdminController {
+  
+  @Get('/dashboard')
+  @Use(requireRole(['admin', 'superadmin']))
+  async getDashboard() {
+    return { metrics: [] }
+  }
+}
+```

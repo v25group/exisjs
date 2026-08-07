@@ -1,0 +1,155 @@
+---
+title: "Queues"
+description: "API Reference for ExisJS Background Queues (`exisjs/queue`)."
+---
+
+# Queues (`exisjs/queue`)
+
+ExisJS ships with a highly robust, Redis-backed background job queue mechanism. It supports strict payload validation, exponential backoff, delayed execution, and lifecycle observability hooks, seamlessly integrated right into the core framework.
+
+---
+
+## Configuration (`exis.config.ts`)
+
+Before using the queue system, you must configure your driver (either `memory` for local development or `redis` for production). This is defined globally in your `exis.config.ts` file.
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
+export default async (phase: string) => {
+  return defineConfig({
+    queue: {
+      driver: phase === 'development' ? 'memory' : 'redis',
+      redisUrl: process.env.REDIS_URL,
+      maxConcurrent: 100, // Maximum active workers
+      maxQueue: 1000      // Maximum waiting jobs
+    }
+  })
+}
+```
+
+---
+
+## Defining Jobs (File-Based Routing)
+
+ExisJS uses highly intuitive **File-Based Job Routing**. 
+
+To create a new background job, simply create a file in the `src/jobs/` directory and `export default defineJob(...)`. The framework will automatically discover, load, and bind the job queue on boot!
+
+```typescript filename="src/jobs/SendEmailJob.ts"
+import { defineJob } from 'exisjs/queue'
+import { v } from 'exisjs/validator'
+
+export default defineJob({
+  name: 'send-email',
+  
+  // ExisJS will automatically validate incoming queue payloads against this schema!
+  schema: v.object({
+    to: v.string().email(),
+    subject: v.string(),
+    html: v.string()
+  }),
+  
+  // Set default retry and backoff behavior
+  defaultOptions: {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 5000 // 5s, 25s, 125s...
+    }
+  },
+
+  // Observability Hooks
+  onJobFailed(payload, err) {
+    console.error(`Job failed on attempt ${payload.attemptsMade}`, err)
+  },
+  
+  onJobFailedPermanently(payload, err) {
+    // Alert Sentry or Slack!
+    console.error(`Job fatally died after all retries!`, err)
+  },
+
+  // The actual background execution logic
+  async handler(job) {
+    // job.data is completely type-safe and strictly validated by the schema!
+    const { to, subject, html } = job.data
+    
+    await mailer.send({ to, subject, html })
+  }
+})
+```
+
+### Job Definition Properties
+- **`name`** *(string)*: Unique identifier for the queue.
+- **`schema`** *(Validator)*: An ExisJS validator object to validate the payload structure.
+- **`handler`** *(function)*: The logic to execute (optional if using file-based job routing).
+- **`defaultOptions`** *(JobOptions)*: Global options for retry counts and delays.
+- **`cron`** *(string)*: A cron expression (e.g. `'0 * * * *'`) for scheduling the job recursively.
+- **Hooks**: `onJobStart`, `onJobSuccess`, `onJobFailed`, `onJobFailedPermanently`.
+
+---
+
+## Enqueuing Jobs
+
+You can dispatch a job from anywhere in your application (Controllers, Gateways, Services) using the `enqueue` function.
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { enqueue } from 'exisjs/queue'
+import { SendEmailJob } from '../../jobs/SendEmailJob'
+
+export default controller({
+  register: route.post('/register', {
+    async handle(ctx) {
+      const user = await db.users.create(ctx.body)
+      
+      // Dispatch the job to the background queue!
+      await enqueue('send-email', {
+        to: user.email,
+        subject: 'Welcome to ExisJS!',
+        html: '<h1>Welcome aboard!</h1>'
+      })
+      
+      return { success: true }
+    }
+  })
+})
+```
+
+### Delaying Execution
+You can override the `defaultOptions` on a per-dispatch basis. For example, to delay a job by 15 minutes:
+
+```typescript
+await enqueue('send-email', payload, {
+  delay: 15 * 60 * 1000, // 15 minutes in milliseconds
+  attempts: 5
+})
+```
+
+---
+
+### Cron / Scheduled Jobs
+
+Because ExisJS uses file-based routing for jobs, implementing recurring Cron jobs is completely trivial. Just add a `cron` property to your `defineJob` config!
+
+```typescript filename="src/jobs/CleanupJob.ts"
+import { defineJob } from 'exisjs/queue'
+
+export default defineJob({
+  name: 'cleanup-stale-sessions',
+  cron: '0 0 * * *', // Run every day at midnight
+  
+  async handler() {
+    await db.query('DELETE FROM sessions WHERE expiresAt < NOW()')
+  }
+})
+```
+
+### The `JobPayload` Object
+
+When your handler executes, it receives a `JobPayload` containing the following properties:
+- **`id`**: The unique generated UUID for this specific job execution.
+- **`name`**: The name of the queue.
+- **`data`**: The raw, strongly-typed, validated payload.
+- **`attemptsMade`**: How many times this specific job has failed and retried.
+- **`opts`**: The options (delays, backoff strategy) this job is running under.

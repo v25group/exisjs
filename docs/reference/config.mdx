@@ -1,0 +1,118 @@
+---
+title: "Configuration"
+description: "API Reference for the global exis.config.ts file (`exisjs/config`)."
+---
+
+# Configuration (`exisjs/config`)
+
+ExisJS is designed to be highly zero-config out of the box. However, for advanced tuning, security, and clustering, you can define an `exis.config.ts` file in the root of your project.
+
+This configuration file deeply integrates with the framework's core, managing everything from global middleware (like CORS and Helmet) to underlying Server backends and Worker Threads.
+
+---
+
+## 1. Standard Configuration
+
+For most applications, you can simply export a static configuration object typed with `ExisConfig`.
+
+```typescript filename="exis.config.ts"
+import type { ExisConfig } from 'exisjs/config'
+
+const config: ExisConfig = {
+  port: Number(process.env.PORT) || 4000,
+  host: '0.0.0.0',
+
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true,
+  },
+
+  logger: {
+    level: 'debug',
+    pretty: process.env.NODE_ENV !== 'production',
+  },
+
+  queue: {
+    driver: 'memory',
+  },
+
+  helmet: { enabled: true },
+  compression: true,
+
+  test: {
+    include: ['tests/**/*.test.ts'],
+  },
+}
+
+export default config
+```
+
+---
+
+## 2. Advanced Configuration (Phases)
+
+If you need dynamic configuration (such as spawning worker threads only in production or altering middleware depending on the environment), you can use `defineConfig()` and Phase execution.
+
+```typescript filename="exis.config.ts"
+import { defineConfig, PHASE_DEVELOPMENT_SERVER } from 'exisjs/config'
+
+export default async (phase: string, { defaultConfig }) => {
+  const isDev = phase === PHASE_DEVELOPMENT_SERVER
+
+  return defineConfig({
+    port: Number(process.env.PORT) || 4000,
+    
+    // Auto-spawn Worker threads based on CPU cores!
+    workers: isDev ? 1 : 'safe', 
+    
+    // Globally configure native middleware
+    cors: {
+      origin: isDev ? '*' : 'https://myapp.com',
+      credentials: true
+    },
+    helmet: { enabled: true },
+    logger: isDev ? { level: 'debug', pretty: true } : false,
+    
+    // Native plugin registration
+    plugins: [
+      // ... your plugins here
+    ]
+  })
+}
+```
+
+---
+
+## Configuration Phases
+
+If you export a function from `exis.config.ts`, ExisJS will inject the current "Phase" string as the first argument, allowing you to dynamically adjust settings based on whether you are running a dev server, running tests, or building for production.
+
+- `PHASE_DEVELOPMENT_SERVER`: Emitted during `exis dev`
+- `PHASE_PRODUCTION_BUILD`: Emitted during `exis build`
+- `PHASE_PRODUCTION_SERVER`: Emitted during `exis start`
+- `PHASE_TEST`: Emitted during test runs
+
+---
+
+## Configuration Options
+
+Here is the full list of options supported natively by the ExisJS configuration engine:
+
+### Server & Network
+- **`port`** *(number)*: The port the server listens on (default: `4000`).
+- **`host`** *(string)*: The host interface to bind to (default: `'0.0.0.0'`).
+- **`server`** *(`'node' | 'uws' | 'auto'`)*: ExisJS supports running on standard Node `http`, or incredibly fast C++ `uWebSockets.js` (`uws`). Default is `'auto'` (uses `uws` if installed, falls back to `node`).
+- **`workers`** *(number | `'safe'` | `'max'`)*: Number of Node.js Cluster workers to spawn. `'max'` uses all CPU cores. `'safe'` uses all cores minus 1 (to leave room for the OS).
+- **`trustProxy`** *(boolean)*: Enable if running behind a reverse proxy (like Nginx or AWS ALB) to trust the `X-Forwarded-For` headers.
+
+### Security & Middlewares
+- **`cors`** *(boolean | object)*: Enable and configure Cross-Origin Resource Sharing globally.
+- **`helmet`** *(boolean | object)*: Enable strict security headers. Enabled by default.
+- **`logger`** *(boolean | object)*: Configure the high-performance Pino request logger.
+- **`compression`** *(boolean | object)*: Enable gzip/brotli response compression.
+- **`bodyLimit`** *(number)*: Maximum JSON/URL-encoded payload size in bytes (default: `1MB`).
+
+### Advanced Integrations
+- **`queue`**: Define your background queue driver (`memory` or `redis`) and configure `maxConcurrent` processing limits.
+- **`plugins`**: An array of `ExisPlugin` instances to register natively into the framework.
+- **`test`**: Configure testing environments (`include`, `exclude`, `setupFiles`, `coverage`).

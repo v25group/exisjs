@@ -5,12 +5,12 @@ nextTitle: "Cron Jobs"
 
 # Job Queues
 
-ExisJS provides an incredibly robust, built-in Job Queue system designed to handle background processing, delayed tasks, and high-concurrency workloads. 
+ExisJS provides a built-in Job Queue system designed to handle background processing, delayed tasks, and high-concurrency workloads.
 
-Unlike other frameworks where queues feel bolted on, ExisJS integrates them deeply:
-- **Native Worker Threads**: File-based jobs are automatically processed in isolated Node.js Worker Threads (`ThreadPool`) so heavy tasks never block your main HTTP event loop.
+Key features include:
+- **Native Worker Threads**: File-based jobs are processed in isolated Node.js Worker Threads (`ThreadPool`) so heavy tasks do not block the main HTTP event loop.
 - **Type-Safe Payloads**: Built-in schema validation for queue payloads.
-- **Driver Agnostic**: Seamlessly swap between `memory` (for dev) and `redis` (for production) without changing a single line of business logic.
+- **Driver Agnostic**: Swap between `memory` (for dev) and `redis` (for production) without changing business logic.
 
 ---
 
@@ -51,7 +51,7 @@ ExisJS provides two distinctly different ways to define and process background j
 ### Approach 1: Auto-Mounted File-Based Jobs (Multi-Threaded)
 If you place a job definition inside the `src/jobs/` directory, ExisJS automatically mounts it using **File-Based Routing**.
 
-**Crucially, ExisJS will run these files entirely off the main thread in a dedicated V8 isolate (`ThreadPool`).** You don't have to write any `worker_threads` boilerplate. Just define the job, and ExisJS magically protects your HTTP server from being blocked by heavy CPU tasks (like image processing or large calculations).
+ExisJS will run these files off the main thread in a dedicated V8 isolate (`ThreadPool`). You do not need to write `worker_threads` boilerplate. Define the job, and ExisJS prevents the HTTP server from being blocked by heavy CPU tasks (like image processing or large calculations).
 
 ```typescript filename="src/jobs/process-image.ts"
 import { defineJob } from 'exisjs/queue'
@@ -75,9 +75,9 @@ export default defineJob({
 ```
 
 ### Approach 2: Inline Handlers (Main Thread)
-If you have a quick, IO-bound task (like sending an email or hitting an external API) and you don't want to create a whole new file, you can use the global `queue()` helper. 
+If you have an IO-bound task (like sending an email or calling an external API) and you do not want to create a new file, you can use the global `queue()` helper. 
 
-Jobs defined this way run functionally in the **main thread** (alongside your HTTP server), making them extremely quick to set up anywhere in your app.
+Jobs defined this way run functionally in the **main thread** (alongside your HTTP server).
 
 ```typescript filename="src/http/server.ts"
 import { queue } from 'exisjs/queue'
@@ -107,7 +107,7 @@ export default controller({
     async handle({ req, res }) {
       const user = await db.users.create(req.body)
       
-      // Enqueue the job instantly!
+      // Enqueue the job
       await enqueue('send-welcome-email', {
         email: user.email
       }, {
@@ -133,7 +133,7 @@ export default class UsersController {
   async register(@Body() body: any) {
     const user = await db.users.create(body)
     
-    // Enqueue the job instantly!
+    // Enqueue the job
     await enqueue('send-welcome-email', {
       email: user.email
     }, {
@@ -159,19 +159,19 @@ When enqueuing a job, or setting `defaultOptions` in your job definitions, you c
 
 ## 4. Queue Drivers & Internals
 
-ExisJS comes with two heavily optimized native queue drivers. Both drivers implement atomic operations and strict visibility timeouts to ensure jobs are never processed twice and are safely retried if a worker crashes.
+ExisJS comes with two native queue drivers. Both drivers implement atomic operations and strict visibility timeouts to ensure jobs are not processed twice and are safely retried if a worker crashes.
 
 ### The Memory Driver (`memory`)
-The in-memory driver is perfect for development, testing, or simple single-node deployments. 
-- It uses high-performance ES6 `Map` and `Array.sort` to keep jobs sorted by their execution score (`Date.now() + delay`).
+The in-memory driver is designed for development, testing, or simple single-node deployments. 
+- It uses ES6 `Map` and `Array.sort` to keep jobs sorted by their execution score (`Date.now() + delay`).
 - Does not require any external infrastructure.
 
 ### The Redis Driver (`redis`)
-Designed for massive horizontal scale, the Redis driver seamlessly powers distributed clusters.
-- **Atomic Operations**: Uses pure Lua scripts (`EVAL`) to atomically pop jobs from a pending `ZSET` (sorted set) into a processing state.
-- **Zero-Dependency Core**: It dynamically requires `ioredis` only if used, keeping the core ExisJS framework perfectly lightweight.
+Designed for horizontal scale, the Redis driver powers distributed clusters.
+- **Atomic Operations**: Uses Lua scripts (`EVAL`) to atomically pop jobs from a pending `ZSET` (sorted set) into a processing state.
+- **Zero-Dependency Core**: It dynamically requires `ioredis` only if used, keeping the core framework lightweight.
 - **Cluster Safe**: All jobs for a specific topic map to consistent Redis hash slots.
 
 ### The Sweeper
-Regardless of which driver you use, ExisJS runs a background **Sweeper** every 10 seconds.
-If a worker crashes mid-job, or a job takes longer than its `visibilityTimeout`, the Sweeper automatically detects the stalled job in the processing list and aggressively re-queues it back into the pending list so another worker can pick it up.
+ExisJS runs a background **Sweeper** every 10 seconds.
+If a worker crashes mid-job, or a job takes longer than its `visibilityTimeout`, the Sweeper detects the stalled job in the processing list and re-queues it back into the pending list so another worker can pick it up.

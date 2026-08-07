@@ -5,9 +5,9 @@ nextTitle: "Resend"
 
 # AWS S3 Integration
 
-ExisJS provides a zero-config, native integration for **AWS S3** via the official `@aws-sdk/client-s3` package. 
+ExisJS provides an integration for AWS S3 via the official `@aws-sdk/client-s3` package. 
 
-Just like our database plugins, you do **NOT** need to write massive boilerplate to initialize the AWS SDK. The S3 client is lazily initialized the exact moment you execute your first `PutObject` or `GetObject` command!
+You do **NOT** need to write boilerplate to initialize the AWS SDK. The S3 client is lazily initialized when you execute your first `PutObject` or `GetObject` command.
 
 ---
 
@@ -27,7 +27,7 @@ AWS_REGION="us-east-1"
 
 ## Installation
 
-ExisJS wraps the blazing fast `@aws-sdk/client-s3` library.
+ExisJS wraps the `@aws-sdk/client-s3` library.
 
 ```bash
 npm install @aws-sdk/client-s3
@@ -37,7 +37,7 @@ npm install @aws-sdk/client-s3
 
 ## Usage
 
-Simply import the `s3` proxy from `exisjs/s3` and use standard AWS SDK commands. ExisJS will instantly boot the client behind the scenes.
+Simply import the `s3` proxy from `exisjs/s3` and use standard AWS SDK commands. ExisJS will boot the client behind the scenes.
 
 #### Functional Paradigm
 
@@ -47,7 +47,7 @@ import { s3 } from 'exisjs/s3'
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
 export default controller({
-  // ExisJS automatically parses multipart/form-data when you access req.files!
+  // ExisJS parses multipart/form-data when you access req.files
   uploadFile: route.post('/', {
     async handle(req) {
       // req.files is automatically populated natively by ExisJS
@@ -60,7 +60,7 @@ export default controller({
         ContentType: file.mimetype,
       })
 
-      // The s3 client magically lazy-loads here!
+    // The s3 client lazy-loads here
       await s3.send(command)
 
       return { success: true, url: `https://my-exis-bucket.s3.amazonaws.com/${file.filename}` }
@@ -108,7 +108,7 @@ import { configureS3 } from 'exisjs/s3'
 
 export default exis({
   async onStart() {
-    // Perfect for S3-compatible APIs like Cloudflare R2!
+    // Compatible with S3 APIs like Cloudflare R2
     configureS3({
       endpoint: 'https://<ACCOUNT_ID>.r2.cloudflarestorage.com',
       forcePathStyle: true
@@ -118,5 +118,5 @@ export default exis({
 ```
 
 <Hint>
-Because ExisJS uses the official AWS SDK under the hood, the S3 integration works perfectly out-of-the-box with **Cloudflare R2**, **DigitalOcean Spaces**, **MinIO**, and any other S3-compatible storage provider!
+Because ExisJS uses the official AWS SDK under the hood, the S3 integration works with Cloudflare R2, DigitalOcean Spaces, MinIO, and any other S3-compatible storage provider.
 </Hint>

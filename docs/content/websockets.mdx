@@ -5,7 +5,7 @@ nextTitle: "Job Queues"
 
 # WebSockets
 
-ExisJS provides a first-class, built-in WebSocket engine that goes far beyond native `ws`. It includes an integrated Pub/Sub system (rooms), automatic JSON serialization, Socket.io-style event emitters, and built-in presence trackingall running blazingly fast on top of Node.js or uWebSockets.js.
+ExisJS provides a built-in WebSocket engine. It includes an integrated Pub/Sub system (rooms), automatic JSON serialization, Socket.io-style event emitters, and built-in presence tracking.
 
 You can handle WebSockets using either the **Functional API** or the **Class-Based (OOP) API**.
 
@@ -58,9 +58,9 @@ export default controller({
 
 ## 2. Class-Based (OOP) API
 
-For enterprise applications, ExisJS provides the `@Ws()` decorator to cleanly map WebSocket endpoints inside your Controllers.
+For larger applications, ExisJS provides the `@Ws()` decorator to map WebSocket endpoints inside your Controllers.
 
-```typescript filename="src/http/chat/controller.ts"
+```typescript filename="src/http/chat/route.ts"
 import { Controller, Ws, Socket } from 'exisjs/decorators'
 import { ExisWebSocket } from 'exisjs/router'
 
@@ -71,12 +71,12 @@ export default class ChatController {
     // Enable auto-presence for this server
     socket.server.enablePresence()
 
-    // Listen for custom JSON events seamlessly
+    // Listen for custom JSON events
     socket.onEvent('join', (data) => {
       // Attach custom state to the socket
       socket.data.userId = data.userId
 
-      // Unsubscribe from previous rooms cleanly
+      // Unsubscribe from previous rooms
       socket.leaveAll()
       socket.join(data.room)
 
@@ -100,7 +100,7 @@ export default class ChatController {
 
 ## The `ExisWebSocket` API
 
-ExisJS wraps the native WebSocket with a powerful `ExisWebSocket` instance that provides Socket.io-like ergonomics without the heavy client-side dependencies.
+ExisJS wraps the native WebSocket with an `ExisWebSocket` instance that provides Socket.io-like ergonomics without the heavy client-side dependencies.
 
 ### Emitting & Sending
 
@@ -243,7 +243,7 @@ route.ws('/data', {
 ```typescript
 @Ws('/api')
 handleSocket(@Socket() socket: ExisWebSocket) {
-  // Cleanly handle specific JSON events
+  // Handle specific JSON events
   socket.onEvent('auth', (credentials) => {
     console.log('Auth attempt:', credentials.username)
   })

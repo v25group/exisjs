@@ -5,7 +5,7 @@ nextTitle: "Gateways"
 
 # Providers
 
-Providers are a fundamental concept in ExisJS. Many of the basic classes may be treated as a provider – services, repositories, factories, helpers, and so on.
+Providers are a fundamental concept in ExisJS. Many of the basic classes may be treated as a provider: services, repositories, factories, helpers, and so on.
 
 The main idea of a provider is that it can be injected as a dependency; this means objects can create various relationships with each other, and the function of "wiring up" instances of objects can largely be delegated to the ExisJS runtime system.
 
@@ -64,7 +64,7 @@ export default class UsersController {
 ```
 
 <Info title="Note on Dependency Injection">
-ExisJS utilizes an ultra-fast runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a zero-overhead footprint. The `inject()` function is the primary and recommended way to resolve dependencies smoothly.
+ExisJS utilizes a runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a minimal footprint. The `inject()` function is the primary and recommended way to resolve dependencies.
 </Info>
 
 ### Advanced: Manual Resolution
@@ -80,13 +80,9 @@ const usersService = app.container.resolve(UsersService)
 
 ## Custom Providers
 
-ExisJS's DI container is extremely flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+ExisJS's DI container is flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
+
+### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
 import exis from 'exisjs'
@@ -117,8 +113,7 @@ export default exis({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -138,9 +133,6 @@ import { UsersService } from './users/service'
 })
 export default class RootServer {}
 ```
-
-  </TabsContent>
-</Tabs>
 
 ## Injection Scopes
 

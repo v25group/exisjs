@@ -20,7 +20,13 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
   const prefix = options.prefix || 'rl:'
   const keyGenerator =
     options.keyGenerator ||
-    ((req: Request) => req.ip || req.get('x-forwarded-for') || 'unknown')
+    ((req: Request) => {
+      // Respect X-Forwarded-For for apps behind a reverse proxy (Nginx, Cloudflare, etc.)
+      // Take the leftmost IP which is the true client IP
+      const forwarded = req.get('x-forwarded-for')
+      if (forwarded) return forwarded.split(',')[0].trim()
+      return req.ip || req.get('x-real-ip') || 'unknown'
+    })
 
   const hits = new Map<string, { count: number; resetTime: number }>()
 

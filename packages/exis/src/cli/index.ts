@@ -45,6 +45,7 @@ program
   .command('start')
   .description('Start the production server')
   .option('-p, --port <port>', 'Port to listen on')
+  .option('-h, --host <host>', 'Host to bind to')
   .option('-e, --entry <file>', 'Custom entry file path')
   .action(async (options) => {
     await startCommand(options)

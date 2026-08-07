@@ -1,0 +1,293 @@
+---
+title: "Decorators"
+description: "API Reference for ExisJS Class-Based Routing and Decorators."
+---
+
+# Decorators (OOP)
+
+ExisJS provides a robust Object-Oriented Programming (OOP) paradigm via the `exisjs/decorators` module. 
+
+Unlike many other frameworks (such as NestJS or TypeDI), ExisJS decorators are built completely on standard ECMAScript decorators and **do not require `reflect-metadata`**. This makes them incredibly lightweight, extremely fast, and completely free of legacy metadata bloat.
+
+---
+
+## 1. Controller & Routing
+
+### `@Controller(prefixOrOptions?)`
+
+Marks a class as a Controller. All route handler methods within the class will be grouped under the specified prefix.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller } from 'exisjs/decorators'
+
+// Routes will be mounted at /api/users
+@Controller('/api/users')
+export default class UserController {
+  // ...
+}
+```
+
+### HTTP Methods
+Defines an HTTP route handler on a class method. You can optionally pass a schema to validate incoming requests.
+
+- `@Get(path?, schema?)`
+- `@Post(path?, schema?)`
+- `@Put(path?, schema?)`
+- `@Patch(path?, schema?)`
+- `@Delete(path?, schema?)`
+- `@Options(path?, schema?)`
+- `@Head(path?, schema?)`
+- `@Connect(path?, schema?)`
+- `@Trace(path?, schema?)`
+- `@All(path?, schema?)`
+- `@Query(path?, schema?)`: Can be used as a method decorator to handle custom `QUERY` method requests (e.g., RPC or GraphQL-like endpoints).
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+
+@Controller('/users')
+export default class UserController {
+  @Get('/:id')
+  getUser() {
+    return { id: 1 }
+  }
+
+  @Post('/', { body: v.object({ name: v.string() }) })
+  createUser() {
+    return { success: true }
+  }
+}
+```
+
+### Real-Time Methods
+- `@Ws(path?, schema?)`: Maps the handler to a WebSocket connection.
+- `@Sse(path?, schema?)`: Maps the handler to a Server-Sent Events stream.
+
+---
+
+## 2. Parameter Injection
+
+Parameter decorators automatically extract data from the incoming request and inject them directly into your method arguments, drastically reducing boilerplate.
+
+- `@Body()`: Parses and injects the JSON request body.
+- `@Param(name?)`: Injects a URL path parameter (e.g., `id` from `/:id`).
+- `@Query(name?)`: Injects a query string parameter. (Note: `@Query` doubles as a route decorator if used on a method).
+- `@Headers(name?)`: Injects an HTTP header by name.
+- `@HostParam(name?)`: Injects a subdomain parameter (e.g., extracted from `@Hosts(':tenant.example.com')`).
+- `@Req()`: Injects the raw ExisJS Request object.
+- `@Res(options?)`: Injects the raw ExisJS Response object. Use `@Res({ passthrough: true })` if you want ExisJS to still handle the final response serialization.
+- `@Ip()`: Injects the client's IP address.
+- `@Session()`: Injects the active session object (requires session middleware).
+- `@Next()`: Injects the Next function.
+- `@Socket()`: Injects the active WebSocket instance (for `@Ws`).
+- `@Stream()`: Injects the active SSE instance (for `@Sse`).
+- `@UploadedFile() / @UploadedFiles()`: Injects multipart/form-data files.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post, Param, Body, Ip } from 'exisjs/decorators'
+
+@Controller('/users')
+export default class UserController {
+  @Get('/:id')
+  getUser(@Param('id') id: string, @Ip() ip: string) {
+    return { id, requestedBy: ip }
+  }
+
+  @Post('/')
+  createUser(@Body() body: { email: string }) {
+    return { email: body.email }
+  }
+}
+```
+
+---
+
+## 3. Middleware & Configuration
+
+### `@Use(...middlewares)`
+Applies Express-style middleware functions to a specific route handler or an entire controller class.
+
+```typescript filename="src/http/secure/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { authMiddleware } from '../middleware/auth'
+
+@Controller('/secure')
+@Use(authMiddleware)
+export default class SecureController {
+  @Get('/')
+  getSecureData() {
+    return { secure: true }
+  }
+}
+```
+
+### `@Cache(options)`
+Automatically caches `GET` responses in memory or Redis.
+
+### `@Idempotent(options)`
+Enforces idempotency based on the `Idempotency-Key` header, preventing duplicate mutations (e.g., duplicate payments).
+
+```typescript filename="src/http/payments/route.ts"
+import { Controller, Post, Idempotent } from 'exisjs/decorators'
+
+@Controller('/payments')
+export default class PaymentController {
+  @Post('/checkout')
+  @Idempotent()
+  checkout() {
+    return { status: 'processing' }
+  }
+}
+```
+
+---
+
+## 4. Responses & Metadata
+
+### `@HttpCode(code)`
+Forces a specific HTTP status code for successful responses.
+
+### `@Header(name, value)`
+Automatically injects a specific response header before sending the response.
+
+### `@Redirect(url, statusCode?)`
+Redirects the request to the specified URL.
+
+### `@Returns(schema)`
+Explicitly defines the response schema for OpenAPI (Swagger) generation.
+
+```typescript filename="src/http/documents/route.ts"
+import { Controller, Post, HttpCode, Header } from 'exisjs/decorators'
+
+@Controller('/documents')
+export default class DocumentController {
+  @Post('/')
+  @HttpCode(201)
+  @Header('X-Custom-Status', 'Processed')
+  createDoc() {
+    return { created: true }
+  }
+}
+```
+
+---
+
+## 5. Security & Lifecycle
+
+These decorators allow you to attach ExisJS lifecycle hooks to your OOP routes.
+
+- `@Permissions(...flags)`: Restricts the route to users with specific permission flags.
+- `@Hosts(...hosts)`: Restricts the route to a specific subdomain/host.
+- `@UseGuards(...guards)`: Attaches Guards (authentication/authorization checks).
+- `@UseInterceptors(...interceptors)`: Attaches Interceptors (request/response mutation).
+- `@UseFilters(...filters)`: Attaches Exception Filters (custom error handling).
+
+---
+
+## 6. Global Setup
+
+### `@Server(options?)`
+Marks a class as the root Server entry point. Used to register global configuration and dependencies.
+
+**Options Interface:**
+```typescript
+interface ServerConfig {
+  plugins?: any[]
+  providers?: any[]
+  cron?: any[]
+  queue?: any[]
+}
+```
+
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { corsPlugin } from 'exisjs/middleware'
+
+@Server({
+  plugins: [corsPlugin]
+})
+export default class RootServer {
+  async onStart(app) {
+    app.log.info("App booted!")
+  }
+}
+```
+
+### `@Gateway(options?)`
+Marks a class as a Gateway module. Gateways are used to apply massive configuration blocks across an entire directory of routes (e.g., applying an auth guard to all routes inside `src/http/admin`).
+
+**Options Interface:**
+```typescript
+interface GatewayConfig {
+  exclude?: any[]
+  middleware?: any[]
+  filters?: any[]
+  guards?: any[]
+  interceptors?: any[]
+  timeout?: number | ((req: any) => number)
+  metadata?: Record<string, any>
+  cors?: any
+  headers?: Record<string, string>
+  imports?: any[]
+  providers?: any[]
+}
+```
+
+```typescript filename="src/http/gateway.ts"
+import { Gateway } from 'exisjs/decorators'
+import { helmet, hpp } from 'exisjs/middleware'
+
+/**
+ * Root Gateway (gatekeeper for the entire application)
+ *
+ * Gateways apply configuration to all routes within their directory and subdirectories.
+ * This acts as the global security and infrastructure layer.
+ */
+@Gateway({
+  // 1. Cross-Origin Resource Sharing (CORS)
+  cors: {
+    origin: ['https://myapp.com', /localhost:\d+/],
+    credentials: true,
+  },
+
+  // 2. Global Headers
+  headers: {
+    'X-Powered-By': 'ExisJS',
+    'X-Application-Version': '1.0.0',
+  },
+
+  // 3. Global Middleware
+  middleware: [
+    helmet(), // Sets secure HTTP headers
+    hpp(),    // Prevents HTTP Parameter Pollution
+  ],
+
+  // 4. Exclude Paths
+  exclude: [{ path: '/health', method: 'GET' }],
+
+  // 5. Dependency Injection Providers
+  providers: [
+    ['ConfigService', { useValue: { apiKey: process.env.API_KEY || 'default' } }],
+  ],
+
+  // 6. Global Metadata
+  metadata: {
+    tenant: 'root',
+  },
+
+  // 7. Request Timeout
+  timeout: 10000,
+})
+export default class RootGateway {}
+```
+
+### `@Injectable(options?)`
+Marks a class as a provider for Dependency Injection, meaning it can be automatically injected into controllers or other services by the IoC container.
+
+**Options Interface:**
+```typescript
+interface InjectableOptions {
+  scope?: 'singleton' | 'request'
+}
+```

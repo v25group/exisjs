@@ -5,9 +5,9 @@ nextTitle: "Modules & Plugins"
 
 # Middleware
 
-ExisJS comes with a massive arsenal of highly optimized, built-in middleware out of the box. 
+ExisJS comes with a collection of built-in middleware out of the box. 
 
-Unlike Express or other minimalist frameworks where you have to stitch together dozens of unmaintained third-party packages, ExisJS provides first-party implementations for everything from CORS and Request Logging to Backpressure and Deduplication.
+ExisJS provides first-party implementations for features like CORS, Request Logging, Backpressure, and Deduplication.
 
 All middleware can be imported directly from the `exisjs/middleware` package.
 
@@ -40,19 +40,19 @@ It is critical to understand that middleware executes **before** your route hand
 If you try to call an authentication function *inline* inside the handler, the `user` variable will be `undefined` because destructuring occurs at the moment the handler is invoked—before the inline function has a chance to execute!
 
 ```typescript
-// ❌ BAD: Destructuring happens before requireAuth mutates the request!
+// ❌ BAD: Destructuring happens before requireAuth mutates the request
 create: route.post('/', {
   async handle({ user, req }) {
     requireAuth(req); 
-    console.log(user); // undefined!
+    console.log(user); // undefined
   }
 })
 
-// ✅ GOOD: Middleware runs first, so `user` is fully populated and strongly typed!
+// ✅ GOOD: Middleware runs first, so `user` is fully populated and strongly typed
 create: route.post('/', {
   middleware: [requireAuth],
   async handle({ user }) {
-    console.log(user); // Populated and 100% typed!
+    console.log(user); // Populated and typed
   }
 })
 ```
@@ -95,9 +95,9 @@ export default class MyController {
 
 ## 1. CORS
 
-The `cors` middleware handles Cross-Origin Resource Sharing effortlessly. It is fully configurable and optimized for zero-overhead on preflight requests.
+The `cors` middleware handles Cross-Origin Resource Sharing. It is configurable and optimized for low overhead on preflight requests.
 
-The best practice in ExisJS is to configure CORS globally in your **`exis.config.ts`** file (the Single Source of Truth). The framework will automatically merge and apply it globally for you.
+The recommended practice in ExisJS is to configure CORS globally in your **`exis.config.ts`** file (the Single Source of Truth). The framework will automatically merge and apply it globally for you.
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
@@ -113,7 +113,7 @@ export default async () => defineConfig({
 })
 ```
 
-By default, ExisJS intercepts `OPTIONS` requests at the middleware level and responds immediately with a `204 No Content` (and the appropriate CORS headers) to save server resources. However, if you need to run custom logic on preflight requests—such as hitting a specific `route.options('/', ...)` handler or a `@Options()` decorated controller method—you can set `preflightContinue: true`. 
+By default, ExisJS intercepts `OPTIONS` requests at the middleware level and responds with a `204 No Content` (and the appropriate CORS headers) to save server resources. However, if you need to run custom logic on preflight requests—such as hitting a specific `route.options('/', ...)` handler or a `@Options()` decorated controller method—you can set `preflightContinue: true`. 
 
 You can also configure CORS locally per-route by passing it to your controller config or gateway.
 
@@ -121,7 +121,7 @@ You can also configure CORS locally per-route by passing it to your controller c
 
 ## 2. Request Logger
 
-ExisJS uses **Pino** under the hood, arguably the fastest logger in the Node.js ecosystem. The `requestLogger` automatically injects a request-scoped logger instance (`req.log`) and times response cycles automatically without deoptimizing V8.
+ExisJS uses **Pino** under the hood. The `requestLogger` injects a request-scoped logger instance (`req.log`) and times response cycles automatically.
 
 ```typescript filename="src/http/server.ts"
 import { requestLogger } from 'exisjs/middleware'
@@ -140,7 +140,7 @@ import { controller, route } from 'exisjs/router'
 export default controller({
   index: route.get('/', {
     handle(req, res) {
-      req.log.info({ userId: 123 }, "User hit the index route!")
+      req.log.info({ userId: 123 }, "User hit the index route")
       return { ok: true }
     }
   })
@@ -156,7 +156,7 @@ import { Controller, Get, Req } from 'exisjs/decorators'
 export default class MyController {
   @Get('/')
   async index(@Req() req: any) {
-    req.log.info({ userId: 123 }, "User hit the index route!")
+    req.log.info({ userId: 123 }, "User hit the index route")
     return { ok: true }
   }
 }
@@ -166,7 +166,7 @@ export default class MyController {
 
 ## 3. Request ID
 
-Injects a unique `X-Request-Id` into every incoming request and outgoing response header. It natively supports distributed tracing headers (`traceparent`, `x-b3-traceid`) making it perfect for microservices.
+Injects a unique `X-Request-Id` into every incoming request and outgoing response header. It natively supports distributed tracing headers (`traceparent`, `x-b3-traceid`).
 
 ```typescript filename="src/http/server.ts"
 import { requestId } from 'exisjs/middleware'
@@ -208,7 +208,7 @@ export default class MyController {
 
 ## 4. Static File Serving
 
-A blazing fast static file server that automatically resolves MIME types, streams files, and provides Cache-Control configuration out of the box.
+A static file server that resolves MIME types, streams files, and provides Cache-Control configuration out of the box.
 
 ```typescript
 import { serveStatic } from 'exisjs/middleware'
@@ -223,20 +223,18 @@ app.use('/public', serveStatic(path.join(process.cwd(), 'public'), {
 
 ## 5. Security Middlewares
 
-ExisJS bundles the most critical security middlewares directly. (We will cover these deeply in the Security documentation, but here is a quick preview):
+ExisJS bundles several security middlewares. (We will cover these in the Security documentation, but here is a preview):
 
 - **`helmet()`**: Automatically sets 14+ secure HTTP headers.
-- **`xss()`**: Sanitizes incoming user payloads to prevent Cross-Site Scripting.
 - **`hpp()`**: Prevents HTTP Parameter Pollution attacks.
 - **`dbSanitize()`**: A universal scraper that protects against NoSQL injection patterns (`$where` and other malicious operators).
 - **`timeout(ms)`**: Kills requests that hang longer than a specified duration.
 - **`ipFilter()`**: Restricts access based on IP Whitelists/Blacklists.
 
 ```typescript
-import { helmet, xss, timeout, dbSanitize } from 'exisjs/middleware'
+import { helmet, timeout, dbSanitize } from 'exisjs/middleware'
 
 app.use(helmet())
-app.use(xss())
 app.use(dbSanitize({ mongo: true }))
 app.use(timeout(5000)) // 5 second timeout
 ```
@@ -245,7 +243,7 @@ app.use(timeout(5000)) // 5 second timeout
 
 ## 6. Advanced Performance Middlewares
 
-These middlewares push ExisJS beyond traditional HTTP frameworks into the realm of enterprise-grade Edge Gateways.
+These middlewares provide additional scaling and performance capabilities.
 
 - **`cache()`**: An in-memory route caching engine. Requires a `keyGenerator` to prevent data leaks.
 - **`dedupe()`**: Request deduplication (In-flight request collapsing). If 1,000 users hit a heavy `/stats` route at the exact same millisecond, ExisJS will only compute it **once**, and send the same response to all 1,000 users simultaneously. Requires a `keyGenerator`.
@@ -276,7 +274,7 @@ app.use(catchError(DatabaseError, (err, req, res) => {
 
 ## 8. Schema Validation
 
-ExisJS ships with its own ultra-fast, zero-dependency validation engine. You can validate `body`, `query`, or `params` directly at the middleware layer. If validation fails, it automatically rejects the request with a structured HTTP 400 JSON response.
+ExisJS includes a validation engine. You can validate `body`, `query`, or `params` directly at the middleware layer. If validation fails, it automatically rejects the request with a structured HTTP 400 JSON response.
 
 #### Functional Paradigm
 
@@ -335,7 +333,7 @@ export default class UsersController {
 
 ## 9. Idempotency
 
-Idempotency ensures that retrying an identical request multiple times (e.g., due to network timeouts) will not result in duplicate operations on the server. ExisJS provides an ultra-fast, Redis-backed (or in-memory) idempotency engine.
+Idempotency ensures that retrying an identical request multiple times (e.g., due to network timeouts) will not result in duplicate operations on the server. ExisJS provides a Redis-backed (or in-memory) idempotency engine.
 
 #### Functional Paradigm
 
@@ -372,7 +370,7 @@ export default class CheckoutController {
 
 ## 10. Cache Engine
 
-ExisJS provides an incredibly fast, built-in Cache Engine for `GET` requests. It allows you to dramatically reduce database load and response times for frequently requested data.
+ExisJS provides a built-in Cache Engine for `GET` requests. It allows you to reduce database load and response times for frequently requested data.
 
 #### Functional Paradigm
 
@@ -414,7 +412,7 @@ export default class BooksController {
 
 ## 11. Compression (Gzip / Brotli / Deflate)
 
-ExisJS includes a highly optimized stream-based Compression middleware. It natively hooks into the `uWebSockets` C++ core and compresses JSON, streams, and text on-the-fly, reducing your outbound network bandwidth.
+ExisJS includes a stream-based Compression middleware. It natively hooks into the `uWebSockets` core and compresses JSON, streams, and text on-the-fly, reducing your outbound network bandwidth.
 
 The best practice is to configure Compression globally in your **`exis.config.ts`**. By default, if `compression: true` is passed, the framework will add the `compress` middleware for you automatically.
 

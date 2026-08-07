@@ -1,0 +1,132 @@
+---
+title: "Sanitization"
+description: "API Reference for ExisJS built-in Sanitization Engine."
+---
+
+# Sanitization (`sanitize`)
+
+The `exisjs/sanitize` module provides a comprehensive suite of pure, dependency-free functions for transforming and cleaning data **before** it hits your business logic or database.
+
+Sanitizers are designed to be perfectly composable with the [ExisJS Validator](/docs/reference/validator) via the `.sanitize()` modifier, meaning you can strip HTML, trim whitespace, and enforce limits *while* validating request payloads.
+
+---
+
+## Core Sanitizers
+
+The `sanitize` object exposes pure functions grouped by their target data type.
+
+### String Sanitizers
+
+- `sanitize.trim`: Trims leading and trailing whitespace.
+- `sanitize.toLowerCase`: Converts the string to lower case.
+- `sanitize.toUpperCase`: Converts the string to upper case.
+- `sanitize.collapseWhitespace`: Replaces multiple consecutive spaces, tabs, or newlines with a single space.
+- `sanitize.stripHtml`: Removes all HTML tags from the string.
+- `sanitize.escapeHtml`: Escapes dangerous characters (`&`, `<`, `>`, `"`, `'`) into HTML entities.
+- `sanitize.normalizeUnicode`: Normalizes unicode characters to their canonical form (NFC).
+- `sanitize.slugify`: Converts a string into a URL-friendly slug (e.g., `Hello World!` -> `hello-world`).
+- `sanitize.truncate(length)`: Hard-truncates a string to a specific maximum length.
+- `sanitize.removeNonAlphanumeric`: Removes all characters except letters and numbers.
+- `sanitize.normalizeLineEndings`: Converts Windows line endings (`\r\n`) to Unix line endings (`\n`).
+
+### Number Sanitizers
+
+- `sanitize.round`: Rounds the number to the nearest integer.
+- `sanitize.clamp(min, max)`: Restricts a number to fall within a specific range.
+- `sanitize.defaultIfNaN(fallback)`: Returns the fallback value if the provided number is `NaN`.
+
+### Date Sanitizers
+
+- `sanitize.normalizeToIsoString`: Converts a Date object into a standard ISO 8601 string.
+- `sanitize.stripTime`: Resets the time portion of a Date object to `00:00:00:000` (midnight local time).
+
+### Array Sanitizers
+
+- `sanitize.dedupe`: Removes duplicate elements from the array.
+- `sanitize.compact`: Removes `null`, `undefined`, and empty strings (`''`) from the array.
+- `sanitize.trimElements`: Trims whitespace from all string elements inside the array.
+- `sanitize.limitLength(length)`: Slices the array down to a maximum length.
+
+### Object Sanitizers
+
+- `sanitize.stripUnknownKeys(['allowedA', 'allowedB'])`: Strips out any keys from the object that are not explicitly allowed.
+- `sanitize.deepTrimStringValues`: Recursively walks through an object (and nested arrays/objects) and trims all string values found.
+- `sanitize.omit(['secret'])`: Removes specific keys from the object.
+- `sanitize.pick(['publicField'])`: Returns a new object containing only the specified keys.
+
+---
+
+## Using with Validation
+
+The most powerful way to use ExisJS sanitizers is to chain them directly into your schemas using the `.sanitize()` modifier. 
+
+**Note that sanitization runs *before* final validation checks (like `.email()` or `.min()`).**
+
+```typescript filename="src/http/posts/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+import { sanitize } from 'exisjs/sanitize'
+
+const CreatePostSchema = v.object({
+  // Trim the title, then ensure it's still at least 5 characters
+  title: v.string()
+    .sanitize(sanitize.trim, sanitize.collapseWhitespace)
+    .min(5),
+
+  // Automatically generate a URL slug from the input string
+  slug: v.string()
+    .sanitize(sanitize.slugify),
+
+  // Strip all HTML before saving to the database
+  content: v.string()
+    .sanitize(sanitize.stripHtml),
+
+  // Deduplicate tags and remove empty strings
+  tags: v.array(v.string())
+    .sanitize(sanitize.dedupe, sanitize.compact)
+    .max(5)
+})
+
+// === Class-Based (OOP) Example ===
+@Controller('/api/posts')
+export default class PostController {
+  @Post('/', { body: CreatePostSchema })
+  createPost(@Body() data: any) {
+    // data.title will be trimmed
+    // data.content will have zero HTML tags
+    // data.tags will contain no duplicates
+    return data
+  }
+}
+
+// === Functional Example ===
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  createPostFn: route.post('/api/posts/functional', {
+    body: CreatePostSchema,
+    async handle(ctx) {
+      // ctx.body is fully sanitized and strongly typed!
+      return ctx.body
+    }
+  })
+})
+```
+
+---
+
+## Standalone Usage
+
+Because the `sanitize` methods are pure functions, you can easily use them independently anywhere in your application.
+
+```typescript
+import { sanitize } from 'exisjs/sanitize'
+
+const rawInput = "   <script>alert('hack')</script> Hello    World!   "
+
+let safeInput = sanitize.stripHtml(rawInput)
+safeInput = sanitize.collapseWhitespace(safeInput)
+safeInput = sanitize.trim(safeInput)
+
+console.log(safeInput) // "Hello World!"
+```

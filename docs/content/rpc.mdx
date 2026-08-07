@@ -5,9 +5,9 @@ nextTitle: "Custom Decorators"
 
 # RPC Client (End-to-End Type Safety)
 
-ExisJS comes with a native, blazingly fast RPC (Remote Procedure Call) client designed to give you **end-to-end type safety** without needing code generation (like OpenAPI/Swagger) or GraphQL. 
+ExisJS comes with a native RPC (Remote Procedure Call) client designed to give you **end-to-end type safety** without needing code generation (like OpenAPI/Swagger) or GraphQL. 
 
-Because ExisJS infers the types of your backend routes natively, you can share those types directly with your frontend (React, Vue, React Native) and get flawless autocomplete, payload validation, and response typing!
+Because ExisJS infers the types of your backend routes natively, you can share those types directly with your frontend (React, Vue, React Native) and get autocomplete, payload validation, and response typing.
 
 ---
 
@@ -24,13 +24,13 @@ const app = exis({
   }
 })
 
-// Export the inferred router type for the frontend!
+// Export the inferred router type for the frontend
 export type AppRouter = typeof app
 
 export default app
 ```
 
-*(Note: Because this is just a TypeScript `type` export, absolutely zero backend code gets compiled into your frontend bundle!)*
+*(Note: Because this is just a TypeScript `type` export, no backend code gets compiled into your frontend bundle.)*
 
 ---
 
@@ -67,9 +67,9 @@ export const client = createClient<AppRouter>({
 
 ---
 
-## 3. Using the Client (The Magic)
+## 3. Using the Client
 
-Because ExisJS uses a clever ES6 `Proxy` under the hood, the client dynamically maps your chained object calls into HTTP requests. It perfectly mirrors your backend's folder structure!
+Because ExisJS uses an ES6 `Proxy` under the hood, the client dynamically maps your chained object calls into HTTP requests. It mirrors your backend's folder structure.
 
 If you have a backend route at `src/http/api/users/route.ts` with a `get` handler:
 
@@ -77,9 +77,9 @@ If you have a backend route at `src/http/api/users/route.ts` with a `get` handle
 import { client } from '../api'
 
 async function fetchUser() {
-  // 1. Perfect autocomplete for .api.users.get
+  // 1. Autocomplete for .api.users.get
   // 2. Strong typing for the payload (e.g. { id: string })
-  // 3. The `user` variable is strictly typed to whatever the backend returns!
+  // 3. The `user` variable is strictly typed to whatever the backend returns
   const user = await client.api.users.get({
     id: "123"
   })
@@ -108,7 +108,7 @@ const users = await client.api.users.get(
 
 ## 4. Advanced Configuration
 
-The `createClient` function accepts several powerful configuration options to intercept requests and responses globally.
+The `createClient` function accepts configuration options to intercept requests and responses globally.
 
 ```typescript
 export interface ClientConfig {
@@ -128,13 +128,13 @@ export interface ClientConfig {
   onResponse?: (res: Response, url: string) => void | Promise<void>
   
   // A global hook that catches any failed requests
-  onError?: (err: ExisClientError) => void | Promise<void>
+  onError?: (err: Error) => void | Promise<void>
 }
 ```
 
 ### ExisClientError
 
-If an HTTP request fails (e.g., the backend returns a `400 Bad Request` or `500 Internal Server Error`), the client throws an `ExisClientError`. This error conveniently attaches the status code and parsed JSON response!
+If an HTTP request fails (e.g., the backend returns a `400 Bad Request` or `500 Internal Server Error`), the client throws an `ExisClientError`. This error attaches the status code and parsed JSON response.
 
 ```typescript
 try {

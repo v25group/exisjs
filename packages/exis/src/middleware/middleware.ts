@@ -177,10 +177,17 @@ export {
   csrf,
   timeout,
   hpp,
-  xss,
   mongoSanitize,
   dbSanitize,
 } from './security'
+export type {
+  CsrfOptions,
+  TimeoutOptions,
+  DbSanitizeOptions,
+  HelmetOptions,
+} from './security'
+export { rateLimit } from './rate-limit'
+export type { RateLimitOptions } from './rate-limit'
 export { cacheMiddleware as cache } from './cache'
 export { dedupeMiddleware as dedupe } from './dedupe'
 export { backpressureMiddleware as backpressure } from './backpressure'

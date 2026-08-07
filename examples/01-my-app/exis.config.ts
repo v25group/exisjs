@@ -48,10 +48,10 @@ export default async (phase: string, { defaultConfig }: any) => {
       maxConcurrent: 100, // For Backpressure
       maxQueue: 1000
     },
-    logger: isDev ? {
-      level: 'debug',
-      pretty: true
-    } : false,
+    logger: {
+      level: isDev ? 'debug' : 'info',
+      pretty: isDev,
+    },
 
     /**
      * ExisJS Plugin Ecosystem

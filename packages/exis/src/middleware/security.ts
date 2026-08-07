@@ -51,7 +51,10 @@ export function helmet(options: HelmetOptions = {}): Handler {
     staticHeaders['X-Frame-Options'] = action
   }
 
-  if (options.contentSecurityPolicy) {
+  if (
+    options.contentSecurityPolicy &&
+    !options.contentSecurityPolicy.includes('{nonce}')
+  ) {
     staticHeaders['Content-Security-Policy'] = options.contentSecurityPolicy
   }
 
@@ -59,11 +62,25 @@ export function helmet(options: HelmetOptions = {}): Handler {
   const headerEntries = Object.entries(staticHeaders)
 
   return (req: Request, res: Response, next: NextFunction) => {
-    for (const [key, value] of headerEntries) {
-      res.set(key, value)
+    // Generate CSP nonce if needed
+    if (
+      options.contentSecurityPolicy &&
+      options.contentSecurityPolicy.includes('{nonce}')
+    ) {
+      const nonce = crypto.randomBytes(16).toString('base64url')
+      ;(req as any).cspNonce = nonce
+      res.setHeader(
+        'Content-Security-Policy',
+        options.contentSecurityPolicy.replace(/\{nonce\}/g, nonce)
+      )
     }
+
     if (hidePoweredBy) {
       res.removeHeader('X-Powered-By')
+    }
+
+    for (const [key, value] of headerEntries) {
+      res.setHeader(key, value)
     }
     next()
   }
@@ -72,6 +89,7 @@ export function helmet(options: HelmetOptions = {}): Handler {
 // ─── CSRF Protection ──────────────────────────────────────────────────────────
 
 export interface CsrfOptions {
+  secret: string
   cookieName?: string
   headerName?: string
   cookieOptions?: {
@@ -83,25 +101,58 @@ export interface CsrfOptions {
   }
 }
 
+function signCsrfToken(val: string, secret: string): string {
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(val)
+    .digest('base64url')
+  return `${val}.${signature}`
+}
+
+function unsignCsrfToken(val: string, secret: string): string | false {
+  const parts = val.split('.')
+  if (parts.length !== 2) return false
+  const [str, signature] = parts
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(str)
+    .digest('base64url')
+
+  const sigBuf = Buffer.from(signature)
+  const expectedBuf = Buffer.from(expectedSignature)
+
+  if (sigBuf.length !== expectedBuf.length) return false
+  if (!crypto.timingSafeEqual(sigBuf, expectedBuf)) return false
+  return str
+}
+
 /**
- * CSRF middleware using Double Submit Cookie pattern.
- * Generates a random token on GET requests and sets it as a cookie.
- * Requires the client to send the same token in a header on state-changing requests.
+ * CSRF middleware using Signed Double Submit Cookie pattern.
+ * Generates a random token on GET requests and sets it as a signed cookie.
+ * Requires the client to send the same unsigned token in a header on state-changing requests.
  */
-export function csrf(options: CsrfOptions = {}): Handler {
+export function csrf(options: CsrfOptions): Handler {
+  if (!options.secret || options.secret.length < 32) {
+    throw new Error('CSRF options.secret must be at least 32 characters long')
+  }
+
   const cookieName = options.cookieName || 'csrf-token'
   const headerName = (options.headerName || 'x-csrf-token').toLowerCase()
 
   const generateToken = () => crypto.randomUUID()
 
   return (req: Request, res: Response, next: NextFunction) => {
-    // Read existing token from cookie
-    let token = req.cookies[cookieName]
+    const rawCookie = req.cookies[cookieName]
+    let token: string | false = false
 
-    // If no token exists, generate one
+    if (rawCookie) {
+      token = unsignCsrfToken(rawCookie, options.secret)
+    }
+
+    // If no valid token exists in the signed cookie, generate a new one
     if (!token) {
       token = generateToken()
-      res.cookie(cookieName, token, {
+      res.cookie(cookieName, signCsrfToken(token, options.secret), {
         httpOnly: options.cookieOptions?.httpOnly ?? false, // Must be readable by client JS to send in header
         secure:
           options.cookieOptions?.secure ??
@@ -120,10 +171,29 @@ export function csrf(options: CsrfOptions = {}): Handler {
       return next()
     }
 
-    // For state-changing methods, validate the header token matches the cookie
+    // For state-changing methods, validate the header token matches the unsigned cookie token
     const headerToken = req.get(headerName)
     if (!headerToken || headerToken !== token) {
       return next(new HttpError('Invalid CSRF token', 403, 'CSRF_FAILED'))
+    }
+
+    // Additional security layer: Verify Origin or Referer matches the Host
+    const origin = req.get('origin')
+    const referer = req.get('referer')
+    const host = req.get('host')
+
+    if (origin || referer) {
+      const source = origin || referer || ''
+      try {
+        const sourceHost = new URL(source).host
+        if (sourceHost !== host) {
+          return next(new HttpError('CSRF Origin mismatch', 403, 'CSRF_FAILED'))
+        }
+      } catch {
+        return next(
+          new HttpError('Invalid Origin/Referer format', 403, 'CSRF_FAILED')
+        )
+      }
     }
 
     next()
@@ -184,42 +254,6 @@ export function hpp(): Handler {
         }
       }
     }
-    next()
-  }
-}
-
-// ─── XSS Sanitization ─────────────────────────────────────────────────────────
-
-function sanitizeHtml(str: string): string {
-  if (typeof str !== 'string') return str
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-}
-
-function traverseAndSanitizeXss(obj: unknown): unknown {
-  if (typeof obj === 'string') return sanitizeHtml(obj)
-  if (Array.isArray(obj)) return obj.map(traverseAndSanitizeXss)
-  if (obj && typeof obj === 'object') {
-    const sanitized: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(obj)) {
-      sanitized[k] = traverseAndSanitizeXss(v)
-    }
-    return sanitized
-  }
-  return obj
-}
-
-export function xss(): Handler {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.body) req.body = traverseAndSanitizeXss(req.body)
-    if (Object.keys(req.query).length > 0)
-      req.query = traverseAndSanitizeXss(req.query) as Record<string, string>
-    if (Object.keys(req.params).length > 0)
-      req.params = traverseAndSanitizeXss(req.params) as Record<string, string>
     next()
   }
 }

@@ -21,7 +21,7 @@ export default controller({
   },
 
   list: route.get('/', {
-    middleware: [cache({ tags: ['users'], ttlMs: 60000 })],
+    middleware: [cache({ tags: ['users'], ttlMs: 60000, keyGenerator: (req) => req.path })],
     async handle(ctx) {
       // Re-use the existing controller
       return getUsers(ctx.req, ctx.res)
@@ -65,3 +65,4 @@ export default controller({
     },
   }),
 })
+

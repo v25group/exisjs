@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import { error, c } from '../utils'
 import { generateManifest, generateExisEnv } from '../manifest.js'
 import { resolvePathAliases } from '../resolve-aliases.js'
@@ -113,6 +114,35 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     // default to cjs if package.json is missing or unparseable
   }
 
+  // ─── TypeScript Type-Check ─────────────────────────────────────────────────
+  // Run the TS compiler in check-only mode (no emit) to catch type errors,
+  // broken imports, and syntax errors BEFORE esbuild runs.
+  process.stdout.write(`${c.dim}type-checking...${c.reset}`)
+  const program = ts.createProgram(parsedConfig.fileNames, {
+    ...parsedConfig.options,
+    noEmit: true,
+  })
+  const diagnostics = ts.getPreEmitDiagnostics(program)
+  if (diagnostics.length > 0) {
+    process.stdout.write('\n')
+    const formatted = ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+      getCanonicalFileName: (f: string) => f,
+      getCurrentDirectory: ts.sys.getCurrentDirectory,
+      getNewLine: () => '\n',
+    })
+    process.stderr.write(formatted + '\n')
+    error(`TYPE_CHECK_FAILED: ${diagnostics.length} error(s) found.`)
+    console.error(
+      `\n${c.yellow}  Fix the errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+    )
+    process.exit(1)
+  }
+  process.stdout.write(
+    `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`
+  )
+
+  // ─── esbuild Compilation ───────────────────────────────────────────────────
+  process.stdout.write(`${c.dim}compiling...${c.reset}`)
   try {
     const esbuild = await import('esbuild')
     await esbuild.build({
@@ -127,9 +157,9 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     process.stdout.write(
       `\r${c.green}✓${c.reset} ${c.dim}compiled via esbuild in ${Date.now() - start}ms.${c.reset}\n`
     )
-  } catch {
+  } catch (err: any) {
     console.error('')
-    error(`> BUILD_OPTIMIZATION_FAILED`)
+    error(`COMPILE_FAILED: ${err?.message ?? 'esbuild encountered an error'}`)
     process.exit(1)
   }
 
@@ -139,24 +169,31 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // Generate the .exis/manifest.js route map
   await generateManifest(cwd, outDir)
 
-  process.stdout.write(`${c.dim}running experimental optimizers...${c.reset}`)
+  // ─── Build-time Validation ──────────────────────────────────────────────────
+  // Eagerly import the generated manifest to catch route-level configuration
+  // errors (e.g. missing cache keyGenerator, invalid middleware options) NOW,
+  // at build time, rather than letting them crash the production server on first
+  // request or startup.
+  process.stdout.write(`${c.dim}validating routes...${c.reset}`)
   try {
-    const { optimizeRoutes } = await import('../optimizers/aot-routes')
-    const { treeShakeMiddleware } = await import('../optimizers/tree-shake')
-    const { precompileSerializers } =
-      await import('../optimizers/precompile-serializers')
-
-    await optimizeRoutes(cwd, outDir)
-    await treeShakeMiddleware(cwd, outDir)
-    await precompileSerializers(cwd, outDir)
-    process.stdout.write(
-      `\r${c.yellow}⚠${c.reset} ${c.dim}experimental optimizers applied (not yet wired to runtime).${c.reset}\n`
+    const manifestPath = path.join(cwd, '.exis', 'routes-manifest.js')
+    if (fs.existsSync(manifestPath)) {
+      const dynamicImport = new Function(
+        'specifier',
+        'return import(specifier)'
+      )
+      await dynamicImport(pathToFileURL(manifestPath).href)
+      process.stdout.write(
+        `\r${c.green}✓${c.reset} ${c.dim}all routes validated.${c.reset}\n`
+      )
+    }
+  } catch (err: any) {
+    console.error('')
+    error(`BUILD_VALIDATION_FAILED: ${err.message}`)
+    console.error(
+      `\n${c.yellow}  Fix the error above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
     )
-  } catch (err) {
-    console.error(err)
-    process.stdout.write(
-      `\r${c.yellow}⚠${c.reset} ${c.dim}some experimental optimizers failed.${c.reset}\n`
-    )
+    process.exit(1)
   }
 
   const ms = Date.now() - start

@@ -1,0 +1,304 @@
+---
+title: "Middleware"
+description: "API Reference for ExisJS built-in Middleware functions."
+---
+
+# Middleware (`exisjs/middleware`)
+
+ExisJS ships with a massive suite of highly optimized, zero-dependency middleware. Rather than relying on outdated Express middlewares (which are often unmaintained and have heavy dependency trees), ExisJS implements security and utility middleware natively.
+
+All middlewares can be applied globally in `server.ts`, directory-wide in `gateway.ts`, or locally on specific controllers/routes.
+
+## How to Apply Middleware
+
+ExisJS provides first-class support for both Object-Oriented and Functional middleware application.
+
+**Class-Based (OOP)**
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { cache, ipFilter } from 'exisjs/middleware'
+
+@Controller('/users')
+@Use(ipFilter({ allow: ['192.168.1.0/24'] })) // Applies to entire class
+export default class UserController {
+  
+  @Get('/stats')
+  @Use(cache(60)) // Applies only to this method
+  getStats() {
+    return { users: 100 }
+  }
+}
+```
+
+**Functional**
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { cache, ipFilter } from 'exisjs/middleware'
+
+export default controller({
+  // Applies to entire controller block
+  middleware: [ipFilter({ allow: ['192.168.1.0/24'] })],
+  
+  getStats: route.get('/stats', {
+    // Applies only to this specific route
+    middleware: [cache(60)],
+    async handle() {
+      return { users: 100 }
+    }
+  })
+})
+```
+
+---
+
+## Security Middleware
+
+### `helmet(options?)`
+A native implementation of the popular Helmet middleware. It automatically sets 14+ strict security headers (HSTS, CSP, XSS Protection, No Sniff, etc.) to protect your application from common web vulnerabilities.
+
+```typescript
+interface HelmetOptions {
+  contentSecurityPolicy?: string
+  hsts?: boolean | { maxAge: number; includeSubDomains: boolean }
+  noSniff?: boolean
+  xssFilter?: boolean
+  hidePoweredBy?: boolean
+  frameguard?: boolean | { action: 'DENY' | 'SAMEORIGIN' }
+}
+```
+
+```typescript
+import { helmet } from 'exisjs/middleware'
+
+@Gateway({
+  middleware: [
+    helmet({
+      hsts: { maxAge: 31536000, includeSubDomains: true },
+      xssFilter: true,
+      hidePoweredBy: true
+    })
+  ]
+})
+```
+
+### `csrf(options)`
+Implements the Signed Double Submit Cookie pattern for Cross-Site Request Forgery (CSRF) protection. Generates a random token on GET requests, sets it as a signed cookie, and strictly requires the client to send the same unsigned token in a header on all state-changing requests (POST, PUT, DELETE).
+
+```typescript
+interface CsrfOptions {
+  secret: string
+  cookieName?: string
+  headerName?: string
+  cookieOptions?: {
+    httpOnly?: boolean
+    secure?: boolean
+    sameSite?: 'Strict' | 'Lax' | 'None'
+    path?: string
+    maxAge?: number
+  }
+}
+```
+
+```typescript
+import { csrf } from 'exisjs/middleware'
+
+app.use(csrf({
+  secret: process.env.CSRF_SECRET, // Must be 32+ chars
+  cookieName: 'csrf-token',
+  headerName: 'x-csrf-token'
+}))
+```
+
+### `hpp()`
+Protects against HTTP Parameter Pollution attacks. If a client maliciously sends an array of values where a string is expected (e.g., `?id=1&id=2`), `hpp()` will automatically intercept the request and only take the *last* provided value, preventing backend crashes or logic bypasses.
+
+### `mongoSanitize()` / `dbSanitize(options)`
+Recursively scans incoming `req.body`, `req.query`, and `req.params` and immediately strips any keys containing dangerous NoSQL characters (like `$` or `.`). This definitively prevents NoSQL Injection attacks.
+
+```typescript
+interface DbSanitizeOptions {
+  mongo?: boolean // Default: true
+}
+```
+
+### `ipFilter(options)`
+Restricts access based on the client's IP address. Supports exact matches, CIDR blocks, and custom validation functions.
+
+```typescript
+import { ipFilter } from 'exisjs/middleware'
+
+// Only allow internal network traffic
+app.use(ipFilter({
+  allow: ['10.0.0.0/8', '192.168.1.100'],
+  message: 'Access denied from external networks'
+}))
+```
+
+---
+
+## Rate Limiting & Idempotency
+
+### `rateLimit(options)`
+Limits the number of requests a single IP (or custom key) can make within a time window. 
+
+```typescript
+interface RateLimitOptions {
+  windowMs?: number         // Time window in ms (default: 60000)
+  max?: number              // Max requests per windowMs (default: 100)
+  message?: string          // Error message (default: 'Too many requests...')
+  statusCode?: number       // HTTP Status Code (default: 429)
+  keyGenerator?: Function   // Custom IP extraction logic
+  redis?: any               // Optional ioredis client for distributed limits
+  prefix?: string           // Redis key prefix
+}
+```
+
+```typescript
+import { rateLimit } from 'exisjs/middleware'
+
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,                 // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests, please try again later.'
+}))
+```
+
+### `idempotent(options)`
+Prevents duplicate identical state-changing requests (like creating a payment or order twice). Requires the client to send an `Idempotency-Key` header. If the same key is sent twice, ExisJS intercepts the second request and returns the exact same response as the first, without hitting your database again.
+
+```typescript
+import { idempotent } from 'exisjs/middleware'
+
+@Post('/payments')
+@Use(idempotent({ ttlMs: 86400000 })) // Keep keys for 24 hours
+chargeCard() {
+  return stripe.charges.create(...)
+}
+```
+
+---
+
+## Performance & Reliability
+
+### `cache(ttl)`
+Caches identical GET request responses in memory (or Redis, depending on the active adapter) for a specified number of seconds (`ttl`). Highly effective for public APIs and computationally expensive routes.
+
+```typescript
+import { cache } from 'exisjs/middleware'
+
+// Cache this endpoint for 60 seconds
+@Get('/stats')
+@Use(cache(60))
+getStats() {
+  return db.computeHeavyStats()
+}
+```
+
+### `dedupe(ttl)`
+Prevents duplicate identical requests from being processed simultaneously. If 1,000 clients request the exact same expensive resource at the exact same millisecond, `dedupe` forces 999 of them to wait for the 1st request to finish, and then serves the exact same response to all 1,000 clients simultaneously.
+
+### `compress()`
+A blazing-fast payload compression middleware natively supporting `gzip`, `deflate`, and `brotli`. Automatically compresses responses based on the client's `Accept-Encoding` header.
+
+### `timeout(ms)`
+Automatically times out any request that hangs longer than the specified milliseconds, returning a clean 503 response. Crucial for preventing stalled requests from exhausting the Node.js event loop or database connection pools.
+
+```typescript
+interface TimeoutOptions {
+  ms: number
+  message?: string
+}
+```
+
+```typescript
+import { timeout } from 'exisjs/middleware'
+
+@Gateway({
+  middleware: [timeout(10000)] // 10 second global timeout
+})
+```
+
+### `backpressure(options)`
+Monitors the Node.js Event Loop Delay in real-time. If the event loop gets too backed up (e.g., CPU is pegged at 100%), it will start returning 503 Service Unavailable to new requests until the CPU catches its breath.
+
+---
+
+## Utility Middleware
+
+### `cors(options)`
+Native, zero-dependency Cross-Origin Resource Sharing (CORS) handler. Features full support for preflight (`OPTIONS`), dynamic regex origins, and exposed headers.
+
+```typescript
+import { cors } from 'exisjs/middleware'
+
+app.use(cors({
+  origin: ['https://myapp.com', /localhost:\d+/],
+  credentials: true,
+  methods: ['GET', 'POST']
+}))
+```
+
+### `requestId()`
+Injects a unique `X-Request-Id` into every incoming request and attaches it to `req.requestId`. Seamlessly respects incoming tracing headers (`traceparent`, `x-b3-traceid`) for distributed microservice tracing.
+
+### `requestLogger(config)`
+A high-performance request logger powered by Pino. Automatically logs method, URL, status code, and response time. Integrates perfectly with `requestId()` to attach trace IDs to every single log line.
+
+```typescript
+import { requestLogger } from 'exisjs/middleware'
+
+app.use(requestLogger({ level: 'info' }))
+```
+
+### `serveStatic(root, options?)`
+A highly optimized static file server. Supports ETags, `HEAD` requests, conditional GETs, streaming file reads, and deep path resolution. Perfect for serving SPAs or assets.
+
+```typescript
+import { serveStatic } from 'exisjs/middleware'
+
+app.use('/public', serveStatic('./public', { maxAge: 86400 }))
+```
+
+---
+
+## Architectural Middleware
+
+ExisJS provides utility wrappers that convert NestJS-style architectural patterns into standard Express middlewares, bridging the gap between OOP metadata and pure functional execution.
+
+### `guard(fn)`
+Wraps an authorization or validation function. If the guard returns `false`, it throws an automatic `403 Forbidden` response.
+
+```typescript
+import { guard } from 'exisjs/middleware'
+
+const RequireAdmin = guard((req) => req.user?.role === 'admin')
+```
+
+### `pipe(fn)`
+A synchronous transformation function. Takes the incoming request data, transforms it, and overwrites the body before passing it down the chain.
+
+### `intercept(fn)`
+Wraps the entire request-response lifecycle. Interceptors can manipulate the response right before it gets sent to the client. Highly useful for standardizing JSON response shapes.
+
+```typescript
+import { intercept } from 'exisjs/middleware'
+
+// Standardize all responses to { data: <payload> }
+const WrapResponse = intercept((req, res, data) => ({
+  data
+}))
+```
+
+### `catchError(handler)`
+An exception filter wrapper. Catches any errors thrown by the route or previous middlewares and handles them gracefully.
+
+```typescript
+import { catchError } from 'exisjs/middleware'
+
+const HandlePrismaErrors = catchError((err, req, res) => {
+  if (err.code === 'P2002') {
+    return res.status(409).json({ error: 'Unique constraint failed' })
+  }
+  throw err // Pass to default error handler
+})
+```

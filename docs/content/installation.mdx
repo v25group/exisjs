@@ -8,10 +8,7 @@ nextTitle: 'Project Structure'
 In this guide, you'll learn the core fundamentals of ExisJS. To get familiar with the essential building blocks, we'll scaffold a new project, explore the file structure, and create our very first API server.
 
 <Info title="Language Support">
-  We highly recommend **TypeScript** for maximum type-safety and automatic
-  frontend client generation. However, ExisJS perfectly supports vanilla
-  JavaScript as well. ExisJS leverages ultra-fast bundlers under the hood,
-  meaning you never have to manually run `tsc` to start your server.
+  We recommend **TypeScript** for type-safety and automatic frontend client generation. However, ExisJS fully supports vanilla JavaScript as well. ExisJS leverages esbuild under the hood, meaning you do not need to manually run `tsc` to start your server.
 </Info>
 
 ## Prerequisites
@@ -20,10 +17,10 @@ Please make sure that **Node.js (version >= 20)** is installed on your operating
 
 ## Setup
 
-Setting up a new project is incredibly simple using our CLI tool. Open your terminal and run the following command to scaffold a new ExisJS project:
+Setting up a new project can be done using our CLI tool. Open your terminal and run the following command to scaffold a new ExisJS project:
 
 <div className="my-6 max-w-lg">
-  <CopyCommand command="npx @exisjs/create@latest my-app" />
+  <CopyCommand command="npx @exisjs/create@latest my-backend" />
 </div>
 
 The CLI will prompt you with a few simple questions to customize your project:
@@ -34,10 +31,10 @@ The CLI will prompt you with a few simple questions to customize your project:
 √ Would you like your code inside a `src/` directory? ... No / Yes
 √ Would you like to customize the import alias (`@/*` by default)? ... No / Yes
 
-Creating a new Exis JS app in my-app.
+Creating a new Exis JS app in my-backend.
 ```
 
-The CLI will then create the `my-app` directory, install all required dependencies, and populate the project with a conventional base structure.
+The CLI will then create the `my-backend` directory, install all required dependencies, and populate the project with a conventional base structure.
 
 ## Core Files
 
@@ -72,12 +69,7 @@ Once the installation is complete, your project directory will look something li
 
 Let's look at the generated `src/http/server.ts`. This is the strict entry point of your application, where you can connect to databases and register global plugins.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Server Setup
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -98,8 +90,7 @@ export default exis({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Server Setup
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -122,9 +113,6 @@ export default class RootServer {
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
 With ExisJS, the framework automatically handles booting up your server and loading your routes based on the file system. You don't need to manually call `app.listen()`!
 
 ## Your First Route
@@ -135,15 +123,22 @@ ExisJS supports two primary styles of writing routes: **Functional** and **OOP (
 
 ### Functional Routing
 
-Functional routing provides a lean, inference-heavy developer experience similar to modern frontend frameworks. Let's declare our first route in `src/http/route.ts`:
+Functional routing provides a lean, inference-heavy developer experience similar to modern frontend frameworks. Let's declare our first route in `src/http/users/route.ts`:
 
-```typescript filename="src/http/route.ts (Functional)"
+```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  welcome: route.get('/', {
-    handle() {
-      return { message: 'Welcome to Exis JS!' }
+  getUsers: route.get('/', {
+    handle(req) {
+      // Return a realistic response structure
+      return { 
+        data: [
+          { id: 1, name: 'Alice' },
+          { id: 2, name: 'Bob' }
+        ],
+        total: 2 
+      }
     },
   }),
 })
@@ -153,19 +148,27 @@ export default controller({
 
 If you prefer a highly-structured architecture heavily inspired by Angular and NestJS, ExisJS natively provides robust class-based routing using Decorators:
 
-```typescript filename="src/http/route.ts (OOP)"
-import { Controller, Get } from 'exisjs/decorators'
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs'
 
 @Controller()
-export default class RootController {
+export default class UsersController {
   @Get('/')
-  welcome() {
-    return { message: 'Welcome to Exis JS!' }
+  getUsers(@Req() req: Request) {
+    // Return a realistic response structure
+    return { 
+      data: [
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' }
+      ],
+      total: 2 
+    }
   }
 }
 ```
 
-In both examples, because this file is named `route.ts` and is located at the root of the `http` folder, it automatically responds to `GET /` requests. Whatever you return is automatically serialized to JSON.
+In both examples, because this file is named `route.ts` and is located in the `users` folder, it automatically responds to `GET /users` requests. Whatever you return is automatically serialized to JSON.
 
 ## Running the Application
 
@@ -175,7 +178,7 @@ Your generated `package.json` comes pre-configured with the Exis CLI commands. S
   <CopyCommand command="npm run dev" />
 </div>
 
-You will see the ultra-fast ExisJS server boot up in your terminal:
+You will see the server boot up in your terminal:
 
 ```text filename="Terminal"
 6:18:28 pm [exis] starting development server (v0.1.0)...
@@ -192,6 +195,16 @@ Open your browser and navigate to [http://localhost:4000/](http://localhost:4000
 
 ```json filename="Response"
 {
-  "message": "Welcome to Exis JS!"
+  "data": [
+    {
+      "id": 1,
+      "name": "Alice"
+    },
+    {
+      "id": 2,
+      "name": "Bob"
+    }
+  ],
+  "total": 2
 }
 ```

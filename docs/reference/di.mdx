@@ -1,0 +1,123 @@
+---
+title: "Dependency Injection"
+description: "API Reference for ExisJS Dependency Injection (`exisjs/di`)."
+---
+
+# Dependency Injection (`exisjs/di`)
+
+ExisJS ships with a powerful, built-in Inversion of Control (IoC) Container. 
+
+It fully supports standard Class-Based constructor injection (similar to NestJS or Angular) but also introduces a highly optimized `inject()` function that allows perfectly typed, deeply nested dependency injection inside purely functional architectures.
+
+---
+
+## Providing Dependencies
+
+Before a dependency can be injected, it must be provided to the application container. This is typically done in your plugins or the global `server.ts` file using `app.provide()`.
+
+### Provider Types
+
+ExisJS supports four types of providers:
+
+**1. Value Providers**
+Provide static, pre-instantiated values or configuration objects.
+```typescript
+app.provide('API_KEY', { useValue: 'sk_live_123' })
+```
+
+**2. Class Providers**
+Provide a class constructor. ExisJS will automatically instantiate it the first time it is resolved.
+```typescript
+app.provide('UserService', { useClass: UserService })
+```
+
+**3. Factory Providers**
+Provide a synchronous or asynchronous function to generate the value dynamically.
+```typescript
+app.provide('Database', { 
+  useFactory: async () => {
+    const db = new DatabaseConnection()
+    await db.connect()
+    return db
+  }
+})
+```
+
+**4. Direct Injection**
+If you pass an undecorated Class or object directly, ExisJS will attempt to resolve it automatically.
+```typescript
+app.provide(AuthService, AuthService)
+```
+
+---
+
+## Scopes (`singleton` vs `request`)
+
+By default, all providers in ExisJS are **Singletons**. They are instantiated once and cached for the lifetime of the application.
+
+If you need a new instance of a dependency for *every single incoming HTTP request*, you can change the scope to `request`.
+
+```typescript
+app.provide('TraceLogger', { 
+  useClass: RequestScopedLogger, 
+  scope: 'request' 
+})
+```
+
+> [!WARNING]
+> Request-scoped providers can severely impact application performance because they force the engine to allocate new memory and construct new classes on every single HTTP request. Only use `request` scope when strictly necessary.
+
+---
+
+## Injecting Dependencies
+
+### 1. Functional Injection (`inject()`)
+
+The true superpower of ExisJS is the `inject()` hook. 
+
+Powered by Node.js `AsyncLocalStorage`, `inject()` can be called from **anywhere** within a request lifecycle (Controllers, Middlewares, nested utility functions) without needing to explicitly pass the `app` or `req` objects down the call chain!
+
+```typescript filename="src/http/users/route.ts"
+import { route } from 'exisjs/router'
+import { inject } from 'exisjs/di'
+import { Database } from '../db' // The class definition
+
+export default controller({
+  getUsers: route.get('/', {
+    async handle() {
+      // Magically resolves the correct instance from the global container!
+      // Type is automatically inferred as `Database`.
+      const db = inject(Database) 
+      
+      const apiKey = inject<string>('API_KEY')
+      
+      return db.query('SELECT * FROM users')
+    }
+  })
+})
+```
+
+> [!NOTE]
+> `inject()` relies on the active execution context. If you call `inject()` outside of an active HTTP request or application lifecycle hook (e.g., in a background `setInterval` without context), it will throw an error.
+
+### 2. Using `inject()` in Classes (OOP)
+
+Unlike other frameworks like NestJS, ExisJS does **not** rely on slow, metadata-heavy Constructor Injection. 
+
+Instead, you use the exact same blazingly fast `inject()` function directly inside your Controller methods! This completely eliminates the need for `@Inject()` decorators or massive constructor boilerplate.
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { inject } from 'exisjs/di'
+import { Database } from '../db'
+
+@Controller('/users')
+export default class UserController {
+  @Get('/')
+  async getUsers() {
+    // Inject dependencies perfectly cleanly right where you need them!
+    const db = inject(Database)
+    return db.query('SELECT * FROM users')
+  }
+}
+```

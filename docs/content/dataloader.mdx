@@ -5,9 +5,9 @@ nextTitle: "Security & Auth"
 
 # Dataloader (N+1 Queries)
 
-The **N+1 problem** is one of the most notorious performance killers in backend development. It occurs when your code executes one query to fetch a list of items (e.g. 100 Posts), and then executes $N$ additional queries to fetch related data (e.g. 100 separate queries for each Post's Author).
+The **N+1 problem** is a common performance issue in backend development. It occurs when your code executes one query to fetch a list of items (e.g. 100 Posts), and then executes $N$ additional queries to fetch related data (e.g. 100 separate queries for each Post's Author).
 
-ExisJS ships with a native `Dataloader` implementation (heavily inspired by GraphQL/Facebook's DataLoader) built directly into the core framework. It automatically **batches** and **caches** requests over a single tick of the Node.js event loop.
+ExisJS ships with a native `Dataloader` implementation (inspired by GraphQL/Facebook's DataLoader) built directly into the core framework. It automatically **batches** and **caches** requests over a single tick of the Node.js event loop.
 
 ---
 
@@ -15,7 +15,7 @@ ExisJS ships with a native `Dataloader` implementation (heavily inspired by Grap
 
 The best practice in ExisJS is to define a central registry of Dataloaders that are **securely scoped to the current HTTP Request** (to prevent data leaking between different users). 
 
-ExisJS provides `defineLoaders` to effortlessly create this context-aware registry.
+ExisJS provides `defineLoaders` to create this context-aware registry.
 
 ```typescript filename="src/loaders.ts"
 import { Dataloader, defineLoaders } from 'exisjs/dataloader'
@@ -59,12 +59,7 @@ export const { loaderMiddleware, getLoaders } = defineLoaders({
 
 Because ExisJS uses lazy-initialization, there is **zero performance penalty** for routes that don't actually use the loaders.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+#### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -78,8 +73,7 @@ export default exis({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+#### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -95,14 +89,11 @@ export default class RootServer {
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
 ---
 
 ## 3. Using Dataloader in Routes
 
-Now for the magic. Anywhere in your application (Routes, Controllers, Services), you can call `getLoaders()` to retrieve the securely isolated loaders for the *current* request.
+Anywhere in your application (Routes, Controllers, Services), you can call `getLoaders()` to retrieve the securely isolated loaders for the *current* request.
 
 #### Functional Paradigm
 
@@ -121,15 +112,15 @@ export default controller({
       // 2. Loop through 100 posts and call .load()
       const postsWithAuthors = await Promise.all(
         posts.map(async (post) => {
-          // MAGIC: Instead of firing 100 queries to the database,
-          // Dataloader queues them up and fires exactly ONE batched query!
+          // Instead of firing 100 queries to the database,
+          // Dataloader queues them up and fires exactly ONE batched query.
           const author = await authorLoader.load(post.authorId)
           return { ...post, author }
         })
       )
 
       return postsWithAuthors
-      // Total Queries: 2 (Not 101!)
+      // Total Queries: 2 (Not 101)
     }
   })
 })
@@ -153,15 +144,15 @@ export default class PostsController {
     // 2. Loop through 100 posts and call .load()
     const postsWithAuthors = await Promise.all(
       posts.map(async (post) => {
-        // MAGIC: Instead of firing 100 queries to the database,
-        // Dataloader queues them up and fires exactly ONE batched query!
+        // Instead of firing 100 queries to the database,
+        // Dataloader queues them up and fires exactly ONE batched query.
         const author = await authorLoader.load(post.authorId)
         return { ...post, author }
       })
     )
 
     return postsWithAuthors
-    // Total Queries: 2 (Not 101!)
+    // Total Queries: 2 (Not 101)
   }
 }
 ```

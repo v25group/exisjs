@@ -5,9 +5,9 @@ nextTitle: "OpenAI"
 
 # Resend (Email) Integration
 
-ExisJS provides a zero-config, native integration for **Resend** to send emails effortlessly. 
+ExisJS provides an integration for Resend to send emails. 
 
-Just like all our other integrations, ExisJS treats the `resend` SDK as an optional dependency. You only install it if you need it, keeping your core application blazing fast and extremely lightweight!
+Just like all our other integrations, ExisJS treats the `resend` SDK as an optional dependency. You only install it if you need it, keeping your core application lightweight.
 
 ---
 
@@ -35,7 +35,7 @@ npm install resend
 
 ## Usage
 
-Simply import the `resend` proxy from `exisjs/resend`. ExisJS will instantly boot the client behind the scenes the first time you attempt to send an email!
+Simply import the `resend` proxy from `exisjs/resend`. ExisJS will boot the client behind the scenes the first time you attempt to send an email.
 
 #### Functional Paradigm
 
@@ -48,7 +48,7 @@ export default controller({
     async handle(req) {
       const { email, name } = req.body
 
-      // The resend client magically lazy-loads here!
+    // The resend client lazy-loads here
       const { data, error } = await resend.emails.send({
         from: 'Acme <onboarding@resend.dev>',
         to: [email],

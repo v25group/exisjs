@@ -1,0 +1,132 @@
+---
+title: "Caching"
+description: "API Reference for ExisJS Caching and Revalidation (`exisjs/cache`)."
+---
+
+# Caching (`exisjs/cache`)
+
+ExisJS comes with a highly sophisticated built-in caching system that natively supports **stale-while-revalidate** semantics, intelligent `tags`-based cache invalidation, and multiple backing stores (Memory, FileSystem, and Redis).
+
+---
+
+## `cacheMiddleware(options)`
+
+The primary way to use the cache is by attaching the `cacheMiddleware` directly to your GET routes. It intercepts responses, stores them in the cache, and serves them blazingly fast on subsequent identical requests.
+
+ExisJS automatically injects an `X-Exis-Cache: HIT` or `X-Exis-Cache: MISS` header into the HTTP response so you can debug your cache behavior instantly!
+
+**Class-Based (OOP)**
+```typescript filename="src/http/stats/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { cacheMiddleware } from 'exisjs/cache'
+
+@Controller('/stats')
+export default class StatsController {
+  
+  @Get('/')
+  @Use(
+    cacheMiddleware({
+      ttlMs: 60 * 1000, // 60 seconds
+      keyGenerator: (req) => `stats:${req.query.period || 'all'}`
+    })
+  )
+  async getStats() {
+    return db.queryHeavyStats() 
+  }
+}
+```
+
+**Functional**
+```typescript filename="src/http/stats/route.ts"
+import { controller, route } from 'exisjs/router'
+import { cacheMiddleware } from 'exisjs/cache'
+
+export default controller({
+  getStats: route.get('/', {
+    middleware: [
+      cacheMiddleware({
+        ttlMs: 60 * 1000, // 60 seconds
+        
+        // You MUST provide a keyGenerator to prevent data leaking between users!
+        keyGenerator: (req) => `stats:${req.query.period || 'all'}`
+      })
+    ],
+    async handle() {
+      // This heavy query only runs once every 60 seconds per period
+      return db.queryHeavyStats() 
+    }
+  })
+})
+```
+
+### Options
+
+- **`keyGenerator`** `(req => string)`: **Required.** Generates a unique cache key for the request. Never use a static key if the response varies by User ID or Query Parameters.
+- **`ttlMs`** `(number)`: Time to live in milliseconds. If omitted, the cache never inherently expires based on time (relies on manual tags instead).
+- **`tags`** `(string[] | function)`: A list of tags to associate with this cache entry, used for Next.js-style on-demand revalidation.
+
+---
+
+## Tag-Based Cache Invalidation
+
+Instead of waiting for a TTL to expire, you can invalidate caches instantly using tags. This is exactly how Next.js App Router caching works.
+
+When you cache a route, assign it a tag:
+
+```typescript filename="src/http/products/route.ts"
+import { cacheMiddleware } from 'exisjs/cache'
+
+route.get('/:id', {
+  middleware: [
+    cacheMiddleware({
+      // We tag this cache entry with the specific product ID
+      tags: (req) => [`product-${req.params.id}`, 'all-products'],
+      keyGenerator: (req) => `product:${req.params.id}`
+    })
+  ],
+  async handle(ctx) {
+    return db.products.find(ctx.params.id)
+  }
+})
+```
+
+Later, when a user updates the product via a `POST` or `PUT` route, you can instantly bust all caches tied to that tag using `revalidateTag()`!
+
+```typescript filename="src/http/products/route.ts"
+import { revalidateTag } from 'exisjs/cache'
+
+route.put('/:id', {
+  async handle(ctx) {
+    await db.products.update(ctx.params.id, ctx.body)
+    
+    // Instantly purge the cache across the entire cluster!
+    await revalidateTag(`product-${ctx.params.id}`)
+    
+    return { success: true }
+  }
+})
+```
+
+---
+
+## Cache Drivers
+
+ExisJS natively provides three driver implementations:
+
+1. **`FileSystemCacheStore`**: (Default). Writes cache data to `.exis/cache/*.json` on the disk. Extremely fast for static data and survives server reboots.
+2. **`MemoryCacheStore`**: Keeps caches purely in RAM. Perfect for development or extremely high-throughput, short-TTL data. (Includes automatic broadcast sync if running in an ExisJS Cluster).
+3. **`RedisCacheStore`**: The standard for production. Uses a minimal Redis client to handle distributed caching across massive fleets of servers.
+
+### Switching Stores Globally
+
+While you can pass a `store` option directly into `cacheMiddleware()`, it is usually better to set the global cache store during application boot:
+
+```typescript filename="src/server.ts"
+import { exis } from 'exisjs'
+import { setCacheStore, RedisCacheStore } from 'exisjs/cache'
+
+const app = exis()
+
+// Use Redis instead of the default FileSystem cache
+setCacheStore(new RedisCacheStore(myRedisClient))
+```

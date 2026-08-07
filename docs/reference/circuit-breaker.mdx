@@ -1,0 +1,71 @@
+---
+title: "Circuit Breaker"
+description: "Strict API Reference for the Circuit Breaker resilience utility."
+---
+
+# Circuit Breaker (`exisjs/circuit-breaker`)
+
+This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/circuit-breaker` module. For high-level resilience guides, see the [Circuit Breaker Guide](/docs/circuit-breaker).
+
+---
+
+## `CircuitBreaker` Class
+
+The `CircuitBreaker` class is a state machine that monitors the execution of async actions to prevent cascading failures.
+
+```typescript
+import { CircuitBreaker } from 'exisjs/circuit-breaker'
+
+class CircuitBreaker {
+  constructor(options?: CircuitBreakerOptions)
+  
+  // The current state of the breaker
+  public state: CircuitState
+  
+  // Executes the provided async action through the breaker
+  fire<T>(action: () => Promise<T>): Promise<T>
+}
+```
+
+### `CircuitBreakerOptions`
+
+```typescript
+interface CircuitBreakerOptions {
+  /** Maximum number of sequential failures before the breaker transitions to OPEN */
+  failureThreshold?: number // Default: 5
+  
+  /** Time to wait (in ms) before transitioning from OPEN to HALF_OPEN to test recovery */
+  resetTimeoutMs?: number   // Default: 10000 (10 seconds)
+}
+```
+
+---
+
+## `CircuitState` Enum
+
+The circuit breaker operates in one of three states.
+
+```typescript
+enum CircuitState {
+  // Normal operation, all requests pass
+  CLOSED = 'CLOSED',
+  
+  // Failing, all requests are instantly rejected
+  OPEN = 'OPEN',
+  
+  // Testing recovery, exactly ONE request is allowed through
+  HALF_OPEN = 'HALF_OPEN',
+}
+```
+
+---
+
+## `CircuitBreakerError`
+
+If `fire()` is called while the breaker is `OPEN` (or if it is `HALF_OPEN` and a probe is already in flight), the breaker will instantly reject the promise with a `CircuitBreakerError`.
+
+```typescript
+class CircuitBreakerError extends Error {
+  constructor(message: string)
+}
+```

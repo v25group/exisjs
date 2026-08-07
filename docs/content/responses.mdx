@@ -5,7 +5,7 @@ nextTitle: "Prisma Integration"
 
 # Responses
 
-Unlike standard Node.js `ServerResponse` objects which are notoriously low-level and cumbersome, ExisJS wraps every response in a highly optimized `ExisResponse` class. It provides an expressive, chainable API while maintaining the raw performance of native Node.
+Unlike standard Node.js `ServerResponse` objects, ExisJS wraps every response in an `ExisResponse` class. It provides a chainable API while maintaining the raw performance of native Node.
 
 While ExisJS routes allow you to simply `return { data: ... }` (which automatically serializes to JSON), the `res` object gives you granular control over headers, cookies, streams, and file downloads.
 
@@ -23,7 +23,7 @@ import { controller, route } from 'exisjs/router'
 export default controller({
   getUsers: route.get('/', {
     handle(req, res) {
-      // ExisJS automatically handles JSON serialization!
+      // ExisJS automatically handles JSON serialization
       return [{ id: 1, name: "Alice" }] 
     }
   })
@@ -39,7 +39,7 @@ import { Controller, Get } from 'exisjs/decorators'
 export default class UsersController {
   @Get('/')
   async getUsers() {
-    // ExisJS automatically handles JSON serialization!
+    // ExisJS automatically handles JSON serialization
     return [{ id: 1, name: "Alice" }] 
   }
 }
@@ -134,7 +134,7 @@ export default class UsersController {
 
 ## 3. Setting Headers & Status
 
-The `ExisResponse` object implements a beautiful, chainable API for HTTP headers and status codes.
+The `ExisResponse` object implements a chainable API for HTTP headers and status codes.
 
 ```typescript
 res.status(404)
@@ -174,7 +174,7 @@ res.clearCookie('session_id')
 
 ## 4. File Downloads & Streaming
 
-ExisJS makes streaming files incredibly simple and efficient, fully bypassing V8 memory bottlenecks by piping native Node streams directly to the socket.
+ExisJS makes streaming files simple, bypassing V8 memory bottlenecks by piping native Node streams directly to the socket.
 
 ### `res.download()`
 Automatically reads a file from disk, sets the `Content-Disposition` header to force a download in the browser, and infers the correct MIME type based on the file extension.
@@ -266,6 +266,6 @@ res.redirect('https://google.com', 301)
 
 ExisJS features native, automatic ETag generation. 
 
-If the client sends an `If-None-Match` header matching the ETag of the current response, ExisJS will immediately abort serialization and send a lightning-fast `304 Not Modified` header with an empty body, saving significant bandwidth and CPU cycles.
+If the client sends an `If-None-Match` header matching the ETag of the current response, ExisJS will immediately abort serialization and send a `304 Not Modified` header with an empty body, saving bandwidth and CPU cycles.
 
-*Note: ETag generation is disabled by default to maximize raw throughput, but can be enabled globally in your `exis()` config, or manually per-route via `res.etagEnabled = true`.*
+*Note: ETag generation is disabled by default, but can be enabled globally in your `exis()` config, or manually per-route via `res.etagEnabled = true`.*

@@ -125,12 +125,21 @@ export function aws(app: App) {
         const finalBuffer = Buffer.concat(bodyChunks)
         statusCode = res.statusCode || statusCode
 
-        // Resolve the Lambda promise
+        const contentType = resHeaders['content-type'] || ''
+        const isText =
+          contentType.includes('text/') ||
+          contentType.includes('application/json') ||
+          contentType.includes('application/xml') ||
+          contentType.includes('application/x-www-form-urlencoded') ||
+          contentType.includes('application/javascript')
+
         resolve({
           statusCode,
           headers: resHeaders,
-          body: finalBuffer.toString('base64'),
-          isBase64Encoded: true,
+          body: isText
+            ? finalBuffer.toString('utf8')
+            : finalBuffer.toString('base64'),
+          isBase64Encoded: !isText,
         })
 
         if (typeof cb === 'function') cb()

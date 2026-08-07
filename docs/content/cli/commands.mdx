@@ -1,0 +1,214 @@
+---
+nextUrl: "/docs"
+nextTitle: "Introduction"
+---
+
+# CLI command reference
+
+### `exisjs init`
+
+Creates a new ExisJS project.
+
+```bash
+$ npx exisjs init
+```
+
+**Description**
+Creates and initializes a new ExisJS project. Prompts for configuration options (such as whether to include TypeScript, ESLint, Database integrations, etc.) and generates a boilerplate project structure for you.
+
+---
+
+### `exisjs generate`
+
+Generates and/or modifies files based on a schematic.
+
+```bash
+$ npx exisjs generate <type> <name> [options]
+$ npx exisjs g <type> <name> [options]
+```
+
+**Description**
+Generates new features for your application, such as routes, plugins, middleware, or tests.
+
+**Arguments**
+
+| Argument | Description |
+| :--- | :--- |
+| `<type>` | The type of the feature to generate. See the Schematics table below. |
+| `<name>` | The name of the generated component. |
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `--oop` | Generate using Class-Based (OOP) paradigm instead of Functional. |
+
+**Schematics**
+
+| Name | Alias | Description |
+| :--- | :--- | :--- |
+| `route` | `r` | Generates a new Route controller. |
+| `plugin` | `p` | Generates a new ExisJS Plugin module. |
+| `middleware` | `m` | Generates a new Middleware function. |
+| `test` | `t` | Generates a new test suite file. |
+
+---
+
+### `exisjs build`
+
+Compiles an application or workspace into an output folder.
+
+```bash
+$ npx exisjs build [options]
+```
+
+**Description**
+Compiles TypeScript to production JavaScript.
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-o, --out-dir <dir>` | Output directory (default: dist). |
+| `--no-clean` | Skip cleaning the output directory. |
+
+---
+
+### `exisjs start`
+
+Compiles and runs an application from the compiled `dist` directory.
+
+```bash
+$ npx exisjs start [options]
+```
+
+**Description**
+Starts the production server by executing the compiled application entry file.
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-p, --port <port>` | Port to listen on (overrides `.env`). |
+| `-e, --entry <file>` | Custom compiled entry file path (default: `dist/http/server.js`). |
+
+---
+
+### `exisjs dev`
+
+Starts the development server with Hot Module Replacement (HMR) and automatic restarts.
+
+```bash
+$ npx exisjs dev [options]
+```
+
+**Description**
+Starts the development server and handles TypeScript compilation on the fly.
+- **Port Detection:** If your requested port is already in use by another process, it detects the collision, automatically increments the port, and binds to the next available one.
+- **Lazy Routing (.exis):** ExisJS leverages the hidden `.exis` folder during development to lazy-load routes on demand.
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-p, --port <port>` | Port to listen on (overrides `.env`). |
+| `-h, --host <host>` | Host to bind to. |
+| `-e, --entry <file>` | Custom entry file path (default: `src/http/server.ts`). |
+
+---
+
+### `exisjs test`
+
+Runs the native Node.js test runner (`node:test`) across your project.
+
+```bash
+$ npx exisjs test [files...] [options]
+```
+
+**Description**
+Automatically sets up the ExisJS environment and parses TypeScript natively to run tests using the built-in `node:test` runner.
+
+**Arguments**
+
+| Argument | Description |
+| :--- | :--- |
+| `[files...]` | Specific test files or directories to run (optional). |
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `--watch` | Watch for file changes and re-run tests. |
+| `-u, --update` | Update test snapshots. |
+| `-e, --entry <file>` | Custom entry file path to bootstrap before tests. |
+
+---
+
+### `exisjs routes`
+
+Analyzes your application and prints a tabular representation of your entire routing table to the terminal.
+
+```bash
+$ npx exisjs routes [options]
+```
+
+**Description**
+Loads your application context and outputs a formatted table showing all registered HTTP routes.
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the app from. |
+
+---
+
+### `exisjs repl`
+
+Starts an interactive Read-Eval-Print Loop (REPL) console loaded with your application's context.
+
+```bash
+$ npx exisjs repl [options]
+$ npx exisjs console [options]
+```
+
+**Description**
+Provides an interactive command-line environment with direct access to your application's database, plugins, and services.
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the app from. |
+
+---
+
+### `exisjs exports`
+
+Lists all the available framework exports and public APIs exposed by ExisJS.
+
+```bash
+$ npx exisjs exports
+```
+
+**Description**
+Outputs a list of everything that can be imported from the `exisjs` package.
+
+---
+
+### `exisjs info`
+
+Displays environment and version information for debugging and bug reporting.
+
+```bash
+$ npx exisjs info
+```
+
+**Description**
+Prints out the current ExisJS version, Node.js version, platform, and architecture.
+
+---
+
+## Requirements
+
+ExisJS CLI requires a Node.js binary. We recommend Node.js v20+ to ensure compatibility with modern native features (like the built-in test runner).

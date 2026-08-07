@@ -1,0 +1,61 @@
+---
+nextUrl: "/docs/cli/commands"
+nextTitle: "CLI Commands"
+---
+
+# CLI Usage
+
+The ExisJS CLI can be executed in two primary contexts: **globally** via your operating system's PATH, or **locally** via your project's `package.json` scripts. Understanding the distinction between these execution contexts is critical for maintaining stable development environments.
+
+## Global vs. Local Execution
+
+When you install the CLI globally (`npm install -g exisjs`) or run it on-demand via `npx`, the binary operates outside of your project's dependency tree. While this is necessary for initializing new projects, it presents a challenge for long-term maintenance: if two developers have different global versions of the CLI installed, they may experience inconsistent build outputs or behavior.
+
+To solve this, ExisJS manages its build and execution tools as **local development dependencies**. When you run `exisjs init`, the framework automatically installs the `exisjs` package into your `node_modules` and wires it up to your `package.json` scripts. 
+
+By executing the CLI through `npm run`, npm automatically resolves the binary to the exact version pinned in your `package.json`, ensuring deterministic behavior across your entire engineering team and CI/CD pipelines.
+
+## Default Package Scripts
+
+Every ExisJS project is scaffolded with a standard set of `package.json` scripts that wrap the underlying CLI commands:
+
+```json
+{
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "test": "exisjs test"
+  }
+}
+```
+
+You invoke these scripts using your package manager:
+
+```bash
+$ npm run dev
+$ npm run build
+$ npm run start
+```
+
+## Passing Arguments via Scripts
+
+If you need to pass additional arguments or options to the CLI while using package scripts, append a double-dash (`--`) before the CLI options. This instructs npm to pass the remaining arguments directly to the underlying `exisjs` command.
+
+For example, to start the development server on a custom port:
+
+```bash
+$ npm run dev -- --port 4000
+```
+
+To generate a new route using `npx` (which bypasses the script requirement while still using the local binary):
+
+```bash
+$ npx exisjs generate route users
+```
+
+## Recommended Workflow
+
+1. Use the global CLI (or `npx exisjs`) **only** for scaffolding new projects (`exisjs init`).
+2. Use the `package.json` scripts (e.g., `npm run dev`) for all day-to-day development, building, and testing.
+3. Use `npx exisjs` inside an existing project directory for one-off commands (like `generate`, `routes`, or `repl`).

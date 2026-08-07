@@ -5,9 +5,9 @@ nextTitle: "Error Handling"
 
 # Validation & Schemas
 
-If you are coming from frameworks like Fastify, you are likely used to writing validation schemas using verbose JSON Schema strings and relying on external dependencies like AJV.
+If you are coming from frameworks like Fastify, you are likely used to writing validation schemas using JSON Schema strings and relying on external dependencies like AJV.
 
-ExisJS takes a drastically more modern and strictly-typed approach. It includes a native, blazingly fast validation engine out of the box, heavily inspired by **Zod**. You don't need any external dependencies, and you don't need to write error-prone string references (like `$ref: '#address'`).
+ExisJS takes a strictly-typed approach. It includes a native validation engine out of the box, inspired by Zod. You don't need any external dependencies, and you avoid string-based references (like `$ref: '#address'`).
 
 ## The Native Validator (`v`)
 
@@ -16,7 +16,7 @@ ExisJS exports a global validator object `v` that allows you to fluently build c
 ```typescript filename="example.ts"
 import { v } from 'exisjs/validator'
 
-// Build an incredibly strict schema intuitively
+// Build a strict schema intuitively
 const userSchema = v.object({
   name: v.string().min(3),
   age: v.number().optional().default(18),
@@ -52,43 +52,46 @@ ExisJS supports a comprehensive set of strict validation primitives:
 Unlike standard validators that only check types, ExisJS allows you to mutate and sanitize incoming data in real-time before it reaches your controller. It includes a massive suite of built-in sanitizers for Strings, Numbers, Arrays, and Objects.
 
 **String Sanitizers**
-- `.trim()` - Removes leading and trailing whitespace.
-- `.lowercase()` / `.uppercase()` - Transforms string casing.
-- `.collapseWhitespace()` - Replaces multiple spaces with a single space.
-- `.stripHtml()` - Removes all HTML tags.
-- `.escape()` - Escapes HTML entities (e.g., `<` to `&lt;`) to prevent XSS.
-- `.normalizeUnicode()` - Normalizes unicode characters (NFC).
-- `.slugify()` - Converts text to a URL-friendly slug.
-- `.truncate(length)` - Truncates strings exceeding the specified length.
-- `.removeNonAlphanumeric()` - Strips out special characters.
-- `.normalizeLineEndings()` - Converts `\r\n` to `\n`.
+- `sanitize.trim` - Removes leading and trailing whitespace.
+- `sanitize.toLowerCase` / `sanitize.toUpperCase` - Transforms string casing.
+- `sanitize.collapseWhitespace` - Replaces multiple spaces with a single space.
+- `sanitize.stripHtml` - Removes all HTML tags.
+- `sanitize.escapeHtml` - Escapes HTML entities (e.g., `<` to `&lt;`) to prevent XSS.
+- `sanitize.normalizeUnicode` - Normalizes unicode characters (NFC).
+- `sanitize.slugify` - Converts text to a URL-friendly slug.
+- `sanitize.truncate(length)` - Truncates strings exceeding the specified length.
+- `sanitize.removeNonAlphanumeric` - Strips out special characters.
+- `sanitize.normalizeLineEndings` - Converts `\r\n` to `\n`.
 
 **Number Sanitizers**
-- `.round()` - Rounds numbers to the nearest integer.
-- `.clamp(min, max)` - Restricts a number between a minimum and maximum value.
-- `.defaultIfNaN(fallback)` - Provides a fallback if the number is `NaN`.
+- `sanitize.round` - Rounds numbers to the nearest integer.
+- `sanitize.clamp(min, max)` - Restricts a number between a minimum and maximum value.
+- `sanitize.defaultIfNaN(fallback)` - Provides a fallback if the number is `NaN`.
 
 **Array Sanitizers**
-- `.dedupe()` - Removes duplicate elements.
-- `.compact()` - Removes `null`, `undefined`, and empty strings.
-- `.trimElements()` - Trims all string elements inside the array.
-- `.limitLength(length)` - Slices the array to a maximum length.
+- `sanitize.dedupe` - Removes duplicate elements.
+- `sanitize.compact` - Removes `null`, `undefined`, and empty strings.
+- `sanitize.trimElements` - Trims all string elements inside the array.
+- `sanitize.limitLength(length)` - Slices the array to a maximum length.
 
 **Object Sanitizers**
-- `.deepTrimStringValues()` - Recursively trims all string values deeply nested within the object.
+- `sanitize.deepTrimStringValues` - Recursively trims all string values deeply nested within the object.
 
 ```typescript filename="example.ts"
+import { v } from 'exisjs/validator'
+import { sanitize } from 'exisjs/sanitize'
+
 const loginSchema = v.object({
-  // Automatically trim whitespace, convert to lowercase, and prevent HTML injections!
-  email: v.string().email().trim().lowercase().escape(),
+  // Automatically trim whitespace, convert to lowercase, and prevent HTML injections
+  email: v.string().email().sanitize(sanitize.trim, sanitize.toLowerCase, sanitize.escapeHtml),
   password: v.string().min(8)
 })
 
 const articleSchema = v.object({
-  title: v.string().collapseWhitespace().truncate(100),
-  // Auto-generate slugs from the title using .slugify() !
-  slug: v.string().slugify(),
-  tags: v.array(v.string()).dedupe().compact().limitLength(5)
+  title: v.string().sanitize(sanitize.collapseWhitespace, sanitize.truncate(100)),
+  // Auto-generate slugs from the title using sanitize.slugify!
+  slug: v.string().sanitize(sanitize.slugify),
+  tags: v.array(v.string()).sanitize(sanitize.dedupe, sanitize.compact, sanitize.limitLength(5))
 })
 ```
 
@@ -173,9 +176,7 @@ export const UserParamsSchema = v.object({
 export type UserParams = Infer<typeof UserParamsSchema>
 ```
 
-## Validating Routes
-
-To validate incoming HTTP requests, ExisJS provides built-in validation configurations. Whether you use the Functional paradigm or the Class-based (OOP) paradigm, ExisJS seamlessly validates incoming payloads and strictly types your handlers!
+To validate incoming HTTP requests, ExisJS provides built-in validation configurations. Whether you use the Functional paradigm or the Class-based (OOP) paradigm, ExisJS validates incoming payloads and types your handlers.
 
 #### Functional Paradigm
 
@@ -185,7 +186,7 @@ import { v } from 'exisjs/validator'
 
 export default controller({
   create: route.post('/', {
-    // 1. The validation schema is passed directly in the config!
+    // 1. The validation schema is passed directly in the config
     body: v.object({
       username: v.string().min(4),
       password: v.string().min(8)
@@ -194,10 +195,9 @@ export default controller({
       source: v.string().optional()
     }),
       
-    // 2. Your handler only runs if validation succeeds!
+    // 2. Your handler only runs if validation succeeds
     async handle({ body, query, req, res }) {
-      // ✅ body and query are perfectly strongly-typed here!
-      // ✅ req.body and req.query are ALSO natively inferred! No `as any` required.
+      // body and query are strongly-typed here
       await db.users.create(body)
       res.status(201).json({ success: true })
     }

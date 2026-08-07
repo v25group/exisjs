@@ -5,9 +5,9 @@ nextTitle: "Observability"
 
 # PostHog Integration
 
-ExisJS provides a zero-config, native integration for **PostHog**, the powerful open-source product analytics platform. 
+ExisJS provides an integration for PostHog, an open-source product analytics platform. 
 
-This enables you to instantly capture server-side events, identify users, and evaluate feature flags directly inside your route handlers!
+This enables you to capture server-side events, identify users, and evaluate feature flags directly inside your route handlers.
 
 ---
 
@@ -36,7 +36,7 @@ npm install posthog-node
 
 ## Usage
 
-Simply import the `posthog` proxy from `exisjs/posthog`. ExisJS will instantly boot the client behind the scenes the first time you track an event!
+Simply import the `posthog` proxy from `exisjs/posthog`. ExisJS will boot the client behind the scenes the first time you track an event.
 
 #### Functional Paradigm
 
@@ -51,7 +51,7 @@ export default controller({
 
       // Your auth logic here...
 
-      // The posthog client magically lazy-loads here!
+      // The posthog client lazy-loads here
       posthog.identify({
         distinctId: userId,
         properties: { email }
@@ -83,7 +83,7 @@ export default class AuthController {
 
     // Your auth logic here...
 
-    // The posthog client magically lazy-loads here!
+    // The posthog client lazy-loads here
     posthog.identify({
       distinctId: userId,
       properties: { email }
@@ -107,7 +107,7 @@ PostHog queues events in memory and sends them in batches for high performance.
 
 When your application shuts down, you must ensure all pending events are successfully flushed to PostHog before the Node.js process exits so you don't lose analytics data.
 
-Simply await `posthog.shutdown()` in your `onStop` hook!
+Simply await `posthog.shutdown()` in your `onStop` hook.
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -115,7 +115,7 @@ import { posthog } from 'exisjs/posthog'
 
 export default exis({
   async onStop() {
-    // Ensures all pending events are flushed before the server exits!
+    // Ensures all pending events are flushed before the server exits
     await posthog.shutdown()
   }
 })

@@ -201,9 +201,11 @@ export async function resolvePathAliases(
   for (const file of files) {
     const content = fs.readFileSync(file, 'utf-8')
 
-    // Quick check: does this file even contain any alias prefix?
+    // Quick check: does this file contain any alias prefix OR any extensionless relative import?
     const hasAlias = aliases.some((a) => content.includes(a.prefix))
-    if (!hasAlias) continue
+    const hasExtensionlessRelative =
+      /from\s+['"](\.\.?\/[^'"]*[^/.'"])['"]/g.test(content)
+    if (!hasAlias && !hasExtensionlessRelative) continue
 
     const rewritten = rewriteFileContent(
       content,

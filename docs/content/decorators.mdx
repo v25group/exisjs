@@ -1,8 +1,8 @@
 # Decorators
 
-ExisJS provides a rich ecosystem of standard ES6 decorators for developers who prefer the Object-Oriented Programming (OOP) paradigm (heavily inspired by NestJS). 
+ExisJS provides standard ES6 decorators for developers who prefer the Object-Oriented Programming (OOP) paradigm (inspired by NestJS). 
 
-Because ExisJS does not rely on heavy reflection libraries like `reflect-metadata`, these decorators are incredibly fast and memory-efficient.
+Because ExisJS does not rely on reflection libraries like `reflect-metadata`, these decorators are fast and memory-efficient.
 
 All decorators can be imported directly from `exisjs/decorators`.
 
@@ -10,7 +10,7 @@ All decorators can be imported directly from `exisjs/decorators`.
 
 ## 1. Servers & Gateways
 
-ExisJS allows you to configure your root application and directory-scoped gateways using decorators, completely replacing the need for functional `exis()` and `defineGateway()` wrappers if you prefer OOP.
+ExisJS allows you to configure your root application and directory-scoped gateways using decorators, replacing the need for functional `exis()` and `defineGateway()` wrappers if you prefer OOP.
 
 ### `@Server(config)`
 Used exclusively in your `src/http/server.ts` file to bootstrap the application.
@@ -26,7 +26,7 @@ import type { App } from 'exisjs'
 })
 export default class RootServer {
   async onStart(app: App) {
-    console.log('Server started!')
+    console.log('Server started')
   }
 }
 ```
@@ -90,7 +90,7 @@ export default class UsersController {
 
 ## 2. Request Parameters
 
-Instead of manually digging through the `req` object, ExisJS allows you to cleanly inject request properties directly into your method parameters.
+Instead of manually digging through the `req` object, ExisJS allows you to inject request properties directly into your method parameters.
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Post, Body, Param, Headers, Req, Res } from 'exisjs/decorators'
@@ -123,13 +123,13 @@ export default class UsersController {
 - `@Session()` - Injects `req.session` (if a session plugin is active).
 - `@Socket()` - Injects the `ExisWebSocket` (only valid in `@Ws` routes).
 - `@Stream()` - Injects the `ExisSSE` stream (only valid in `@Sse` routes).
-- `@UploadedFile()` / `@UploadedFiles()` - Automatically extracts multipart form-data files!
+- `@UploadedFile()` / `@UploadedFiles()` - Automatically extracts multipart form-data files.
 
 ---
 
 ## 3. Middleware & Lifecycles
 
-You can bind Middleware, Guards, Exception Filters, and Interceptors directly to your Controllers or individual methods using decorators!
+You can bind Middleware, Guards, Exception Filters, and Interceptors directly to your Controllers or individual methods using decorators.
 
 ```typescript filename="src/http/admin/route.ts"
 import { Controller, Get, Use, UseGuards, UseFilters } from 'exisjs/decorators'
@@ -176,7 +176,7 @@ export default class ApiController {
   }
   
   @Get('/legacy')
-  @Redirect('/new-api', 301) // Automatically redirects the client!
+  @Redirect('/new-api', 301) // Automatically redirects the client
   async legacy() {}
 }
 ```

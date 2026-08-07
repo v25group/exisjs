@@ -5,7 +5,7 @@ nextTitle: "Back to Home"
 
 # Adapters & Serverless
 
-ExisJS was engineered from the ground up using modern web standards (Fetch API, Request/Response patterns). Because of this, ExisJS isn't just bound to Node.js—it can run virtually anywhere!
+ExisJS was engineered using modern web standards (Fetch API, Request/Response patterns). Because of this, ExisJS can run across various JavaScript runtimes.
 
 To deploy your ExisJS application to serverless or edge environments, you simply wrap your `app` with the corresponding adapter from `exisjs/adapters`.
 
@@ -35,7 +35,7 @@ Every adapter handles **lazy initialization** automatically—your routes, plugi
 
 ## Vercel
 
-Vercel provides blazing fast serverless functions. To deploy an ExisJS app to Vercel, create an `api/index.js` entrypoint that wraps your app with the `vercel` adapter.
+To deploy an ExisJS app to Vercel, create an `api/index.js` entrypoint that wraps your app with the `vercel` adapter.
 
 ```javascript filename="api/index.js"
 import { dirname, join } from "node:path";
@@ -96,7 +96,7 @@ The adapter automatically handles:
 
 ## Cloudflare Workers
 
-Because ExisJS avoids bulky Node.js-only legacy dependencies, it works flawlessly on Cloudflare Workers using the Web Standard Fetch API.
+ExisJS works on Cloudflare Workers using the Web Standard Fetch API.
 
 ```typescript filename="src/worker.ts"
 import app from './http/server'
@@ -111,7 +111,7 @@ The adapter returns an object with a `fetch` method that Cloudflare Workers expe
 
 ## Netlify
 
-Netlify Edge Functions use the Web Standard Fetch API, making ExisJS a perfect fit.
+Netlify Edge Functions use the Web Standard Fetch API, which ExisJS supports.
 
 ```typescript filename="netlify/edge-functions/api.ts"
 import app from '../../src/http/server'
@@ -139,7 +139,7 @@ Deno.serve({ port: 8000 }, deno(app))
 
 ## Bun
 
-Bun provides a native, high-performance HTTP server. The `bun` adapter ties directly into Bun's `serve` function.
+Bun provides a native HTTP server. The `bun` adapter ties directly into Bun's `serve` function.
 
 ```typescript filename="src/main.ts"
 import app from './http/server'
@@ -196,4 +196,4 @@ The `app.fetch()` method accepts an optional `env` and `ctx` parameter, which ar
 app.fetch(request: Request, env?: any, ctx?: any): Promise<Response>
 ```
 
-This architecture ensures that ExisJS remains **100% portable and vendor-agnostic**. Your application code stays the same—only the deployment wrapper changes.
+This architecture ensures that ExisJS remains portable. Your application code stays the same—only the deployment wrapper changes.

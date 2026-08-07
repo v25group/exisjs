@@ -97,6 +97,22 @@ export class FileSystemCacheStore implements CacheStore {
 export class MemoryCacheStore implements CacheStore {
   private items = new Map<string, CacheItem>()
   private tags: Record<string, number> = {}
+  private isWorker: boolean
+
+  constructor() {
+    this.isWorker =
+      process.env.__EXIS_CLUSTER_WORKERS !== undefined &&
+      process.send !== undefined
+
+    if (this.isWorker) {
+      process.on('message', (msg: any) => {
+        if (msg && msg.type === 'exis:cache:revalidate' && msg.tag) {
+          // Update the tag from the broadcast
+          this.tags[msg.tag] = msg.timestamp || Date.now()
+        }
+      })
+    }
+  }
 
   async get(key: string): Promise<CacheItem | null> {
     const item = this.items.get(key)
@@ -120,7 +136,16 @@ export class MemoryCacheStore implements CacheStore {
   }
 
   async revalidateTag(tag: string): Promise<void> {
-    this.tags[tag] = Date.now()
+    const timestamp = Date.now()
+    this.tags[tag] = timestamp
+
+    if (this.isWorker && process.send) {
+      process.send({
+        type: 'exis:cache:revalidate',
+        tag,
+        timestamp,
+      })
+    }
   }
 
   async getTags(): Promise<Record<string, number>> {

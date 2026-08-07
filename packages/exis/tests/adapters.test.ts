@@ -33,10 +33,9 @@ describe('Serverless Adapters', () => {
       expect(result.headers['content-type']).toBe(
         'application/json; charset=utf-8'
       )
-      expect(result.isBase64Encoded).toBe(true)
+      expect(result.isBase64Encoded).toBe(false)
 
-      const bodyBuffer = Buffer.from(result.body, 'base64')
-      const bodyJson = JSON.parse(bodyBuffer.toString('utf8'))
+      const bodyJson = JSON.parse(result.body)
 
       expect(bodyJson).toEqual({
         echo: { hello: 'world' },
@@ -64,7 +63,8 @@ describe('Serverless Adapters', () => {
       }
 
       const result = await handler(event)
-      const decodedBody = Buffer.from(result.body, 'base64').toString('utf8')
+      expect(result.isBase64Encoded).toBe(false)
+      const decodedBody = result.body
 
       expect(decodedBody).toBe(payload)
     })

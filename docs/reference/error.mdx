@@ -1,0 +1,170 @@
+---
+title: "Error Handling"
+description: "API Reference for ExisJS built-in Error Handling (`exisjs/error`)."
+---
+
+# Error Handling (`exisjs/error`)
+
+ExisJS provides a rich set of predefined, highly optimized HTTP Error classes and a global error handler that automatically intercepts errors, formats them into a standard JSON shape, and prevents sensitive stack traces from leaking into production.
+
+---
+
+## Standard Exceptions
+
+You can throw these predefined exceptions from anywhere in your application (Controllers, Gateways, Services, or Middlewares). ExisJS will automatically catch them and map them to the correct HTTP status code.
+
+### Using Factory Methods (Recommended)
+
+The base `HttpError` class provides static factory methods for every standard HTTP error, making it extremely clean to throw errors inline:
+
+**Class-Based (OOP)**
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { HttpError } from 'exisjs/error'
+
+@Controller('/users')
+export default class UserController {
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    const user = await db.users.find(id)
+    
+    if (!user) throw HttpError.notFound('User could not be found')
+    if (user.isBanned) throw HttpError.forbidden('User account is suspended')
+
+    return user
+  }
+}
+```
+
+**Functional**
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { HttpError } from 'exisjs/error'
+
+export default controller({
+  getUser: route.get('/:id', {
+    async handle(ctx) {
+      const user = await db.users.find(ctx.params.id)
+      
+      if (!user) throw HttpError.notFound('User could not be found')
+      if (user.isBanned) throw HttpError.forbidden('User account is suspended')
+
+      return user
+    }
+  })
+})
+```
+
+### Supported Factory Methods
+- `HttpError.badRequest(msg, details?)` (400)
+- `HttpError.unauthorized(msg?)` (401)
+- `HttpError.forbidden(msg?)` (403)
+- `HttpError.notFound(resource?)` (404)
+- `HttpError.conflict(msg)` (409)
+- `HttpError.unprocessable(msg, details?)` (422)
+- `HttpError.tooManyRequests(msg?)` (429)
+- `HttpError.internal(msg?)` (500)
+- `HttpError.serviceUnavailable(msg?)` (503)
+
+### `HttpError` Properties
+
+If you catch an `HttpError` or intercept it, you have access to the following properties:
+- **`statusCode`** `(number)`: The HTTP status code.
+- **`code`** `(string)`: The unique uppercase error code (e.g., `'NOT_FOUND'`).
+- **`message`** `(string)`: The human-readable message.
+- **`details`** `(unknown)`: Optional metadata attached to the error.
+- **`isOperational`** `(boolean)`: Always `true` for `HttpError`s. Used by the global error handler to determine if an error was intentionally thrown vs an unexpected crash.
+- **`toJSON()`**: Serializes the error into the strictly typed ExisJS `{ success: false, error: ... }` response shape.
+
+---
+
+## Direct Class Instantiation
+
+If you prefer class instantiation (common in NestJS workflows), you can directly instantiate the error classes or their `Exception` aliases.
+
+```typescript filename="src/services/auth.ts"
+import { UnauthorizedError, ConflictException } from 'exisjs/error'
+
+export function verifyToken(token: string) {
+  if (!isValid(token)) {
+    throw new UnauthorizedError('Invalid or expired token')
+  }
+}
+
+export function createUser(email: string) {
+  if (db.exists(email)) {
+    throw new ConflictException('Email already exists')
+  }
+}
+```
+
+### Supported Classes
+- `BadRequestError` / `BadRequestException`
+- `UnauthorizedError` / `UnauthorizedException`
+- `ForbiddenError` / `ForbiddenException`
+- `NotFoundError` / `NotFoundException`
+- `ConflictError` / `ConflictException`
+- `UnprocessableError` / `UnprocessableException`
+- `RateLimitError` / `RateLimitException`
+- `InternalError` / `InternalException`
+
+---
+
+## Custom Errors
+
+You can easily create your own custom domain errors by extending the base `HttpError` class.
+
+```typescript filename="src/errors/payment.ts"
+import { HttpError } from 'exisjs/error'
+
+export class InsufficientFundsError extends HttpError {
+  constructor(currentBalance: number) {
+    super(
+      'Insufficient funds to complete this transaction',
+      402, // Payment Required
+      'INSUFFICIENT_FUNDS', // Custom Error Code
+      { currentBalance } // Extra details attached to the response
+    )
+  }
+}
+```
+
+---
+
+## Global Error Handler
+
+ExisJS uses a highly sophisticated global error handler out of the box, generated via `createErrorHandler(isDev)`. 
+
+### Automatic Features:
+1. **JSON Standardization**: Automatically formats all errors into a strict `{ success: false, error: { code, message, details? } }` shape.
+2. **Third-Party Integrations**: Natively catches and normalizes schema validation errors from **Zod**, **Yup**, and the **ExisJS built-in validator**.
+3. **Syntax Guard**: Catches malformed JSON payloads (SyntaxErrors) in the request body gracefully.
+4. **Dev vs Prod Modes**: If `isDev` is true, unexpected internal errors (500) will attach stack traces to the response. In production, stack traces are completely stripped to prevent security leaks.
+5. **HTML Error Pages**: In Dev mode, if a request accepts `text/html`, the error handler renders a beautiful, stylized HTML error page displaying the stack trace directly in the browser.
+
+### Overriding the Global Handler
+
+If you need to intercept errors before they reach the client (e.g., to send them to Sentry or Datadog), you can provide a custom global error handler:
+
+```typescript filename="src/server.ts"
+import { exis } from 'exisjs'
+import { HttpError } from 'exisjs/error'
+
+const app = exis()
+
+app.use((err, req, res, next) => {
+  // Log unexpected errors to Sentry
+  if (!(err instanceof HttpError) || err.statusCode >= 500) {
+    Sentry.captureException(err)
+  }
+
+  // Pass it down to the default ExisJS error handler
+  next(err)
+})
+```
+
+### Express Compatibility (`asyncHandler`)
+
+ExisJS natively intercepts and handles Promise rejections at the core routing level. 
+
+Unlike Express, you do **not** need to wrap your routes in an `asyncHandler`. However, for strict compatibility with older Express middleware ecosystems, `exisjs/error` does export an `asyncHandler` wrapper. Note that using it in ExisJS is entirely redundant and merely adds unnecessary Promise allocations.

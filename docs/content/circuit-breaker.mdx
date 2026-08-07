@@ -5,9 +5,9 @@ nextTitle: "Responses"
 
 # Circuit Breaker
 
-Microservices and external APIs fail. It is an inevitable reality of distributed systems. When an external service goes down, continuing to send it traffic can cause cascading failures across your entire infrastructure as requests queue up and connection pools are exhausted.
+Microservices and external APIs fail. It is a reality of distributed systems. When an external service goes down, continuing to send it traffic can cause cascading failures across your entire infrastructure as requests queue up and connection pools are exhausted.
 
-ExisJS ships with a native **Circuit Breaker** pattern built into the core framework. It automatically detects failures and "trips" the circuit, instantly rejecting subsequent requests so your system can recover gracefully.
+ExisJS ships with a native **Circuit Breaker** pattern built into the core framework. It automatically detects failures and "trips" the circuit, rejecting subsequent requests so your system can recover.
 
 ---
 
@@ -16,14 +16,14 @@ ExisJS ships with a native **Circuit Breaker** pattern built into the core frame
 The ExisJS Circuit Breaker operates as a state machine with three states:
 
 1. **`CLOSED`** (Normal): The circuit is closed, and traffic flows normally.
-2. **`OPEN`** (Failing): The failure threshold has been reached. The circuit is tripped, and all requests are instantly rejected with a `CircuitBreakerError` to protect the system.
+2. **`OPEN`** (Failing): The failure threshold has been reached. The circuit is tripped, and all requests are rejected with a `CircuitBreakerError` to protect the system.
 3. **`HALF_OPEN`** (Testing Recovery): After a timeout period, the circuit allows exactly *one* request through. If it succeeds, the circuit resets to `CLOSED`. If it fails, it trips back to `OPEN`.
 
 ---
 
 ## 2. Basic Usage
 
-To protect a fragile external API or a heavy database query, wrap the call inside the `CircuitBreaker.fire()` method.
+To protect an external API or a database query, wrap the call inside the `CircuitBreaker.fire()` method.
 
 #### Functional Paradigm
 
@@ -41,9 +41,9 @@ export default controller({
   charge: route.post('/charge', {
     async handle(req, res) {
       try {
-        // 2. Wrap your fragile logic inside .fire()
+        // 2. Wrap your logic inside .fire()
         const result = await stripeCircuit.fire(async () => {
-          // If this throws an error 5 times, the circuit trips!
+          // If this throws an error 5 times, the circuit trips
           return await fetch('https://api.stripe.com/v1/charges', {
             method: 'POST',
             body: JSON.stringify(req.body)
@@ -54,7 +54,7 @@ export default controller({
         
       } catch (err) {
         if (err.name === 'CircuitBreakerError') {
-          // Fast-fail response without hanging the server!
+          // Fast-fail response without hanging the server
           res.status(503).json({ error: "Payment gateway is currently overloaded. Please try again later." })
         } else {
           res.status(500).json({ error: "Payment failed" })
@@ -82,9 +82,9 @@ export default class PaymentController {
   @Post('/charge')
   async charge(@Body() body: any, @Res() res: any) {
     try {
-      // 2. Wrap your fragile logic inside .fire()
+      // 2. Wrap your logic inside .fire()
       const result = await stripeCircuit.fire(async () => {
-        // If this throws an error 5 times, the circuit trips!
+        // If this throws an error 5 times, the circuit trips
         return await fetch('https://api.stripe.com/v1/charges', {
           method: 'POST',
           body: JSON.stringify(body)
@@ -95,7 +95,7 @@ export default class PaymentController {
       
     } catch (err: any) {
       if (err.name === 'CircuitBreakerError') {
-        // Fast-fail response without hanging the server!
+        // Fast-fail response without hanging the server
         res.status(503).json({ error: "Payment gateway is currently overloaded. Please try again later." })
       } else {
         res.status(500).json({ error: "Payment failed" })

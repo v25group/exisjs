@@ -1,0 +1,245 @@
+---
+title: "Router & Controllers"
+description: "API Reference for defining routes and controllers in ExisJS."
+---
+
+# Router & Controllers
+
+ExisJS provides two distinct ways to build your API: **Functional Routing** (using `route` and `controller`) and **Class-Based Routing** (using standard decorators). You can use either paradigm, or even mix both in the same application.
+
+---
+
+## 1. Functional Routing
+
+The functional router provides a lightweight, type-safe API via the `route` and `controller` exports from `exisjs/router`. 
+
+These utilities allow you to define HTTP endpoints with built-in validation schemas, automatically typed execution contexts, and file-level configuration.
+
+### `controller()`
+
+The `controller` function wraps a collection of routes and configuration options (like middleware or CORS) inside a single file. 
+
+### Usage
+
+```typescript
+import { controller, route } from 'exisjs/router'
+import { authMiddleware } from '../../middleware/auth'
+
+export default controller({
+  // Global config applied to all routes in this controller
+  cors: true,
+  middleware: [authMiddleware],
+
+  // Your individual routes
+  getUser: route.get('/user', {
+    async handle({ req }) {
+      return { user: req.user }
+    }
+  })
+})
+```
+
+### Options (`ControllerConfig`)
+- `cors` (`boolean | CorsConfig`): Enables or configures CORS for all routes in this file.
+- `middleware` (`Handler[]`): Array of middleware functions applied to all routes in this file.
+- `filters` (`any | any[]`): Route filters applied to all routes.
+- `onError` (`HookError`): A file-level error handler.
+- `onResponse` (`HookResponse`): A file-level response hook.
+- `[key: string]` (`RouteDefinition`): **Any other key** is treated as a route definition (e.g. `getUser: route.get(...)`). This is how you bind routes to the controller!
+
+---
+
+## `route`
+
+The `route` object provides factory functions for every HTTP method (e.g., `route.get`, `route.post`, `route.patch`, `route.delete`, `route.ws`, `route.sse`). 
+
+It takes a path and a `RouteConfig` object.
+
+### Usage
+
+```typescript
+import { controller, route } from 'exisjs/router'
+import { v } from 'exisjs/validator'
+
+export default controller({
+  createUser: route.post('/users', {
+    body: {
+      email: v.string().email(),
+      password: v.string().min(8)
+    },
+    async handle(ctx) {
+      // ctx.body is strictly typed!
+      const { email, password } = ctx.body 
+      return { success: true, email }
+    }
+  })
+})
+```
+
+### Options (`RouteConfig`)
+
+- `body`: A validation schema for the request body (e.g., using `v` or Zod).
+- `query`: A validation schema for the query string.
+- `params`: A validation schema for the URL path parameters.
+- `response`: A validation schema to serialize/validate the outgoing response.
+- `middleware` (`Handler[]`): An array of middleware specific to this route.
+- `cors` (`boolean | CorsConfig`): Route-specific CORS overrides.
+- `filters` (`any | any[]`): Route-specific filters (like rate limiters or authorization checks).
+- `permissions` (`string[]`): An array of required permission flags to access this route.
+- `metadata` (`Record<string, any>`): Arbitrary metadata attached to the route for custom plugins/middleware.
+- `host` (`string | string[]`): Restrict this route to a specific subdomain/host (e.g. `api.example.com`).
+- `handle`: The async function that executes your business logic. It receives a `SuperContext`.
+
+---
+
+## `SuperContext`
+
+Every `handle` function receives a `SuperContext` object that provides fully-typed access to the request and application environment.
+
+```typescript
+import { controller, route } from '../router' // Import your custom router (see below)
+import { v } from 'exisjs/validator'
+
+export default controller({
+  getUserInfo: route.get('/info/:id', {
+    params: { id: v.string() },
+    query: { debug: v.boolean().optional() },
+    async handle({ body, query, params, headers, req, res, app, state, user, workspace }) {
+      // 1. `body`, `query`, and `params` are pre-validated and fully typed!
+      const id = params.id
+      
+      // 2. `req` and `res` are the raw ExisJS request/response objects
+      const ip = req.ip
+      
+      // 3. `app` is the global ExisJS application instance
+      const db = app.resolve('Database')
+      
+      // 4. `state` is a mutable object shared across middlewares
+      const cacheHit = state.cacheHit 
+
+      // 5. `user` and `workspace` are strictly typed from your custom context!
+      return { id, email: user.email, workspace }
+    }
+  })
+})
+```
+
+---
+
+## `createRouter<T>()`
+
+If your application relies heavily on custom context (e.g., passing a `user` or `workspace` object injected via middleware to every route), you can create a strongly-typed custom router using `createRouter<T>()`.
+
+This removes the need to constantly cast or redefine types.
+
+### Usage
+
+```typescript filename="src/router.ts"
+import { createRouter } from "exisjs/router";
+
+interface User {
+  userId: string;
+  role: string;
+  email: string;
+}
+
+interface AppContext {
+  user: User;
+  workspace: string; // Just an example to prove we can pass any property
+}
+
+// Create a completely customized router scoped to this application
+export const { route, controller } = createRouter<AppContext>();
+```
+
+Now, when you use this custom `route` object, the `SuperContext` will automatically infer your custom context fields!
+
+```typescript filename="src/http/users/route.ts"
+import { route, controller } from '../../router'
+
+export default controller({
+  me: route.get('/me', {
+    async handle({ user, workspace }) {
+      // `user` and `workspace` are strictly typed!
+      return { id: user.userId, workspace }
+    }
+  })
+})
+```
+
+---
+
+## 2. Class-Based Routing (OOP)
+
+If you prefer an Object-Oriented paradigm, ExisJS provides a robust set of decorators via `exisjs/decorators`. These decorators are built on standard ECMAScript decorators and do not require `reflect-metadata`, making them incredibly fast and lightweight.
+
+### Usage
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
+import { v } from 'exisjs/validator'
+
+@Controller('/users')
+export default class UserController {
+  
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    return { id, name: 'Alice' }
+  }
+
+  @Post('/', {
+    body: { email: v.string().email(), password: v.string() }
+  })
+  async createUser(@Body() body: any) {
+    // body is automatically validated!
+    return { success: true, email: body.email }
+  }
+}
+```
+
+### Route Decorators
+
+- `@Get(path, schema?)`
+- `@Post(path, schema?)`
+- `@Put(path, schema?)`
+- `@Patch(path, schema?)`
+- `@Delete(path, schema?)`
+- `@Ws(path, schema?)`: Defines a WebSocket route.
+- `@Sse(path, schema?)`: Defines a Server-Sent Events stream route.
+
+*Note: Just like functional routes, you can pass an optional `RouteSchema` to any of these decorators to automatically validate requests!*
+
+### Parameter Injectors
+
+Use parameter decorators to automatically extract data from the incoming request and inject them into your method arguments:
+
+- `@Body()`: Injects the parsed JSON request body.
+- `@Param('id')`: Injects a specific URL path parameter.
+- `@Query('search')`: Injects a specific query string parameter.
+- `@Headers('authorization')`: Injects a specific HTTP header.
+- `@Req()`: Injects the raw ExisJS Request object.
+- `@Res()`: Injects the raw ExisJS Response object.
+- `@Next()`: Injects the next function.
+- `@Socket()`: Injects the active WebSocket instance (for `@Ws` routes).
+- `@Stream()`: Injects the active SSE instance (for `@Sse` routes).
+
+### Advanced Decorators
+
+ExisJS provides a rich ecosystem of decorators to apply middleware, configure responses, and enforce security on both individual routes and entire controllers:
+
+#### Configuration & Middleware
+- `@Use(...middlewares)`: Applies Express-style middleware to a route or entire controller.
+- `@Hosts('api.example.com')`: Restricts the route or controller to specific domains.
+
+#### Security & Lifecycle
+- `@Permissions('admin')`: Requires specific permission flags.
+- `@UseGuards(...guards)`: Attaches Guards (like auth checks) to a route/controller.
+- `@UseInterceptors(...interceptors)`: Attaches Interceptors to mutate requests/responses.
+- `@UseFilters(...filters)`: Attaches Exception Filters to handle specific errors.
+
+#### Responses & Caching
+- `@HttpCode(201)`: Forces a specific HTTP status code for successful responses.
+- `@Header('X-Custom', 'Value')`: Automatically injects a specific response header.
+- `@Returns(schema)`: Explicitly defines the response schema for OpenAPI generation.
+- `@Cache({ ttlMs: 60000 })`: Automatically caches GET responses.
+- `@Idempotent()`: Enforces idempotency keys for mutations (e.g., checkout/payments).

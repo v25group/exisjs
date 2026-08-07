@@ -5,18 +5,13 @@ nextTitle: "WebSockets"
 
 # Error Handling
 
-ExisJS implements a bulletproof error boundary and observability system. The framework is designed so that you never have to manually construct HTTP error responses again.
+ExisJS implements a comprehensive error boundary and observability system. The framework is designed to reduce the need to manually construct HTTP error responses.
 
 ## The `HttpError` System
 
-Never manually write `res.status(404).json({ error: '...' })` again. You can throw an `HttpError` absolutely anywhere in your application, and the ExisJS router will automatically intercept it, log it, and format it into a standardized JSON response for the client.
+You can throw an `HttpError` anywhere in your application, and the ExisJS router will automatically intercept it, log it, and format it into a standardized JSON response for the client.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -28,12 +23,12 @@ export default controller({
       const user = db.findUser(params.id)
       
       if (!user) {
-        // This instantly breaks execution and returns a clean 404
+        // This stops execution and returns a 404
         throw HttpError.notFound('User') 
       }
       
       if (user.isBanned) {
-        // This returns a clean 403 Forbidden
+        // This returns a 403 Forbidden
         throw HttpError.forbidden('User is banned from the platform')
       }
 
@@ -43,8 +38,7 @@ export default controller({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param } from 'exisjs/decorators'
@@ -57,12 +51,12 @@ export default class UsersController {
     const user = db.findUser(id)
     
     if (!user) {
-      // This instantly breaks execution and returns a clean 404
+      // This stops execution and returns a 404
       throw HttpError.notFound('User') 
     }
     
     if (user.isBanned) {
-      // This returns a clean 403 Forbidden
+      // This returns a 403 Forbidden
       throw HttpError.forbidden('User is banned from the platform')
     }
 
@@ -70,9 +64,6 @@ export default class UsersController {
   }
 }
 ```
-
-  </TabsContent>
-</Tabs>
 
 ### Common Error Factories
 
@@ -88,7 +79,7 @@ The `HttpError` class provides static factory methods for standard HTTP status c
 
 ### Direct Error Classes & Exceptions
 
-If you prefer an even more explicit, class-based approach, ExisJS exports every standard error as its own class! For NestJS or Java developers, we also provide `Exception` aliases for every error class. You can import and throw them directly:
+If you prefer a class-based approach, ExisJS exports every standard error as its own class. We also provide `Exception` aliases for every error class. You can import and throw them directly:
 
 ```typescript filename="example.ts"
 import { NotFoundException, UnauthorizedException, BadRequestError } from 'exisjs/error'
@@ -105,7 +96,7 @@ export const deleteBook = (req, res) => {
 
 ### The Standardized Response
 
-When an `HttpError` is thrown, the client will automatically receive a perfectly structured JSON payload.
+When an `HttpError` is thrown, the client will automatically receive a structured JSON payload.
 
 ```json filename="Response"
 {
@@ -134,20 +125,15 @@ To keep your codebase clean and consistent, use this decision tree when deciding
 
 ## Advanced Error Handling
 
-ExisJS provides incredibly powerful mechanisms for granular error handling, heavily inspired by the best features of NestJS (Exception Filters) and Fastify (Lifecycle Hooks).
+ExisJS provides mechanisms for granular error handling.
 
 ### 1. Exception Filters (`catchError`)
 
-Just like NestJS's `@Catch()` decorator, ExisJS allows you to create **Exception Filters** to globally intercept specific types of errors without cluttering your route logic. 
+ExisJS allows you to create **Exception Filters** to globally intercept specific types of errors. 
 
 Using the `catchError` middleware, you can map specific custom errors to custom responses globally:
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -162,7 +148,7 @@ export class DatabaseConnectionError extends Error {
 
 export default exis({
   async onStart(app) {
-    // Globally intercept ONLY DatabaseConnectionError specifically!
+    // Globally intercept DatabaseConnectionError
     app.use(catchError(DatabaseConnectionError, (err, req, res) => {
       res.status(503).json({
         success: false,
@@ -173,8 +159,7 @@ export default exis({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -191,7 +176,7 @@ export class DatabaseConnectionError extends Error {
 @Server()
 export default class RootServer {
   async onStart(app: App) {
-    // Globally intercept ONLY DatabaseConnectionError specifically!
+    // Globally intercept DatabaseConnectionError
     app.use(catchError(DatabaseConnectionError, (err, req, res) => {
       res.status(503).json({
         success: false,
@@ -202,49 +187,39 @@ export default class RootServer {
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
 This prevents you from having to write `try/catch` blocks in every single route just to handle standard database failures.
 
 ### 2. Local Error Hooks (`onError`)
 
-If you want to catch errors only within a specific module or route grouping (similar to Fastify's encapsulated error handlers), you can use the `onError` hook directly in your controller definition.
+If you want to catch errors only within a specific module or route grouping, you can use the `onError` hook directly in your controller definition.
 
-When a controller throws an error, the local `onError` hook will intercept it before it ever reaches the global error handler!
+When a controller throws an error, the local `onError` hook will intercept it before it reaches the global error handler.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  // This local hook catches ANY error thrown by the routes in this controller
+  // This local hook catches errors thrown by the routes in this controller
   onError: (err, req, res) => {
     console.log('Users Controller Error Handler Caught:', err.message)
     res.status(400).json({ success: false, localError: err.message })
   },
 
   crash: route.get('/crash', async () => {
-    // This error will be safely caught by the local onError hook!
-    throw new Error("Something went wrong specifically in the users module!")
+    // This error will be caught by the local onError hook
+    throw new Error("Something went wrong in the users module")
   })
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, UseFilters } from 'exisjs/decorators'
 import type { Request, Response } from 'exisjs/router'
 
-// Or use standard middleware/Exception Filters in OOP paradigm!
 function localErrorHandler(err: any, req: Request, res: Response, next: any) {
   console.log('Users Controller Error Handler Caught:', err.message)
   res.status(400).json({ success: false, localError: err.message })
@@ -255,30 +230,22 @@ function localErrorHandler(err: any, req: Request, res: Response, next: any) {
 export default class UsersController {
   @Get('/crash')
   async crash() {
-    throw new Error("Something went wrong specifically in the users module!")
+    throw new Error("Something went wrong in the users module")
   }
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
-By combining Exception Filters and Local Error Hooks, ExisJS gives you maximum control over your error boundaries, keeping your application lean, safe, and incredibly robust.
+By combining Exception Filters and Local Error Hooks, ExisJS gives you control over your error boundaries.
 
 ## Observability (BYOM/BYOT)
 
-ExisJS ships with completely dependency-free, high-performance tracing and metric adapters. Instead of forcing you into a specific telemetry ecosystem (like DataDog or NewRelic), ExisJS lets you **Bring Your Own Metrics** (BYOM) and **Bring Your Own Tracer** (BYOT).
+ExisJS ships with tracing and metric adapters. Instead of tying you to a specific telemetry ecosystem, ExisJS lets you **Bring Your Own Metrics** (BYOM) and **Bring Your Own Tracer** (BYOT).
 
 ### Metrics
 
-You can use the `metrics` middleware to track request durations and counts without a massive performance hit.
+You can use the `metrics` middleware to track request durations and counts.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Paradigm
 
 ```typescript filename="src/http/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -288,7 +255,7 @@ const myPrometheusAdapter = {
   onRequestStart: ({ method, path }) => {
     // A request just started. Start a timer.
     return ({ statusCode, durationMs }) => {
-      // The request just finished. Push to Prometheus!
+      // The request just finished. Push to Prometheus.
       console.log(`[Metrics] ${method} ${path} took ${durationMs}ms with status ${statusCode}`)
     }
   }
@@ -299,8 +266,7 @@ export default defineGateway({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/gateway.ts"
 import { Gateway } from 'exisjs/decorators'
@@ -320,20 +286,13 @@ const myPrometheusAdapter = {
 export default class RootGateway {}
 ```
 
-  </TabsContent>
-</Tabs>
-*Note: ExisJS natively normalizes dynamic paths (e.g., turning `/users/123` into `/users/:id`) so you don't suffer from metrics cardinality explosions!*
+*Note: ExisJS normalizes dynamic paths (e.g., turning `/users/123` into `/users/:id`) to prevent metrics cardinality issues.*
 
 ### OpenTelemetry Tracing
 
 ExisJS seamlessly integrates with OpenTelemetry (OTel) via the `tracing` middleware.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+### Functional Paradigm
 
 ```typescript filename="src/http/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -358,8 +317,7 @@ export default defineGateway({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/gateway.ts"
 import { Gateway } from 'exisjs/decorators'
@@ -383,7 +341,4 @@ const myOtelAdapter = {
 export default class RootGateway {}
 ```
 
-  </TabsContent>
-</Tabs>
-
-By providing these standard interfaces natively, your application metrics and traces are flawlessly bound to the ExisJS router lifecycle!
+By providing these standard interfaces natively, your application metrics and traces are bound to the ExisJS router lifecycle.

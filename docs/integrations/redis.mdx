@@ -5,7 +5,7 @@ nextTitle: "JWT Auth"
 
 # Redis Integration
 
-ExisJS provides a zero-config, native integration for **Redis** via the industry-standard `ioredis` package. Just like our database plugins, you do **NOT** need to register Redis in your `server.ts` file. The connection pool is lazily initialized the exact moment you execute your first command.
+ExisJS provides an integration for Redis via the `ioredis` package. You do **NOT** need to register Redis in your `server.ts` file. The connection pool is lazily initialized when you execute your first command.
 
 ---
 
@@ -24,7 +24,7 @@ REDIS_URL="redis://default:password@localhost:6379"
 
 ## Installation
 
-ExisJS wraps the blazing fast `ioredis` client.
+ExisJS wraps the `ioredis` client.
 
 ```bash
 npm install ioredis
@@ -34,7 +34,7 @@ npm install ioredis
 
 ## Usage
 
-Simply import the `redis` proxy from `exisjs/redis`. ExisJS will instantly connect to your Redis instance behind the scenes.
+Import the `redis` proxy from `exisjs/redis`. ExisJS will connect to your Redis instance behind the scenes.
 
 #### Functional Paradigm
 
@@ -87,41 +87,36 @@ export default class CacheController {
 
 ## Redis as a Job Queue
 
-ExisJS's native distributed Job Queue seamlessly runs on top of Redis. This is the **recommended** approach for production environments to securely process thousands of background jobs across multiple server instances.
+ExisJS's native distributed Job Queue can run on top of Redis. This is a common approach for production environments to process background jobs across multiple server instances.
 
-To enable the Redis queue driver, you can configure it either in `server.ts` or centrally in your `exis.config.ts` file:
+To enable the Redis queue driver, configure it either in `server.ts` or centrally in your `exis.config.ts` file:
 
-<Tabs defaultValue="config" className="mt-6 mb-8">
-  <TabsList>
-    <TabsTrigger value="config">exis.config.ts</TabsTrigger>
-    <TabsTrigger value="server">src/http/server.ts</TabsTrigger>
-  </TabsList>
-  <TabsContent value="config">
-    ```typescript filename="exis.config.ts"
-    import { defineConfig } from 'exisjs/config'
+### `exis.config.ts`
 
-    export default defineConfig({
-      queue: {
-        driver: 'redis',
-        // ExisJS will automatically use process.env.REDIS_URL.
-        // If you need a custom URL just for the queue, you can specify it:
-        // redisUrl: process.env.CUSTOM_QUEUE_REDIS_URL
-      }
-    })
-    ```
-  </TabsContent>
-  <TabsContent value="server">
-    ```typescript filename="src/http/server.ts"
-    import { exis } from 'exisjs'
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
 
-    export default exis({
-      queue: {
-        driver: 'redis',
-      }
-    })
-    ```
-  </TabsContent>
-</Tabs>
+export default defineConfig({
+  queue: {
+    driver: 'redis',
+    // ExisJS will automatically use process.env.REDIS_URL.
+    // If you need a custom URL just for the queue, you can specify it:
+    // redisUrl: process.env.CUSTOM_QUEUE_REDIS_URL
+  }
+})
+```
+
+### `src/http/server.ts`
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+
+export default exis({
+  queue: {
+    driver: 'redis',
+  }
+})
+```
 
 ---
 

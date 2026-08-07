@@ -5,19 +5,17 @@ nextTitle: "WebSockets"
 
 # Server-Sent Events (SSE)
 
-Server-Sent Events (SSE) is a server push technology enabling a client to receive automatic updates from a server via HTTP connection. Unlike WebSockets, SSE is unidirectional (server to client) and works flawlessly over standard HTTP without requiring complex handshake protocols or specialized load balancer configurations.
+Server-Sent Events (SSE) is a server push technology enabling a client to receive automatic updates from a server via an HTTP connection. Unlike WebSockets, SSE is unidirectional (server-to-client) and works over standard HTTP without requiring complex handshake protocols or specialized load balancer configurations.
 
-SSE is the industry standard for LLM streaming (e.g. OpenAI, Anthropic) and real-time dashboard updates.
-
-ExisJS provides native, highly-optimized SSE support right out of the box.
+SSE is the industry standard for Large Language Model (LLM) streaming (e.g., OpenAI, Anthropic) and real-time dashboard updates. ExisJS provides native SSE support.
 
 ---
 
 ## 1. Creating an SSE Stream
 
-When you declare a route as an SSE endpoint, ExisJS automatically configures the correct headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`) and provides an `ExisSSE` stream object.
+When you declare a route as an SSE endpoint using `route.sse()` or `@Sse()`, ExisJS automatically configures the correct HTTP headers (`Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`) and provides an `ExisSSE` stream object.
 
-#### Functional Paradigm
+### Functional Paradigm
 
 ```typescript filename="src/http/chat/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -42,8 +40,9 @@ export default controller({
           stream: true,
         })
 
+        // Iterate over the async generator provided by the AI SDK
         for await (const chunk of aiStream) {
-          // Prevent writing to a closed socket if the client disconnects!
+          // Prevent writing to a closed socket if the client disconnects early
           if (!sse.connected) break
           
           const content = chunk.choices[0]?.delta?.content || ''
@@ -51,8 +50,10 @@ export default controller({
             sse.send({ text: content }, 'chunk')
           }
         }
+        
         sse.send({ text: '' }, 'done')
       } finally {
+        // Ensure the connection is always closed when processing completes
         sse.close()
       }
     }
@@ -60,7 +61,7 @@ export default controller({
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/chat/route.ts"
 import { Controller, Sse, Stream, Req } from 'exisjs/decorators'
@@ -88,7 +89,6 @@ export default class AIChatController {
       })
 
       for await (const chunk of aiStream) {
-        // Prevent writing to a closed socket if the client disconnects!
         if (!sse.connected) break
         
         const content = chunk.choices[0]?.delta?.content || ''
@@ -108,16 +108,52 @@ export default class AIChatController {
 
 ## 2. The `ExisSSE` API
 
-The injected `sse` object gives you full control over the stream:
+The injected `sse` object gives you full control over the streaming connection:
 
-- **`sse.send(data: any, event?: string, id?: string)`**: Serializes `data` to JSON and sends it down the wire. You can optionally tag it with an `event` type or an `id`.
-- **`sse.connected`**: A boolean that is `true` while the connection is alive. You should always check this inside long-running `for await` loops to prevent throwing "Socket Closed" errors.
+- **`sse.send(data: string | Record<string, any>, eventName?: string)`**: Serializes the data (if it is an object) to JSON and sends it down the wire. You can optionally tag it with a specific `eventName`.
+- **`sse.connected`**: A boolean that evaluates to `true` while the connection is alive. You should always check this inside long-running `for await` or `while` loops to prevent throwing "Socket Closed" errors when the client disconnects unexpectedly.
 - **`sse.close()`**: Safely closes the stream and terminates the HTTP connection.
 
 ```typescript
-// Sending a plain message
-sse.send("Hello World")
+// Sending a plain text message
+sse.send("Processing your request...")
 
-// Sending a specific event type (e.g., 'error', 'chunk', 'ping')
-sse.send({ cpu_usage: 95 }, 'metrics')
+// Sending a JSON object tagged with a specific event type (e.g., 'metrics')
+sse.send({ cpu_usage: 95, mem_usage: 60 }, 'metrics')
+```
+
+---
+
+## 3. Client-Side Consumption
+
+To consume the SSE stream from the frontend (e.g., in React, Vue, or Vanilla JS), use the native browser `EventSource` API.
+
+```javascript filename="frontend/app.js"
+// Connect to the ExisJS SSE endpoint
+const eventSource = new EventSource('/api/chat?message=Hello')
+
+// Listen for the default 'message' event (when no eventName is specified in sse.send)
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data)
+  console.log("Standard message:", data)
+}
+
+// Listen for a custom event type, such as 'chunk'
+eventSource.addEventListener('chunk', (event) => {
+  const data = JSON.parse(event.data)
+  // Append the streamed text to the DOM
+  document.getElementById('output').textContent += data.text
+})
+
+// Listen for the 'done' event to close the connection from the client side
+eventSource.addEventListener('done', () => {
+  console.log("Stream finished.")
+  eventSource.close()
+})
+
+// Handle connection errors
+eventSource.onerror = (error) => {
+  console.error("SSE Connection Error:", error)
+  eventSource.close()
+}
 ```

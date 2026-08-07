@@ -5,13 +5,13 @@ nextTitle: "Circuit Breaker"
 
 # Security & Authentication
 
-ExisJS takes security incredibly seriously. Rather than relying on a patchwork of unmaintained third-party npm packages, the framework bundles battle-tested, native implementations for Cryptography, JWT generation, Role-Based Access Control (RBAC), and Edge Security.
+ExisJS includes native implementations for Cryptography, JWT generation, Role-Based Access Control (RBAC), and Edge Security.
 
 ---
 
 ## 1. Password Hashing (Scrypt)
 
-Stop using outdated `bcrypt` packages. ExisJS bundles a native, highly secure password hashing engine powered by Node.js's built-in `crypto.scrypt`. 
+ExisJS includes a password hashing engine powered by Node.js's built-in `crypto.scrypt`. 
 
 It automatically generates a secure salt, derives the key, and formats the output into a single safely-storable string (`scrypt:cost:blockSize:parallelization:keyLength:salt:hash`).
 
@@ -86,7 +86,7 @@ export default class AuthController {
 
 ## 2. JSON Web Tokens (JWT)
 
-ExisJS provides a ridiculously fast, zero-dependency JWT engine using native `createHmac('sha256')`.
+ExisJS provides a JWT engine using native `createHmac('sha256')`.
 
 ```typescript filename="src/http/auth/route.ts"
 import { JWT } from 'exisjs/auth'
@@ -103,14 +103,9 @@ const payload = JWT.verifyJWT<{ userId: number, role: string }>(token, process.e
 
 ### Creating an Auth Middleware
 
-You can easily wrap this in a gateway middleware to protect entire folders:
+You can wrap this in a gateway middleware to protect entire folders:
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+#### Functional Paradigm
 
 ```typescript filename="src/http/admin/gateway.ts"
 import { defineGateway } from 'exisjs/router'
@@ -120,7 +115,7 @@ export default defineGateway({
   middlewares: [
     (req, res, next) => {
       const token = req.headers.authorization?.split(' ')[1]
-      // Verifies the token and attaches the payload to the request!
+      // Verifies the token and attaches the payload to the request
       req.user = JWT.verifyJWT(token, process.env.JWT_SECRET)
       next()
     }
@@ -128,8 +123,7 @@ export default defineGateway({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+#### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/admin/gateway.ts"
 import { Gateway } from 'exisjs/decorators'
@@ -147,14 +141,11 @@ import { JWT } from 'exisjs/auth'
 export default class AdminGateway {}
 ```
 
-  </TabsContent>
-</Tabs>
-
 ---
 
 ## 3. Role-Based Access Control (RBAC)
 
-Once your user is authenticated and their payload is attached to `req.user`, ExisJS provides native, declarative Role-Based Access Control right inside the route configuration! You don't need any custom middlewares for this.
+Once your user is authenticated and their payload is attached to `req.user`, ExisJS provides native Role-Based Access Control right inside the route configuration. You don't need any custom middlewares for this.
 
 #### Functional Paradigm
 
@@ -164,7 +155,7 @@ import { parseUser } from '../middlewares/auth.js'
 
 export default controller({
   // Intercepts the request and checks req.user.permissions (or req.user.role) 
-  // before the handler even executes. Throws 403 Forbidden if missing!
+  // before the handler even executes. Throws 403 Forbidden if missing.
   deleteDatabase: route.delete('/db', {
     permissions: ['superadmin'],
     middleware: [parseUser()],
@@ -213,16 +204,11 @@ export default class AdminController {
 
 ## 4. Stateful Sessions
 
-If you prefer stateful authentication over JWTs, ExisJS ships with a fully-featured secure session middleware. It securely signs the session cookie (`exis_sid`) and automatically persists changes to `req.session` back to the active store.
+If you prefer stateful authentication over JWTs, ExisJS ships with a secure session middleware. It securely signs the session cookie (`exis_sid`) and automatically persists changes to `req.session` back to the active store.
 
-By default, it uses a rapid `MemorySessionStore`, but you can plug in any distributed store (like Redis) by implementing the `SessionStore` interface.
+By default, it uses a `MemorySessionStore`, but you can plug in any distributed store (like Redis) by implementing the `SessionStore` interface.
 
-<Tabs defaultValue="functional" className="mb-6 w-full">
-  <TabsList className="grid w-[300px] grid-cols-2">
-    <TabsTrigger value="functional">Functional</TabsTrigger>
-    <TabsTrigger value="oop">Class-Based (OOP)</TabsTrigger>
-  </TabsList>
-  <TabsContent value="functional" className="mt-4">
+#### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -239,8 +225,7 @@ export default exis({
 })
 ```
 
-  </TabsContent>
-  <TabsContent value="oop" className="mt-4">
+#### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -259,9 +244,6 @@ export default class RootServer {
 }
 ```
 
-  </TabsContent>
-</Tabs>
-
 #### Functional Paradigm
 
 ```typescript filename="src/http/cart/route.ts"
@@ -271,7 +253,7 @@ export default controller({
   addItem: route.post('/', {
     handle(req, res) {
       // 2. Read and Write natively to req.session
-      // ExisJS automatically saves this back to the Store when the request ends!
+      // ExisJS automatically saves this back to the Store when the request ends
       if (!req.session.cart) req.session.cart = []
       
       req.session.cart.push(req.body.itemId)
@@ -291,7 +273,7 @@ export default class CartController {
   @Post('/')
   async addItem(@Req() req: any, @Body() body: any) {
     // 2. Read and Write natively to req.session
-    // ExisJS automatically saves this back to the Store when the request ends!
+    // ExisJS automatically saves this back to the Store when the request ends
     if (!req.session.cart) req.session.cart = []
     
     req.session.cart.push(body.itemId)
@@ -307,7 +289,6 @@ export default class CartController {
 As mentioned in the [Middleware Guide](/docs/middleware), you should strongly consider registering the following global security middleware in your `server.ts`:
 
 - `helmet()`: Enforces Strict-Transport-Security (HSTS), X-Content-Type-Options (nosniff), and prevents Clickjacking (`X-Frame-Options: DENY`).
-- `xss()`: Recursively sanitizes JSON payloads, stripping malicious HTML tags.
-- `dbSanitize({ mongo: true })`: A powerful universal scraper that strips NoSQL operators (`$where`) to provide robust defense-in-depth for MongoDB databases.
-- `csrf()`: Enforces the Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE).
+- `dbSanitize({ mongo: true })`: A universal scraper that strips NoSQL operators (`$where`) to provide defense-in-depth for MongoDB databases.
+- `csrf({ secret })`: Enforces the Signed Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE) from Cookie Tossing attacks.
 - `hpp()`: HTTP Parameter Pollution protection (removes duplicate array keys).
