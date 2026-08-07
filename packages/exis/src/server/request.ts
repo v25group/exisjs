@@ -40,6 +40,7 @@ export class ExisRequest<
   public params!: TParams
   public body!: TBody
   public files: import('../types').ExisFile[] = []
+
   public rawBody?: string
   public user?: any
   public log!: Logger

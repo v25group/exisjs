@@ -255,12 +255,12 @@ export interface ExisConfig {
   debugRouting?: boolean // Enables detailed logging of the resolved route file and applied gateways for every incoming request
   asyncContext?: boolean // Enables AsyncLocalStorage for global getContext() (adds ~10% overhead). Default false.
   /**
-   * Optional. Server backend to use.
-   * 'node' (default fallback) uses Node's native HTTP/HTTPS modules.
-   * 'uws' uses uWebSockets.js for significantly higher throughput.
-   * 'auto' will use uWS if installed, otherwise Node.
+   * Defines the HTTP server backend.
+   * 'node' uses the native Node.js HTTP module.
+   * 'bun' uses Bun's native HTTP module for significantly higher throughput.
+   * 'auto' will use Bun if detected, otherwise Node.
    */
-  server?: 'auto' | 'node' | 'uws'
+  server?: 'auto' | 'node' | 'bun'
   queue?: import('./queue/types').QueueConfig
   plugins?: ExisPlugin[]
   test?: {

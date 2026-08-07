@@ -33,7 +33,7 @@ export const defaultConfig: ResolvedConfig = {
   env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'development',
   compression: false,
   keepAlive: false,
-  server: 'auto' as 'auto' | 'node' | 'uws', // Auto-detect backend
+  server: 'auto' as 'auto' | 'node' | 'bun', // Auto-detect backend
   queue: undefined as any,
   test: undefined as any,
   plugins: [],
@@ -136,7 +136,7 @@ const configSchema = v.object({
     ])
     .optional(),
   keepAlive: v.union([v.boolean(), v.number()]).optional(),
-  server: v.enum(['node', 'uws']).optional(),
+  server: v.enum(['node', 'bun']).optional(),
   workers: v
     .union([v.number(), v.literal('safe'), v.literal('max')])
     .optional(),

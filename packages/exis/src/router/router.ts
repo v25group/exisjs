@@ -463,6 +463,40 @@ export function runHandlers(
   done?: (err?: Error) => void,
   filters?: any[]
 ): void {
+  if (handlers.length === 1 && (!filters || filters.length === 0)) {
+    const handler = handlers[0]
+    let calledNext = false
+    const safeNext = (err?: Error) => {
+      if (calledNext) return
+      calledNext = true
+      if (done) done(err)
+    }
+
+    let result: unknown
+    try {
+      result = handler(req, res, safeNext)
+    } catch (e) {
+      safeNext(e instanceof Error ? e : new Error(String(e)))
+      return
+    }
+
+    if (result instanceof Promise) {
+      result.then(
+        (data: unknown) => {
+          if (data !== undefined && data !== res && !res.headersSent) {
+            res.json(data)
+          }
+        },
+        (e: unknown) => {
+          safeNext(e instanceof Error ? e : new Error(String(e)))
+        }
+      )
+    } else if (result !== undefined && result !== res && !res.headersSent) {
+      res.json(result)
+    }
+    return
+  }
+
   let index = 0
   const total = handlers.length
 

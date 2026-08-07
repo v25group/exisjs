@@ -5,7 +5,6 @@ import { ExisResponse } from './response'
 import { executionContext } from './context'
 import { runHandlers } from '../router/router'
 import { notFound } from '../middleware/middleware'
-import { UwsIncomingMessage, UwsServerResponse } from './uws-adapter'
 import type { Handler } from '../types'
 
 export class RequestHandler {
@@ -113,46 +112,13 @@ export class RequestHandler {
         diCache: new Map(),
       }
 
-      let reqCompleted = false
-      const onComplete = () => {
-        if (reqCompleted) return
-        reqCompleted = true
-        for (const cb of store.afterCallbacks) {
-          try {
-            const promise = cb()
-            if (promise instanceof Promise) {
-              promise.catch((err) => {
-                this.app.log.error({ err }, 'Error in after() background task')
-              })
-            }
-          } catch (err) {
-            this.app.log.error({ err }, 'Error in after() background task')
-          }
-        }
-        RequestHandler.activeRequests--
-      }
-
-      res.raw.on('finish', onComplete)
-      res.raw.on('close', onComplete)
-
       executionContext.run(store, execution)
     } else {
-      let reqCompleted = false
-      const onComplete = () => {
-        if (reqCompleted) return
-        reqCompleted = true
-        RequestHandler.activeRequests--
-      }
-      res.raw.on('finish', onComplete)
-      res.raw.on('close', onComplete)
-
       execution()
     }
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
-    RequestHandler.activeRequests++
-
     const res = new ExisResponse(rawRes)
     const req = new ExisRequest(
       rawReq,
@@ -184,44 +150,6 @@ export class RequestHandler {
       }
 
       this._handleWithHooks(req, res, rawRes)
-    })
-  }
-
-  public handleUws(
-    shimReq: UwsIncomingMessage,
-    shimRes: UwsServerResponse
-  ): void {
-    const res = new ExisResponse(shimRes as unknown as ServerResponse)
-    const req = new ExisRequest(
-      shimReq as unknown as IncomingMessage,
-      res,
-      this.app.options.trustProxy,
-      this.app.options.bodyLimit
-    )
-    res.req = req
-    res.etagEnabled = this.app.options.etag === true
-    req.log = this.app.log
-    req._dataloaderFns = (this.app as any)._dataloaders
-
-    this._executeWithContext(req, res, () => {
-      if (
-        this.app.hooks.request.length === 0 &&
-        this.app.hooks.response.length === 0
-      ) {
-        runHandlers(this.getCompiledPipeline(), req, res, (err) => {
-          if (err) {
-            this._runErrorHandlers(err, req, res).catch((e) => {
-              this.app.log.error(
-                { err: e, originalError: err },
-                'Error in error handler'
-              )
-            })
-          }
-        })
-        return
-      }
-
-      this._handleWithHooks(req, res, shimRes as unknown as ServerResponse)
     })
   }
 

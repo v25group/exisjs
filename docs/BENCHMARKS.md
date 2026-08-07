@@ -4,7 +4,7 @@
 - **OS:** win32 (x64)
 - **CPU:** 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz (12 cores)
 - **RAM:** 16 GB
-- **Node:** v22.23.2
+- **Node:** v26.3.0
 
 ### Test Configuration
 - **Tool:** autocannon ^8.0.0
@@ -18,10 +18,10 @@
 
 | Framework | Req/Sec (median) | Latency avg (ms) | Latency p50 (ms) | Latency p99 (ms) | Errors | Server backend |
 |---|---|---|---|---|---|---|
-| Express | 8917.60 | 10.73 | 8.00 | 67.00 | 0 | n/a |
-| Fastify | 31816.00 | 2.58 | 2.00 | 5.00 | 0 | n/a |
-| Hono | 30808.73 | 2.69 | 3.00 | 5.00 | 0 | n/a |
-| Exis JS | 37436.81 | 2.21 | 2.00 | 4.00 | 0 | n/a |
+| Express | 22258.19 | 4.08 | 4.00 | 5.00 | 0 | n/a |
+| Fastify | 37307.64 | 2.11 | 2.00 | 3.00 | 0 | n/a |
+| Hono | 36036.37 | 2.16 | 2.00 | 3.00 | 0 | n/a |
+| Exis JS | 35372.00 | 2.38 | 2.00 | 5.00 | 0 | node |
 
 ### Handler Parity Note
 

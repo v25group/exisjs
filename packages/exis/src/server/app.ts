@@ -17,12 +17,6 @@ import { defaultConfig, mergeConfig } from '../utils/config'
 import type { ResolvedConfig } from '../utils/config'
 import { createLogger, resolveLoggerConfig } from '../utils/logger'
 import { HotReloader } from './hot-reload'
-import {
-  createUwsApp,
-  UwsIncomingMessage,
-  UwsServerResponse,
-} from './uws-adapter'
-import type { UwsListenToken } from './uws-adapter'
 import type { JobOptions } from '../queue/types'
 import { Container } from '../di/container'
 import type { ProviderToken, ProviderDefinition } from '../di/container'
@@ -93,12 +87,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
   set onCloseHook(cb) {
     this.pluginManager.onCloseHook = cb
   }
-
-  // ─── uWebSockets.js Backend ──────────────────────────────────────────────────
-  private _useUws = false
-
-  private _uwsApp: ReturnType<typeof createUwsApp> | null = null
-  private _uwsListenToken: UwsListenToken | null = null
 
   // ─── Lifecycle Hooks Registry ───────────────────────────────────────────────
   get hooks() {
@@ -607,17 +595,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
     this.requestHandler.handle(rawReq, rawRes)
-  }
-
-  /**
-   * Handle a request from the uWebSockets.js backend.
-   * Uses the same middleware pipeline as Node HTTP but with uWS shims.
-   */
-  public handleUws(
-    shimReq: UwsIncomingMessage,
-    shimRes: UwsServerResponse
-  ): void {
-    this.requestHandler.handleUws(shimReq, shimRes)
   }
 
   public getErrorHandlers() {

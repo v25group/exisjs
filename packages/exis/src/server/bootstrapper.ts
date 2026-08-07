@@ -4,8 +4,7 @@ import { createServer as createHttpsServer } from 'node:https'
 import type { Server as HttpsServer } from 'node:https'
 import { createSecureServer as createHttp2Server } from 'node:http2'
 import type { Http2SecureServer } from 'node:http2'
-import { isUwsAvailable, createUwsApp } from './uws-adapter'
-import type { UwsListenToken } from './uws-adapter'
+import { createBunApp } from './bun-adapter'
 import type { ListenOptions } from '../types'
 import { RequestHandler } from './request-handler'
 import type { App } from './app'
@@ -16,34 +15,34 @@ export class ServerBootstrapper {
   private redirectServer: HttpServer | null = null
   private shutdownHooks: (() => Promise<void> | void)[] = []
 
-  public _useUws = false
-  public _uwsApp: ReturnType<typeof createUwsApp> | null = null
-  public _uwsListenToken: UwsListenToken | null = null
+  public _useBun = false
+  public _bunApp: ReturnType<typeof createBunApp> | null = null
+  private bunServerInstance: any = null
 
   constructor(app: App<any>) {
     this.app = app
 
-    // Auto-detect uWebSockets.js backend
+    // Auto-detect Bun backend
     if (
-      app.explicitOptions.server === 'uws' ||
+      app.explicitOptions.server === 'bun' ||
       (app.explicitOptions.server !== 'node' &&
-        isUwsAvailable() &&
+        typeof Bun !== 'undefined' &&
         app.options.env !== 'test')
     ) {
-      if (isUwsAvailable()) {
-        this._useUws = true
-        // Don't init Node server - we'll create the uWS app at listen() time
+      if (typeof Bun !== 'undefined') {
+        this._useBun = true
+        // Don't init Node server - we'll create the Bun app at listen() time
       } else {
-        if (app.explicitOptions.server === 'uws') {
+        if (app.explicitOptions.server === 'bun') {
           app.log.warn(
-            "server: 'uws' was requested, but uWebSockets.js could not be loaded. This usually means it is not installed or the installed version doesn't support your Node.js platform/version. Falling back to the native Node.js HTTP server."
+            "server: 'bun' was requested, but Bun is not available. Falling back to the native Node.js HTTP server."
           )
         }
-        this._useUws = false
+        this._useBun = false
         this.server = this._initServer()
       }
     } else {
-      this._useUws = false
+      this._useBun = false
       this.server = this._initServer()
     }
   }
@@ -135,20 +134,17 @@ export class ServerBootstrapper {
       host = this.app.options.host!
     }
 
-    // ─── uWebSockets.js listen path ───
-    if (this._useUws) {
-      this._uwsApp = createUwsApp(
-        this.app.handleUws.bind(this.app),
-        this.app.wsOrchestrator.handleUwsUpgrade.bind(this.app.wsOrchestrator),
+    // --- Bun listen path ---
+    if (this._useBun) {
+      this._bunApp = createBunApp(
+        this.app.handle.bind(this.app) as any,
+        this.app.wsOrchestrator.handleBunUpgrade.bind(this.app.wsOrchestrator),
+        port,
+        host,
         this.app.options.ssl
       )
 
-      this._uwsApp.listen(port, host, async (token) => {
-        if (!token) {
-          this.app.log.error(`Failed to listen on ${host}:${port} (uWS)`)
-          return
-        }
-        this._uwsListenToken = token
+      this.bunServerInstance = this._bunApp.listen(port, host, async () => {
         const address = { port, host }
 
         if (this.app.hotReloader) {
@@ -161,13 +157,13 @@ export class ServerBootstrapper {
           if (!process.env.__EXIS_DEV_SERVER && !process.env.__EXIS_CLI) {
             const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
             this.app.log.info(
-              { url, env: this.app.options.env, backend: 'uws' },
-              `Server running at ${url} (uWebSockets.js)`
+              { url, env: this.app.options.env, backend: 'bun' },
+              `Server running at ${url} (Bun)`
             )
           }
         }
 
-        // ─── onReady Hook ───
+        // --- onReady Hook ---
         for (const hook of this.app.hooks.ready) {
           await hook()
         }
@@ -179,7 +175,7 @@ export class ServerBootstrapper {
       return this.server
     }
 
-    // ─── Node HTTP listen path ───
+    // --- Node HTTP listen path ---
 
     // Auto HTTP -> HTTPS redirect server
     if (
@@ -213,7 +209,7 @@ export class ServerBootstrapper {
 
     this.server.on('error', (err: any) => {
       if (err.code === 'EADDRINUSE') {
-        console.error(`\n\x1b[31m✗ Port ${port} is already in use.\x1b[0m`)
+        console.error(`\n\x1b[31m? Port ${port} is already in use.\x1b[0m`)
         console.error(
           `  Try killing the process or use a different port in exis.config.ts\n`
         )
@@ -227,7 +223,7 @@ export class ServerBootstrapper {
     this.server.listen(port, host, async () => {
       const address = { port, host }
 
-      // ─── onReady Hook ───
+      // --- onReady Hook ---
       for (const hook of this.app.hooks.ready) {
         await hook()
       }
@@ -322,21 +318,21 @@ export class ServerBootstrapper {
       `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  ready in ${c.bold}${readyMs} ms${c.reset}\n`
     )
     console.log(
-      `  ${c.white}➜${c.reset}  ${c.bold}Local:${c.reset}   ${c.blue}http://${displayHost}:${port}/${c.reset}`
+      `  ${c.white}?${c.reset}  ${c.bold}Local:${c.reset}   ${c.blue}http://${displayHost}:${port}/${c.reset}`
     )
     console.log(
-      `  ${c.white}➜${c.reset}  ${c.dim}Network:${c.reset} ${c.blue}${networkHost}/${c.reset}`
+      `  ${c.white}?${c.reset}  ${c.dim}Network:${c.reset} ${c.blue}${networkHost}/${c.reset}`
     )
     console.log(
-      `  ${c.white}➜${c.reset}  ${c.dim}Environ:${c.reset} ${c.green}${displayEnv}${c.reset}`
+      `  ${c.white}?${c.reset}  ${c.dim}Environ:${c.reset} ${c.green}${displayEnv}${c.reset}`
     )
     if (workerCount && Number(workerCount) > 1) {
       console.log(
-        `  ${c.white}➜${c.reset}  ${c.dim}Workers:${c.reset} ${c.magenta}${workerCount}${c.reset}`
+        `  ${c.white}?${c.reset}  ${c.dim}Workers:${c.reset} ${c.magenta}${workerCount}${c.reset}`
       )
     }
     console.log(
-      `  ${c.white}➜${c.reset}  press ${c.bold}h + enter${c.reset} ${c.dim}to show help${c.reset}\n`
+      `  ${c.white}?${c.reset}  press ${c.bold}h + enter${c.reset} ${c.dim}to show help${c.reset}\n`
     )
   }
 
@@ -384,19 +380,19 @@ export class ServerBootstrapper {
         }
       }
 
-      if (!this._useUws && (!this.server || !this.server.listening)) {
+      if (!this._useBun && (!this.server || !this.server.listening)) {
         finish()
         return
       }
 
-      if (this._useUws && !this._uwsListenToken) {
+      if (this._useBun && !this.bunServerInstance) {
         finish()
         return
       }
 
       // Close idle keep-alive connections immediately
       if (
-        !this._useUws &&
+        !this._useBun &&
         this.server &&
         'closeIdleConnections' in this.server
       ) {
@@ -412,7 +408,7 @@ export class ServerBootstrapper {
           `Shutdown timeout of ${timeout}ms exceeded, forcefully terminating active connections`
         )
         if (
-          !this._useUws &&
+          !this._useBun &&
           this.server &&
           'closeAllConnections' in this.server
         ) {
@@ -446,9 +442,9 @@ export class ServerBootstrapper {
         this.redirectServer.close()
       }
 
-      if (this._useUws && this._uwsApp) {
-        this._uwsApp.close(this._uwsListenToken)
-        this._uwsListenToken = null
+      if (this._useBun && this.bunServerInstance) {
+        this.bunServerInstance.stop(true)
+        this.bunServerInstance = null
         cleanupAndFinish()
       } else {
         this.server.close((err) => {

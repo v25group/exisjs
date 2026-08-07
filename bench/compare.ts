@@ -86,9 +86,12 @@ async function runTrial(
   serverInfo: (typeof servers)[0]
 ): Promise<TrialResult | null> {
   const serverPath = path.join(__dirname, 'servers', serverInfo.file)
+  const isExis = serverInfo.name === 'Exis JS'
+  const execPath = isExis ? 'C:\\Users\\prasanth\\.bun\\bin\\bun.exe' : process.execPath
+
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
-    process.execPath,
-    [serverPath],
+    execPath,
+    isExis ? ['run', serverPath] : [serverPath],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PORT: String(serverInfo.port) },
