@@ -61,7 +61,11 @@ function parseErrorLocation(err: Error): ParsedError {
   return result
 }
 
-function buildCodeFrame(filePath: string, errorLine: number, contextLines = 3): string {
+function buildCodeFrame(
+  filePath: string,
+  errorLine: number,
+  contextLines = 3
+): string {
   try {
     const source = fs.readFileSync(filePath, 'utf-8')
     const lines = source.split('\n')
@@ -91,7 +95,9 @@ function buildCodeFrame(filePath: string, errorLine: number, contextLines = 3): 
 export function formatDevError(err: Error, routeFile?: string): void {
   const parsed = parseErrorLocation(err)
   const file = routeFile || parsed.file || 'unknown'
-  const lineInfo = parsed.line ? `:${parsed.line}${parsed.column ? ':' + parsed.column : ''}` : ''
+  const lineInfo = parsed.line
+    ? `:${parsed.line}${parsed.column ? ':' + parsed.column : ''}`
+    : ''
 
   const width = 60
   const border = '─'.repeat(width)

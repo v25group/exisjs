@@ -318,21 +318,21 @@ export class ServerBootstrapper {
       `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  ready in ${c.bold}${readyMs} ms${c.reset}\n`
     )
     console.log(
-      `  ${c.white}?${c.reset}  ${c.bold}Local:${c.reset}   ${c.blue}http://${displayHost}:${port}/${c.reset}`
+      `  ${c.white}→${c.reset}  ${c.bold}Local:${c.reset}   ${c.blue}http://${displayHost}:${port}/${c.reset}`
     )
     console.log(
-      `  ${c.white}?${c.reset}  ${c.dim}Network:${c.reset} ${c.blue}${networkHost}/${c.reset}`
+      `  ${c.white}→${c.reset}  ${c.dim}Network:${c.reset} ${c.blue}${networkHost}/${c.reset}`
     )
     console.log(
-      `  ${c.white}?${c.reset}  ${c.dim}Environ:${c.reset} ${c.green}${displayEnv}${c.reset}`
+      `  ${c.white}→${c.reset}  ${c.dim}Environ:${c.reset} ${c.green}${displayEnv}${c.reset}`
     )
     if (workerCount && Number(workerCount) > 1) {
       console.log(
-        `  ${c.white}?${c.reset}  ${c.dim}Workers:${c.reset} ${c.magenta}${workerCount}${c.reset}`
+        `  ${c.white}→${c.reset}  ${c.dim}Workers:${c.reset} ${c.magenta}${workerCount}${c.reset}`
       )
     }
     console.log(
-      `  ${c.white}?${c.reset}  press ${c.bold}h + enter${c.reset} ${c.dim}to show help${c.reset}\n`
+      `  ${c.white}→${c.reset}  press ${c.bold}h + enter${c.reset} ${c.dim}to show help${c.reset}\n`
     )
   }
 
@@ -343,7 +343,8 @@ export class ServerBootstrapper {
 
   public close(timeout = 5000): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.app.log.info('Initiating graceful shutdown')
+      const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
+      if (!isCLI) this.app.log.info('Initiating graceful shutdown')
 
       let finishCalled = false
       const finish = async () => {
@@ -372,7 +373,7 @@ export class ServerBootstrapper {
           if (this.app.hotReloader) {
             await this.app.hotReloader.stop()
           }
-          this.app.log.info('Graceful shutdown completed')
+          if (!isCLI) this.app.log.info('Graceful shutdown completed')
           resolve()
         } catch (err) {
           this.app.log.error({ err }, 'Error executing shutdown hooks')

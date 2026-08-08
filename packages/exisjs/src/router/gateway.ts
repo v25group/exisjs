@@ -22,8 +22,7 @@ export interface GatewayConfig {
    * Plugins to automatically register when this gateway is loaded.
    */
   plugins?: (
-    | import('../types').ExisPluginInstance
-    | import('../types').ExisPlugin
+    import('../types').ExisPluginInstance | import('../types').ExisPlugin
   )[]
 
   /**
@@ -31,8 +30,7 @@ export interface GatewayConfig {
    * These are automatically deduplicated so singletons are only initialized once.
    */
   imports?: (
-    | import('../types').ExisPluginInstance
-    | import('../types').ExisPlugin
+    import('../types').ExisPluginInstance | import('../types').ExisPlugin
   )[]
 
   /**
@@ -43,7 +41,9 @@ export interface GatewayConfig {
   /**
    * Exclude specific routes or patterns from this gateway's middleware, guards, and filters.
    */
-  exclude?: (string | { path: string; methods?: import('../types').HttpMethod[] })[]
+  exclude?: (
+    string | { path: string; methods?: import('../types').HttpMethod[] }
+  )[]
 
   /**
    * Exception filters to apply to all routes in this directory and subdirectories.
@@ -61,10 +61,12 @@ export interface GatewayConfig {
   interceptors?: any[]
 
   /**
-   * Folder-scoped request timeout (in milliseconds). 
+   * Folder-scoped request timeout (in milliseconds).
    * Can be a static number or a dynamic function evaluated per-request.
    */
-  timeout?: number | ((req: import('../types').Request<any, any, any>) => number | undefined)
+  timeout?:
+    | number
+    | ((req: import('../types').Request<any, any, any>) => number | undefined)
 
   /**
    * Cascading metadata (e.g., OpenAPI tags, roles) applied to all routes in this directory.

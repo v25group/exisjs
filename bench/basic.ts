@@ -1,4 +1,4 @@
-import { exis } from '../packages/exis/src'
+import { exis } from '../packages/exisjs/src'
 import autocannon from 'autocannon'
 
 async function runBenchmark() {

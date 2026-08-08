@@ -12,7 +12,7 @@ First off, thank you for considering contributing to Exis JS! It's people like y
 ## Making Changes
 
 1. Create a new branch: `git checkout -b feature/your-feature-name`
-2. Make your changes in the appropriate package (`packages/exis` or `packages/create-exis`).
+2. Make your changes in the appropriate package (`packages/exisjs` or `packages/create`).
 3. If you add a new feature, please add a corresponding test in the `tests/` directory.
 4. Ensure your code passes the linter by running `npm run lint`.
 

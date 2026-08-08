@@ -1,6 +1,6 @@
 ---
-nextUrl: "/docs/routing"
-nextTitle: "Routing"
+nextUrl: '/docs/routing'
+nextTitle: 'Routing'
 ---
 
 # Configuration (`exis.config.ts`)
@@ -21,16 +21,16 @@ import { defineConfig } from 'exisjs/config'
 export default defineConfig({
   port: 4000,
   host: '0.0.0.0',
-  
+
   cors: {
     origin: '*',
     credentials: true,
   },
-  
+
   logger: {
     level: 'debug',
-    pretty: true
-  }
+    pretty: true,
+  },
 })
 ```
 
@@ -50,17 +50,18 @@ export default async (phase: string, { defaultConfig }: any) => {
 
   return defineConfig({
     port: Number(process.env.PORT) || 4000,
-    
+
     // Enable pretty logging only in Development
     logger: isDev ? { level: 'debug', pretty: true } : false,
-    
+
     // Compress responses in Production
-    compression: !isDev
+    compression: !isDev,
   })
 }
 ```
 
 The available phases are:
+
 - `PHASE_DEVELOPMENT_SERVER` (Triggered via `exis dev`)
 - `PHASE_PRODUCTION_SERVER` (Triggered via `exis start`)
 - `PHASE_TEST` (Triggered when `NODE_ENV=test`)
@@ -72,15 +73,15 @@ The available phases are:
 We highly recommend using `v.env()` from `exisjs/validator` to strongly type and validate your environment variables before the server starts. You can create an `env.ts` file and import it directly into your `exis.config.ts`.
 
 ```typescript filename="env.ts"
-import { v } from "exisjs/validator";
+import { v } from 'exisjs/validator'
 
 export const env = v.env(
   v.object({
     PORT: v.string().transform(Number).default(4000),
-    NODE_ENV: v.string().default("development"),
+    NODE_ENV: v.string().default('development'),
     MONGODB_URI: v.string(),
   })
-);
+)
 ```
 
 ```typescript filename="exis.config.ts"
@@ -90,8 +91,8 @@ import { env } from './env.ts' // Fails fast if variables are missing!
 export default defineConfig({
   port: env.PORT,
   logger: {
-    pretty: env.NODE_ENV !== "production",
-  }
+    pretty: env.NODE_ENV !== 'production',
+  },
 })
 ```
 
@@ -107,8 +108,8 @@ If this is missing, the job scheduler is completely disabled to save memory.
 export default defineConfig({
   queue: {
     driver: 'memory', // Use 'redis' for multi-server production
-    enableWorkers: true // Set to false to push jobs but not process them
-  }
+    enableWorkers: true, // Set to false to push jobs but not process them
+  },
 })
 ```
 
@@ -121,7 +122,7 @@ By default, ExisJS uses the native Node.js HTTP/HTTPS modules. However, you can 
 ```typescript filename="exis.config.ts"
 export default defineConfig({
   // 'auto' will use uWS if installed, otherwise gracefully fallback to Node
-  server: 'auto', // 'auto' | 'node' | 'uws'
+  server: 'auto', // 'auto' | 'node' | 'bun'
 })
 ```
 
@@ -132,40 +133,45 @@ export default defineConfig({
 Here is a full breakdown of the configuration schema:
 
 ### Network & SSL
-- `port` *(number)*: The port the server will bind to. (Default: `4000`)
-- `host` *(string)*: The host interface to bind to. (Default: `'0.0.0.0'`)
-- `ssl` *(object)*: Provide `{ key, cert }` strings or Buffers to enable HTTPS natively.
-- `http2` *(boolean)*: Enables HTTP/2 support natively. (Defaults to `true` when SSL is provided).
-- `redirectHttp` *(boolean | number)*: Automatically intercepts HTTP requests and redirects them to HTTPS.
+
+- `port` _(number)_: The port the server will bind to. (Default: `4000`)
+- `host` _(string)_: The host interface to bind to. (Default: `'0.0.0.0'`)
+- `ssl` _(object)_: Provide `{ key, cert }` strings or Buffers to enable HTTPS natively.
+- `http2` _(boolean)_: Enables HTTP/2 support natively. (Defaults to `true` when SSL is provided).
+- `redirectHttp` _(boolean | number)_: Automatically intercepts HTTP requests and redirects them to HTTPS.
 
 ### Global Middleware
-- `cors` *(object | boolean)*: Global CORS policy configuration (`origin`, `methods`, `credentials`, etc.).
-- `helmet` *(object | boolean)*: Automatically secures your app with standard HTTP headers. (Enabled by default).
-- `compression` *(object | boolean)*: Enables Gzip/Brotli compression for all HTTP responses.
-- `logger` *(object | boolean)*: Configures the internal Pino-based logger (`level`, `pretty`).
-- `etag` *(boolean)*: Automatically generates ETag headers for cache-invalidation.
+
+- `cors` _(object | boolean)_: Global CORS policy configuration (`origin`, `methods`, `credentials`, etc.).
+- `helmet` _(object | boolean)_: Automatically secures your app with standard HTTP headers. (Enabled by default).
+- `compression` _(object | boolean)_: Enables Gzip/Brotli compression for all HTTP responses.
+- `logger` _(object | boolean)_: Configures the internal Pino-based logger (`level`, `pretty`).
+- `etag` _(boolean)_: Automatically generates ETag headers for cache-invalidation.
 
 ### Performance & Security
-- `bodyLimit` *(number)*: The maximum allowed size (in bytes) for incoming request bodies. (Default: `1MB`)
-- `trustProxy` *(boolean | number)*: If true, respects `X-Forwarded-For` and `X-Forwarded-Host` headers (essential for apps deployed behind NGINX, Cloudflare, or AWS ELB). If a number, trusts that many hops.
-- `keepAlive` *(object | boolean)*: Tunes the Keep-Alive timeout and Header timeout limits.
-- `workers` *(number | 'safe' | 'max')*: Number of CPU workers for cluster mode. Defaults to 1. 'safe' caps to 2. 'max' uses all available cores.
+
+- `bodyLimit` _(number)_: The maximum allowed size (in bytes) for incoming request bodies. (Default: `1MB`)
+- `trustProxy` _(boolean | number)_: If true, respects `X-Forwarded-For` and `X-Forwarded-Host` headers (essential for apps deployed behind NGINX, Cloudflare, or AWS ELB). If a number, trusts that many hops.
+- `keepAlive` _(object | boolean)_: Tunes the Keep-Alive timeout and Header timeout limits.
+- `workers` _(number | 'safe' | 'max')_: Number of CPU workers for cluster mode. Defaults to 1. 'safe' caps to 2. 'max' uses all available cores.
 
 ### Execution & Debugging
-- `env` *(string)*: Overrides the environment. Can be 'development', 'production', or 'test'.
-- `server` *('auto' | 'node' | 'uws')*: Server backend to use. Defaults to 'node'.
-- `debugRouting` *(boolean)*: Enables detailed logging of the resolved route file and applied gateways for every incoming request.
-- `test` *(object)*: Configuration for the native test runner (`include`, `exclude`, `setupFiles`, `concurrency`, `coverage`).
+
+- `env` _(string)_: Overrides the environment. Can be 'development', 'production', or 'test'.
+- `server` _('auto' | 'node' | 'uws')_: Server backend to use. Defaults to 'node'.
+- `debugRouting` _(boolean)_: Enables detailed logging of the resolved route file and applied gateways for every incoming request.
+- `test` _(object)_: Configuration for the native test runner (`include`, `exclude`, `setupFiles`, `concurrency`, `coverage`).
 
 ### Queues & Plugins
-- `queue` *(object)*: Configures the Global Job Queue driver (`memory` or `redis`) and backpressure settings.
-- `plugins` *(array)*: Registers framework-level plugins.
+
+- `queue` _(object)_: Configures the Global Job Queue driver (`memory` or `redis`) and backpressure settings.
+- `plugins` _(array)_: Registers framework-level plugins.
 
 ---
 
 ## 7. ExisJS Plugin Ecosystem
 
-The ExisJS configuration file is also where you integrate native plugins and modules. 
+The ExisJS configuration file is also where you integrate native plugins and modules.
 
 You can easily build your own plugins using `defineModule` from `exisjs/module`. Under the hood, plugins get full access to the `app` instance to register routes, providers, or lifecycle hooks!
 
@@ -174,18 +180,19 @@ import { defineConfig } from 'exisjs/config'
 import { defineModule } from 'exisjs/module'
 
 // 1. Create a custom plugin (e.g., a mock GraphQL endpoint)
-const graphqlPlugin = (options: { endpoint: string }) => defineModule({
-  name: 'graphql',
-  routes: (app) => {
-    app.post(options.endpoint, (req, res) => res.json({ data: 'GraphQL Response' }))
-  }
-})
+const graphqlPlugin = (options: { endpoint: string }) =>
+  defineModule({
+    name: 'graphql',
+    routes: (app) => {
+      app.post(options.endpoint, (req, res) =>
+        res.json({ data: 'GraphQL Response' })
+      )
+    },
+  })
 
 // 2. Register it in your config
 export default defineConfig({
-  plugins: [
-    graphqlPlugin({ endpoint: '/graphql' })
-  ]
+  plugins: [graphqlPlugin({ endpoint: '/graphql' })],
 })
 ```
 
@@ -193,14 +200,17 @@ export default defineConfig({
 
 ## 8. Process Model & Multi-Tenancy
 
-ExisJS expects a **One App Per Process** architecture. 
+ExisJS expects a **One App Per Process** architecture.
 
 ### Zero-Config Singletons
+
 ExisJS's highly ergonomic integrations (e.g., `redis.ts`, `prisma.ts`, `s3.ts`) are implemented using ES6 Proxies that cache the underlying clients at the module level. This means they are **process-wide singletons**.
 If you attempt to mount multiple `App` instances inside a single Node.js process to serve different tenants, they will **share the exact same database connections, redis pools, and caches**.
 
 ### Multi-Tenant Guidance
+
 If you are building a multi-tenant B2B application, do not boot multiple ExisJS `App` instances per tenant. Instead, use one of the following standard approaches:
+
 1. **Row-Level Tenancy (Recommended)**: Run a single `App` connected to a single database. Use request context or middleware to inject the `tenantId` and scope all queries via Prisma/SQL.
 2. **Factory-Based Clients**: If you need true database-per-tenant isolation, do not use the zero-config singleton exports (like `import { db } from 'exisjs/prisma'`). Instead, manually construct the client factories inside a tenant-resolution middleware and attach them to the request context (`req.tenantDb`).
 3. **Containerized Deployments**: Run separate Node.js processes (Docker containers) for each tenant, passing tenant-specific `DATABASE_URL`s to each container.

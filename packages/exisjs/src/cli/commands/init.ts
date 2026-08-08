@@ -15,7 +15,7 @@ export async function initCommand() {
   }
 
   // In development, the create-exis package is located relative to the exis package
-  // dist/cli/commands/init.js -> ../../../../create-exis/dist/index.js
+  // dist/cli/commands/init.js -> ../../../../create/dist/index.js
   const localCreateExis = path.join(
     __dirname,
     '..',

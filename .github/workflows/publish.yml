@@ -33,10 +33,10 @@ jobs:
 
       - name: Publish exisjs
         run: |
-          VERSION=$(node -p "require('./packages/exis/package.json').version")
+          VERSION=$(node -p "require('./packages/exisjs/package.json').version")
           EXISTS=$(npm view exisjs@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/exis --access public
+            npm publish --workspace=packages/exisjs --access public
           else
             echo "exisjs@$VERSION is already published. Skipping."
           fi
@@ -45,10 +45,10 @@ jobs:
 
       - name: Publish @exisjs/create
         run: |
-          VERSION=$(node -p "require('./packages/create-exis/package.json').version")
+          VERSION=$(node -p "require('./packages/create/package.json').version")
           EXISTS=$(npm view @exisjs/create@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/create-exis --access public
+            npm publish --workspace=packages/create --access public
           else
             echo "@exisjs/create@$VERSION is already published. Skipping."
           fi

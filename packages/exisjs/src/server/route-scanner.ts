@@ -43,73 +43,72 @@ export class RouteScanner {
     const isDev = this.app.options.env === 'development'
 
     // Try to load the pre-built manifest first (O(1) boot)
-    const manifestPath = path.join(root, '.exis', 'routes-manifest.js')
-    try {
-      const stat = await fs.stat(manifestPath)
-      if (stat.isFile()) {
-        let url = pathToFileURL(manifestPath).href
-        if (!isProd) url += '?t=' + Date.now() // cache bust for dev
+    let manifest: any = undefined
 
-        let mod: any
-        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-          mod = await import(url)
-        } else {
-          const dynamicImport = new Function(
-            'specifier',
-            'return import(specifier)'
-          )
-          mod = await dynamicImport(url)
-        }
-        const manifest = mod.manifest
+    // STANDALONE MODE: If the bundler statically injected the manifest, skip filesystem!
+    if ((globalThis as any).__EXIS_STANDALONE_MANIFEST__) {
+      manifest = (globalThis as any).__EXIS_STANDALONE_MANIFEST__
+    } else {
+      const manifestPath = path.join(root, '.exis', 'routes-manifest.js')
+      try {
+        const stat = await fs.stat(manifestPath)
+        if (stat.isFile()) {
+          let url = pathToFileURL(manifestPath).href
+          if (!isProd) url += '?t=' + Date.now() // cache bust for dev
 
-        if (Array.isArray(manifest)) {
-          for (const entry of manifest) {
-            const { routePath, module: routeMod, filePath } = entry
-            const normalizedPath = path.resolve(root, filePath)
-            this.routeMap.set(normalizedPath, routePath)
-            const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
-            const isClassController = (obj: any) =>
-              obj &&
-              obj.prototype &&
-              obj.prototype[CONTROLLER_PREFIX] !== undefined
-
-            const unwrappedMod =
-              routeMod.default && routeMod.default.default
-                ? routeMod.default.default
-                : routeMod.default
-                  ? routeMod.default
-                  : routeMod
-
-            const functionalControllerObj =
-              unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
-
-            const routerInstance =
-              routeMod.router || routeMod.default || routeMod
-
-            if (functionalControllerObj) {
-              const router = this.compileFunctionalController(
-                functionalControllerObj
-              )
-              this.mountRouteWithSource(routePath, router, normalizedPath)
-            } else if (isClassController(routerInstance)) {
-              this.app.registerControllers([routerInstance], routePath)
-            } else {
-              this.mountRouteWithSource(
-                routePath,
-                routerInstance,
-                normalizedPath
-              )
-            }
+          let mod: any
+          if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+            mod = await import(url)
+          } else {
+            const dynamicImport = new Function(
+              'specifier',
+              'return import(specifier)'
+            )
+            mod = await dynamicImport(url)
           }
-          // Skip the filesystem scan completely!
-          return
+          manifest = mod.manifest
+        }
+      } catch (err: any) {
+        if (err.code !== 'ENOENT') {
+          console.warn('exisjs: Failed to load routes manifest:', err.message)
         }
       }
-    } catch (err: any) {
-      if (err.code !== 'ENOENT') {
-        console.warn('exisjs: Failed to load routes manifest:', err.message)
+    }
+
+    if (Array.isArray(manifest)) {
+      for (const entry of manifest) {
+        const { routePath, module: routeMod, filePath } = entry
+        const normalizedPath = path.resolve(root, filePath)
+        this.routeMap.set(normalizedPath, routePath)
+        const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
+        const isClassController = (obj: any) =>
+          obj && obj.prototype && obj.prototype[CONTROLLER_PREFIX] !== undefined
+
+        const unwrappedMod =
+          routeMod.default && routeMod.default.default
+            ? routeMod.default.default
+            : routeMod.default
+              ? routeMod.default
+              : routeMod
+
+        const functionalControllerObj =
+          unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
+
+        const routerInstance = routeMod.router || routeMod.default || routeMod
+
+        if (functionalControllerObj) {
+          const router = this.compileFunctionalController(
+            functionalControllerObj
+          )
+          this.mountRouteWithSource(routePath, router, normalizedPath)
+        } else if (isClassController(routerInstance)) {
+          this.app.registerControllers([routerInstance], routePath)
+        } else {
+          this.mountRouteWithSource(routePath, routerInstance, normalizedPath)
+        }
       }
-      // Fall back to scanning the filesystem
+      // Skip the filesystem scan completely!
+      return
     }
 
     const searchDirs = isProd

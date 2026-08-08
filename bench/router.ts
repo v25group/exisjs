@@ -1,5 +1,5 @@
 import { run, bench, group } from 'mitata'
-import { Router } from '../packages/exis/src/router/router'
+import { Router } from '../packages/exisjs/src/router/router'
 import FindMyWay from 'find-my-way'
 import { TrieRouter } from 'hono/router/trie-router'
 import { SmartRouter } from 'hono/router/smart-router'

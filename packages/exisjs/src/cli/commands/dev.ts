@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'node:child_process'
+import { spawn, spawnSync, ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { log, error, c, warn } from '../utils'
@@ -81,7 +81,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   let child: ChildProcess | null = null
   let isShuttingDown = false
 
-  const CHILD_EXIT_TIMEOUT_MS = 1000
+  const CHILD_EXIT_TIMEOUT_MS = 10000
 
   async function handleSessionStop(_signal: string) {
     if (isShuttingDown) return
@@ -116,7 +116,11 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
             `${c.red}  Force killing process after timeout...${c.reset}`
           )
           try {
-            if (process.platform !== 'win32') {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
               child.kill('SIGKILL')
             }
           } catch {
@@ -128,11 +132,19 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
       child.on('exit', () => {
         clearTimeout(exitTimeout)
-        process.exit(0)
+        // Small delay to allow the child's buffered stdout to fully flush
+        // before the parent exits (fixes Windows race condition where the
+        // PS prompt appears before the last log lines are printed).
+        setTimeout(() => process.exit(0), 300)
       })
 
       try {
-        if (process.platform !== 'win32') {
+        if (process.platform === 'win32') {
+          // On Windows, signals are not natively supported — send Ctrl+C
+          // event to the child's console group so it can shut down gracefully.
+          // The child already receives SIGINT from the terminal directly, so
+          // this is a no-op safety net; the real fix is the drain delay above.
+        } else {
           child.kill('SIGTERM')
         }
       } catch {

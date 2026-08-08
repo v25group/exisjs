@@ -60,8 +60,7 @@ export async function routesCommand(
 
     const appExport = Object.values(mod).find(isApp)
     const app = (isApp(mod.default) ? mod.default : appExport) as
-      | App
-      | undefined
+      App | undefined
 
     if (!app) {
       console.error(

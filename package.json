@@ -21,14 +21,13 @@
     "examples/*/*"
   ],
   "scripts": {
-    "version": "node scripts/update-templates.mjs",
-    "build": "npm run build --workspace=packages/exis --workspace=packages/create-exis",
+    "build": "npm run build --workspace=packages/exisjs --workspace=packages/create",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
     "lint": "eslint .",
     "prepare": "husky",
-    "release": "npm run build && npm publish --workspace=packages/exis --workspace=packages/create-exis --workspace=packages/client --access public",
+    "release": "npm run build && npm publish --workspace=packages/exisjs --workspace=packages/create --workspace=packages/client --access public",
     "bench": "tsx bench/basic.ts",
     "bench:compare": "tsx bench/compare.ts",
     "bench:router": "tsx bench/router.ts"
