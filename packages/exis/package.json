@@ -183,7 +183,7 @@
     "dotenv": "^17.4.2",
     "dotenv-expand": "^13.0.0",
     "esbuild": "^0.28.1",
-    "execa": "^10.0.0",
+    "execa": "^10.0.1",
     "fast-json-stringify": "^7.0.1",
     "fast-querystring": "^1.1.2",
     "fresh": "^0.5.2",
