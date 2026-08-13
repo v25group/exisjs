@@ -8,15 +8,30 @@
  *   npm install mongoose
  */
 
-export function createMongooseClient(options?: any) {
-  const uri = process.env.MONGODB_URI || process.env.DATABASE_URL
+export function createMongooseClient(uriOrOptions?: any, options?: any) {
+  let uri: string | undefined = undefined
+  let opts = options
+
+  if (typeof uriOrOptions === 'string') {
+    uri = uriOrOptions
+  } else if (uriOrOptions) {
+    opts = uriOrOptions
+  }
+
+  if (!uri) {
+    uri =
+      process.env.MONGO_URI ||
+      process.env.MONGODB_URI ||
+      process.env.DATABASE_URL
+  }
+
   if (!uri) {
     throw new Error(
-      'process.env.MONGODB_URI or DATABASE_URL is missing. Cannot initialize Mongoose.'
+      'process.env.MONGO_URI or DATABASE_URL is missing. Cannot initialize Mongoose.'
     )
   }
 
-  let mongoose: any = options?.client
+  let mongoose: any = opts?.client
 
   if (!mongoose) {
     try {
@@ -32,7 +47,7 @@ export function createMongooseClient(options?: any) {
   }
 
   // Connect without awaiting. Mongoose natively buffers operations until connected.
-  const connectOptions = { ...options }
+  const connectOptions = { ...opts }
   delete connectOptions.client // don't pass client to mongoose.connect
 
   const connectionPromise = mongoose
@@ -49,14 +64,25 @@ export function createMongooseClient(options?: any) {
 
 let cachedClient: any
 
-export function configureMongoose(options: any) {
+import { activeAppInstance } from '../server/app'
+
+export function configureMongoose(uriOrOptions?: any, options?: any) {
   if (cachedClient) {
     console.warn(
       'Mongoose client is already initialized. Call configureMongoose() before using it.'
     )
     return cachedClient
   }
-  cachedClient = createMongooseClient(options)
+  cachedClient = createMongooseClient(uriOrOptions, options)
+
+  if (activeAppInstance) {
+    activeAppInstance.onShutdown(async () => {
+      if (cachedClient) {
+        await cachedClient.disconnect()
+      }
+    })
+  }
+
   return cachedClient
 }
 

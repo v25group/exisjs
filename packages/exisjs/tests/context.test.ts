@@ -1,25 +1,28 @@
 import { exis } from '../src'
-import { getContext, setContext, after } from '../src/exports/route'
+import { getContext, setContext, after } from '../src/router/index'
 import { createTestApp } from '../src/testing/client'
 import { describe, expect, it, ex } from '../src/testing'
 
 describe('Context API & after()', () => {
   it('should isolate context state across requests', async () => {
-    const app = exis({ asyncContext: true })
-
     const mockService = () => {
       const state = getContext<{ userId: string }>()
       return state.userId
     }
 
-    app.get('/user/:id', (req, res) => {
-      setContext('userId', req.params.id)
+    const app = exis({
+      asyncContext: true,
+      async onStart(activeApp) {
+        activeApp.get('/user/:id', (req, res) => {
+          setContext('userId', req.params.id)
 
-      // Simulate async work
-      setTimeout(() => {
-        const idFromContext = mockService()
-        res.json({ contextId: idFromContext })
-      }, 10)
+          // Simulate async work
+          setTimeout(() => {
+            const idFromContext = mockService()
+            res.json({ contextId: idFromContext })
+          }, 10)
+        })
+      },
     })
 
     const server = createTestApp(app)
@@ -34,15 +37,18 @@ describe('Context API & after()', () => {
   })
 
   it('should run after() callbacks when the response finishes', async () => {
-    const app = exis({ asyncContext: true })
-
     let afterExecuted = false
 
-    app.get('/background', (req, res) => {
-      after(() => {
-        afterExecuted = true
-      })
-      res.json({ success: true })
+    const app = exis({
+      asyncContext: true,
+      async onStart(activeApp) {
+        activeApp.get('/background', (req, res) => {
+          after(() => {
+            afterExecuted = true
+          })
+          res.json({ success: true })
+        })
+      },
     })
 
     const server = createTestApp(app)

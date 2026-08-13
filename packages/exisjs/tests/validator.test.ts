@@ -1,5 +1,5 @@
-import { v, ValidatorError, ValidatorType } from '../src/utils/validator'
-import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { v, ValidatorError } from '../src/utils/validator'
+import { describe, expect, it } from '../src/testing'
 // ─── String Validator ─────────────────────────────────────────────────────────
 
 describe('v.string()', () => {

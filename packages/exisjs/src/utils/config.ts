@@ -22,6 +22,19 @@ export const defaultConfig: ResolvedConfig = {
   http2: true,
   redirectHttp: false,
   etag: false,
+  telemetry: {
+    enabled: false,
+    exporter: 'console',
+  },
+  metrics: {
+    enabled: false,
+    path: '/metrics',
+  },
+  healthcheck: {
+    enabled: false,
+    path: '/_health',
+    checks: [],
+  },
   cors: {
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -38,6 +51,7 @@ export const defaultConfig: ResolvedConfig = {
   test: undefined as any,
   plugins: [],
   workers: 1,
+  cluster: { workers: 1 },
   debugRouting: false,
   asyncContext: false,
 }

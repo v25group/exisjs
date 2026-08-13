@@ -14,8 +14,29 @@ export class ExisQueue {
     this.maxQueue = config.maxQueue
 
     // Auto-detect driver if not explicitly provided
-    const driverType =
+    let driverType =
       config.driver || (config.redis || config.redisUrl ? 'redis' : null)
+
+    if (process.env.NODE_ENV === 'production') {
+      if (driverType === 'memory') {
+        console.warn(
+          '\x1b[33m[ExisJS] Warning: Queue is explicitly configured to use "memory" driver in production. This is dangerous as jobs will be lost on restart.\x1b[0m'
+        )
+      } else if (!driverType) {
+        if (process.env.REDIS_URL) {
+          config.redisUrl = process.env.REDIS_URL
+          driverType = 'redis'
+        } else {
+          console.warn(
+            '\x1b[33m[ExisJS] Warning: Queue is enabled without a driver in production. Memory driver will be used, but jobs will be lost on restart. Please set REDIS_URL to automatically use Redis.\x1b[0m'
+          )
+          driverType = 'memory'
+        }
+      }
+    } else if (!driverType) {
+      // Default to memory in development if queue config is present
+      driverType = 'memory'
+    }
 
     if (driverType === 'redis') {
       if (config.redis) {

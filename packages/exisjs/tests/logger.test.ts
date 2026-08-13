@@ -4,7 +4,7 @@ import {
   resolveLoggerConfig,
   createSilentLogger,
 } from '../src/utils/logger'
-import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { describe, expect, it } from '../src/testing'
 // ─── createLogger ─────────────────────────────────────────────────────────────
 
 describe('createLogger()', () => {

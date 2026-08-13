@@ -3,6 +3,9 @@ import type { ExisResponse } from './server/response'
 import type { ExisWebSocket } from './websocket/socket'
 import type { ExisSSE } from './server/sse'
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ExisUser {}
+
 export type Request<
   TBody = unknown,
   TQuery = Record<string, string>,
@@ -236,11 +239,32 @@ export interface SslConfig {
   passphrase?: string
 }
 
+export interface TelemetryConfig {
+  enabled: boolean
+  serviceName?: string
+  exporter?: 'otlp' | 'console'
+  endpoint?: string
+}
+
+export interface MetricsConfig {
+  enabled: boolean
+  path?: string // default '/metrics'
+}
+
+export interface HealthCheckConfig {
+  enabled: boolean
+  path?: string // default '/_health'
+  checks?: (() => Promise<boolean>)[]
+}
+
 export interface ExisConfig {
   port?: number
   host?: string
   cors?: CorsConfig | boolean
   logger?: LoggerConfig | boolean
+  telemetry?: TelemetryConfig | boolean
+  metrics?: MetricsConfig | boolean
+  healthcheck?: HealthCheckConfig | boolean
   helmet?: HelmetConfig | boolean
   trustProxy?: boolean | number
   bodyLimit?: number // bytes, default 1mb
@@ -251,7 +275,10 @@ export interface ExisConfig {
   http2?: boolean // Default true when SSL is provided
   redirectHttp?: boolean | number // If true, redirects port 80 to HTTPS port. If number, redirects that specific port.
   etag?: boolean // Default false. Set to true to enable ETag generation for all responses.
-  workers?: number | 'safe' | 'max' // Number of CPU workers for cluster. default 1. 'safe' caps to 2. 'max' uses all cores.
+  workers?: number | 'safe' | 'max' // @deprecated Use cluster.workers instead
+  cluster?: {
+    workers?: number | 'auto' | 'safe' | 'max' // Number of CPU workers for cluster. 'auto' or 'max' uses all cores.
+  }
   debugRouting?: boolean // Enables detailed logging of the resolved route file and applied gateways for every incoming request
   asyncContext?: boolean // Enables AsyncLocalStorage for global getContext() (adds ~10% overhead). Default false.
   /**

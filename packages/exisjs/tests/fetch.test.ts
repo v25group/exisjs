@@ -1,5 +1,5 @@
 import { App } from '../src/server/app'
-import { describe, expect, it, ex } from '../src/testing'
+import { describe, expect, it } from '../src/testing'
 
 describe('Web Standard Fetch Adapter (Edge Runtime)', () => {
   it('handles GET requests', async () => {

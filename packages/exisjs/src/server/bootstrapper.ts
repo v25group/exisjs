@@ -450,8 +450,9 @@ export class ServerBootstrapper {
       } else {
         this.server.close((err) => {
           if (err) reject(err)
-          else cleanupAndFinish()
         })
+        // Call immediately to start polling active requests concurrently
+        cleanupAndFinish()
       }
     })
   }

@@ -156,8 +156,14 @@ export const route = {
   >(
     path: string,
     config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
-    ({ method: 'get', path, ...config }) as any,
+  ): RouteDefinition<B, Q, P, TContext> => {
+    if ('body' in config && config.body) {
+      console.warn(
+        `\x1b[33m[ExisJS] Warning: GET route '${path}' defines a body schema, but GET requests cannot have bodies.\x1b[0m`
+      )
+    }
+    return { method: 'get', path, ...config } as any
+  },
 
   post: <
     B = unknown,

@@ -14,3 +14,24 @@ export function defineJob<T = unknown>(
 export function defineJob(def: any) {
   return def
 }
+
+import { getActiveApp } from '../server/app'
+import type { JobOptions } from './types'
+
+export async function enqueue<T = unknown>(
+  name: string,
+  payload: T,
+  opts?: JobOptions
+): Promise<string> {
+  return getActiveApp().enqueue(name, payload, opts)
+}
+
+export function queue<T = unknown>(
+  name: string,
+  handler: import('./types').JobHandler<T>,
+  options?: Omit<import('./types').JobDefinition<T>, 'name' | 'handler'>
+) {
+  return getActiveApp().queue(name, handler, options)
+}
+
+queue.enqueue = enqueue

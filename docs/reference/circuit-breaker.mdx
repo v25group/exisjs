@@ -3,9 +3,9 @@ title: "Circuit Breaker"
 description: "Strict API Reference for the Circuit Breaker resilience utility."
 ---
 
-# Circuit Breaker (`exisjs/circuit-breaker`)
+# Circuit Breaker (`exisjs/app`)
 
-This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/circuit-breaker` module. For high-level resilience guides, see the [Circuit Breaker Guide](/docs/circuit-breaker).
+This document provides the strict API signatures and TypeScript interfaces exported for the `CircuitBreaker` utility. For high-level resilience guides, see the [Circuit Breaker Guide](/docs/circuit-breaker).
 
 ---
 
@@ -14,7 +14,7 @@ This document provides the strict API signatures and TypeScript interfaces expor
 The `CircuitBreaker` class is a state machine that monitors the execution of async actions to prevent cascading failures.
 
 ```typescript
-import { CircuitBreaker } from 'exisjs/circuit-breaker'
+import { CircuitBreaker } from 'exisjs/app'
 
 class CircuitBreaker {
   constructor(options?: CircuitBreakerOptions)

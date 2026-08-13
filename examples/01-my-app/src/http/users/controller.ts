@@ -1,5 +1,5 @@
 import type { Request, Response } from 'exisjs/router'
-import { CircuitBreaker } from 'exisjs/circuit-breaker'
+import { CircuitBreaker } from 'exisjs/app'
 import { inject } from 'exisjs/di'
 import { UserParamsSchema } from './schema'
 import type { UsersService } from './service'

@@ -24,9 +24,30 @@ export function createLogger(config: LoggerConfig = {}): Logger {
     redact = DEFAULT_REDACT,
   } = config
 
+  let otelApi: any
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    otelApi = require('@opentelemetry/api')
+  } catch {
+    // Optional dependency
+  }
+
   const options: pino.LoggerOptions = {
     level,
     ...(redact && redact.length > 0 && { redact }),
+    mixin() {
+      if (otelApi && otelApi.trace && otelApi.context) {
+        const span = otelApi.trace.getSpan(otelApi.context.active())
+        if (span) {
+          const spanContext = span.spanContext()
+          return {
+            trace_id: spanContext.traceId,
+            span_id: spanContext.spanId,
+          }
+        }
+      }
+      return {}
+    },
   }
 
   const streams: pino.StreamEntry[] = []

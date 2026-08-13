@@ -29,5 +29,5 @@ export type {
   HookRequest,
 } from './types'
 
-export * as queue from './exports/queue'
-export * from './config/constants'
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ExisUser {}

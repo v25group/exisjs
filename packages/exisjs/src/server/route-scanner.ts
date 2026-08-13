@@ -12,6 +12,7 @@ export class RouteScanner {
   public routeMap = new Map<string, string>()
   public apiDir: string | null = null
   public _allApiDirs?: string[]
+  public hasGateways = false
 
   constructor(public app: App) {}
 
@@ -165,6 +166,13 @@ export class RouteScanner {
       const routes = await this.scanDirectory(appDir)
 
       for (const { filePath, routePath } of routes) {
+        if (
+          filePath.endsWith('gateway.ts') ||
+          filePath.endsWith('gateway.js')
+        ) {
+          this.hasGateways = true
+        }
+
         if (filePath.endsWith('route.ts') || filePath.endsWith('route.js')) {
           const normalized = path.resolve(filePath)
           this.routeMap.set(normalized, routePath)
@@ -218,6 +226,12 @@ export class RouteScanner {
           }
         }
       }
+    }
+
+    if (!this.hasGateways && !isProd) {
+      console.warn(
+        '\x1b[33m[ExisJS] Warning: No gateway.ts found — applying default security headers.\x1b[0m'
+      )
     }
   }
 
@@ -360,6 +374,7 @@ export class RouteScanner {
 
         if (targetGw) {
           activeGateways.push(targetGw)
+          this.hasGateways = true
           const gwUrl =
             process.env.VITEST || process.env.NODE_ENV === 'test'
               ? pathToFileURL(targetGw).href

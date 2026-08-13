@@ -8,10 +8,21 @@ export interface DedupeOptions {
   keyGenerator: (req: Request) => string
 }
 
+/**
+ * Request Deduplication Middleware
+ *
+ * Prevents identical parallel requests (e.g., from a user double-clicking a button)
+ * from hitting the controller simultaneously. The first request runs the handler,
+ * while subsequent requests for the same key wait and share the same response.
+ *
+ * @example
+ * // in gateway.ts
+ * dedupe({ keyGenerator: (req) => req.user?.id || req.ip })
+ */
 export function dedupeMiddleware(options: DedupeOptions): Handler {
   if (!options || typeof options.keyGenerator !== 'function') {
     throw new Error(
-      'dedupeMiddleware: keyGenerator option is required to prevent cross-user data leaks.'
+      `dedupeMiddleware: keyGenerator option is required to prevent cross-user data leaks.\nExample: dedupe({ keyGenerator: (req) => req.user?.id || req.ip })`
     )
   }
   const keyGenerator = options.keyGenerator

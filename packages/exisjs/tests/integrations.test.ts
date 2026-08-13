@@ -1,7 +1,7 @@
 import { jwt } from '../src/integrations/jwt'
 import { createRedisClient } from '../src/integrations/redis'
 import { createS3Client } from '../src/integrations/s3'
-import { describe, expect, it, ex, afterAll, beforeEach } from '../src/testing'
+import { describe, expect, it, afterAll, beforeEach } from '../src/testing'
 
 import Module from 'module'
 

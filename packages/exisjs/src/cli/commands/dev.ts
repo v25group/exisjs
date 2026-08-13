@@ -1,6 +1,7 @@
 import { spawn, spawnSync, ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
+import http from 'node:http'
 import { log, error, c, warn } from '../utils'
 
 interface DevOptions {
@@ -158,7 +159,60 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   process.on('SIGINT', () => handleSessionStop('SIGINT'))
   process.on('SIGTERM', () => handleSessionStop('SIGTERM'))
 
+  let fallbackServer: http.Server | null = null
+
+  function closeFallbackServer() {
+    if (fallbackServer) {
+      try {
+        fallbackServer.close()
+      } catch {
+        /* ignore */
+      }
+      fallbackServer = null
+    }
+  }
+
+  function startFallbackServer(errorMessage: string) {
+    closeFallbackServer()
+    const port = parseInt(process.env.PORT || '3000', 10)
+    fallbackServer = http.createServer((req, res) => {
+      res.writeHead(500, { 'Content-Type': 'text/html' })
+      res.end(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Build Error | Exis</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #fcebeb; color: #333; margin: 0; padding: 40px; }
+    .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px rgba(200, 0, 0, 0.1); border-left: 6px solid #e53e3e; }
+    h1 { color: #e53e3e; margin-top: 0; font-size: 24px; }
+    .code-block { background: #1e1e1e; color: #fc8181; padding: 20px; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Build/Syntax Error</h1>
+    <div class="code-block">${errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+  </div>
+</body>
+</html>
+      `)
+    })
+    fallbackServer
+      .listen(port, () => {
+        console.log(
+          `\n${c.red}[exis] Serving build error on port ${port}${c.reset}`
+        )
+      })
+      .on('error', () => {
+        // Port might still be in use by zombie process, just ignore
+      })
+  }
+
   function startProcess(): void {
+    closeFallbackServer()
+
     if (child) {
       child.kill('SIGTERM')
     }
@@ -170,11 +224,25 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         __EXIS_DEV_SERVER: '1',
         EXIS_ENTRY_FILE: entryFile!,
       },
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
       shell: runner!.bin === process.execPath ? false : true,
     })
 
-    // Using env vars for entry file so wrapper tools like tsx don't break IPC
+    let stderrBuffer = ''
+
+    child!.stdout?.on('data', (chunk) => {
+      process.stdout.write(chunk)
+    })
+
+    child!.stderr?.on('data', (chunk) => {
+      const str = chunk.toString()
+      process.stderr.write(chunk)
+      stderrBuffer += str
+      // Keep only last 10000 chars to avoid memory leak
+      if (stderrBuffer.length > 10000) {
+        stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 10000)
+      }
+    })
 
     child!.on('error', (err) => {
       error(`Failed to start process: ${err.message}`)
@@ -192,6 +260,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           return
         }
         error(`Process crashed with code ${code}`)
+        // Start the fallback server so the browser doesn't hang or get "Connection Refused"
+        startFallbackServer(
+          stderrBuffer || 'Process crashed with no error output.'
+        )
       }
     })
   }
@@ -243,14 +315,29 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     )
     ;(global as any)._tscProcess = tscProcess
 
+    let tscErrors: string[] = []
+
     tscProcess.stdout?.on('data', (data) => {
       const lines = data.toString().trim().split('\n')
       for (const line of lines) {
         if (!line) continue
         if (line.includes('Found 0 errors')) {
           console.log(`\n${c.green}✓ type-check passed.${c.reset}`)
+          tscErrors = []
+          // Type errors are cleared — close the fallback so the real server can serve
+          closeFallbackServer()
         } else if (line.includes('error TS')) {
           console.error(`\n${c.yellow}[tsc]${c.reset} ${line}`)
+          tscErrors.push(line)
+        } else if (line.includes('Found') && line.includes('error')) {
+          // "Found 3 errors." summary line — show all collected errors in browser
+          console.error(`\n${c.yellow}[tsc]${c.reset} ${line}`)
+          if (tscErrors.length > 0) {
+            startFallbackServer(
+              `TypeScript Compilation Errors\n${'─'.repeat(50)}\n\n` +
+                tscErrors.join('\n')
+            )
+          }
         } else if (
           !line.includes('Starting compilation in watch mode') &&
           !line.includes('File change detected')

@@ -1,5 +1,5 @@
 import { App } from '../src/server/app'
-import { defineGateway, controller, route } from '../src/exports/route'
+import { defineGateway, controller, route } from '../src/router/index'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { createTestApp } from '../src/testing/client'
@@ -18,7 +18,7 @@ describe('Gateway & Inline Config', () => {
     await fs.mkdir(httpDir, { recursive: true })
 
     const routerPath = path
-      .join(__dirname, '../src/exports/route')
+      .join(__dirname, '../src/router/index')
       .replace(/\\/g, '/')
 
     // Root Gateway

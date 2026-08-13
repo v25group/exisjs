@@ -10,7 +10,8 @@ export async function exportsCommand() {
     {
       name: '🚀 Core Framework',
       items: [
-        { path: 'exisjs', desc: 'Main entrypoint (App, cors, helmet)' },
+        { path: 'exisjs', desc: 'Main entrypoint (cors, helmet, setup)' },
+        { path: 'exisjs/app', desc: 'App lifecycle, workers, and resilience' },
         { path: 'exisjs/router', desc: 'Routing decorators and contexts' },
         { path: 'exisjs/module', desc: 'Module and Gateway definitions' },
         { path: 'exisjs/di', desc: 'Dependency Injection container' },
@@ -38,7 +39,6 @@ export async function exportsCommand() {
         { path: 'exisjs/error', desc: 'Global exception formatting' },
         { path: 'exisjs/plugin', desc: 'Plugin isolation wrapper' },
         { path: 'exisjs/response', desc: 'Standardized JSON responses' },
-        { path: 'exisjs/circuit-breaker', desc: 'Service protection layer' },
       ],
     },
     {

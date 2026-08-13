@@ -42,7 +42,7 @@ export class ExisRequest<
   public files: import('../types').ExisFile[] = []
 
   public rawBody?: string
-  public user?: any
+  public user!: import('../types').ExisUser & Record<string, any>
   public log!: Logger
   public session?: Record<string, any> | any
   public requestId?: string

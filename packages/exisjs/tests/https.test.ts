@@ -4,7 +4,7 @@ import { request as httpsRequest } from 'https'
 import http2 from 'http2'
 import fs from 'fs'
 import path from 'path'
-import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { describe, expect, it, beforeAll, afterAll } from '../src/testing'
 
 describe('HTTPS and HTTP/2 Server', () => {
   let key: Buffer

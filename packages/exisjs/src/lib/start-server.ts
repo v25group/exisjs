@@ -52,9 +52,24 @@ async function start() {
 
     // Support declarative `export default exis({ ... })` or `@Server` classes
     let app = mod.default || mod.app
+    let instance: import('../server/app.js').App | null = null
+    const { setActiveAppInstance } = await import('../server/app.js')
 
+    if (app && app._isExisAppDefinition) {
+      // It's a functional ExisAppDefinition from exis({})
+      const AppClass = (await import('../server/app.js')).App
+      instance = new AppClass(app.options)
+      if (app.options.onStart) {
+        instance.onStartHook = app.options.onStart
+      }
+      if (app.options.onClose) {
+        instance.onCloseHook = app.options.onClose
+      }
+      app = instance
+      setActiveAppInstance(instance)
+    }
     // Check if it's a class decorated with @Server
-    if (
+    else if (
       app &&
       typeof app === 'function' &&
       app.prototype &&
@@ -62,7 +77,7 @@ async function start() {
     ) {
       const serverConfig = app.prototype[Symbol.for('exisjs:server_config')]
       const AppClass = (await import('../server/app.js')).App
-      const instance = new AppClass({
+      instance = new AppClass({
         plugins: serverConfig.plugins,
       })
 
@@ -81,11 +96,12 @@ async function start() {
 
       instance.onCloseHook = async () => {
         if (typeof serverInstance.onClose === 'function') {
-          await serverInstance.onClose(instance)
+          await serverInstance.onClose(instance!)
         }
       }
 
       app = instance
+      setActiveAppInstance(instance)
     }
 
     if (
@@ -94,6 +110,28 @@ async function start() {
       typeof app.listen === 'function'
     ) {
       await app.create()
+
+      // ─── Boot Telemetry (if configured) ───────────────────────────────────────
+      if (
+        app &&
+        app.options &&
+        app.options.telemetry &&
+        app.options.telemetry.enabled
+      ) {
+        try {
+          const telemetry = await import('@exisjs/telemetry')
+          telemetry.initTelemetry(app.options.telemetry)
+        } catch (err: any) {
+          if (err.code === 'ERR_MODULE_NOT_FOUND') {
+            console.warn(
+              '\x1b[33m[ExisJS] Warning: config.telemetry is enabled, but @exisjs/telemetry is not installed. Please run `npm install @exisjs/telemetry`.\x1b[0m'
+            )
+          } else {
+            console.error('[ExisJS] Failed to initialize telemetry:', err)
+          }
+        }
+      }
+
       if (typeof app.onStartHook === 'function') {
         await app.onStartHook(app)
       }
@@ -143,7 +181,11 @@ async function bootstrap() {
 
     const { loadConfig } = await import('../utils/config.js')
     const config = await loadConfig(process.cwd())
-    if (config.workers) {
+    if (config.cluster && config.cluster.workers) {
+      workers =
+        config.cluster.workers === 'auto' ? 'max' : config.cluster.workers
+    } else if (config.workers) {
+      // Fallback for legacy workers config
       workers = config.workers
     }
   } catch {

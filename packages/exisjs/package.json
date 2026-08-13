@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -22,80 +22,76 @@
       "default": "./dist/index.js"
     },
     "./router": {
-      "types": "./dist/exports/route.d.ts",
-      "default": "./dist/exports/route.js"
+      "types": "./dist/router/index.d.ts",
+      "default": "./dist/router/index.js"
     },
     "./app": {
-      "types": "./dist/exports/app.d.ts",
-      "default": "./dist/exports/app.js"
+      "types": "./dist/app/index.d.ts",
+      "default": "./dist/app/index.js"
     },
     "./module": {
-      "types": "./dist/exports/module.d.ts",
-      "default": "./dist/exports/module.js"
+      "types": "./dist/module/index.d.ts",
+      "default": "./dist/module/index.js"
     },
     "./di": {
-      "types": "./dist/exports/di.d.ts",
-      "default": "./dist/exports/di.js"
+      "types": "./dist/di/index.d.ts",
+      "default": "./dist/di/index.js"
     },
     "./decorators": {
-      "types": "./dist/exports/decorators.d.ts",
-      "default": "./dist/exports/decorators.js"
+      "types": "./dist/decorators/index.d.ts",
+      "default": "./dist/decorators/index.js"
     },
     "./middleware": {
       "types": "./dist/middleware/middleware.d.ts",
       "default": "./dist/middleware/middleware.js"
     },
     "./auth": {
-      "types": "./dist/exports/auth.d.ts",
-      "default": "./dist/exports/auth.js"
+      "types": "./dist/auth/index.d.ts",
+      "default": "./dist/auth/index.js"
     },
     "./cache": {
-      "types": "./dist/exports/cache.d.ts",
-      "default": "./dist/exports/cache.js"
+      "types": "./dist/cache/index.d.ts",
+      "default": "./dist/cache/index.js"
     },
     "./queue": {
-      "types": "./dist/exports/queue.d.ts",
-      "default": "./dist/exports/queue.js"
+      "types": "./dist/queue/index.d.ts",
+      "default": "./dist/queue/index.js"
+    },
+    "./swagger": {
+      "types": "./dist/swagger/index.d.ts",
+      "default": "./dist/swagger/index.js"
+    },
+    "./validator": {
+      "types": "./dist/validator/index.d.ts",
+      "default": "./dist/validator/index.js"
     },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
     },
-    "./validator": {
-      "types": "./dist/exports/validation.d.ts",
-      "default": "./dist/exports/validation.js"
-    },
     "./dataloader": {
-      "types": "./dist/exports/dataloader.d.ts",
-      "default": "./dist/exports/dataloader.js"
+      "types": "./dist/dataloader/index.d.ts",
+      "default": "./dist/dataloader/index.js"
     },
     "./observability": {
       "types": "./dist/observability/index.d.ts",
       "default": "./dist/observability/index.js"
     },
-    "./swagger": {
-      "types": "./dist/exports/swagger.d.ts",
-      "default": "./dist/exports/swagger.js"
-    },
     "./config": {
-      "types": "./dist/exports/config.d.ts",
-      "default": "./dist/exports/config.js"
+      "types": "./dist/config/index.d.ts",
+      "default": "./dist/config/index.js"
     },
     "./error": {
-      "types": "./dist/exports/error.d.ts",
-      "default": "./dist/exports/error.js"
+      "types": "./dist/error/index.d.ts",
+      "default": "./dist/error/index.js"
     },
     "./plugin": {
-      "types": "./dist/exports/plugin.d.ts",
-      "default": "./dist/exports/plugin.js"
+      "types": "./dist/plugin/index.d.ts",
+      "default": "./dist/plugin/index.js"
     },
     "./response": {
-      "types": "./dist/exports/response.d.ts",
-      "default": "./dist/exports/response.js"
-    },
-    "./circuit-breaker": {
-      "types": "./dist/utils/circuit-breaker.d.ts",
-      "default": "./dist/utils/circuit-breaker.js"
+      "types": "./dist/response/index.d.ts",
+      "default": "./dist/response/index.js"
     },
     "./adapters": {
       "types": "./dist/adapters/index.d.ts",
@@ -150,12 +146,12 @@
       "default": "./dist/integrations/supabase.js"
     },
     "./sanitize": {
-      "types": "./dist/exports/sanitize.d.ts",
-      "default": "./dist/exports/sanitize.js"
+      "types": "./dist/sanitize/index.d.ts",
+      "default": "./dist/sanitize/index.js"
     },
     "./storage": {
-      "types": "./dist/exports/storage.d.ts",
-      "default": "./dist/exports/storage.js"
+      "types": "./dist/storage/index.d.ts",
+      "default": "./dist/storage/index.js"
     }
   },
   "files": [
@@ -192,6 +188,7 @@
     "ora": "^9.4.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
+    "prom-client": "^15.1.3",
     "tsc-alias": "^1.9.1",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",

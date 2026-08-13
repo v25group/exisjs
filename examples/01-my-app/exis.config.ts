@@ -38,8 +38,19 @@ export default async (phase: string, { defaultConfig }: any) => {
       preflightContinue: true,
     },
     helmet: { enabled: true },
-  asyncContext: true,
+    asyncContext: true,
     compression: false,
+    telemetry: { enabled: true, exporter: 'console' },
+    metrics: { enabled: true },
+    healthcheck: { 
+      enabled: true,
+      checks: [
+        async () => {
+          // Dummy healthcheck
+          return true
+        }
+      ]
+    },
 
     /**
      * Advanced Tuning

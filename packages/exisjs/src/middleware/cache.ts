@@ -15,9 +15,12 @@ export interface CacheOptions {
 
 export function cacheMiddleware(options: CacheOptions): Handler {
   const ttlMs = options.ttlMs
-  // Default to method + url (which includes query) — safe for public, non-user-specific endpoints
-  const keyGenerator =
-    options.keyGenerator ?? ((req: Request) => `${req.method}:${req.url}`)
+  if (!options || typeof options.keyGenerator !== 'function') {
+    throw new Error(
+      `cacheMiddleware: keyGenerator option is required to prevent cross-user data leaks.\nExample: cache({ ttlMs: 60000, keyGenerator: (req) => req.user?.id || req.ip })`
+    )
+  }
+  const keyGenerator = options.keyGenerator
 
   return async (req: Request, res: Response, next: NextFunction) => {
     if (req.method !== 'GET') {

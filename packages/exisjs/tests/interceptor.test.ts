@@ -1,6 +1,6 @@
 import { App } from '../src/server/app'
 import { intercept } from '../src/middleware/interceptor'
-import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { describe, expect, it } from '../src/testing'
 
 describe('Response Interceptor', () => {
   it('should synchronously mutate res.json payloads', async () => {

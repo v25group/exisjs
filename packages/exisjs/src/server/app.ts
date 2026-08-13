@@ -568,6 +568,56 @@ export class App<TRoutes extends Record<string, any> = {}> {
         createErrorHandler(this.options.env === 'development')
       )
     }
+
+    // Healthcheck Route
+    if (
+      this.options.healthcheck &&
+      typeof this.options.healthcheck === 'object' &&
+      this.options.healthcheck.enabled
+    ) {
+      const hcPath = this.options.healthcheck.path || '/_health'
+      const checks = this.options.healthcheck.checks || []
+
+      this.get(hcPath as any, async (req, res) => {
+        try {
+          if (checks.length > 0) {
+            const results = await Promise.all(checks.map((c) => c()))
+            if (results.some((r) => r === false)) {
+              return res
+                .status(503)
+                .json({ status: 'error', message: 'Health check failed' })
+            }
+          }
+          return res.status(200).json({ status: 'ok' })
+        } catch (err: any) {
+          return res.status(503).json({ status: 'error', message: err.message })
+        }
+      })
+    }
+
+    // Metrics Route
+    if (
+      this.options.metrics &&
+      typeof this.options.metrics === 'object' &&
+      this.options.metrics.enabled
+    ) {
+      const metricsPath = this.options.metrics.path || '/metrics'
+
+      this.get(metricsPath as any, async (req, res) => {
+        try {
+          const { initMetrics, getMetrics } =
+            await import('../observability/metrics')
+          initMetrics()
+          const metricsStr = await getMetrics()
+          return res
+            .status(200)
+            .set('Content-Type', 'text/plain')
+            .send(metricsStr)
+        } catch {
+          return res.status(500).json({ error: 'Failed to generate metrics' })
+        }
+      })
+    }
   }
 
   public async fetch(
@@ -706,6 +756,34 @@ export class App<TRoutes extends Record<string, any> = {}> {
       await this.hotReloader.start()
     }
 
+    if (this.options.env === 'production') {
+      const hasRateLimit = this.globalMiddleware.some(
+        (m) =>
+          m.name.toLowerCase().includes('ratelimit') ||
+          m.name.toLowerCase().includes('rate_limit')
+      )
+
+      let hasGatewayRateLimit = false
+      for (const route of this.router.getRoutes()) {
+        if (
+          route.handlers.some(
+            (m) =>
+              m.name.toLowerCase().includes('ratelimit') ||
+              m.name.toLowerCase().includes('rate_limit')
+          )
+        ) {
+          hasGatewayRateLimit = true
+          break
+        }
+      }
+
+      if (!hasRateLimit && !hasGatewayRateLimit) {
+        this.log.warn(
+          '\x1b[33m[ExisJS] Warning: No rate limiter detected — your API is unprotected against abuse in production.\x1b[0m'
+        )
+      }
+    }
+
     return this
   }
 
@@ -770,4 +848,8 @@ export let activeAppInstance: App | null = null
 
 export function getActiveApp(): App {
   return activeAppInstance || app
+}
+
+export function setActiveAppInstance(instance: App) {
+  activeAppInstance = instance
 }

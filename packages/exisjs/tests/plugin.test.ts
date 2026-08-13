@@ -1,5 +1,5 @@
 import { App } from '../src/server/app'
-import { definePlugin } from '../src/exports/plugin'
+import { definePlugin } from '../src/plugin/index'
 import { createTestApp } from '../src/testing/client'
 import { describe, expect, it } from '../src/testing'
 

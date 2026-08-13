@@ -55,14 +55,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @exisjs/client
+      - name: Publish @exisjs/fetch
         run: |
-          VERSION=$(node -p "require('./packages/client/package.json').version")
-          EXISTS=$(npm view @exisjs/client@$VERSION version 2>/dev/null || echo "")
+          VERSION=$(node -p "require('./packages/fetch/package.json').version")
+          EXISTS=$(npm view @exisjs/fetch@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/client --access public
+            npm publish --workspace=packages/fetch --access public
           else
-            echo "@exisjs/client@$VERSION is already published. Skipping."
+            echo "@exisjs/fetch@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @exisjs/telemetry
+        run: |
+          VERSION=$(node -p "require('./packages/telemetry/package.json').version")
+          EXISTS=$(npm view @exisjs/telemetry@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/telemetry --access public
+          else
+            echo "@exisjs/telemetry@$VERSION is already published. Skipping."
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

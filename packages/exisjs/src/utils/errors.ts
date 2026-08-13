@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import type { ErrorHandler, Handler } from '../types'
 
 // ─── HttpError ─────────────────────────────────────────────────────────────────
@@ -174,12 +175,65 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;')
 }
 
+function buildHtmlCodeFrame(err: Error): string {
+  if (!err.stack) return ''
+  const stackLines = err.stack.split('\n')
+  let file = '',
+    line = 0
+
+  for (const sl of stackLines) {
+    const match =
+      sl.match(/\((.+):(\d+):(\d+)\)/) ||
+      sl.match(/at\s+(.+):(\d+):(\d+)/) ||
+      sl.match(/^(.+\.tsx?):(\d+):(\d+)/)
+    if (
+      match &&
+      !match[1].includes('node_modules') &&
+      !match[1].includes('node:')
+    ) {
+      file = match[1]
+      line = parseInt(match[2], 10)
+      break
+    }
+  }
+
+  if (!file || !line) return ''
+
+  try {
+    const source = fs.readFileSync(file, 'utf-8')
+    const lines = source.split('\n')
+    const start = Math.max(0, line - 5)
+    const end = Math.min(lines.length, line + 4)
+
+    let html = `<div style="margin-bottom: 12px; font-weight: bold; color: #a0aec0; font-family: monospace;">${escapeHtml(file)}:${line}</div>`
+    html += `<div style="background: #1e1e1e; padding: 15px 0; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace; font-size: 14px; line-height: 1.5; color: #d4d4d4;">`
+
+    for (let i = start; i < end; i++) {
+      const isErrorLine = i + 1 === line
+      const lineNum = String(i + 1).padStart(4, ' ')
+      const escapedLine = escapeHtml(lines[i]) || ' '
+      if (isErrorLine) {
+        html += `<div style="background: rgba(229, 62, 62, 0.2); display: flex; padding: 2px 15px; color: #fc8181; border-left: 4px solid #fc8181;"><span style="color: #718096; margin-right: 15px; user-select: none;">${lineNum} |</span><span style="white-space: pre;">${escapedLine}</span></div>`
+      } else {
+        html += `<div style="display: flex; padding: 2px 15px; border-left: 4px solid transparent;"><span style="color: #718096; margin-right: 15px; user-select: none;">${lineNum} |</span><span style="white-space: pre;">${escapedLine}</span></div>`
+      }
+    }
+    html += `</div>`
+    return html
+  } catch {
+    return ''
+  }
+}
+
 function renderErrorHtml(err: Error, req: import('../types').Request): string {
   const stack = err.stack
     ? escapeHtml(err.stack)
         .replace(/\n/g, '<br/>')
         .replace(/ {2}/g, '&nbsp;&nbsp;')
     : 'No stack trace available.'
+
+  const codeFrame = buildHtmlCodeFrame(err)
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -191,17 +245,22 @@ function renderErrorHtml(err: Error, req: import('../types').Request): string {
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #fcebeb; color: #333; margin: 0; padding: 40px; }
     .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px rgba(200, 0, 0, 0.1); border-left: 6px solid #e53e3e; }
     h1 { color: #e53e3e; margin-top: 0; font-size: 24px; }
-    .message { font-size: 18px; font-weight: 500; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; }
-    .code-block { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 14px; line-height: 1.5; }
-    .req-info { margin-top: 20px; font-size: 14px; color: #666; }
-    .highlight { color: #e53e3e; font-weight: bold; }
+    .message { font-size: 18px; font-weight: 500; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
+    .stack-block { background: #f8f9fa; color: #4a5568; padding: 20px; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 13px; line-height: 1.5; border: 1px solid #e2e8f0; margin-top: 20px; }
+    .req-info { margin-top: 25px; font-size: 14px; color: #666; background: #f7fafc; padding: 15px; border-radius: 6px; border: 1px solid #edf2f7; }
+    .highlight { color: #e53e3e; font-weight: bold; background: #fed7d7; padding: 2px 6px; border-radius: 4px; }
+    .code-section { margin-top: 20px; }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Unhandled Server Error</h1>
     <div class="message">${escapeHtml(err.message || 'Unknown Error')}</div>
-    <div class="code-block">${stack}</div>
+    
+    ${codeFrame ? `<div class="code-section">${codeFrame}</div>` : ''}
+    
+    <div class="stack-block">${stack}</div>
+    
     <div class="req-info">
       <strong>Request:</strong> <span class="highlight">${escapeHtml(req.method)}</span> ${escapeHtml(req.path)}
     </div>

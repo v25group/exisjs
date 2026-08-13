@@ -1,5 +1,6 @@
 import http from 'node:http'
 import { App } from '../server/app'
+import type { ExisAppDefinition } from '../server/define'
 
 export interface TestResponse {
   status: number
@@ -10,7 +11,9 @@ export interface TestResponse {
 }
 
 export class TestRequest {
-  private _app: App
+  private _appSource: App | ExisAppDefinition
+  private _appPromise?: Promise<App>
+  private _app?: App
   private _method: string
   private _path: string
   private _body?: unknown
@@ -19,8 +22,8 @@ export class TestRequest {
   private _expectedHeaders: Record<string, string | RegExp> = {}
   private _expectedBody?: unknown
 
-  constructor(app: App, method: string, path: string) {
-    this._app = app
+  constructor(app: App | ExisAppDefinition, method: string, path: string) {
+    this._appSource = app
     this._method = method
     this._path = path
   }
@@ -72,6 +75,17 @@ export class TestRequest {
   }
 
   public async execute(): Promise<TestResponse> {
+    if (!this._app) {
+      if ((this._appSource as any)._isExisAppDefinition) {
+        if (!this._appPromise) {
+          this._appPromise = (this._appSource as ExisAppDefinition).boot()
+        }
+        this._app = await this._appPromise
+      } else {
+        this._app = this._appSource as App
+      }
+    }
+
     const payload = this._body
 
     try {
@@ -142,7 +156,7 @@ export interface TestApp {
   request(method: string, path: string): TestRequest
 }
 
-export function createTestApp(app: App): TestApp {
+export function createTestApp(app: App | ExisAppDefinition): TestApp {
   return {
     get: (path) => new TestRequest(app, 'GET', path),
     post: (path) => new TestRequest(app, 'POST', path),

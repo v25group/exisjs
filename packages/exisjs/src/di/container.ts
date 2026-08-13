@@ -69,8 +69,9 @@ export class Container {
           }
           return instance
         } catch (err: any) {
+          const innerMsg = err instanceof Error ? err.message : String(err)
           const error = new Error(
-            `Cannot resolve provider for token: ${String(token)}`
+            `Cannot resolve provider for token: ${String(token)}. Inner error: ${innerMsg}`
           )
           ;(error as any).cause = err
           throw error
