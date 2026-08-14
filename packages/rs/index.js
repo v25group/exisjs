@@ -27,9 +27,7 @@ switch (platform) {
   case 'win32':
     switch (arch) {
       case 'x64':
-        localFileExisted = existsSync(
-          join(__dirname, 'exisjs-rs.win32-x64-msvc.node')
-        )
+        localFileExisted = existsSync(join(__dirname, 'exisjs-rs.win32-x64-msvc.node'))
         try {
           if (localFileExisted) {
             nativeBinding = require('./exisjs-rs.win32-x64-msvc.node')
@@ -40,19 +38,107 @@ switch (platform) {
           loadError = e
         }
         break
-      case 'ia32':
       case 'arm64':
-        // add other platforms...
+        localFileExisted = existsSync(join(__dirname, 'exisjs-rs.win32-arm64-msvc.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./exisjs-rs.win32-arm64-msvc.node')
+          } else {
+            nativeBinding = require('@exisjs/rs-win32-arm64-msvc')
+          }
+        } catch (e) {
+          loadError = e
+        }
         break
       default:
         throw new Error(`Unsupported architecture on Windows: ${arch}`)
     }
     break
   case 'darwin':
-  case 'freebsd':
+    switch (arch) {
+      case 'x64':
+        localFileExisted = existsSync(join(__dirname, 'exisjs-rs.darwin-x64.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./exisjs-rs.darwin-x64.node')
+          } else {
+            nativeBinding = require('@exisjs/rs-darwin-x64')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
+      case 'arm64':
+        localFileExisted = existsSync(join(__dirname, 'exisjs-rs.darwin-arm64.node'))
+        try {
+          if (localFileExisted) {
+            nativeBinding = require('./exisjs-rs.darwin-arm64.node')
+          } else {
+            nativeBinding = require('@exisjs/rs-darwin-arm64')
+          }
+        } catch (e) {
+          loadError = e
+        }
+        break
+      default:
+        throw new Error(`Unsupported architecture on macOS: ${arch}`)
+    }
+    break
   case 'linux':
-  case 'android':
-    // add other platforms...
+    switch (arch) {
+      case 'x64':
+        if (isMusl()) {
+          localFileExisted = existsSync(join(__dirname, 'exisjs-rs.linux-x64-musl.node'))
+          try {
+            if (localFileExisted) {
+              nativeBinding = require('./exisjs-rs.linux-x64-musl.node')
+            } else {
+              nativeBinding = require('@exisjs/rs-linux-x64-musl')
+            }
+          } catch (e) {
+            loadError = e
+          }
+        } else {
+          localFileExisted = existsSync(join(__dirname, 'exisjs-rs.linux-x64-gnu.node'))
+          try {
+            if (localFileExisted) {
+              nativeBinding = require('./exisjs-rs.linux-x64-gnu.node')
+            } else {
+              nativeBinding = require('@exisjs/rs-linux-x64-gnu')
+            }
+          } catch (e) {
+            loadError = e
+          }
+        }
+        break
+      case 'arm64':
+        if (isMusl()) {
+          localFileExisted = existsSync(join(__dirname, 'exisjs-rs.linux-arm64-musl.node'))
+          try {
+            if (localFileExisted) {
+              nativeBinding = require('./exisjs-rs.linux-arm64-musl.node')
+            } else {
+              nativeBinding = require('@exisjs/rs-linux-arm64-musl')
+            }
+          } catch (e) {
+            loadError = e
+          }
+        } else {
+          localFileExisted = existsSync(join(__dirname, 'exisjs-rs.linux-arm64-gnu.node'))
+          try {
+            if (localFileExisted) {
+              nativeBinding = require('./exisjs-rs.linux-arm64-gnu.node')
+            } else {
+              nativeBinding = require('@exisjs/rs-linux-arm64-gnu')
+            }
+          } catch (e) {
+            loadError = e
+          }
+        }
+        break
+      default:
+        throw new Error(`Unsupported architecture on Linux: ${arch}`)
+    }
     break
   default:
     throw new Error(`Unsupported OS: ${platform}, architecture: ${arch}`)
@@ -65,4 +151,4 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-Object.assign(module.exports, nativeBinding)
+module.exports = nativeBinding
