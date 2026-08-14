@@ -21,7 +21,7 @@
     "examples/*/*"
   ],
   "scripts": {
-    "build": "npm run build --workspace=packages/telemetry --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/create",
+    "build": "npm run build --workspace=packages/rs --workspace=packages/telemetry --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/create",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
