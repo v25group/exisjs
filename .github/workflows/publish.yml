@@ -10,7 +10,62 @@ permissions:
   packages: write
 
 jobs:
+  build-native:
+    name: Build Native (${{ matrix.settings.target }})
+    runs-on: ${{ matrix.settings.host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - host: macos-latest
+            target: x86_64-apple-darwin
+          - host: macos-latest
+            target: aarch64-apple-darwin
+          - host: windows-latest
+            target: x86_64-pc-windows-msvc
+          - host: windows-latest
+            target: aarch64-pc-windows-msvc
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+          - host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.settings.target }}
+      - name: Install Dependencies
+        run: npm install
+      - name: Build Native
+        working-directory: packages/rs
+        shell: bash
+        run: |
+          if [[ "${{ matrix.settings.target }}" == "aarch64-unknown-linux-"* ]]; then
+            npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
+          elif [[ "${{ matrix.settings.target }}" == "aarch64-pc-windows-msvc" ]]; then
+            npx napi build --platform --release --target ${{ matrix.settings.target }} --cross-compile
+          else
+            npx napi build --platform --release --target ${{ matrix.settings.target }}
+          fi
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings-${{ matrix.settings.target }}
+          path: packages/rs/*.node
+          if-no-files-found: error
+
   publish:
+    name: Publish Packages
+    needs: build-native
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
@@ -25,7 +80,20 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Build
+      - name: Download Native Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/rs/artifacts
+          merge-multiple: true
+
+      - name: Setup Native NPM Packages
+        working-directory: packages/rs
+        run: |
+          npx napi create-npm-dirs
+          cp artifacts/*.node ./
+          npx napi prepublish -t npm
+
+      - name: Build Workspace
         run: npm run build
 
       - name: Run Tests
