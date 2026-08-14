@@ -18,7 +18,7 @@ import {
   Req,
   Returns,
 } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { inject } from 'exisjs/di'
 import type { Request, Response, NextFunction } from 'exisjs/router'
 
@@ -47,12 +47,12 @@ export default class ProfileController {
   private profileService = inject(ProfileService)
 
   @Get('/:id', {
-    response: v.object({
-      success: v.boolean(),
-      data: v.object({
-        id: v.string(),
-        name: v.string(),
-        role: v.string(),
+    response: tex.object({
+      success: tex.boolean(),
+      data: tex.object({
+        id: tex.string(),
+        name: tex.string(),
+        role: tex.string(),
       }),
     }),
   })
@@ -62,18 +62,18 @@ export default class ProfileController {
   }
 
   @Post('/update')
-  @Returns(v.object({
-    success: v.boolean(),
-    message: v.string(),
+  @Returns(tex.object({
+    success: tex.boolean(),
+    message: tex.string(),
   }))
   @UseGuards(SimpleAuthGuard)
   @HttpCode(202)
   @Header('X-Custom-Header', 'custom-value')
   async updateProfile(
-    @Body(v.object({
-      name: v.string(),
-      preferences: v.object({
-        theme: v.string(),
+    @Body(tex.object({
+      name: tex.string(),
+      preferences: tex.object({
+        theme: tex.string(),
       }),
     })) body: { name: string; preferences: { theme: string } }
   ) {

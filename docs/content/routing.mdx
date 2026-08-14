@@ -447,6 +447,29 @@ export default class SearchController {
 
   
 
+## Dependency Injection in Functional Controllers
+
+ExisJS natively supports **Request-Scoped Dependency Injection** directly inside functional routes. You don't need to use classes to get the benefits of DI!
+
+By destructuring `resolve` from the context, you can dynamically fetch services without relying on global imports. This perfectly solves the "Fat Handler" problem by encouraging you to abstract business logic into clean Service classes, and makes unit testing incredibly easy.
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { UsersService } from './service'
+
+export default controller({
+  list: route.get('/', {
+    async handle({ resolve }) {
+      // 1. Resolves UsersService from the IoC Container
+      // 2. Maintains request-scope (the same instance is returned throughout this HTTP request)
+      const usersService = resolve(UsersService)
+      
+      return usersService.getAll()
+    }
+  })
+})
+```
+
 ## The Context API (Advanced)
 
 For applications where passing `(req, res)` arguments through multiple service layers becomes tedious, ExisJS offers a Next.js-inspired approach: **The Context API**. Powered by Node.js `AsyncLocalStorage`, ExisJS provides hooks to access the current request state from anywhere in the execution context.

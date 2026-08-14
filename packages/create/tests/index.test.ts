@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { exec } from 'node:child_process'
 import {
   test as it,
   describe,

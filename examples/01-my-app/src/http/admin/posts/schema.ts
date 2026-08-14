@@ -1,5 +1,5 @@
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-export const CreateAdminPostsSchema = v.object({
-  name: v.string()
+export const CreateAdminPostsSchema = tex.object({
+  name: tex.string()
 })

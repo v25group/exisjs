@@ -2,7 +2,7 @@ import { controller, route } from 'exisjs/router'
 import { User } from '@/models/User'
 import { JWT } from 'exisjs/auth'
 import { BadRequestError, UnauthorizedError, InternalError } from 'exisjs/error'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { sanitize } from 'exisjs/sanitize'
 import { cache } from 'exisjs/middleware'
 import { protectRoute } from '@/middleware/auth'
@@ -15,10 +15,10 @@ const generateToken = (userId: string) => {
 
 export default controller({
   register: route.post('/register', {
-    body: v.object({
-      email: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).email(),
-      username: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).min(3),
-      password: v.string().min(6),
+    body: tex.object({
+      email: tex.email({ trim: true, toLowerCase: true }),
+      username: tex.string({ trim: true, toLowerCase: true, min: 3 }),
+      password: tex.string({ min: 6 }),
     }),
     async handle({ body }) {
       const { email, username, password } = body
@@ -62,9 +62,9 @@ export default controller({
   }),
 
   login: route.post('/login', {
-    body: v.object({
-      email: v.string().sanitize(sanitize.trim, sanitize.toLowerCase).email(),
-      password: v.string(),
+    body: tex.object({
+      email: tex.email({ trim: true, toLowerCase: true }),
+      password: tex.string(),
     }),
     async handle({ body }) {
       const { email, password } = body

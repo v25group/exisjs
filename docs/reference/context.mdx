@@ -111,11 +111,11 @@ Queues a function to execute in the background **after** the response has been c
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 import { after } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   createUser: route.post('/', {
-    body: { email: v.string().email() },
+    body: tex.object({ email: tex.email() }),
     async handle({ body }) {
       
       // Respond to the client immediately

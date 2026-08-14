@@ -43,7 +43,7 @@ export async function generateRoute(
     }
   }
 
-  const schemaCode = `import { v } from 'exisjs/validator'\n\nexport const Create${capitalizedName}Schema = v.object({\n  name: v.string()\n})\n`
+  const schemaCode = `import { tex } from 'exisjs/validator'\n\nexport const Create${capitalizedName}Schema = tex.object({\n  name: tex.string()\n})\n`
 
   let gatewayCode: string
   let serviceCode: string

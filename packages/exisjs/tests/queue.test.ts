@@ -1,6 +1,6 @@
 import { App } from '../src/server/app'
 import RedisMock from 'ioredis-mock'
-import { v } from '../src/utils/validator'
+import { tex } from '../src/validator/tex'
 import { describe, expect, it, ex } from '../src/testing'
 
 const drivers = ['memory', 'redis'] as const
@@ -28,9 +28,9 @@ describe('Exis Native Queue', () => {
             payloadProcessed(job.data)
           },
           {
-            schema: v.object({
-              to: v.string(),
-              subject: v.string(),
+            schema: tex.object({
+              to: tex.string(),
+              subject: tex.string(),
             }),
           }
         )

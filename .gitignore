@@ -46,3 +46,9 @@ examples/**/out/*
 
 # Cache
 *.tsbuildinfo
+
+# Rust / NAPI
+packages/rs/target/
+packages/rs/*.node
+packages/rs/test.js
+packages/rs/test2.js

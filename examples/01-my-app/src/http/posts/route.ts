@@ -1,5 +1,5 @@
 import { controller, route } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { getLoaders } from '../../loaders'
 import { NotFoundError, BadRequestError } from 'exisjs/error'
 
@@ -20,8 +20,8 @@ export default controller({
   }),
 
   create: route.post('/', {
-    body: v.object({
-      text: v.string().min(1)
+    body: tex.object({
+      text: tex.string({ min: 1 })
     }),
     handle({ body }) {
       const newPost = { id: posts.length + 1, text: body.text, userId: 1 }
@@ -31,8 +31,8 @@ export default controller({
   }),
 
   getById: route.get('/:id', {
-    params: v.object({
-      id: v.number().transform(Number)
+    params: tex.object({
+      id: tex.number({ coerce: true })
     }),
     handle({ params }) {
       const post = posts.find(p => p.id === params.id)

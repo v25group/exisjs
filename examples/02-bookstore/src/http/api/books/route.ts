@@ -1,18 +1,18 @@
 import { Controller, Use, Get, Post, Delete, Body, Query, Param, Req } from 'exisjs/decorators'
 import { Idempotent } from 'exisjs/decorators'
 import { streamUpload } from 'exisjs/storage'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import type { Infer } from 'exisjs/validator'
 import { HttpError } from 'exisjs/error'
 import cloudinary from '@/lib/cloudinary'
 import { Book } from '@/models/Book'
 import { protectRoute } from '@/middleware/auth'
 
-const CreateBookSchema = v.object({
-  title: v.string(),
-  caption: v.string(),
-  rating: v.number(),
-  image: v.string(),
+const CreateBookSchema = tex.object({
+  title: tex.string(),
+  caption: tex.string(),
+  rating: tex.number(),
+  image: tex.string(),
 })
 
 type CreateBookDto = Infer<typeof CreateBookSchema>
@@ -72,7 +72,7 @@ export default class BooksController {
 
   @Post('/checkout')
   @Idempotent()
-  async checkout(@Body(v.object({ bookId: v.string() })) body: any) {
+  async checkout(@Body(tex.object({ bookId: tex.string() })) body: any) {
     console.log('Processing checkout for book:', body.bookId)
     // simulate a long checkout process
     await new Promise((resolve) => setTimeout(resolve, 1000))

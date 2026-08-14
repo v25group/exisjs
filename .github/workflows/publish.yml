@@ -43,6 +43,18 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Publish @exisjs/rs
+        run: |
+          VERSION=$(node -p "require('./packages/rs/package.json').version")
+          EXISTS=$(npm view @exisjs/rs@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/rs --access public
+          else
+            echo "@exisjs/rs@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish @exisjs/create
         run: |
           VERSION=$(node -p "require('./packages/create/package.json').version")

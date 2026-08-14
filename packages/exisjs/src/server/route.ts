@@ -34,6 +34,7 @@ export type SuperContext<
   res: Response
   app: App
   state: Record<string, any>
+  resolve: <T>(token: import('../di/container').ProviderToken<T>) => T
   [key: string]: any
 } & TContext
 
@@ -44,8 +45,8 @@ export type SuperContext<
  *
  * @example
  * export default controller({
- *   login: route.post('/login', {
- *     body: { email: v.string(), password: v.string() },
+ *   createUser: route.post('/users', {
+ *     body: tex.object({ email: tex.string(), password: tex.string() }),
  *     middleware: [rateLimiter],
  *     async handle({ body }) {
  *       return { token: '...' }
@@ -140,8 +141,12 @@ export const route = {
    * Example:
    *
    *     route.get('/users', {
-   *       query: { search: v.string() },
-   *       handle({ query }) { return { users: [] }; }
+   *       // Validate the query string
+   *       query: tex.object({ search: tex.string() }),
+   *
+   *       async handle(ctx) {
+   *         // ctx.query is typed as { search: string }
+   *       }
    *     })
    *
    * @param {string} path

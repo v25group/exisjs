@@ -49,9 +49,9 @@ ExisJS doesn't force you into a single paradigm. You can build lightweight funct
 
 ```typescript
 import { controller, route } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-const UserSchema = v.object({ id: v.number(), name: v.string() })
+const UserSchema = tex.object({ id: tex.number(), name: tex.string() })
 
 export default controller({
   // Safely typed, automatically validated, and added to Swagger!
@@ -72,9 +72,9 @@ export default controller({
 
 ```typescript
 import { Controller, Post, Body, Returns } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-const UserSchema = v.object({ id: v.number(), name: v.string() })
+const UserSchema = tex.object({ id: tex.number(), name: tex.string() })
 
 @Controller()
 export default class UserController {

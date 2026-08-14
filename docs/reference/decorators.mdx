@@ -44,7 +44,7 @@ Defines an HTTP route handler on a class method. You can optionally pass a schem
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 @Controller('/users')
 export default class UserController {
@@ -53,7 +53,7 @@ export default class UserController {
     return { id: 1 }
   }
 
-  @Post('/', { body: v.object({ name: v.string() }) })
+  @Post('/', { body: tex.object({ name: tex.string() }) })
   createUser() {
     return { success: true }
   }

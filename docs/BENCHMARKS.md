@@ -7,7 +7,7 @@
 - **Node:** v26.3.0
 
 ### Test Configuration
-- **Tool:** autocannon ^8.0.0
+- **Tool:** autocannon unknown
 - **Connections:** 100, **Duration:** 10s, **Pipelining:** 1 (no pipelining)
 - **Trials:** 3 per framework, order randomized each trial, median reported
 - **Warmup:** 2s untimed warmup run before each timed trial
@@ -18,10 +18,10 @@
 
 | Framework | Req/Sec (median) | Latency avg (ms) | Latency p50 (ms) | Latency p99 (ms) | Errors | Server backend |
 |---|---|---|---|---|---|---|
-| Express | 22258.19 | 4.08 | 4.00 | 5.00 | 0 | n/a |
-| Fastify | 37307.64 | 2.11 | 2.00 | 3.00 | 0 | n/a |
-| Hono | 36036.37 | 2.16 | 2.00 | 3.00 | 0 | n/a |
-| Exis JS | 35372.00 | 2.38 | 2.00 | 5.00 | 0 | node |
+| Express | 23715.64 | 3.66 | 4.00 | 6.00 | 0 | n/a |
+| Fastify | 36803.64 | 2.17 | 2.00 | 4.00 | 0 | n/a |
+| Hono | 40222.55 | 2.08 | 2.00 | 4.00 | 0 | n/a |
+| Exis JS | 32542.55 | 2.54 | 2.00 | 4.00 | 0 | node |
 
 ### Handler Parity Note
 

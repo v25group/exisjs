@@ -2,7 +2,16 @@ import { controller, route } from 'exisjs/router'
 import { cache, guard, pipe } from 'exisjs/middleware'
 import { UserParamsSchema } from './schema'
 import { getUsers, getUserById } from './controller'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
+
+class MyService {
+  get [Symbol.for('exisjs:scope')]() {
+    return 'request'
+  }
+  sayHello() {
+    return 'hello from DI test!'
+  }
+}
 
 export default controller({
   cors: true,
@@ -21,10 +30,16 @@ export default controller({
   },
 
   list: route.get('/', {
-    middleware: [cache({ tags: ['users'], ttlMs: 60000, keyGenerator: (req) => req.path })],
-    async handle(ctx) {
+    middleware: [
+      cache({ tags: ['users'], ttlMs: 60000, keyGenerator: (req) => req.path }),
+    ],
+    async handle({ req, res, resolve }) {
+      // Test Dependency Injection
+      const myService = resolve(MyService)
+      console.log('DI Test:', myService.sayHello())
+
       // Re-use the existing controller
-      return getUsers(ctx.req, ctx.res)
+      return getUsers(req, res)
     },
   }),
 
@@ -44,7 +59,7 @@ export default controller({
 
   implicit: route.get('/:id/implicit', {
     params: UserParamsSchema,
-    body: v.object({ role: v.string() }),
+    body: tex.object({ role: tex.string() }),
     async handle({ params, body }) {
       return {
         success: true,
@@ -65,4 +80,3 @@ export default controller({
     },
   }),
 })
-

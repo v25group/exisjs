@@ -30,7 +30,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.5.6',
+      exisjs: '^0.5.7',
     },
   }
 
@@ -120,22 +120,22 @@ export default config
 
 export function envTsTemplate(useTypeScript: boolean): string {
   if (useTypeScript) {
-    return `import { v } from 'exisjs/validator'
+    return `import { tex } from 'exisjs/validator'
 
-export const env = v.env(v.object({
-  PORT: v.string().optional(),
-  NODE_ENV: v.enum(['development', 'production', 'test']).optional(),
-  CORS_ORIGIN: v.string().optional(),
-}))
+export const env = tex.object({
+  PORT: tex.number({ coerce: true, optional: true }),
+  NODE_ENV: tex.enum(['development', 'production', 'test'], { optional: true }),
+  CORS_ORIGIN: tex.string({ optional: true }),
+}).parse(process.env)
 `
   } else {
-    return `import { v } from 'exisjs/validator'
+    return `import { tex } from 'exisjs/validator'
 
-export const env = v.env(v.object({
-  PORT: v.string().optional(),
-  NODE_ENV: v.enum(['development', 'production', 'test']).optional(),
-  CORS_ORIGIN: v.string().optional(),
-}))
+export const env = tex.object({
+  PORT: tex.number({ coerce: true, optional: true }),
+  NODE_ENV: tex.enum(['development', 'production', 'test'], { optional: true }),
+  CORS_ORIGIN: tex.string({ optional: true }),
+}).parse(process.env)
 `
   }
 }

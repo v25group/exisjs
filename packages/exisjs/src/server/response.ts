@@ -1,7 +1,6 @@
 import { ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
-import crypto from 'node:crypto'
 import type { CookieOptions, Request as IRequest } from '../types'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -9,14 +8,10 @@ const contentDisposition = require('content-disposition')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mime = require('mime-types')
 
+import { generateEtag } from '@exisjs/rs'
+
 function generateETag(content: Buffer): string {
-  if (content.length === 0) return 'W/"0-2jmj7l5rsw0yVb/vlWAYkK/YBwk"'
-  const hash = crypto
-    .createHash('sha1')
-    .update(content)
-    .digest('base64')
-    .substring(0, 27)
-  return `W/"${content.length.toString(16)}-${hash}"`
+  return generateEtag(content)
 }
 
 export class ExisResponse<TResponse = any> {
@@ -27,6 +22,15 @@ export class ExisResponse<TResponse = any> {
   public _serializer?: (data: unknown) => string
 
   constructor(public raw: ServerResponse) {}
+
+  public init(raw: ServerResponse): this {
+    this.raw = raw
+    this.req = undefined
+    this.etagEnabled = false
+    this._onFinish.length = 0
+    this._serializer = undefined
+    return this
+  }
 
   get headersSent(): boolean {
     return this.raw.headersSent

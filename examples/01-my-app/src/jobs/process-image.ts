@@ -1,11 +1,11 @@
 import { defineJob } from 'exisjs/queue'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default defineJob({
   name: 'process-image', // Optional, defaults to file name
-  schema: v.object({
-    imageId: v.string(),
-    resize: v.boolean()
+  schema: tex.object({
+    imageId: tex.string(),
+    resize: tex.boolean()
   }),
   handler: async (payload) => {
     // This runs completely off the main thread in a V8 isolate!

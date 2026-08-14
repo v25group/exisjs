@@ -585,11 +585,11 @@ export class ObjectValidator<
   }
 
   /**
-   * Converts this v.object() schema into a Mongoose-compatible schema definition.
+   * Converts this tex.object() schema into a Mongoose-compatible schema definition.
    * Pass the result directly to `new mongoose.Schema()`.
    *
    * @example
-   * const UserSchema = v.object({ name: v.string(), email: v.string().email().unique() })
+   * const UserSchema = tex.object({ name: tex.string(), email: tex.email() })
    * const User = mongoose.model('User', new mongoose.Schema(UserSchema.toMongoSchema()))
    */
   toMongoSchema(): {
@@ -1081,6 +1081,10 @@ export class FileValidator extends ValidatorType<{
   }
 }
 
+/**
+ * @deprecated The `v` validation engine is deprecated in favor of the new string-based `@exisjs/tex` validation engine.
+ * Please migrate to `tex.type({ ... })` for native Rust-powered validation.
+ */
 export const v = {
   string: () => new StringValidator(),
   number: () => new NumberValidator(),

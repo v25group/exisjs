@@ -1,7 +1,7 @@
 import type { App } from './app'
 import { Router } from '../router/router'
 import { cors } from '../middleware/middleware'
-import { v } from '../utils/validator'
+import { tex } from '../validator/index'
 import { pathToFileURL } from 'node:url'
 import { executionContext } from './context'
 import type { Handler } from '../types'
@@ -806,7 +806,9 @@ export class RouteScanner {
             headers: req.headers,
             req,
             res,
-            app: this,
+            app: this.app,
+            resolve: <T>(token: any): T =>
+              this.app.resolve(token, (req as any)._diCache),
             socket: (req as any).ws,
             state: executionContext.getStore()?.state || {},
             ...req, // Spread req to allow access to user, session, etc.
@@ -858,17 +860,17 @@ export class RouteScanner {
         (typeof v === 'function' && v.prototype?.transform)
 
       if (rc.body) {
-        schema.body = isValidatorOrPipe(rc.body) ? rc.body : v.object(rc.body)
+        schema.body = isValidatorOrPipe(rc.body) ? rc.body : tex.object(rc.body)
       }
       if (rc.query) {
         schema.query = isValidatorOrPipe(rc.query)
           ? rc.query
-          : v.object(rc.query)
+          : tex.object(rc.query)
       }
       if (rc.params) {
         schema.params = isValidatorOrPipe(rc.params)
           ? rc.params
-          : v.object(rc.params)
+          : tex.object(rc.params)
       }
       if (rc.host) {
         schema.host = rc.host
@@ -906,7 +908,9 @@ export class RouteScanner {
               headers: rawReq.headers,
               req: rawReq,
               res: undefined as any, // Res is not available in standard SSE after handshake
-              app: this,
+              app: this.app,
+              resolve: <T>(token: any): T =>
+                this.app.resolve(token, rawReq._diCache),
               stream,
               ...rawReq,
             }

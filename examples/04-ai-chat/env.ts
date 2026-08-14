@@ -1,7 +1,7 @@
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-export const env = v.env(v.object({
-  PORT: v.string().optional(),
-  NODE_ENV: v.enum(['development', 'production', 'test']).optional(),
-  CORS_ORIGIN: v.string().optional(),
-}))
+export const env = tex.object({
+  PORT: tex.string({ optional: true }),
+  NODE_ENV: tex.enum(['development', 'production', 'test'], { optional: true }),
+  CORS_ORIGIN: tex.string({ optional: true }),
+}).parse(process.env)

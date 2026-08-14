@@ -7,7 +7,7 @@ description: "API Reference for ExisJS auto-generated Swagger UI (`exisjs/swagge
 
 ExisJS ships with native, zero-configuration OpenAPI 3.0 generation.
 
-Because ExisJS routes strongly integrate with `exisjs/validator`, the framework automatically introspects your validators (`v.object`, `v.string`, etc.) across all controllers and automatically generates a fully interactive Swagger UI!
+Because ExisJS routes strongly integrate with `exisjs/validator`, the framework automatically introspects your validators (`tex.object`, `tex.string`, etc.) across all controllers and automatically generates a fully interactive Swagger UI!
 
 ---
 
@@ -69,19 +69,19 @@ When using the `route.*` functions, anything you pass to `schema.body`, `schema.
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   createUser: route.post('/', {
     schema: {
       // ExisJS automatically builds an OpenAPI schema from this validator!
-      body: v.object({
-        email: v.string().email(),
-        age: v.number().min(18)
+      body: tex.object({
+        email: tex.email(),
+        age: tex.number({ min: 18 })
       }),
-      response: v.object({
-        id: v.string(),
-        success: v.boolean()
+      response: tex.object({
+        id: tex.string(),
+        success: tex.boolean()
       })
     },
     async handle(ctx) {
@@ -97,16 +97,16 @@ If you are using OOP Decorators, ExisJS achieves the exact same result by readin
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Post, Body, Returns } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-const CreateUserSchema = v.object({
-  email: v.string().email(),
-  age: v.number().min(18)
+const CreateUserSchema = tex.object({
+  email: tex.email(),
+  age: tex.number({ min: 18 })
 })
 
-const ResponseSchema = v.object({
-  id: v.string(),
-  success: v.boolean()
+const ResponseSchema = tex.object({
+  id: tex.string(),
+  success: tex.boolean()
 })
 
 @Controller('/users')

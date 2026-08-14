@@ -73,15 +73,13 @@ The available phases are:
 We highly recommend using `v.env()` from `exisjs/validator` to strongly type and validate your environment variables before the server starts. You can create an `env.ts` file and import it directly into your `exis.config.ts`.
 
 ```typescript filename="env.ts"
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-export const env = v.env(
-  v.object({
-    PORT: v.string().transform(Number).default(4000),
-    NODE_ENV: v.string().default('development'),
-    MONGODB_URI: v.string(),
-  })
-)
+export const env = tex.object({
+  PORT: tex.number({ coerce: true, optional: true }),
+  NODE_ENV: tex.string({ optional: true }),
+  MONGODB_URI: tex.string(),
+}).parse(process.env)
 ```
 
 ```typescript filename="exis.config.ts"

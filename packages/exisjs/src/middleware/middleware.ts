@@ -1,5 +1,12 @@
 import type { Handler, CorsConfig, LoggerConfig, Logger } from '../types'
-import { ObjectValidator, ValidatorError } from '../utils/validator'
+import {
+  ObjectValidator,
+  ValidatorError as OldValidatorError,
+} from '../utils/validator'
+import {
+  TexEngine,
+  ValidatorError as NewValidatorError,
+} from '../validator/tex'
 import { createLogger, isLogger } from '../utils/logger'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -279,11 +286,11 @@ export function serveStatic(
 // ─── Native Validation ────────────────────────────────────────────────────────
 
 export interface ValidateSchema {
-  body?: ObjectValidator<any>
+  body?: ObjectValidator<any> | TexEngine<any>
 
-  query?: ObjectValidator<any>
+  query?: ObjectValidator<any> | TexEngine<any>
 
-  params?: ObjectValidator<any>
+  params?: ObjectValidator<any> | TexEngine<any>
 }
 
 export function validate(schema: ValidateSchema): Handler {
@@ -300,7 +307,10 @@ export function validate(schema: ValidateSchema): Handler {
       }
       next()
     } catch (err: unknown) {
-      if (err instanceof ValidatorError) {
+      if (
+        err instanceof OldValidatorError ||
+        err instanceof NewValidatorError
+      ) {
         res.status(400).json({
           success: false,
           error: {

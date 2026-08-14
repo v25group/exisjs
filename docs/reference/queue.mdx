@@ -38,16 +38,16 @@ To create a new background job, simply create a file in the `src/jobs/` director
 
 ```typescript filename="src/jobs/SendEmailJob.ts"
 import { defineJob } from 'exisjs/queue'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default defineJob({
   name: 'send-email',
   
   // ExisJS will automatically validate incoming queue payloads against this schema!
-  schema: v.object({
-    to: v.string().email(),
-    subject: v.string(),
-    html: v.string()
+  schema: tex.object({
+    to: tex.email(),
+    subject: tex.string(),
+    html: tex.string()
   }),
   
   // Set default retry and backoff behavior

@@ -60,7 +60,7 @@ export const Get = createMethodDecorator('GET')
  *
  * Example:
  *
- *     @Post('/', { body: v.object({ name: v.string() }) })
+ *     @Post('/', { body: tex.object({ name: tex.string() }) })
  *     createUser(@Body() body: any) { return body; }
  *
  * @param {string} [path] The route path

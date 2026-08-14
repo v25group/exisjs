@@ -1,11 +1,12 @@
-import { spawn, ChildProcessByStdio } from 'child_process'
+import { spawn, ChildProcessByStdio, exec } from 'child_process'
+import { promisify } from 'util'
 import path from 'path'
 import http from 'http'
 import type { Readable } from 'stream'
-import autocannon from 'autocannon'
 import fs from 'fs'
 import os from 'os'
 
+const execAsync = promisify(exec)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -86,12 +87,11 @@ async function runTrial(
   serverInfo: (typeof servers)[0]
 ): Promise<TrialResult | null> {
   const serverPath = path.join(__dirname, 'servers', serverInfo.file)
-  const isExis = serverInfo.name === 'Exis JS'
-  const execPath = isExis ? 'C:\\Users\\prasanth\\.bun\\bin\\bun.exe' : process.execPath
+  const execPath = process.execPath
 
   const child: ChildProcessByStdio<null, Readable, Readable> = spawn(
     execPath,
-    isExis ? ['run', serverPath] : [serverPath],
+    [serverPath],
     {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PORT: String(serverInfo.port) },
@@ -123,16 +123,12 @@ async function runTrial(
 
   if (WARMUP_REQUESTS) {
     // Short untimed run to let JIT/connection pools warm up before we measure.
-    await autocannon({ url, connections: 20, duration: 2 })
+    await execAsync(`npx autocannon -c 20 -d 2 ${url}`)
     await sleep(300)
   }
 
-  const result = await autocannon({
-    url,
-    connections: 100,
-    duration: 10,
-    pipelining: 1,
-  })
+  const { stdout } = await execAsync(`npx autocannon --json -c 100 -d 10 -p 1 ${url}`)
+  const result = JSON.parse(stdout)
 
   child.kill()
   await sleep(500) // let the port fully release before the next trial

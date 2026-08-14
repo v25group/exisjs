@@ -44,13 +44,13 @@ This configures the global application infrastructure. Here, you define network 
 ExisJS strongly encourages type-safe environment variables. By defining an `env.ts` file using the built-in validator (`v.env()`), your application will gracefully crash at boot if a required environment variable (like `DATABASE_URL`) is missing.
 
 ```typescript filename="env.ts"
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-export const env = v.env(v.object({
-  PORT: v.string().optional(),
-  NODE_ENV: v.enum(['development', 'production', 'test']),
-  DATABASE_URL: v.string()
-}))
+export const env = tex.object({
+  PORT: tex.number({ coerce: true, optional: true }),
+  NODE_ENV: tex.enum(['development', 'production', 'test']),
+  DATABASE_URL: tex.string()
+}).parse(process.env)
 ```
 
 ### 3. `src/http/server.ts`

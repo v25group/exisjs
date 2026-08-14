@@ -51,15 +51,16 @@ ExisJS integrates with its internal `v` validator. Any validation schemas attach
 #### Functional Paradigm
 
 ```typescript filename="src/http/users/route.ts"
-import { controller, route, v } from 'exisjs/router'
+import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   createUser: route.post('/', {
     // This schema is automatically translated to OpenAPI request body definitions
-    body: {
-      name: v.string(),
-      age: v.number().optional()
-    },
+    body: tex.object({
+      name: tex.string(),
+      age: tex.number({ optional: true })
+    }),
     async handle(req) {
       return { success: true, name: req.body.name }
     }
@@ -71,11 +72,11 @@ export default controller({
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Post, Body } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-const CreateUserSchema = v.object({
-  name: v.string(),
-  age: v.number().optional()
+const CreateUserSchema = tex.object({
+  name: tex.string(),
+  age: tex.number({ optional: true })
 })
 
 @Controller('/users')

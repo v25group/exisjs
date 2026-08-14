@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -171,6 +171,7 @@
     "url": "git+https://github.com/v25group/exisjs.git"
   },
   "dependencies": {
+    "@exisjs/rs": "*",
     "@exisjs/telemetry": "^0.5.0",
     "accepts": "^1.3.8",
     "busboy": "^1.6.0",

@@ -281,12 +281,12 @@ ExisJS includes a validation engine. You can validate `body`, `query`, or `param
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 import { validate } from 'exisjs/middleware'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 const createUserSchema = {
-  body: v.object({
-    email: v.string().email(),
-    age: v.number().min(18)
+  body: tex.object({
+    email: tex.email(),
+    age: tex.number({ min: 18 })
   })
 }
 
@@ -309,12 +309,12 @@ export default controller({
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Post, Use, Body } from 'exisjs/decorators'
 import { validate } from 'exisjs/middleware'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 const createUserSchema = {
-  body: v.object({
-    email: v.string().email(),
-    age: v.number().min(18)
+  body: tex.object({
+    email: tex.email(),
+    age: tex.number({ min: 18 })
   })
 }
 

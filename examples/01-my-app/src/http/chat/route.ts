@@ -1,10 +1,10 @@
 import { controller, route } from 'exisjs/router'
 import { JWT } from 'exisjs/auth'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 // Schema for incoming chat messages
-const ChatMessageSchema = v.object({
-  text: v.string().min(1).max(500)
+const ChatMessageSchema = tex.object({
+  text: tex.string({ min: 1, max: 500 })
 })
 
 export default controller({

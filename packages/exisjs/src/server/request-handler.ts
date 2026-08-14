@@ -9,6 +9,8 @@ import type { Handler } from '../types'
 
 export class RequestHandler {
   private _compiledPipeline?: Handler[]
+  private reqPool: ExisRequest[] = []
+  private resPool: ExisResponse[] = []
 
   public static activeRequests = 0
 
@@ -133,19 +135,43 @@ export class RequestHandler {
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
-    const res = new ExisResponse(rawRes)
-    const req = new ExisRequest(
-      rawReq,
-      res,
-      this.app.options.trustProxy,
-      this.app.options.bodyLimit
-    )
+    const res = this.resPool.pop()?.init(rawRes) ?? new ExisResponse(rawRes)
+    const req =
+      this.reqPool
+        .pop()
+        ?.init(
+          rawReq,
+          res,
+          this.app.options.trustProxy,
+          this.app.options.bodyLimit
+        ) ??
+      new ExisRequest(
+        rawReq,
+        res,
+        this.app.options.trustProxy,
+        this.app.options.bodyLimit
+      )
+
     res.req = req
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
     req._dataloaderFns = (this.app as any)._dataloaders
 
     this._executeWithContext(req, res, () => {
+      RequestHandler.activeRequests++
+      res.raw.on('finish', () => {
+        RequestHandler.activeRequests--
+        if (this.reqPool.length < 10000) this.reqPool.push(req)
+        if (this.resPool.length < 10000) this.resPool.push(res)
+      })
+      res.raw.on('close', () => {
+        if (!res.raw.writableFinished) {
+          RequestHandler.activeRequests--
+          if (this.reqPool.length < 10000) this.reqPool.push(req)
+          if (this.resPool.length < 10000) this.resPool.push(res)
+        }
+      })
+
       if (
         this.app.hooks.request.length === 0 &&
         this.app.hooks.response.length === 0

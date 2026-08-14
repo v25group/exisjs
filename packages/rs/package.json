@@ -1,0 +1,33 @@
+{
+  "name": "@exisjs/rs",
+  "version": "0.1.0",
+  "description": "Native Rust bindings for ExisJS",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "exisjs-rs",
+    "targets": [
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-unknown-linux-musl",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "aarch64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-apple-darwin"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --dts .napi-types.d.ts",
+    "build:debug": "napi build --platform --dts .napi-types.d.ts",
+    "prepublishOnly": "napi prepublish -t npm"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  },
+  "engines": {
+    "node": ">= 10"
+  },
+  "author": "V25 Group <support@v25group.com>",
+  "license": "MIT"
+}

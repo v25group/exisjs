@@ -7,21 +7,21 @@ nextTitle: "Error Handling"
 
 If you are coming from frameworks like Fastify, you are likely used to writing validation schemas using JSON Schema strings and relying on external dependencies like AJV.
 
-ExisJS takes a strictly-typed approach. It includes a native validation engine out of the box, inspired by Zod. You don't need any external dependencies, and you avoid string-based references (like `$ref: '#address'`).
+ExisJS takes a strictly-typed approach. It includes a native validation engine out of the box, powered by Rust for maximum performance. You don't need any external dependencies, and you avoid string-based references.
 
-## The Native Validator (`v`)
+## The Native Validator (`tex`)
 
-ExisJS exports a global validator object `v` that allows you to fluently build complex validation schemas using pure, typesafe JavaScript.
+ExisJS exports a global validator object `tex` that allows you to fluently build complex validation schemas using pure, typesafe JavaScript.
 
 ```typescript filename="example.ts"
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 // Build a strict schema intuitively
-const userSchema = v.object({
-  name: v.string().min(3),
-  age: v.number().optional().default(18),
-  role: v.enum(['admin', 'user']),
-  email: v.string().refine((val) => val.includes('@'), 'Must be a valid email')
+const userSchema = tex.object({
+  name: tex.string({ min: 3 }),
+  age: tex.number({ optional: true }),
+  role: tex.enum(['admin', 'user']),
+  email: tex.email()
 })
 
 // You can natively parse data directly!
@@ -32,70 +32,41 @@ const safeData = userSchema.parse(rawInput)
 
 ExisJS supports a comprehensive set of strict validation primitives:
 
-- `v.string()` - String validation (supports `.min()`, `.max()`, `.email()`, `.regex()`).
-- `v.number()` - Strict number validation (fails if passed a string).
-- `v.boolean()` - Strict boolean validation.
-- `v.coerce.number()` - Automatically coerces incoming string representations (like `"123"` from query strings or form data) into native JavaScript numbers (`123`) before passing it downstream.
-- `v.coerce.boolean()` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
-- `v.array(schema)` - Validates an array of items.
-- `v.object({ ... })` - Validates structured JSON objects.
-- `v.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
-- `v.date()` - Parses string, number, or Date inputs into a valid Date object.
-- `v.record(schema)` - Validates an object with arbitrary keys but specific value types.
-- `v.literal('exact')` - Validates an exact primitive value.
-- `v.union([schema1, schema2])` - Validates if the value matches at least one of the schemas.
-- `v.file()` - Validates multipart file uploads natively!
-- `v.any()` - Accepts any value without validation.
+- `tex.string()` - String validation (supports options like `{ min: 5, max: 10 }`).
+- `tex.email()` - Validates standard email formatting.
+- `tex.number()` - Strict number validation (fails if passed a string).
+- `tex.boolean()` - Strict boolean validation.
+- `tex.number({ coerce: true })` - Automatically coerces incoming string representations into native JavaScript numbers.
+- `tex.boolean({ coerce: true })` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
+- `tex.array(schema)` - Validates an array of items.
+- `tex.object({ ... })` - Validates structured JSON objects.
+- `tex.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
+
+All primitives accept an options object where you can pass `{ optional: true }` to allow `undefined`.
 
 ### Data Sanitization (Trimming & Formatting)
 
-Unlike standard validators that only check types, ExisJS allows you to mutate and sanitize incoming data in real-time before it reaches your controller. It includes a massive suite of built-in sanitizers for Strings, Numbers, Arrays, and Objects.
-
-**String Sanitizers**
-- `sanitize.trim` - Removes leading and trailing whitespace.
-- `sanitize.toLowerCase` / `sanitize.toUpperCase` - Transforms string casing.
-- `sanitize.collapseWhitespace` - Replaces multiple spaces with a single space.
-- `sanitize.stripHtml` - Removes all HTML tags.
-- `sanitize.escapeHtml` - Escapes HTML entities (e.g., `<` to `&lt;`) to prevent XSS.
-- `sanitize.normalizeUnicode` - Normalizes unicode characters (NFC).
-- `sanitize.slugify` - Converts text to a URL-friendly slug.
-- `sanitize.truncate(length)` - Truncates strings exceeding the specified length.
-- `sanitize.removeNonAlphanumeric` - Strips out special characters.
-- `sanitize.normalizeLineEndings` - Converts `\r\n` to `\n`.
-
-**Number Sanitizers**
-- `sanitize.round` - Rounds numbers to the nearest integer.
-- `sanitize.clamp(min, max)` - Restricts a number between a minimum and maximum value.
-- `sanitize.defaultIfNaN(fallback)` - Provides a fallback if the number is `NaN`.
-
-**Array Sanitizers**
-- `sanitize.dedupe` - Removes duplicate elements.
-- `sanitize.compact` - Removes `null`, `undefined`, and empty strings.
-- `sanitize.trimElements` - Trims all string elements inside the array.
-- `sanitize.limitLength(length)` - Slices the array to a maximum length.
-
-**Object Sanitizers**
-- `sanitize.deepTrimStringValues` - Recursively trims all string values deeply nested within the object.
+ExisJS allows you to mutate and sanitize incoming data in real-time before it reaches your controller. It includes a native Rust-powered sanitization engine for Strings and Arrays.
 
 ```typescript filename="example.ts"
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { sanitize } from 'exisjs/sanitize'
 
-const loginSchema = v.object({
+const loginSchema = tex.object({
   // Automatically trim whitespace, convert to lowercase, and prevent HTML injections
-  email: v.string().email().sanitize(sanitize.trim, sanitize.toLowerCase, sanitize.escapeHtml),
-  password: v.string().min(8)
+  email: tex.email().sanitize(sanitize.trim, sanitize.toLowerCase, sanitize.escapeHtml),
+  password: tex.string({ min: 8 })
 })
 
-const articleSchema = v.object({
-  title: v.string().sanitize(sanitize.collapseWhitespace, sanitize.truncate(100)),
+const articleSchema = tex.object({
+  title: tex.string().sanitize(sanitize.collapseWhitespace, sanitize.truncate(100)),
   // Auto-generate slugs from the title using sanitize.slugify!
-  slug: v.string().sanitize(sanitize.slugify),
-  tags: v.array(v.string()).sanitize(sanitize.dedupe, sanitize.compact, sanitize.limitLength(5))
+  slug: tex.string().sanitize(sanitize.slugify),
+  tags: tex.array(tex.string()).sanitize(sanitize.dedupe, sanitize.compact)
 })
 ```
 
-### Standalone Usage
+### Standalone Sanitization Usage
 
 Because the sanitization engine is designed as a collection of pure, independent functions, **you don't have to use it with the Validator**. If you ever need to manually sanitize data deep inside your services, background jobs, or generic Node.js scripts, you can import the engine directly:
 
@@ -109,20 +80,20 @@ export function formatArticleTitle(rawInput: string) {
 }
 ```
 
-## Advanced Features
+## Schema Composition & Features
 
-ExisJS validation isn't just about basic types. It comes packed with advanced features to handle complex real-world use cases seamlessly.
+ExisJS validation provides robust features to handle real-world use cases efficiently and seamlessly.
 
 ### Schema Composition
 
 You can construct powerful shared schemas easily using composition methods (`.partial()`, `.omit()`, `.pick()`). This prevents schema duplication.
 
 ```typescript filename="example.ts"
-const UserSchema = v.object({
-  id: v.string(),
-  name: v.string(),
-  email: v.string().email(),
-  password: v.string().min(8)
+const UserSchema = tex.object({
+  id: tex.string(),
+  name: tex.string(),
+  email: tex.email(),
+  password: tex.string({ min: 8 })
 })
 
 // Create an update schema (all fields optional)
@@ -134,8 +105,8 @@ const PublicUserSchema = UserSchema.omit(['password'])
 // Create a specialized schema
 const LoginSchema = UserSchema.pick(['email', 'password'])
 
-// Chain multiple schemas using .or()
-const FlexibleIdSchema = v.string().or(v.number())
+// Chain multiple schemas using tex.union()
+const FlexibleIdSchema = tex.union([tex.string(), tex.number()])
 ```
 
 ### Asynchronous Validation
@@ -143,37 +114,35 @@ const FlexibleIdSchema = v.string().or(v.number())
 Need to check a database during validation? No problem! Use `.refineAsync()` to run complex async logic seamlessly within your validation schemas. The ExisJS router will automatically wait for the async checks to resolve before executing your route handler.
 
 ```typescript filename="example.ts"
-const registerSchema = v.object({
-  email: v.string()
-    .email()
+const registerSchema = tex.object({
+  email: tex.email()
     .refineAsync(async (val) => {
       const exists = await db.users.find({ email: val })
       return !exists // Return false if email is taken
     }, 'Email is already taken'),
-  password: v.string().min(8)
+  password: tex.string({ min: 8 })
 })
 ```
 
 ### Response Stripping & Serialization
 
-Because `ObjectValidator` validates by strictly iterating over its defined schema keys, it naturally **strips** any extra or unknown properties from the resulting object. 
+Because `TexEngine` validates by strictly iterating over its defined schema keys, it naturally **strips** any extra or unknown properties from the resulting object. 
 
 This provides immense security out of the box when used as a `response` schema, ensuring you never accidentally leak sensitive data (like passwords or internal IDs) to the client. The ExisJS router handles this stripping serialization natively behind the scenes.
-
 
 ### Separating Schemas
 
 To keep your route files clean and maintainable, we highly recommend defining your schemas in a dedicated `schema.ts` file alongside your routes.
 
 ```typescript filename="src/http/users/schema.ts"
-import { v } from 'exisjs/validator'
-import type { Infer } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
+import type { ResolveSchema } from 'exisjs/validator'
 
-export const UserParamsSchema = v.object({
-  id: v.number().transform(Number)
+export const UserParamsSchema = tex.object({
+  id: tex.number({ coerce: true })
 })
 
-export type UserParams = Infer<typeof UserParamsSchema>
+export type UserParams = ResolveSchema<typeof UserParamsSchema>
 ```
 
 To validate incoming HTTP requests, ExisJS provides built-in validation configurations. Whether you use the Functional paradigm or the Class-based (OOP) paradigm, ExisJS validates incoming payloads and types your handlers.
@@ -182,17 +151,17 @@ To validate incoming HTTP requests, ExisJS provides built-in validation configur
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   create: route.post('/', {
     // 1. The validation schema is passed directly in the config
-    body: v.object({
-      username: v.string().min(4),
-      password: v.string().min(8)
+    body: tex.object({
+      username: tex.string({ min: 4 }),
+      password: tex.string({ min: 8 })
     }),
-    query: v.object({
-      source: v.string().optional()
+    query: tex.object({
+      source: tex.string({ optional: true })
     }),
       
     // 2. Your handler only runs if validation succeeds
@@ -209,19 +178,19 @@ export default controller({
 
 ```typescript filename="src/http/api/books/route.ts"
 import { Controller, Use, Post, Body, Req } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
-import type { Infer } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
+import type { ResolveSchema } from 'exisjs/validator'
 
 // 1. Define your schema
-const CreateBookSchema = v.object({
-  title: v.string(),
-  caption: v.string(),
-  rating: v.number(),
-  image: v.string(),
+const CreateBookSchema = tex.object({
+  title: tex.string(),
+  caption: tex.string(),
+  rating: tex.number(),
+  image: tex.string(),
 })
 
 // 2. Infer the TypeScript type!
-type CreateBookDto = Infer<typeof CreateBookSchema>
+type CreateBookDto = ResolveSchema<typeof CreateBookSchema>
 
 @Use(protectRoute)
 @Controller()
@@ -247,6 +216,23 @@ export default class BooksController {
 }
 ```
 
+### Database Integration (Mongoose)
+
+Because the ExisJS Validator is native to the framework, it is tightly coupled with our database and documentation adapters. You can generate Mongoose schemas directly from your validation schemas using `.toMongoSchema()`!
+
+```typescript filename="src/models/User.ts"
+import mongoose from 'mongoose'
+import { tex } from 'exisjs/validator'
+
+export const UserValidator = tex.object({
+  email: tex.email(),
+  password: tex.string({ min: 8 }),
+  role: tex.enum(['admin', 'user'], { default: 'user' })
+})
+
+// Pass the ExisJS Validator directly into Mongoose!
+export const User = mongoose.model('User', new mongoose.Schema(UserValidator.toMongoSchema()))
+```
 
 ## Error Handling
 
@@ -256,14 +242,8 @@ If a request fails validation (e.g., missing a required body field), the validat
 {
   "statusCode": 400,
   "error": "Bad Request",
-  "message": "Validation Error: body.username: Required, body.password: Must be at least 8 characters"
+  "message": "Validation Error: body.username is required"
 }
 ```
 
 Because this is built right into the framework, you don't have to manually catch errors or construct complex schema error formatters. It just works exactly as you expect!
-
-### Third-Party Validators (Zod, Yup)
-
-Do you absolutely love **Zod** or **Yup** and want to use them instead of the native `v` validator? No problem! ExisJS routing fully supports third-party validators. 
-
-Even better, if validation fails using a third-party library, ExisJS will intercept the custom error formats (like `ZodError` or `ValidationError`) and **normalize them perfectly** into the exact same `400 Bad Request` structure shown above. It behaves exactly as if you used the native validator, ensuring your API error responses are always consistent for your frontend clients!

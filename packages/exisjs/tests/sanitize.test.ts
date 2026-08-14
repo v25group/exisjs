@@ -1,59 +1,68 @@
 import test from 'node:test'
 import assert from 'node:assert'
-import { v } from '../src/utils/validator'
-import { sanitize } from '../src/utils/sanitize'
+import { sanitize } from '../src/sanitize/index.js'
+import { tex } from '../src/validator/index.js'
 
-test('sanitize executes after coercion but before validation', () => {
-  const schema = v.string().sanitize(sanitize.trim).min(3)
-
-  const result = schema.validate('  hi  ')
-  assert.strictEqual(result.success, false)
-  if (!result.success) {
-    assert.ok(
-      result.errors[0].message.includes('String must be at least 3 characters')
+test('Advanced Sanitization Engine Tests', async (t) => {
+  await t.test('Standalone Rust Sanitization (escapeHtml)', () => {
+    const malicious = '<script>alert("hacked")</script>'
+    const safe = sanitize.escapeHtml(malicious)
+    assert.strictEqual(
+      safe,
+      '&lt;script&gt;alert(&quot;hacked&quot;)&lt;/script&gt;'
     )
-  }
+  })
 
-  const result2 = schema.validate('  hello  ')
-  assert.strictEqual(result2.success, true)
-  if (result2.success) {
-    assert.strictEqual(result2.data, 'hello')
-  }
-})
+  await t.test('Standalone Rust Sanitization (stripHtml)', () => {
+    const malicious = '<p>Hello <b>World</b>!</p>'
+    const safe = sanitize.stripHtml(malicious)
+    assert.strictEqual(safe, 'Hello World!')
+  })
 
-test('sanitize pure functions work independently', () => {
-  assert.strictEqual(sanitize.trim('  hello  '), 'hello')
-  assert.strictEqual(sanitize.toLowerCase('HELLO'), 'hello')
-  assert.strictEqual(sanitize.clamp(1, 10)(15), 10)
-  assert.strictEqual(sanitize.stripHtml('<p>hello</p>'), 'hello')
-})
+  await t.test('Standalone Rust Sanitization (preventSql)', () => {
+    const safe = "O'Connor"
+    assert.strictEqual(sanitize.preventSql(safe), "O'Connor")
 
-test('sanitize can be chained multiple times', () => {
-  const schema = v
-    .string()
-    .sanitize(
-      sanitize.trim,
-      sanitize.toLowerCase,
-      sanitize.removeNonAlphanumeric
-    )
+    const malicious = "admin' or 1=1--"
+    assert.throws(() => {
+      sanitize.preventSql(malicious)
+    }, /Potential SQL Injection detected/)
+  })
 
-  const result = schema.validate('  <Hello>_World!  ')
-  assert.strictEqual(result.success, true)
-  if (result.success) {
-    assert.strictEqual(result.data, 'helloworld')
-  }
-})
+  await t.test('Standalone Rust Sanitization (preventTraversal)', () => {
+    const malicious = '../../../etc/passwd'
+    assert.throws(() => {
+      sanitize.preventTraversal(malicious)
+    }, /Path traversal attempt detected/)
+  })
 
-test('sanitize works with object deep values', () => {
-  const schema = v
-    .object({
-      name: v.string(),
+  await t.test('Integration with TexBuilder Validation Schema', () => {
+    const InputSchema = tex.object({
+      username: tex.string({ preventSql: true, trim: true }),
+      bio: tex.string({ escapeHtml: true }),
+      filePath: tex.string({ preventTraversal: true }),
     })
-    .sanitize(sanitize.deepTrimStringValues)
 
-  const result = schema.validate({ name: '  hello  ' })
-  assert.strictEqual(result.success, true)
-  if (result.success) {
-    assert.strictEqual(result.data.name, 'hello')
-  }
+    const InputValidator = InputSchema
+
+    // Test successful validation & sanitization
+    const result = InputValidator.parse({
+      username: '  john_doe  ',
+      bio: '<i>Hello</i>',
+      filePath: 'images/avatar.png',
+    })
+
+    assert.strictEqual(result.username, 'john_doe') // trimmed
+    assert.strictEqual(result.bio, '&lt;i&gt;Hello&lt;/i&gt;') // escaped
+    assert.strictEqual(result.filePath, 'images/avatar.png')
+
+    // Test rejection of malicious data
+    assert.throws(() => {
+      InputValidator.parse({
+        username: "admin' or 1=1--",
+        bio: 'Test',
+        filePath: 'images/avatar.png',
+      })
+    }, /Potential SQL Injection/)
+  })
 })

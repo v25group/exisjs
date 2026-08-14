@@ -1,21 +1,8 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import { HttpError } from '../utils/errors'
+import { signJwt, verifyJwt } from '@exisjs/rs'
 
 export interface JWTOptions {
   expiresIn?: number // Seconds
-}
-
-function base64url(str: string | Buffer): string {
-  const base64 = Buffer.isBuffer(str)
-    ? str.toString('base64')
-    : Buffer.from(str).toString('base64')
-
-  return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
-}
-
-function fromBase64url(str: string): string {
-  const base64 = str.replace(/-/g, '+').replace(/_/g, '/')
-  return Buffer.from(base64, 'base64').toString('utf8')
 }
 
 /**
@@ -30,21 +17,12 @@ export function signJWT(
   options?: JWTOptions
 ): string {
   const actualSecret = Array.isArray(secret) ? secret[0] : secret
-  const header = { alg: 'HS256', typ: 'JWT' }
 
-  const expPayload = { ...payload }
-  if (options?.expiresIn) {
-    expPayload.exp = Math.floor(Date.now() / 1000) + options.expiresIn
+  try {
+    return signJwt(payload, actualSecret, options?.expiresIn)
+  } catch (err: any) {
+    throw new Error(`Failed to sign JWT: ${err.message}`, { cause: err })
   }
-
-  const encodedHeader = base64url(JSON.stringify(header))
-  const encodedPayload = base64url(JSON.stringify(expPayload))
-
-  const signature = createHmac('sha256', actualSecret)
-    .update(`${encodedHeader}.${encodedPayload}`)
-    .digest()
-
-  return `${encodedHeader}.${encodedPayload}.${base64url(signature)}`
 }
 
 export class TokenExpiredError extends HttpError {
@@ -66,52 +44,26 @@ export function verifyJWT<T = unknown>(
     throw HttpError.unauthorized('Invalid token format')
   }
 
-  const parts = token.split('.')
-  if (parts.length !== 3) {
-    throw HttpError.unauthorized('Invalid token format')
-  }
-
-  const [encodedHeader, encodedPayload, encodedSignature] = parts
-
   const secrets = Array.isArray(secret) ? secret : [secret]
-  let isValid = false
 
-  for (const s of secrets) {
-    const expectedSignature = base64url(
-      createHmac('sha256', s)
-        .update(`${encodedHeader}.${encodedPayload}`)
-        .digest()
-    )
-
-    const expectedBuf = Buffer.from(expectedSignature)
-    const actualBuf = Buffer.from(encodedSignature)
-
-    if (
-      expectedBuf.length === actualBuf.length &&
-      timingSafeEqual(expectedBuf, actualBuf)
-    ) {
-      isValid = true
-      break
+  try {
+    return verifyJwt(token, secrets) as T
+  } catch (err: any) {
+    if (err.message.includes('TokenExpiredError')) {
+      throw new TokenExpiredError()
     }
-  }
 
-  if (!isValid) {
+    // Check specific N-API error messages mapped to HTTP 401
+    const unauthMsg = [
+      'Invalid token',
+      'Malformed token',
+      'HMAC error',
+      'Invalid base64url',
+    ]
+    if (unauthMsg.some((m) => err.message.includes(m))) {
+      throw HttpError.unauthorized(err.message)
+    }
+
     throw HttpError.unauthorized('Invalid token signature')
   }
-
-  let payload: Record<string, unknown>
-  try {
-    payload = JSON.parse(fromBase64url(encodedPayload))
-  } catch {
-    throw HttpError.unauthorized('Malformed token payload')
-  }
-
-  if (
-    typeof payload.exp === 'number' &&
-    Math.floor(Date.now() / 1000) > payload.exp
-  ) {
-    throw new TokenExpiredError()
-  }
-
-  return payload as T
 }

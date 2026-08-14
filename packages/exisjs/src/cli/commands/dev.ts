@@ -319,6 +319,16 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
     tscProcess.stdout?.on('data', (data) => {
       const lines = data.toString().trim().split('\n')
+
+      const getTime = () => {
+        return new Date().toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      }
+
       for (const line of lines) {
         if (!line) continue
         if (line.includes('Found 0 errors')) {
@@ -327,11 +337,13 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           // Type errors are cleared — close the fallback so the real server can serve
           closeFallbackServer()
         } else if (line.includes('error TS')) {
-          console.error(`\n${c.yellow}[tsc]${c.reset} ${line}`)
+          const time = getTime()
+          console.error(`\n${c.red}[${time}] ERROR:${c.reset} ${line}`)
           tscErrors.push(line)
         } else if (line.includes('Found') && line.includes('error')) {
-          // "Found 3 errors." summary line — show all collected errors in browser
-          console.error(`\n${c.yellow}[tsc]${c.reset} ${line}`)
+          // "Found X errors." summary line
+          const time = getTime()
+          console.error(`\n${c.yellow}[${time}] INFO:${c.reset} ${line}`)
           if (tscErrors.length > 0) {
             startFallbackServer(
               `TypeScript Compilation Errors\n${'─'.repeat(50)}\n\n` +
@@ -342,7 +354,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           !line.includes('Starting compilation in watch mode') &&
           !line.includes('File change detected')
         ) {
-          console.error(`${c.yellow}[tsc]${c.reset} ${line}`)
+          const time = getTime()
+          console.error(`${c.yellow}[${time}] INFO:${c.reset} ${line}`)
         }
       }
     })

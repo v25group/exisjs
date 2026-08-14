@@ -1,4 +1,4 @@
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
-export const UserParamsSchema = v.object({ id: v.string() })
-export const UserBatchSchema = v.object({ ids: v.array(v.string()) })
+export const UserParamsSchema = tex.object({ id: tex.string() })
+export const UserBatchSchema = tex.object({ ids: tex.array(tex.string()) })

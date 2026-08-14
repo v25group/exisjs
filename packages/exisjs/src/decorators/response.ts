@@ -50,7 +50,7 @@ export function Header(name: string, value: string): any {
  * Example:
  *
  *     @Get('/')
- *     @Returns(v.object({ id: v.string() }))
+ *     @Returns(tex.object({ id: tex.string() }))
  *     getUser() {}
  *
  * @param {RouteSchema['response']} schema The response schema

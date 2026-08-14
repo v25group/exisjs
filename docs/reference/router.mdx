@@ -59,14 +59,14 @@ It takes a path and a `RouteConfig` object.
 
 ```typescript
 import { controller, route } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   createUser: route.post('/users', {
-    body: {
-      email: v.string().email(),
-      password: v.string().min(8)
-    },
+    body: tex.object({
+      email: tex.email(),
+      password: tex.string({ min: 8 })
+    }),
     async handle(ctx) {
       // ctx.body is strictly typed!
       const { email, password } = ctx.body 
@@ -98,12 +98,12 @@ Every `handle` function receives a `SuperContext` object that provides fully-typ
 
 ```typescript
 import { controller, route } from '../router' // Import your custom router (see below)
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default controller({
   getUserInfo: route.get('/info/:id', {
-    params: { id: v.string() },
-    query: { debug: v.boolean().optional() },
+    params: tex.object({ id: tex.string() }),
+    query: tex.object({ debug: tex.boolean({ optional: true }) }),
     async handle({ body, query, params, headers, req, res, app, state, user, workspace }) {
       // 1. `body`, `query`, and `params` are pre-validated and fully typed!
       const id = params.id
@@ -114,10 +114,13 @@ export default controller({
       // 3. `app` is the global ExisJS application instance
       const db = app.resolve('Database')
       
-      // 4. `state` is a mutable object shared across middlewares
+      // 4. `resolve` is the request-scoped dependency injection resolver!
+      const usersService = resolve(UsersService)
+
+      // 5. `state` is a mutable object shared across middlewares
       const cacheHit = state.cacheHit 
 
-      // 5. `user` and `workspace` are strictly typed from your custom context!
+      // 6. `user` and `workspace` are strictly typed from your custom context!
       return { id, email: user.email, workspace }
     }
   })
@@ -177,7 +180,7 @@ If you prefer an Object-Oriented paradigm, ExisJS provides a robust set of decor
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 @Controller('/users')
 export default class UserController {
@@ -188,7 +191,7 @@ export default class UserController {
   }
 
   @Post('/', {
-    body: { email: v.string().email(), password: v.string() }
+    body: tex.object({ email: tex.email(), password: tex.string() })
   })
   async createUser(@Body() body: any) {
     // body is automatically validated!

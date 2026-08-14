@@ -64,27 +64,25 @@ The most powerful way to use ExisJS sanitizers is to chain them directly into yo
 
 ```typescript filename="src/http/posts/route.ts"
 import { Controller, Post, Body } from 'exisjs/decorators'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { sanitize } from 'exisjs/sanitize'
 
-const CreatePostSchema = v.object({
+const CreatePostSchema = tex.object({
   // Trim the title, then ensure it's still at least 5 characters
-  title: v.string()
-    .sanitize(sanitize.trim, sanitize.collapseWhitespace)
-    .min(5),
+  title: tex.string({ min: 5 })
+    .sanitize(sanitize.trim, sanitize.collapseWhitespace),
 
   // Automatically generate a URL slug from the input string
-  slug: v.string()
+  slug: tex.string()
     .sanitize(sanitize.slugify),
 
   // Strip all HTML before saving to the database
-  content: v.string()
+  content: tex.string()
     .sanitize(sanitize.stripHtml),
 
   // Deduplicate tags and remove empty strings
-  tags: v.array(v.string())
+  tags: tex.array(tex.string())
     .sanitize(sanitize.dedupe, sanitize.compact)
-    .max(5)
 })
 
 // === Class-Based (OOP) Example ===

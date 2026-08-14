@@ -14,23 +14,7 @@ const qs = require('fast-querystring')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
 
-function stripPrototype(obj: any): any {
-  if (!obj || typeof obj !== 'object') return obj
-  if (Array.isArray(obj)) {
-    for (let i = 0; i < obj.length; i++) {
-      obj[i] = stripPrototype(obj[i])
-    }
-    return obj
-  }
-  if ('__proto__' in obj) delete obj.__proto__
-  if ('constructor' in obj) delete obj.constructor
-  for (const key in obj) {
-    if (Object.prototype.hasOwnProperty.call(obj, key)) {
-      obj[key] = stripPrototype(obj[key])
-    }
-  }
-  return obj
-}
+import { parseJsonBody, stripPrototype, parseCookies } from '@exisjs/rs'
 
 export class ExisRequest<
   TBody = unknown,
@@ -56,6 +40,7 @@ export class ExisRequest<
     }
   >
   private _dataloaderCache = new Map<string, Dataloader<any, any, any>>()
+  public _diCache = new Map<any, any>()
 
   private _urlStr: string
   private _qIdx: number
@@ -75,6 +60,45 @@ export class ExisRequest<
   ) {
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
+  }
+
+  public init(
+    raw: IncomingMessage,
+    res: ExisResponse,
+    trustProxy: boolean | number = false,
+    bodyLimit = 1048576 // 1MB
+  ): this {
+    this.raw = raw
+    this.res = res
+    this.trustProxy = trustProxy
+    this.bodyLimit = bodyLimit
+
+    this.params = undefined as any
+    this.body = undefined as any
+    this.files = []
+    this.rawBody = undefined
+    this.user = undefined as any
+    this.log = undefined as any
+    this.session = undefined
+    this.requestId = undefined
+    this.tenantId = undefined
+
+    this._dataloaderFns = undefined
+    this._dataloaderCache.clear()
+    this._diCache.clear()
+
+    this._urlStr = raw.url ?? '/'
+    this._qIdx = this._urlStr.indexOf('?')
+    this._path = undefined
+    this._query = undefined
+    this._cookies = undefined
+    this._ips = undefined
+    this._ip = undefined
+    this._protocol = undefined
+    this._hostname = undefined
+    this._method = undefined
+
+    return this
   }
 
   private _method?: string
@@ -121,30 +145,10 @@ export class ExisRequest<
 
   get cookies(): Record<string, string> {
     if (this._cookies !== undefined) return this._cookies
-    this._cookies = {}
     const cookieHeader = this.raw.headers.cookie
-    if (cookieHeader) {
-      const pairs = cookieHeader.split(';')
-      for (const pair of pairs) {
-        const eqIdx = pair.indexOf('=')
-        if (eqIdx === -1) continue
-        const key = pair.slice(0, eqIdx).trim()
-        const val = pair.slice(eqIdx + 1).trim()
-        if (key && !(key in this._cookies)) {
-          this._cookies[key] =
-            val.indexOf('%') !== -1
-              ? (() => {
-                  try {
-                    return decodeURIComponent(val)
-                  } catch {
-                    return val
-                  }
-                })()
-              : val
-        }
-      }
-    }
-    return this._cookies
+    const parsed = cookieHeader ? parseCookies(cookieHeader) : {}
+    this._cookies = parsed
+    return parsed
   }
 
   set cookies(val: Record<string, string>) {
@@ -436,7 +440,7 @@ export class ExisRequest<
       return this.body as unknown as T
     }
     try {
-      this.body = stripPrototype(JSON.parse(this.rawBody))
+      this.body = parseJsonBody(this.rawBody)
       return this.body as unknown as T
     } catch {
       throw HttpError.badRequest('Invalid JSON body')

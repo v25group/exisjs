@@ -5,7 +5,7 @@ import {
   notFound,
   validate,
 } from '../src/middleware/middleware'
-import { v } from '../src/utils/validator'
+import { tex } from '../src/validator/tex'
 import {
   createMockRequest,
   createMockResponse,
@@ -265,7 +265,7 @@ describe('notFound', () => {
 
 describe('validate()', () => {
   it('passes through with valid body', async () => {
-    const schema = { body: v.object({ name: v.string() }) }
+    const schema = { body: tex.object({ name: tex.string() }) }
     const handler = validate(schema)
 
     const req = createMockRequest()
@@ -281,7 +281,7 @@ describe('validate()', () => {
 
   it('returns 400 for invalid body', async () => {
     const schema = {
-      body: v.object({ name: v.string(), email: v.string().email() }),
+      body: tex.object({ name: tex.string(), email: tex.email() }),
     }
     const handler = validate(schema)
 
@@ -300,7 +300,7 @@ describe('validate()', () => {
   })
 
   it('validates query params', async () => {
-    const schema = { query: v.object({ page: v.string() }) }
+    const schema = { query: tex.object({ page: tex.string() }) }
     const handler = validate(schema)
 
     const req = createMockRequest({ url: '/?page=1' })
@@ -314,7 +314,7 @@ describe('validate()', () => {
   })
 
   it('validates route params', async () => {
-    const schema = { params: v.object({ id: v.string() }) }
+    const schema = { params: tex.object({ id: tex.string() }) }
     const handler = validate(schema)
 
     const req = createMockRequest()

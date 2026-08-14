@@ -1,4 +1,5 @@
 import type { Route, RouteMatch } from '../types'
+import { RadixRouter } from '@exisjs/rs'
 
 // ─── Node Types ──────────────────────────────────────────────────────────────
 
@@ -173,9 +174,9 @@ class RadixNode {
   }
 }
 
-// ─── Radix Tree ──────────────────────────────────────────────────────────────
+// ─── JS Radix Tree (Fallback & Host Routing) ──────────────────────────────────
 
-export class RadixTree {
+export class JSRadixTree {
   root: RadixNode = new RadixNode()
   hasHostRoutes = false
   private cache: Record<string, Record<string, RouteMatch | null>> = {
@@ -623,5 +624,68 @@ function buildParamsLazy(
   return params
 }
 
-// Re-export for type compatibility
-export { RadixNode }
+// ─── Native Radix Tree (Rust Accelerated) ────────────────────────────────────
+
+export class NativeRadixTree {
+  private native: any = null
+  private routes: Route[] = []
+  private jsFallback: JSRadixTree | null = null
+  public hasHostRoutes = false
+
+  constructor() {
+    try {
+      if (typeof RadixRouter === 'function') {
+        this.native = new RadixRouter()
+      }
+    } catch {
+      this.native = null
+    }
+    if (!this.native) {
+      this.jsFallback = new JSRadixTree()
+    }
+  }
+
+  insert(method: string, path: string, route: Route): void {
+    if (route.host) {
+      this.hasHostRoutes = true
+      if (!this.jsFallback) {
+        this.jsFallback = new JSRadixTree()
+        for (const r of this.routes) {
+          this.jsFallback.insert(r.method, r.path, r)
+        }
+      }
+      this.jsFallback.insert(method, path, route)
+    }
+
+    const routeId = this.routes.length
+    this.routes.push(route)
+
+    if (this.native) {
+      this.native.insert(method, path, routeId)
+    } else if (this.jsFallback) {
+      this.jsFallback.insert(method, path, route)
+    }
+  }
+
+  search(method: string, path: string, host?: string): RouteMatch | null {
+    if (this.hasHostRoutes && host && this.jsFallback) {
+      return this.jsFallback.search(method, path, host)
+    }
+
+    if (this.native) {
+      const result = this.native.search(method, path)
+      if (!result) return null
+      const route = this.routes[result.routeId]
+      if (!route) return null
+      return {
+        route,
+        params: result.params || emptyParams,
+      }
+    }
+
+    return this.jsFallback ? this.jsFallback.search(method, path, host) : null
+  }
+}
+
+// Default export uses NativeRadixTree with JS fallback
+export { NativeRadixTree as RadixTree, RadixNode }

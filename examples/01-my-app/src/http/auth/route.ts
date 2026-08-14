@@ -1,5 +1,5 @@
 import { controller, route, after } from 'exisjs/router'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 import { enqueue } from 'exisjs/queue'
 import { JWT, Password } from 'exisjs/auth'
 import { UnauthorizedError, BadRequestError } from 'exisjs/error'
@@ -17,9 +17,9 @@ let nextUserId = 1
 
 export default controller({
   login: route.post('/login', {
-    body: v.object({
-      email: v.string().email(),
-      password: v.string().min(6),
+    body: tex.object({
+      email: tex.email(),
+      password: tex.string({ min: 6 }),
     }),
     async handle({ body, req, app }) {
       after(() => {
@@ -55,10 +55,10 @@ export default controller({
   }),
 
   register: route.post('/register', {
-    body: v.object({
-      name: v.string().min(2),
-      email: v.string().email(),
-      password: v.string().min(6),
+    body: tex.object({
+      name: tex.string({ min: 2 }),
+      email: tex.email(),
+      password: tex.string({ min: 6 }),
     }),
     async handle({ body, app }) {
       console.log('--- Incoming body in /auth/register ---', body)

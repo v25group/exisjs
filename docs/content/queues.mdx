@@ -55,14 +55,14 @@ ExisJS will run these files off the main thread in a dedicated V8 isolate (`Thre
 
 ```typescript filename="src/jobs/process-image.ts"
 import { defineJob } from 'exisjs/queue'
-import { v } from 'exisjs/validator'
+import { tex } from 'exisjs/validator'
 
 export default defineJob({
   name: 'process-image',
   
-  schema: v.object({
-    imageId: v.string(),
-    resize: v.boolean()
+  schema: tex.object({
+    imageId: tex.string(),
+    resize: tex.boolean()
   }),
   
   // ExisJS automatically runs this handler in a separate Worker Thread!
