@@ -1,17 +1,27 @@
 import type { QueueDriver, JobPayload, JobDefinition } from '../types'
 
-interface MemoryJob {
-  id: string
-  payloadStr: string
-  score: number
-}
-
 export class MemoryQueueDriver implements QueueDriver {
-  private pending = new Map<string, MemoryJob[]>()
-  private processing = new Map<string, MemoryJob[]>()
-  private deadLetter = new Map<string, MemoryJob[]>()
+  private nativeQueue: any
+  private fallbackPending = new Map<string, any[]>()
+  private fallbackProcessing = new Map<string, any[]>()
+  private fallbackDeadLetter = new Map<string, any[]>()
+  private isFallback = false
 
-  private getList(map: Map<string, MemoryJob[]>, key: string): MemoryJob[] {
+  constructor() {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { NativeMemoryQueue } = require('@exisjs/rs')
+      this.nativeQueue = new NativeMemoryQueue()
+    } catch {
+      // Fallback if native module fails to load
+      this.isFallback = true
+      this.fallbackPending = new Map()
+      this.fallbackProcessing = new Map()
+      this.fallbackDeadLetter = new Map()
+    }
+  }
+
+  private getList(map: Map<string, any[]>, key: string): any[] {
     if (!map.has(key)) {
       map.set(key, [])
     }
@@ -23,20 +33,35 @@ export class MemoryQueueDriver implements QueueDriver {
     payload: JobPayload,
     maxQueue?: number
   ): Promise<string> {
-    const pendingList = this.getList(this.pending, name)
+    const score = Date.now() + (payload.opts?.delay || 0)
+
+    if (!this.isFallback) {
+      try {
+        this.nativeQueue.enqueue(
+          name,
+          payload.id,
+          JSON.stringify(payload),
+          score,
+          maxQueue
+        )
+        return payload.id
+      } catch (err: any) {
+        throw new Error(err.message, { cause: err })
+      }
+    }
+
+    const pendingList = this.getList(this.fallbackPending!, name)
     if (maxQueue !== undefined && pendingList.length >= maxQueue) {
       throw new Error(
         `Queue backpressure activated: maximum queue size (${maxQueue}) reached for job ${name}.`
       )
     }
 
-    const score = Date.now() + (payload.opts?.delay || 0)
     pendingList.push({
       id: payload.id,
       payloadStr: JSON.stringify(payload),
       score,
     })
-    // Keep it sorted by score
     pendingList.sort((a, b) => a.score - b.score)
 
     return payload.id
@@ -45,20 +70,33 @@ export class MemoryQueueDriver implements QueueDriver {
   async poll(
     jobs: Map<string, JobDefinition>
   ): Promise<{ queueKey: string; jobId: string; payloadStr: string } | null> {
+    if (!this.isFallback) {
+      const jobNames = Array.from(jobs.keys())
+      const visibilityTimeouts = jobNames.map(
+        (name) => jobs.get(name)?.defaultOptions?.visibilityTimeout ?? 30000
+      )
+
+      const result = this.nativeQueue.poll(jobNames, visibilityTimeouts)
+      if (result && result.length === 3) {
+        return {
+          queueKey: result[0],
+          jobId: result[1],
+          payloadStr: result[2],
+        }
+      }
+      return null
+    }
+
     const now = Date.now()
-
     for (const name of jobs.keys()) {
-      const pendingList = this.getList(this.pending, name)
+      const pendingList = this.getList(this.fallbackPending!, name)
       if (pendingList.length > 0 && pendingList[0].score <= now) {
-        // Pop the job
         const job = pendingList.shift()!
-
         const jobDef = jobs.get(name)
         const visibilityTimeout =
           jobDef?.defaultOptions?.visibilityTimeout ?? 30000
 
-        // Move to processing with new score
-        const processingList = this.getList(this.processing, name)
+        const processingList = this.getList(this.fallbackProcessing!, name)
         processingList.push({
           id: job.id,
           payloadStr: job.payloadStr,
@@ -77,7 +115,12 @@ export class MemoryQueueDriver implements QueueDriver {
   }
 
   async acknowledge(jobName: string, jobId: string): Promise<void> {
-    const processingList = this.getList(this.processing, jobName)
+    if (!this.isFallback) {
+      this.nativeQueue.acknowledge(jobName, jobId)
+      return
+    }
+
+    const processingList = this.getList(this.fallbackProcessing!, jobName)
     const index = processingList.findIndex((j) => j.id === jobId)
     if (index !== -1) {
       processingList.splice(index, 1)
@@ -91,7 +134,28 @@ export class MemoryQueueDriver implements QueueDriver {
     maxAttempts: number,
     error: Error
   ): Promise<void> {
-    const processingList = this.getList(this.processing, jobDef.name)
+    if (!this.isFallback) {
+      const isDeadLetter = payload.attemptsMade >= maxAttempts
+      const delay = isDeadLetter ? 0 : (payload.opts?.backoff?.delay ?? 0)
+      this.nativeQueue.fail(
+        jobDef.name,
+        jobId,
+        JSON.stringify(payload),
+        delay,
+        isDeadLetter
+      )
+
+      if (isDeadLetter && jobDef.onJobFailedPermanently) {
+        Promise.resolve(jobDef.onJobFailedPermanently(payload, error)).catch(
+          () => {
+            /* noop */
+          }
+        )
+      }
+      return
+    }
+
+    const processingList = this.getList(this.fallbackProcessing!, jobDef.name)
     const index = processingList.findIndex((j) => j.id === jobId)
     if (index !== -1) {
       processingList.splice(index, 1)
@@ -101,7 +165,7 @@ export class MemoryQueueDriver implements QueueDriver {
       const delay = payload.opts?.backoff?.delay ?? 0
       const score = Date.now() + delay
 
-      const pendingList = this.getList(this.pending, jobDef.name)
+      const pendingList = this.getList(this.fallbackPending!, jobDef.name)
       pendingList.push({
         id: jobId,
         payloadStr: JSON.stringify(payload),
@@ -109,7 +173,7 @@ export class MemoryQueueDriver implements QueueDriver {
       })
       pendingList.sort((a, b) => a.score - b.score)
     } else {
-      const deadLetterList = this.getList(this.deadLetter, jobDef.name)
+      const deadLetterList = this.getList(this.fallbackDeadLetter!, jobDef.name)
       deadLetterList.push({
         id: jobId,
         payloadStr: JSON.stringify(payload),
@@ -118,7 +182,7 @@ export class MemoryQueueDriver implements QueueDriver {
       if (jobDef.onJobFailedPermanently) {
         Promise.resolve(jobDef.onJobFailedPermanently(payload, error)).catch(
           () => {
-            /* ignore */
+            /* noop */
           }
         )
       }
@@ -126,19 +190,21 @@ export class MemoryQueueDriver implements QueueDriver {
   }
 
   async sweep(jobs: Map<string, JobDefinition>): Promise<void> {
+    if (!this.isFallback) {
+      this.nativeQueue.sweep(Array.from(jobs.keys()))
+      return
+    }
+
     const now = Date.now()
     for (const name of jobs.keys()) {
-      const processingList = this.getList(this.processing, name)
-      const pendingList = this.getList(this.pending, name)
+      const processingList = this.getList(this.fallbackProcessing!, name)
+      const pendingList = this.getList(this.fallbackPending!, name)
 
-      // Find expired
       const expired = processingList.filter((j) => j.score <= now)
       if (expired.length > 0) {
-        // Remove from processing
         const remaining = processingList.filter((j) => j.score > now)
-        this.processing.set(name, remaining)
+        this.fallbackProcessing!.set(name, remaining)
 
-        // Add back to pending
         for (const job of expired) {
           pendingList.push({
             id: job.id,
@@ -152,7 +218,11 @@ export class MemoryQueueDriver implements QueueDriver {
   }
 
   async close(): Promise<void> {
-    this.pending.clear()
-    this.processing.clear()
+    if (!this.isFallback) {
+      this.nativeQueue.close()
+    } else {
+      this.fallbackPending!.clear()
+      this.fallbackProcessing!.clear()
+    }
   }
 }

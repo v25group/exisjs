@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 base64 = "0.21"
 hmac = "0.12"
+lru = "0.18.2"
 napi = { version = "2.16.14", default-features = false, features = ["napi8", "serde-json"] }
 napi-derive = "2.16.12"
 serde = { version = "1.0", features = ["derive"] }

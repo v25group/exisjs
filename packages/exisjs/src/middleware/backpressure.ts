@@ -24,6 +24,7 @@ export function backpressureMiddleware(
     res: Response
     next: NextFunction
     timer: NodeJS.Timeout
+    isCancelled: boolean
   }
 
   const queue: QueuedRequest[] = []
@@ -33,6 +34,13 @@ export function backpressureMiddleware(
       const queued = queue.shift()
       if (queued) {
         clearTimeout(queued.timer)
+
+        // O(1) skip if the request timed out
+        if (queued.isCancelled) {
+          process.nextTick(processNext)
+          return
+        }
+
         activeCount++
 
         // Use _onFinish to decrement activeCount when done
@@ -68,20 +76,25 @@ export function backpressureMiddleware(
       )
     }
 
-    const timer = setTimeout(() => {
-      // Remove from queue
-      const index = queue.findIndex((q) => q.req === req)
-      if (index !== -1) {
-        queue.splice(index, 1)
-        next(HttpError.serviceUnavailable('Request timed out in queue.'))
-      }
-    }, timeoutMs)
-
-    // Allow process to exit if only this timer remains
-    if (timer.unref) {
-      timer.unref()
+    const queuedReq: QueuedRequest = {
+      req,
+      res,
+      next,
+      timer: null as any,
+      isCancelled: false,
     }
 
-    queue.push({ req, res, next, timer })
+    const timeoutCallback = () => {
+      queuedReq.isCancelled = true
+      next(HttpError.serviceUnavailable('Request timed out in queue.'))
+    }
+
+    // Refresh timer logic
+    queuedReq.timer = setTimeout(timeoutCallback, timeoutMs)
+    if (queuedReq.timer.unref) {
+      queuedReq.timer.unref()
+    }
+
+    queue.push(queuedReq)
   }
 }

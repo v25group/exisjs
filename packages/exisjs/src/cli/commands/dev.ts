@@ -278,11 +278,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         ignored: [
           // eslint-disable-next-line no-useless-escape
           /(^|[\/\\])\../, // ignore dotfiles
-          '**/node_modules/**',
-          '**/.exis/**',
-          '**/dist/**',
-          '**/exis.d.ts',
-          'exis.d.ts',
+          /node_modules/,
+          /\.exis/,
+          /dist/,
+          /exis\.d\.ts$/,
         ],
       })
 

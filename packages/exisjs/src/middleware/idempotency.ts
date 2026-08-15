@@ -16,20 +16,48 @@ export interface IdempotencyStore {
 }
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
-  private cache = new Map<string, { data: any; expiry: number }>()
+  private nativeCache: any
+  private fallbackCache = new Map<string, { data: any; expiry: number }>()
+  private isFallback = false
+
+  constructor() {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { NativeMemoryCache } = require('@exisjs/rs')
+      // Cap at 10,000 concurrent idempotent requests to prevent memory exhaustion
+      this.nativeCache = new NativeMemoryCache(10000)
+    } catch {
+      this.isFallback = true
+    }
+  }
 
   async get(key: string) {
-    const item = this.cache.get(key)
+    if (!this.isFallback) {
+      const dataStr = this.nativeCache.get(key)
+      if (!dataStr) return null
+      try {
+        return JSON.parse(dataStr)
+      } catch {
+        return null
+      }
+    }
+
+    const item = this.fallbackCache.get(key)
     if (!item) return null
     if (Date.now() > item.expiry) {
-      this.cache.delete(key)
+      this.fallbackCache.delete(key)
       return null
     }
     return item.data
   }
 
   async set(key: string, data: any, ttlMs = 86400000) {
-    this.cache.set(key, { data, expiry: Date.now() + ttlMs })
+    if (!this.isFallback) {
+      this.nativeCache.set(key, JSON.stringify(data), ttlMs)
+      return
+    }
+
+    this.fallbackCache.set(key, { data, expiry: Date.now() + ttlMs })
   }
 }
 

@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::types::{TexField, TexType};
+use crate::core::types::{TexField, TexType};
 
 pub fn parse_tex_rule(rule: &str) -> TexField {
     let mut field = TexField::default();

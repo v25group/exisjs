@@ -71,7 +71,7 @@ export interface TexPasswordOptions extends TexStringOptions {
 }
 
 export class TexBuilder {
-  string<O extends TexStringOptions = Record<string, never>>(
+  string<O extends TexStringOptions = TexStringOptions>(
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'string'
@@ -93,7 +93,7 @@ export class TexBuilder {
     >
   }
 
-  number<O extends TexNumberOptions = Record<string, never>>(
+  number<O extends TexNumberOptions = TexNumberOptions>(
     opts?: O
   ): TexNumber<O['optional'] extends true ? true : false> {
     let base = 'number'
@@ -106,7 +106,7 @@ export class TexBuilder {
     >
   }
 
-  boolean<O extends TexBooleanOptions = Record<string, never>>(
+  boolean<O extends TexBooleanOptions = TexBooleanOptions>(
     opts?: O
   ): TexBoolean<O['optional'] extends true ? true : false> {
     let base = 'boolean'
@@ -117,7 +117,7 @@ export class TexBuilder {
     >
   }
 
-  email<O extends TexStringOptions = Record<string, never>>(
+  email<O extends TexStringOptions = TexStringOptions>(
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'email'
@@ -131,7 +131,9 @@ export class TexBuilder {
   }
 
   uuid<
-    O extends TexStringOptions & { version?: 1 | 4 } = Record<string, never>,
+    O extends TexStringOptions & { version?: 1 | 4 } = TexStringOptions & {
+      version?: 1 | 4
+    },
   >(opts?: O): TexString<O['optional'] extends true ? true : false> {
     let base = 'uuid'
     if (opts?.optional) base += '?'
@@ -141,7 +143,7 @@ export class TexBuilder {
     >
   }
 
-  cuid<O extends TexStringOptions = Record<string, never>>(
+  cuid<O extends TexStringOptions = TexStringOptions>(
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'cuid'
@@ -151,7 +153,7 @@ export class TexBuilder {
     >
   }
 
-  creditCard<O extends TexStringOptions = Record<string, never>>(
+  creditCard<O extends TexStringOptions = TexStringOptions>(
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'creditcard'
@@ -162,7 +164,7 @@ export class TexBuilder {
     >
   }
 
-  password<O extends TexPasswordOptions = Record<string, never>>(
+  password<O extends TexPasswordOptions = TexPasswordOptions>(
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'password'
@@ -178,7 +180,7 @@ export class TexBuilder {
     >
   }
 
-  array<T, O extends TexArrayOptions = Record<string, never>>(
+  array<T, O extends TexArrayOptions = TexArrayOptions>(
     schema: T,
     opts?: O
   ): TexArray<T, O['optional'] extends true ? true : false> {
@@ -194,7 +196,7 @@ export class TexBuilder {
     >
   }
 
-  enum<T extends string, O extends TexEnumOptions = Record<string, never>>(
+  enum<T extends string, O extends TexEnumOptions = TexEnumOptions>(
     values: T[],
     opts?: O
   ): TexEnum<T, O['optional'] extends true ? true : false> {
@@ -209,7 +211,7 @@ export class TexBuilder {
 
   literal<
     T extends string | number | boolean,
-    O extends TexBaseOptions = Record<string, never>,
+    O extends TexBaseOptions = TexBaseOptions,
   >(
     value: T,
     opts?: O
@@ -222,7 +224,7 @@ export class TexBuilder {
     >
   }
 
-  union<T extends any[], O extends TexBaseOptions = Record<string, never>>(
+  union<T extends any[], O extends TexBaseOptions = TexBaseOptions>(
     schemas: T,
     opts?: O
   ): TexUnion<T, O['optional'] extends true ? true : false> {
@@ -236,10 +238,8 @@ export class TexBuilder {
   }
 
   date<
-    O extends TexBaseOptions & { minDate?: string; maxDate?: string } = Record<
-      string,
-      never
-    >,
+    O extends TexBaseOptions & { minDate?: string; maxDate?: string } =
+      TexBaseOptions & { minDate?: string; maxDate?: string },
   >(opts?: O): TexDate<O['optional'] extends true ? true : false> {
     let base = 'date'
     if (opts?.optional) base += '?'
@@ -250,7 +250,7 @@ export class TexBuilder {
     >
   }
 
-  record<T, O extends TexBaseOptions = Record<string, never>>(
+  record<T, O extends TexBaseOptions = TexBaseOptions>(
     schema: T,
     opts?: O
   ): TexRecord<T, O['optional'] extends true ? true : false> {
@@ -263,7 +263,7 @@ export class TexBuilder {
     >
   }
 
-  any<O extends TexBaseOptions = Record<string, never>>(
+  any<O extends TexBaseOptions = TexBaseOptions>(
     opts?: O
   ): TexAny<O['optional'] extends true ? true : false> {
     let base = 'any'
@@ -273,7 +273,7 @@ export class TexBuilder {
     >
   }
 
-  file<O extends TexFileOptions = Record<string, never>>(
+  file<O extends TexFileOptions = TexFileOptions>(
     opts?: O
   ): TexFile<O['optional'] extends true ? true : false> {
     let base = 'file'

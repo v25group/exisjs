@@ -3,7 +3,8 @@ use napi_derive::napi;
 use serde_json::{Value, Map};
 use std::collections::HashMap;
 
-use crate::parser::{parse_tex_rule, TexField, TexType};
+use crate::validation::parser::parse_tex_rule;
+use crate::core::types::{TexField, TexType};
 
 #[napi]
 pub struct TexValidator {
@@ -106,9 +107,13 @@ impl TexValidator {
                 })?;
                 
                 let mut s = s.to_string();
-                if field.trim { s = s.trim().to_string(); }
-                if field.lowercase { s = s.to_lowercase(); }
-                if field.uppercase { s = s.to_uppercase(); }
+                crate::validation::sanitizers::text::apply_text_modifiers(&mut s, field);
+                if field.prevent_sql {
+                    s = crate::validation::sanitizers::security::prevent_sql(s)?;
+                }
+                if field.prevent_traversal {
+                    s = crate::validation::sanitizers::security::prevent_traversal(s)?;
+                }
                 if field.mask {
                     if s.len() > 4 {
                         s = format!("{}****{}", &s[0..2], &s[s.len()-2..]);
@@ -229,6 +234,11 @@ impl TexValidator {
                 if let Some(min) = field.min {
                     if arr.len() < min as usize {
                         return Err(Error::new(Status::InvalidArg, format!("Field '{}' array must have at least {} items", path, min)));
+                    }
+                }
+                if let Some(max) = field.max {
+                    if arr.len() > max as usize {
+                        return Err(Error::new(Status::InvalidArg, format!("Field '{}' array exceeds maximum length of {}", path, max)));
                     }
                 }
                 

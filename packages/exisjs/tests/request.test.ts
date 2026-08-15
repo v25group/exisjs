@@ -440,3 +440,46 @@ filecontent\r
     expect(req.body).toBeUndefined()
   })
 })
+
+describe('Request ID Generation', () => {
+  it('generates a new requestId if not provided', () => {
+    const raw = buildRawRequest({ headers: {} })
+    const res = createMockResponse()
+    const req = new ExisRequest(raw, res).init(raw, res)
+
+    expect(req.requestId).toBeDefined()
+    expect(typeof req.requestId).toBe('string')
+    expect(req.requestId?.length).toBeGreaterThan(10)
+    expect(res.getHeader('X-Request-Id')).toBe(req.requestId)
+  })
+
+  it('uses provided x-request-id header', () => {
+    const raw = buildRawRequest({
+      headers: { 'x-request-id': 'custom-id-123' },
+    })
+    const res = createMockResponse()
+    const req = new ExisRequest(raw, res).init(raw, res)
+
+    expect(req.requestId).toBe('custom-id-123')
+    expect(res.getHeader('X-Request-Id')).toBe('custom-id-123')
+  })
+})
+
+describe('URL Path Normalization', () => {
+  it('collapses multiple slashes', () => {
+    const raw = buildRawRequest({ url: '//api///v1//users//' })
+    const res = createMockResponse()
+    const req = new ExisRequest(raw, res).init(raw, res)
+
+    expect(req.path).toBe('/api/v1/users/')
+  })
+
+  it('does not affect query parameters', () => {
+    const raw = buildRawRequest({ url: '//api//v1//search?query=//test//' })
+    const res = createMockResponse()
+    const req = new ExisRequest(raw, res).init(raw, res)
+
+    expect(req.path).toBe('/api/v1/search')
+    expect(req.query).toEqual({ query: '//test//' })
+  })
+})

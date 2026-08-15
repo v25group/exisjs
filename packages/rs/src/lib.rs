@@ -1,24 +1,21 @@
-#[macro_use]
 extern crate napi_derive;
 
-pub mod types;
-pub mod parser;
-pub mod validators;
-pub mod sanitizers;
-pub mod radix;
-pub mod json;
-pub mod cookie;
-pub mod jwt;
-pub mod etag;
+pub mod auth;
+pub mod cache;
+pub mod core;
+pub mod http;
+pub mod queue;
+pub mod traffic;
+pub mod validation;
 
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 use serde_json::{Value, Map};
 use std::collections::HashMap;
 
-use crate::types::{TexField, TexType};
-use crate::parser::parse_tex_rule;
-use crate::validators::validate_field;
+use crate::core::types::TexField;
+use crate::validation::parser::parse_tex_rule;
+use crate::validation::validators::validate_field;
 
 #[napi]
 pub struct TexValidator {

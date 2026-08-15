@@ -1,7 +1,7 @@
 use napi::bindgen_prelude::*;
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::types::TexField;
+use crate::core::types::TexField;
 use crate::TexValidator;
 
 pub fn validate_enum(val: &Value, values: &Vec<String>, path: &str) -> Result<Value> {
@@ -39,7 +39,7 @@ pub fn validate_array(
     let mut new_arr = Vec::new();
     for (i, item) in arr.iter().enumerate() {
         let item_path = format!("{}[{}]", path, i);
-        let validated_item = crate::validators::validate_field(validator, item, inner_field, &item_path)?;
+        let validated_item = crate::validation::validators::validate_field(validator, item, inner_field, &item_path)?;
         new_arr.push(validated_item);
     }
     

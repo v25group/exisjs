@@ -1,4 +1,4 @@
-use crate::types::TexField;
+use crate::core::types::TexField;
 use napi_derive::napi;
 
 #[napi]

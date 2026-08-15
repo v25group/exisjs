@@ -1,7 +1,7 @@
 {
   "name": "exisjs",
-  "version": "0.5.9",
-  "description": "Zero-configuration full-stack framework with integrated Queue, Cron, MongoDB, and Next.js support",
+  "version": "0.5.10",
+  "description": "High-performance full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
     "exis",

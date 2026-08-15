@@ -4,7 +4,7 @@ pub mod advanced;
 
 use napi::bindgen_prelude::*;
 use serde_json::Value;
-use crate::types::{TexField, TexType};
+use crate::core::types::{TexField, TexType};
 use crate::TexValidator;
 
 pub fn validate_field(

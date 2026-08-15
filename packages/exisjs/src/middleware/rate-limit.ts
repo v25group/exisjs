@@ -27,18 +27,32 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
       return req.ip || 'unknown'
     })
 
-  const hits = new Map<string, { count: number; resetTime: number }>()
+  // Initialize the native rate limiter. Fallback to a JS Map if the native module fails to load in a strange environment.
+  let nativeLimiter: any = null
+  const fallbackHits = new Map<string, { count: number; resetTime: number }>()
 
-  // Sweep memory cache periodically
-  const sweepInterval = setInterval(() => {
-    const now = Date.now()
-    for (const [key, data] of hits.entries()) {
-      if (data.resetTime <= now) {
-        hits.delete(key)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NativeRateLimiter } = require('@exisjs/rs')
+    nativeLimiter = new NativeRateLimiter(windowMs)
+
+    // Sweep native memory periodically via background Rust thread
+    const sweepInterval = setInterval(() => {
+      nativeLimiter.sweep()
+    }, windowMs)
+    sweepInterval.unref()
+  } catch {
+    // Sweep JS memory fallback
+    const sweepInterval = setInterval(() => {
+      const now = Date.now()
+      for (const [key, data] of fallbackHits.entries()) {
+        if (data.resetTime <= now) {
+          fallbackHits.delete(key)
+        }
       }
-    }
-  }, windowMs)
-  sweepInterval.unref() // Don't prevent process from exiting
+    }, windowMs)
+    sweepInterval.unref()
+  }
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -57,13 +71,15 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
           throw new Error('Redis multi failed')
         }
         currentHits = results[0][1] as number
+      } else if (nativeLimiter) {
+        currentHits = nativeLimiter.hit(key)
       } else {
-        let record = hits.get(key)
+        let record = fallbackHits.get(key)
         if (!record || record.resetTime <= now) {
           record = { count: 0, resetTime: now + windowMs }
         }
         record.count += 1
-        hits.set(key, record)
+        fallbackHits.set(key, record)
         currentHits = record.count
       }
 

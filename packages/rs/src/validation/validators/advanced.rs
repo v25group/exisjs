@@ -1,7 +1,7 @@
 use napi::bindgen_prelude::*;
 use serde_json::Value;
-use crate::types::TexField;
-use crate::sanitizers::{text, security};
+use crate::core::types::TexField;
+use crate::validation::sanitizers::{text, security};
 
 pub fn validate_email(val: &Value, field: &TexField, path: &str) -> Result<Value> {
     let s_ref = val.as_str().ok_or_else(|| {

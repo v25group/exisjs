@@ -7,7 +7,7 @@ import { UnauthorizedError, BadRequestError } from 'exisjs/error'
 // Simple in-memory database to store registered users
 interface User {
   id: number
-  name: string
+  name?: string
   email: string
   passwordHash: string
 }
@@ -83,7 +83,7 @@ export default controller({
       // 4. Dispatch background job
       await enqueue('welcome-email', {
         email: body.email,
-        name: body.name,
+        name: body.name || 'Anonymous',
       })
 
       // 5. Sign JWT natively

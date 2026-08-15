@@ -10,27 +10,62 @@ export interface SessionStore {
 }
 
 export class MemorySessionStore implements SessionStore {
-  private sessions = new Map<string, { data: SessionData; expiresAt: number }>()
+  private nativeStore: any
+  private fallbackSessions = new Map<
+    string,
+    { data: SessionData; expiresAt: number }
+  >()
+  private isFallback = false
+
+  constructor() {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { NativeSessionStore } = require('@exisjs/rs')
+      this.nativeStore = new NativeSessionStore()
+    } catch {
+      this.isFallback = true
+    }
+  }
 
   get(sessionId: string): SessionData | null {
-    const session = this.sessions.get(sessionId)
+    if (!this.isFallback) {
+      const dataStr = this.nativeStore.get(sessionId)
+      if (!dataStr) return null
+      try {
+        return JSON.parse(dataStr) as SessionData
+      } catch {
+        return null
+      }
+    }
+
+    const session = this.fallbackSessions.get(sessionId)
     if (!session) return null
     if (session.expiresAt < Date.now()) {
-      this.sessions.delete(sessionId)
+      this.fallbackSessions.delete(sessionId)
       return null
     }
     return session.data
   }
 
   set(sessionId: string, data: SessionData, ttl: number = 86400 * 1000): void {
-    this.sessions.set(sessionId, {
+    if (!this.isFallback) {
+      this.nativeStore.set(sessionId, JSON.stringify(data), ttl)
+      return
+    }
+
+    this.fallbackSessions.set(sessionId, {
       data,
       expiresAt: Date.now() + ttl,
     })
   }
 
   destroy(sessionId: string): void {
-    this.sessions.delete(sessionId)
+    if (!this.isFallback) {
+      this.nativeStore.destroy(sessionId)
+      return
+    }
+
+    this.fallbackSessions.delete(sessionId)
   }
 }
 

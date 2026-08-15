@@ -71,8 +71,25 @@ export function ipFilterMiddleware(options: IpFilterOptions = {}): Handler {
   const message = options.message ?? 'Access Denied'
   const trustProxy = options.trustProxy !== false // default true
 
+  let nativeFilter: any = null
+  let isFallback = false
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NativeIpFilter } = require('@exisjs/rs')
+    nativeFilter = new NativeIpFilter(allowRules, denyRules)
+  } catch {
+    isFallback = true
+  }
+
   return (req: Request, res: Response, next: NextFunction) => {
     const ip = resolveIp(req, trustProxy)
+
+    if (!isFallback && nativeFilter) {
+      if (!nativeFilter.check(ip)) {
+        return next(HttpError.forbidden(message))
+      }
+      return next()
+    }
 
     // If allowlist is defined, IP MUST match at least one rule
     if (allowRules !== null) {

@@ -1,7 +1,7 @@
 use napi::bindgen_prelude::*;
 use serde_json::Value;
-use crate::types::TexField;
-use crate::sanitizers::{text, security, coercion};
+use crate::core::types::TexField;
+use crate::validation::sanitizers::{text, security, coercion};
 
 pub fn validate_string(val: &Value, field: &TexField, path: &str) -> Result<Value> {
     let mut result_val = val.clone();

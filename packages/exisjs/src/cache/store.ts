@@ -95,11 +95,14 @@ export class FileSystemCacheStore implements CacheStore {
 }
 
 export class MemoryCacheStore implements CacheStore {
-  private items = new Map<string, CacheItem>()
-  private tags: Record<string, number> = {}
+  private cache: any
   private isWorker: boolean
 
-  constructor() {
+  constructor(capacity = 10000) {
+    // Dynamically load to avoid issues if native module fails in some environments
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { NativeCache } = require('@exisjs/rs')
+    this.cache = new NativeCache(capacity)
     this.isWorker =
       process.env.__EXIS_CLUSTER_WORKERS !== undefined &&
       process.send !== undefined
@@ -107,23 +110,20 @@ export class MemoryCacheStore implements CacheStore {
     if (this.isWorker) {
       process.on('message', (msg: any) => {
         if (msg && msg.type === 'exis:cache:revalidate' && msg.tag) {
-          // Update the tag from the broadcast
-          this.tags[msg.tag] = msg.timestamp || Date.now()
+          this.cache.revalidateTag(msg.tag)
         }
       })
     }
   }
 
   async get(key: string): Promise<CacheItem | null> {
-    const item = this.items.get(key)
-    if (!item) return null
-
-    for (const tag of item.tags) {
-      if (this.tags[tag] && this.tags[tag] > item.createdAt) {
-        return null
-      }
+    const data = this.cache.get(key)
+    if (!data) return null
+    try {
+      return JSON.parse(data)
+    } catch {
+      return null
     }
-    return item
   }
 
   async set(
@@ -132,24 +132,33 @@ export class MemoryCacheStore implements CacheStore {
     tags: string[],
     _ttlMs?: number
   ): Promise<void> {
-    this.items.set(key, { data, tags, createdAt: Date.now() })
+    try {
+      const dataJson = JSON.stringify(data)
+      this.cache.set(key, dataJson, tags)
+    } catch {
+      // Ignore serialization errors
+    }
   }
 
   async revalidateTag(tag: string): Promise<void> {
-    const timestamp = Date.now()
-    this.tags[tag] = timestamp
+    this.cache.revalidateTag(tag)
 
     if (this.isWorker && process.send) {
       process.send({
         type: 'exis:cache:revalidate',
         tag,
-        timestamp,
       })
     }
   }
 
   async getTags(): Promise<Record<string, number>> {
-    return this.tags
+    try {
+      const data = this.cache.getTags()
+      if (!data) return {}
+      return JSON.parse(data)
+    } catch {
+      return {}
+    }
   }
 }
 
@@ -248,12 +257,79 @@ export class RedisCacheStore implements CacheStore {
   }
 }
 
+export class TieredCacheStore implements CacheStore {
+  constructor(
+    private local: CacheStore,
+    private remote: CacheStore
+  ) {}
+
+  async get(key: string): Promise<CacheItem | null> {
+    const localItem = await this.local.get(key)
+    if (localItem) return localItem
+
+    const remoteItem = await this.remote.get(key)
+    if (remoteItem) {
+      // Background sync back to local cache
+      Promise.resolve(
+        this.local.set(key, remoteItem.data, remoteItem.tags, undefined) // TTL logic omitted for sync simplicity
+      ).catch(() => {
+        /* noop */
+      })
+      return remoteItem
+    }
+    return null
+  }
+
+  async set(
+    key: string,
+    data: any,
+    tags: string[],
+    ttlMs?: number
+  ): Promise<void> {
+    await Promise.all([
+      this.local.set(key, data, tags, ttlMs),
+      this.remote.set(key, data, tags, ttlMs),
+    ])
+  }
+
+  async revalidateTag(tag: string): Promise<void> {
+    await Promise.all([
+      this.local.revalidateTag(tag),
+      this.remote.revalidateTag(tag),
+    ])
+  }
+
+  async getTags(): Promise<Record<string, number>> {
+    // Rely on remote for tags to ensure consistency across fleet
+    return this.remote.getTags()
+  }
+}
+
 // Global active store singleton
 let activeStore: CacheStore | null = null
 
 export function getCacheStore(): CacheStore {
   if (!activeStore) {
-    activeStore = new FileSystemCacheStore(process.cwd())
+    let memoryStore: CacheStore
+    if (process.env.NODE_ENV === 'production') {
+      memoryStore = new MemoryCacheStore(100000)
+    } else {
+      memoryStore = new FileSystemCacheStore(process.cwd())
+    }
+
+    // If REDIS_URL is present, automatically compose a TieredCacheStore
+    if (process.env.REDIS_URL) {
+      // Lazy load redis to avoid cold start overhead if not used
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Redis = require('ioredis')
+      const redisClient = new Redis(process.env.REDIS_URL)
+      activeStore = new TieredCacheStore(
+        memoryStore,
+        new RedisCacheStore(redisClient)
+      )
+    } else {
+      activeStore = memoryStore
+    }
   }
   return activeStore
 }
