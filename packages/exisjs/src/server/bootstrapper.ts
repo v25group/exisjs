@@ -19,30 +19,43 @@ export class ServerBootstrapper {
   public _bunApp: ReturnType<typeof createBunApp> | null = null
   private bunServerInstance: any = null
 
+  public _useUws = false
+  public _uwsApp: any = null
+  private uwsListenToken: any = null
+
   constructor(app: App<any>) {
     this.app = app
 
-    // Auto-detect Bun backend
-    if (
-      app.explicitOptions.server === 'bun' ||
-      (app.explicitOptions.server !== 'node' &&
+    const requestedServer = app.explicitOptions.server
+
+    if (requestedServer === 'uws') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        require('uWebSockets.js')
+        this._useUws = true
+      } catch {
+        app.log.warn(
+          "server: 'uws' was requested, but uWebSockets.js is not available. Falling back to the native Node.js HTTP server."
+        )
+        this.server = this._initServer()
+      }
+    } else if (
+      requestedServer === 'bun' ||
+      (requestedServer !== 'node' &&
         typeof Bun !== 'undefined' &&
         app.options.env !== 'test')
     ) {
       if (typeof Bun !== 'undefined') {
         this._useBun = true
-        // Don't init Node server - we'll create the Bun app at listen() time
       } else {
-        if (app.explicitOptions.server === 'bun') {
+        if (requestedServer === 'bun') {
           app.log.warn(
             "server: 'bun' was requested, but Bun is not available. Falling back to the native Node.js HTTP server."
           )
         }
-        this._useBun = false
         this.server = this._initServer()
       }
     } else {
-      this._useBun = false
       this.server = this._initServer()
     }
   }
@@ -132,6 +145,53 @@ export class ServerBootstrapper {
     } else {
       port = this.app.options.port!
       host = this.app.options.host!
+    }
+
+    // --- uWebSockets.js listen path ---
+    if (this._useUws) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createUwsApp } = require('./uws-adapter')
+      this._uwsApp = createUwsApp(
+        this.app.handle.bind(this.app) as any,
+        this.app.wsOrchestrator.handleUwsUpgrade.bind(this.app.wsOrchestrator),
+        this.app.options.ssl as any
+      )
+
+      this._uwsApp.listen(port, host, async (tokenInfo: any) => {
+        if (!tokenInfo) {
+          console.error(
+            `\n\x1b[31m? Port ${port} is already in use (uWS).\x1b[0m`
+          )
+          process.exit(1)
+        }
+        this.uwsListenToken = tokenInfo.token
+
+        const address = { port: tokenInfo.port, host }
+
+        if (this.app.hotReloader) {
+          this.app.hotReloader.stop()
+        }
+
+        if (onListen) {
+          onListen(address)
+        } else {
+          if (!process.env.__EXIS_DEV_SERVER && !process.env.__EXIS_CLI) {
+            const url = `http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`
+            this.app.log.info(
+              { url, env: this.app.options.env, backend: 'uws' },
+              `Server running at ${url} (uWS)`
+            )
+          }
+        }
+
+        for (const hook of this.app.hooks.ready) {
+          await hook()
+        }
+
+        if (callback) callback()
+      })
+
+      return this.server
     }
 
     // --- Bun listen path ---
@@ -446,6 +506,10 @@ export class ServerBootstrapper {
       if (this._useBun && this.bunServerInstance) {
         this.bunServerInstance.stop(true)
         this.bunServerInstance = null
+        cleanupAndFinish()
+      } else if (this._useUws && this._uwsApp && this.uwsListenToken) {
+        this._uwsApp.close(this.uwsListenToken)
+        this.uwsListenToken = null
         cleanupAndFinish()
       } else {
         this.server.close((err) => {

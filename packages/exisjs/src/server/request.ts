@@ -569,7 +569,25 @@ export class ExisRequest<
     return this.body as unknown as T
   }
 
-  private _parseBody(): Promise<void> {
+  private async _parseBody(): Promise<void> {
+    const contentType = this.get('content-type') ?? ''
+    if (
+      ['GET', 'HEAD', 'OPTIONS'].includes(this.method) ||
+      contentType.includes('multipart/form-data')
+    ) {
+      return
+    }
+
+    if (typeof (this.raw as any).readBody === 'function') {
+      const buf = await (this.raw as any).readBody(this.bodyLimit)
+      if (buf) {
+        this.rawBody = buf.toString('utf8')
+      } else {
+        this.rawBody = ''
+      }
+      return
+    }
+
     return new Promise((resolve, reject) => {
       let settled = false
 
@@ -584,15 +602,6 @@ export class ExisRequest<
 
         if (err) reject(err)
         else resolve()
-      }
-
-      const contentType = this.get('content-type') ?? ''
-      if (
-        ['GET', 'HEAD', 'OPTIONS'].includes(this.method) ||
-        contentType.includes('multipart/form-data')
-      ) {
-        done()
-        return
       }
 
       const contentLengthStr = this.get('content-length')
@@ -613,7 +622,7 @@ export class ExisRequest<
         if (settled) return
         size += chunk.length
         if (size > this.bodyLimit) {
-          this.raw.destroy()
+          this.raw.destroy?.()
           done(
             new Error(`Request body exceeds limit of ${this.bodyLimit} bytes`)
           )
@@ -625,7 +634,7 @@ export class ExisRequest<
       this.raw.on('error', done)
       this.raw.on('aborted', () => done(new Error('Request aborted by client')))
       this.raw.on('close', () => {
-        if (!settled && !this.raw.complete)
+        if (!settled && !(this.raw as any).complete)
           done(new Error('Request closed prematurely'))
       })
 

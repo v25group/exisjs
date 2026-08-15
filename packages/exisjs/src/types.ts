@@ -287,7 +287,7 @@ export interface ExisConfig {
    * 'bun' uses Bun's native HTTP module for significantly higher throughput.
    * 'auto' will use Bun if detected, otherwise Node.
    */
-  server?: 'auto' | 'node' | 'bun'
+  server?: 'auto' | 'node' | 'bun' | 'uws'
   queue?: import('./queue/types').QueueConfig
   plugins?: ExisPlugin[]
   test?: {

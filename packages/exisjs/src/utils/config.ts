@@ -45,7 +45,7 @@ export const defaultConfig: ResolvedConfig = {
   env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'development',
   compression: false,
   keepAlive: false,
-  server: 'auto' as 'auto' | 'node' | 'bun', // Auto-detect backend
+  server: 'auto' as 'auto' | 'node' | 'bun' | 'uws', // Auto-detect backend
   queue: undefined as any,
   test: undefined as any,
   plugins: [],

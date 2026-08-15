@@ -6,6 +6,7 @@ const appDef = exis({
   helmet: false, // Fastify/Hono don't run helmet by default
   cors: false, // Fastify/Hono don't run cors by default
   server: 'node',
+  env: 'production',
   async onStart(app) {
     app.get('/api/health', (req, res) => {
       res.json({ status: 'ok', message: 'Hello from Exis!' })

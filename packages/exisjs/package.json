@@ -260,6 +260,7 @@
     "mitata": "^1.0.34"
   },
   "optionalDependencies": {
-    "ioredis": "^5.11.1"
+    "ioredis": "^5.11.1",
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0"
   }
 }

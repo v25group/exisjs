@@ -66,17 +66,33 @@ export class BunIncomingMessage {
     }
   }
 
+  private _readBodyPromise?: Promise<Buffer>
+
   private async consumeBody(req: any) {
-    try {
-      const arrayBuffer = await req.arrayBuffer()
-      if (arrayBuffer.byteLength > 0) {
-        this.emit('data', Buffer.from(arrayBuffer))
-      }
-    } catch (e) {
-      this.emit('error', e)
-    } finally {
-      this.emit('end')
-    }
+    this._readBodyPromise = new Promise((resolve, reject) => {
+      req
+        .arrayBuffer()
+        .then((arrayBuffer: ArrayBuffer) => {
+          let buf = Buffer.alloc(0)
+          if (arrayBuffer.byteLength > 0) {
+            buf = Buffer.from(arrayBuffer)
+            this.emit('data', buf)
+          }
+          resolve(buf)
+        })
+        .catch((e: any) => {
+          this.emit('error', e)
+          reject(e)
+        })
+        .finally(() => {
+          this._bodyEnded = true
+          this.emit('end')
+        })
+    })
+  }
+
+  readBody(): Promise<Buffer> | undefined {
+    return this._readBodyPromise
   }
 }
 

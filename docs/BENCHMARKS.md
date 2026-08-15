@@ -18,10 +18,10 @@
 
 | Framework | Req/Sec (median) | Latency avg (ms) | Latency p50 (ms) | Latency p99 (ms) | Errors | Server backend |
 |---|---|---|---|---|---|---|
-| Express | 25033.46 | 3.35 | 3.00 | 4.00 | 0 | n/a |
-| Fastify | 41560.73 | 2.05 | 2.00 | 3.00 | 0 | n/a |
-| Hono | 43143.28 | 2.02 | 2.00 | 2.00 | 0 | n/a |
-| Exis JS | 32088.00 | 2.55 | 2.00 | 4.00 | 0 | node |
+| Express | 20036.80 | 4.43 | 4.00 | 7.00 | 0 | n/a |
+| Fastify | 32799.28 | 2.53 | 2.00 | 4.00 | 0 | n/a |
+| Hono | 34264.00 | 2.33 | 2.00 | 4.00 | 0 | n/a |
+| Exis JS | 29128.00 | 3.04 | 3.00 | 5.00 | 0 | node |
 
 ### Handler Parity Note
 

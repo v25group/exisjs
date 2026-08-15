@@ -214,4 +214,124 @@ export class WsOrchestrator {
       resolve(new Response('WebSocket upgrade failed', { status: 400 }))
     })
   }
+
+  // --- uWebSockets.js WebSocket Upgrade Handler -------------------------------
+
+  public async handleUwsUpgrade(
+    uwsReq: any,
+    res: any,
+    context: any
+  ): Promise<void> {
+    this.app.applyBuiltins()
+
+    const reqPath = (uwsReq.url || '').split('?')[0]
+    const matched = this.app.getRouter().match('WS', reqPath)
+
+    if (!matched) {
+      res.writeStatus('404 Not Found')
+      res.end()
+      return
+    }
+
+    const reqMock = {
+      method: 'WS',
+      url: uwsReq.url,
+      headers: uwsReq.headers,
+      params: matched.params,
+      log: this.app.log,
+    }
+
+    let responseSent = false
+    let responseStatus = 200
+
+    const resMock = {
+      headersSent: false,
+      statusCode: 200,
+      status(code: number) {
+        this.statusCode = code
+        return this
+      },
+      send(body: string) {
+        responseSent = true
+        responseStatus = this.statusCode
+        res.cork(() => {
+          res.writeStatus(String(responseStatus))
+          res.end(body)
+        })
+      },
+      json(body: any) {
+        this.send(JSON.stringify(body))
+      },
+    }
+
+    const pipeline: Handler[] = [
+      ...this.app.globalMiddleware,
+      async (req, res, next) => {
+        const routeHandlers = matched.route.handlers.slice(0, -1)
+        runHandlers(routeHandlers, req as any, res as any, (err) => {
+          if (err) return next(err)
+          next()
+        })
+      },
+    ]
+
+    let upgraded = false
+
+    res.onAborted(() => {
+      // Aborted before upgrade
+    })
+
+    await runHandlers(pipeline, reqMock as any, resMock as any, async (err) => {
+      if (err) {
+        this.app.log.error(
+          { err },
+          'Error during uWS WebSocket upgrade middleware'
+        )
+        res.cork(() => {
+          res.writeStatus('500 Internal Server Error')
+          res.end()
+        })
+        return
+      }
+
+      if (responseSent || resMock.headersSent) {
+        return
+      }
+
+      upgraded = true
+
+      const exisWs = new ExisWebSocket(
+        null as any,
+        reqMock as any,
+        this.app.wsServer
+      )
+
+      res.upgrade(
+        {
+          exisWs,
+        },
+        uwsReq.headers['sec-websocket-key'],
+        uwsReq.headers['sec-websocket-protocol'],
+        uwsReq.headers['sec-websocket-extensions'],
+        context
+      )
+
+      this.app.wsServer.track(exisWs)
+      ;(reqMock as any).ws = exisWs
+
+      const finalHandler =
+        matched.route.handlers[matched.route.handlers.length - 1]
+      Promise.resolve(
+        finalHandler(reqMock as any, resMock as any, () => {
+          /* noop */
+        })
+      ).catch((err) => {
+        this.app.log.error({ err }, 'Error in uWS WebSocket handler')
+      })
+    })
+
+    if (!upgraded && !responseSent) {
+      // Something failed silently
+    }
+  }
 }
