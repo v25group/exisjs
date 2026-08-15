@@ -49,8 +49,10 @@ jobs:
         working-directory: packages/rs
         shell: bash
         run: |
-          if [[ "${{ matrix.settings.target }}" == "aarch64-unknown-linux-"* ]]; then
+          if [[ "${{ matrix.settings.target }}" == "aarch64-unknown-linux-gnu" ]]; then
             npx napi build --platform --release --target ${{ matrix.settings.target }} --use-napi-cross
+          elif [[ "${{ matrix.settings.target }}" == "aarch64-unknown-linux-musl" ]]; then
+            npx napi build --platform --release --target ${{ matrix.settings.target }} --cross-compile
           elif [[ "${{ matrix.settings.target }}" == "aarch64-pc-windows-msvc" ]]; then
             npx napi build --platform --release --target ${{ matrix.settings.target }} --cross-compile
           else
