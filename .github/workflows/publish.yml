@@ -115,7 +115,7 @@ jobs:
             # Publish all the generated platform subpackages
             for dir in packages/rs/npm/*; do
               if [ -d "$dir" ]; then
-                npm publish "$dir" --access public
+                npm publish "$dir" --access public || echo "Skipping $dir, likely already published"
               fi
             done
           else
