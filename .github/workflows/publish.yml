@@ -105,18 +105,6 @@ jobs:
       - name: Run Tests
         run: npm run test
 
-      - name: Publish exisjs
-        run: |
-          VERSION=$(node -p "require('./packages/exisjs/package.json').version")
-          EXISTS=$(npm view exisjs@$VERSION version 2>/dev/null || echo "")
-          if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/exisjs --access public
-          else
-            echo "exisjs@$VERSION is already published. Skipping."
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish @exisjs/rs
         run: |
           VERSION=$(node -p "require('./packages/rs/package.json').version")
@@ -132,6 +120,19 @@ jobs:
             done
           else
             echo "@exisjs/rs@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish exisjs
+        run: |
+          VERSION=$(node -p "require('./packages/exisjs/package.json').version")
+          EXISTS=$(npm view exisjs@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/exisjs --access public
+          else
+            echo "exisjs@$VERSION is already published. Skipping."
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
