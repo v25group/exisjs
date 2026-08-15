@@ -97,8 +97,7 @@ jobs:
         working-directory: packages/rs
         run: |
           npx napi create-npm-dirs
-          cp artifacts/*.node ./
-          npx napi prepublish -t npm
+          npx napi artifacts
 
       - name: Build Workspace
         run: npm run build
@@ -124,6 +123,13 @@ jobs:
           EXISTS=$(npm view @exisjs/rs@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
             npm publish --workspace=packages/rs --access public
+            
+            # Publish all the generated platform subpackages
+            for dir in packages/rs/npm/*; do
+              if [ -d "$dir" ]; then
+                npm publish "$dir" --access public
+              fi
+            done
           else
             echo "@exisjs/rs@$VERSION is already published. Skipping."
           fi
