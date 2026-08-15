@@ -45,6 +45,11 @@ jobs:
           targets: ${{ matrix.settings.target }}
       - name: Install Dependencies
         run: npm install
+      - name: Setup Zig
+        if: ${{ matrix.settings.target == 'aarch64-unknown-linux-musl' || matrix.settings.target == 'aarch64-pc-windows-msvc' }}
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
       - name: Build Native
         working-directory: packages/rs
         shell: bash
