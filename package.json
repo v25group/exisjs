@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@hono/node-server": "^2.0.12",
+    "@hono/node-server": "^2.1.0",
     "@napi-rs/cli": "^3.8.6",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
