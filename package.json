@@ -54,7 +54,7 @@
     "find-my-way": "^9.7.0",
     "hono": "^4.12.32",
     "husky": "^9.1.7",
-    "lint-staged": "^17.2.0",
+    "lint-staged": "^17.3.0",
     "mitata": "^1.0.34",
     "prettier": "^3.9.6",
     "tsx": "^4.23.1",
