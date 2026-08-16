@@ -16,6 +16,7 @@ import {
   readmeTemplate,
   eslintTemplate,
   rootRouteTemplate,
+  agentsTemplate,
 } from './templates.js'
 
 const c = {
@@ -222,6 +223,18 @@ async function run() {
     env,
   })
 
+  // Initialize Git Repository
+  try {
+    cp.execSync('git init', { cwd: targetDir, stdio: 'ignore' })
+    cp.execSync('git add .', { cwd: targetDir, stdio: 'ignore' })
+    cp.execSync('git commit -m "Initial commit from Create ExisJS"', {
+      cwd: targetDir,
+      stdio: 'ignore',
+    })
+  } catch {
+    // silently fail
+  }
+
   console.log(`
 ${c.green}${c.bold}✓ Done! Your Exis JS app is ready.${c.reset}
 
@@ -277,6 +290,8 @@ function writeTemplates(
   if (useEslint) {
     write(dir, 'eslint.config.mjs', eslintTemplate(useTypeScript))
   }
+
+  write(dir, '.agents/rules/AGENTS.md', agentsTemplate())
 }
 
 function write(dir: string, file: string, content: string): void {

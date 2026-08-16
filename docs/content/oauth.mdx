@@ -1,0 +1,179 @@
+---
+title: "OAuth Provider System"
+description: "ExisJS includes a fully-featured, built-in OAuth 2.0 and OpenID Connect system with native providers for Google, GitHub, Microsoft, Discord, and Facebook."
+---
+
+# OAuth Provider System
+
+Implementing secure, compliant OAuth flows is notoriously difficult. ExisJS solves this by providing a unified, built-in OAuth system. It handles PKCE (Proof Key for Code Exchange), state generation for CSRF protection, and normalizes user profiles automatically.
+
+<Info title="Functional vs OOP">
+ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP Paradigm** (for dependency injection and decorators). The OAuth middleware helpers can easily be used in either paradigm.
+</Info>
+
+## Configuration
+
+Configure your providers globally using the `OAuthManager`. You typically do this once in your application entry point (`server.ts`).
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { OAuth } from 'exisjs/auth'
+
+export default exis({
+  async onStart(app) {
+    OAuth.configure({
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        redirectUri: 'http://localhost:3000/auth/google/callback',
+      },
+      github: {
+        clientId: process.env.GITHUB_CLIENT_ID!,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+        redirectUri: 'http://localhost:3000/auth/github/callback',
+      },
+    })
+  }
+})
+```
+
+## Routing & Middleware
+
+ExisJS provides Express-style middleware (`oauthRedirect` and `oauthCallback`) that makes securing your routes trivial. It securely stores state/PKCE verifiers in sessions or signed cookies.
+
+Here is how you handle the login flow using both paradigms.
+
+#### Functional Paradigm
+In functional routes, you wrap your handlers using standard middleware chaining techniques.
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
+import { oauthRedirect, oauthCallback } from 'exisjs/auth'
+
+export default controller({
+  // 1. Redirect user to Google
+  login: route.get('/google', {
+    middlewares: [oauthRedirect('google')],
+    handle() {
+      // Never reached, the middleware handles the redirect
+    }
+  }),
+
+  // 2. Handle the callback from Google
+  callback: route.get('/google/callback', {
+    middlewares: [
+      oauthCallback('google', {
+        onSuccess: async (req, res, profile, tokens) => {
+          // profile contains the normalized user data
+          console.log(profile.email, profile.name)
+          
+          // Log the user into your system
+          req.session.userId = profile.id
+          res.redirect('/dashboard')
+        },
+        onError: async (req, res, error) => {
+          res.redirect(`/login?error=${encodeURIComponent(error.message)}`)
+        }
+      })
+    ],
+    handle() {
+      // Handled by the onSuccess callback above
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+In OOP routes, you can use the `@Use()` decorator to apply the exact same middleware helpers.
+
+```typescript filename="src/http/auth/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { oauthRedirect, oauthCallback } from 'exisjs/auth'
+
+@Controller()
+export default class AuthController {
+  
+  // 1. Redirect user to Google
+  @Get('/google')
+  @Use(oauthRedirect('google'))
+  login() {
+    // Never reached, the middleware handles the redirect
+  }
+
+  // 2. Handle the callback from Google
+  @Get('/google/callback')
+  @Use(
+    oauthCallback('google', {
+      onSuccess: async (req, res, profile, tokens) => {
+        // Log the user into your system
+        req.session.userId = profile.id
+        res.redirect('/dashboard')
+      },
+      onError: async (req, res, error) => {
+        res.redirect(`/login?error=${encodeURIComponent(error.message)}`)
+      }
+    })
+  )
+  callback() {
+    // Handled by the onSuccess callback above
+  }
+}
+```
+
+## Route Guards
+
+Once authenticated, use the built-in `requireAuth` middleware to protect your endpoints.
+
+#### Functional Paradigm
+```typescript filename="src/http/dashboard/route.ts"
+import { controller, route } from 'exisjs/router'
+import { requireAuth } from 'exisjs/auth'
+
+export default controller({
+  view: route.get('/', {
+    middlewares: [requireAuth({ redirectTo: '/login' })],
+    handle({ req }) {
+      return { message: 'Welcome to the secure dashboard!' }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/dashboard/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { requireAuth } from 'exisjs/auth'
+
+@Controller()
+@Use(requireAuth({ redirectTo: '/login' })) // Protects the whole controller!
+export default class DashboardController {
+  @Get('/')
+  view() {
+    return { message: 'Welcome to the secure dashboard!' }
+  }
+}
+```
+
+## Creating Custom Providers
+
+If you need to connect to an internal identity provider or a service not included by default, use the generic custom provider adapter anywhere in your `server.ts` configuration:
+
+```typescript
+OAuth.custom({
+  name: 'keycloak',
+  authUrl: 'https://keycloak.example.com/auth',
+  tokenUrl: 'https://keycloak.example.com/token',
+  userInfoUrl: 'https://keycloak.example.com/userinfo',
+  clientId: process.env.KC_CLIENT_ID!,
+  clientSecret: process.env.KC_CLIENT_SECRET!,
+  redirectUri: 'http://localhost:3000/auth/keycloak/callback',
+  scopes: ['openid', 'profile', 'email'],
+  
+  // Optionally map the raw response to standard profile fields
+  mapProfile: (raw) => ({
+    id: raw.sub,
+    email: raw.email,
+    name: raw.preferred_username,
+  }),
+})
+```

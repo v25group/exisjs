@@ -18,6 +18,19 @@ export {
   CircuitState,
 } from './utils/circuit-breaker'
 
+// ─── Database ─────────────────────────────────────────────────────────────────
+export { db, createDatabase, DatabaseManager } from './database'
+export { Migrator } from './database/migration'
+export { QueryBuilder } from './database/query-builder'
+export type {
+  DatabaseConfig,
+  DatabaseDialect,
+  DatabaseAdapter,
+  QueryResult,
+  ExecuteResult,
+  Transaction,
+} from './database/types'
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type {
   ExisConfig,

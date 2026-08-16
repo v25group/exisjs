@@ -331,7 +331,6 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       for (const line of lines) {
         if (!line) continue
         if (line.includes('Found 0 errors')) {
-          console.log(`\n${c.green}✓ type-check passed.${c.reset}`)
           tscErrors = []
           // Type errors are cleared — close the fallback so the real server can serve
           closeFallbackServer()

@@ -1,0 +1,209 @@
+---
+title: "Database Layer"
+description: "ExisJS includes a built-in, high-performance database layer with native support for PostgreSQL, MySQL, SQLite, and MongoDB, plus a powerful query builder and migration system."
+---
+
+# Database Layer
+
+Unlike other Node.js frameworks that rely entirely on third-party ORMs like Prisma or TypeORM, **ExisJS ships with a fully integrated, high-performance Database Layer.** 
+
+This provides a massive advantage in developer experience and reliability, as connections, query generation, and migrations are orchestrated directly by the framework.
+
+<Info title="Functional vs OOP">
+ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP Paradigm** (for dependency injection and decorators). The database layer is seamlessly accessible through both approaches.
+</Info>
+
+## Setup and Connection
+
+You configure your database connections directly in your application entry point (`server.ts`). ExisJS manages their lifecycle (including graceful shutdown) automatically.
+
+#### Functional Paradigm
+```typescript filename="src/http/server.ts"
+import { exis, db, createDatabase } from 'exisjs'
+
+export default exis({
+  async onStart(app) {
+    const database = createDatabase({
+      dialect: 'postgres',
+      url: process.env.DATABASE_URL,
+    })
+    
+    // Connect on boot
+    await database.connect()
+  }
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import { createDatabase } from 'exisjs'
+
+@Server()
+export default class RootServer {
+  async onStart(app: App) {
+    const database = createDatabase({
+      dialect: 'postgres',
+      url: process.env.DATABASE_URL,
+    })
+    
+    // Connect on boot
+    await database.connect()
+  }
+}
+```
+
+## Using the Query Builder in Routes
+
+ExisJS includes a powerful, chainable Query Builder that automatically generates the correct, parameterized SQL for your chosen dialect. Here is how you use it in your route controllers or services.
+
+#### Functional Paradigm
+In functional routes, you can easily use the global `db` object to fetch data directly, or use the `resolve` function to inject a dedicated Service that wraps the database calls.
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { db } from 'exisjs'
+
+export default controller({
+  list: route.get('/', {
+    async handle() {
+      // Query multiple rows
+      const users = await db.table('users')
+        .select('id', 'name', 'email')
+        .where('role', '=', 'admin')
+        .orderBy('created_at', 'desc')
+        .limit(10)
+        .rows()
+        
+      return users
+    }
+  }),
+
+  create: route.post('/', {
+    async handle({ req }) {
+      const { name, email } = req.body
+      
+      // Insert a new row
+      const result = await db.table('users').insert({
+        name,
+        email,
+        role: 'user'
+      }).execute()
+      
+      return { id: result.insertId, name, email }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+In the OOP paradigm, it is highly recommended to abstract database calls into `@Injectable()` services and inject them into your `@Controller()`.
+
+```typescript filename="src/http/users/service.ts"
+import { Injectable } from 'exisjs/decorators'
+import { db } from 'exisjs'
+
+@Injectable()
+export class UsersService {
+  async getAdmins() {
+    return await db.table('users')
+      .select('id', 'name', 'email')
+      .where('role', '=', 'admin')
+      .orderBy('created_at', 'desc')
+      .limit(10)
+      .rows()
+  }
+
+  async createUser(data: { name: string, email: string }) {
+    const result = await db.table('users').insert({
+      ...data,
+      role: 'user'
+    }).execute()
+    
+    return { id: result.insertId, ...data }
+  }
+}
+```
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Post, Body } from 'exisjs/decorators'
+import { UsersService } from './service'
+
+@Controller()
+export default class UsersController {
+  // ExisJS automatically injects the service!
+  constructor(private usersService: UsersService) {}
+
+  @Get('/')
+  async list() {
+    return await this.usersService.getAdmins()
+  }
+
+  @Post('/')
+  async create(@Body() body: any) {
+    return await this.usersService.createUser(body)
+  }
+}
+```
+
+## Transactions
+
+ExisJS makes it trivial to perform safe database transactions. If the callback throws an error, the transaction is automatically rolled back.
+
+```typescript
+import { db } from 'exisjs'
+
+await db.transaction(async (tx) => {
+  // Deduct from inventory
+  await tx.execute(
+    'UPDATE inventory SET stock = stock - ? WHERE id = ?', 
+    [1, itemId]
+  )
+  
+  // Create order record
+  await tx.execute(
+    'INSERT INTO orders (user_id, item_id) VALUES (?, ?)', 
+    [userId, itemId]
+  )
+})
+```
+
+## Built-in Migrations
+
+Managing database schema changes is critical. ExisJS includes a built-in migration system that tracks applied migrations in your database automatically.
+
+```typescript
+import { db } from 'exisjs'
+
+const migrator = db.getMigrator({ directory: './migrations' })
+
+// Apply all pending migrations
+await migrator.up()
+
+// Rollback the last batch of migrations
+await migrator.down()
+
+// Check the status of all migrations
+const status = await migrator.status()
+```
+
+### Creating a Migration
+A migration file simply exports `up` and `down` methods. You write raw SQL inside them for ultimate control.
+
+```typescript filename="migrations/001_create_users.ts"
+module.exports = {
+  name: '001_create_users',
+  async up(db) {
+    await db.execute(`
+      CREATE TABLE users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL
+      )
+    `)
+  },
+  async down(db) {
+    await db.execute('DROP TABLE users')
+  },
+}
+```

@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "description": "High-performance full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -159,6 +159,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postbuild": "node -e \"require('fs').cpSync('../../docs', './dist/docs', {recursive:true, force:true})\"",
     "dev": "tsc --watch",
     "test": "cross-env NODE_ENV=test tsx --test --test-reporter=./src/testing/reporter.mts tests/**/*.test.ts"
   },
@@ -200,6 +201,7 @@
     "@aws-sdk/client-s3": "*",
     "@prisma/client": "*",
     "@supabase/supabase-js": "*",
+    "better-sqlite3": "*",
     "drizzle-orm": "*",
     "ioredis": "*",
     "mongodb": "*",
@@ -210,6 +212,9 @@
     "resend": "*"
   },
   "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
     "drizzle-orm": {
       "optional": true
     },
@@ -247,6 +252,7 @@
   "devDependencies": {
     "@types/accepts": "^1.3.7",
     "@types/autocannon": "^7.12.7",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/bun": "^1.3.14",
     "@types/busboy": "^1.5.4",
     "@types/content-disposition": "^0.5.9",
@@ -255,6 +261,7 @@
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
+    "better-sqlite3": "^13.0.3",
     "find-my-way": "^9.7.0",
     "ioredis-mock": "^8.13.1",
     "mitata": "^1.0.34"

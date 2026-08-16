@@ -363,7 +363,7 @@ export class ServerBootstrapper {
         ? `http://${localIp}:${port}`
         : 'use --host 0.0.0.0 to expose'
 
-    const readyMs = 125
+    const readyMs = Math.round(process.uptime() * 1000)
     const displayEnv =
       this.app.options.env || process.env.NODE_ENV || 'development'
     const workerCount = process.env.__EXIS_CLUSTER_WORKERS

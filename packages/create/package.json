@@ -1,7 +1,7 @@
 {
   "name": "@exisjs/create",
-  "version": "0.5.10",
-  "description": "Create Exis App CLI",
+  "version": "0.5.11",
+  "description": "Scaffolding tool for ExisJS applications",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
     "exis",
