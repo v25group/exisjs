@@ -44,7 +44,7 @@
     "@napi-rs/cli": "^3.8.6",
     "@types/express": "^5.0.6",
     "@types/node": "^26.1.1",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.65.0",
     "benchmark": "^2.1.4",
     "cross-env": "^10.1.0",
