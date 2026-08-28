@@ -13,7 +13,7 @@
   "dependencies": {
     "cloudinary": "^2.10.0",
     "exisjs": "*",
-    "mongoose": "^8.24.2"
+    "mongoose": "^8.24.4"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.1",
