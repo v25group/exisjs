@@ -1,0 +1,97 @@
+---
+title: 'AI Assistants (MCP)'
+description: 'Connect AI agents like Claude and Cursor directly to your ExisJS projects.'
+---
+
+# ExisJS MCP Server
+
+The **Model Context Protocol (MCP)** is an open standard that allows AI coding assistants (like Claude, Cursor, and Google Antigravity) to access external tools and data sources.
+
+ExisJS provides an official MCP Server (`@exisjs/mcp`) that acts as a bridge between your AI agent and your local ExisJS workspace. It empowers the AI with the ability to dynamically read your framework documentation offline and flawlessly scaffold idiomatic ExisJS boilerplate code (routes, plugins, gateways, configurations).
+
+<Info title="Why use the MCP?">
+  Without the MCP, AI agents often hallucinate Express or NestJS syntax when asked to write ExisJS code because ExisJS might not be fully present in their training data. By using the ExisJS MCP, the AI reads the exact documentation for your installed version and uses strict generators to scaffold perfect code.
+</Info>
+
+## Prerequisites
+
+- **Node.js (version >= 20.19)** installed on your machine.
+- An AI Coding Assistant that supports the Model Context Protocol (e.g., Claude Code, Cursor, Windsurf, or Google Antigravity).
+
+## Installation
+
+The easiest way to install the MCP server across all your coding agents is by using the `add-mcp` CLI:
+
+<div className="my-6 max-w-lg">
+  <CopyCommand command="npx add-mcp @exisjs/mcp@latest" />
+</div>
+
+Add `-y` to skip the prompt and install to all detected agents. Add `-g` to install globally across all projects.
+
+### Manual Configuration
+
+If you prefer to configure your AI client manually (or are using an unsupported client), you can add the following JSON to your client's MCP settings file:
+
+```json filename="mcp.json"
+{
+  "mcpServers": {
+    "exisjs-mcp": {
+      "command": "npx",
+      "args": ["-y", "@exisjs/mcp@latest"]
+    }
+  }
+}
+```
+
+<details>
+<summary className="cursor-pointer font-medium text-foreground py-2">Claude Code Setup</summary>
+
+Run the following command in your terminal:
+```bash
+claude mcp add exisjs-mcp npx @exisjs/mcp@latest
+```
+</details>
+
+<details>
+<summary className="cursor-pointer font-medium text-foreground py-2">Cursor Setup</summary>
+
+1. Open Cursor Settings.
+2. Navigate to **Features > MCP**.
+3. Click **+ Add New MCP Server**.
+4. Type: `exisjs-mcp`
+5. Command: `npx -y @exisjs/mcp@latest`
+</details>
+
+## Available Tools
+
+Once the MCP server is installed and running, your AI assistant automatically gains access to the following capabilities:
+
+### 1. Documentation Readers
+
+ExisJS ships its official markdown documentation directly inside the npm package. The MCP server reads these files locally from your `node_modules`.
+
+- **`exis_list_local_docs`**: Recursively scans and lists all available ExisJS documentation topics.
+- **`exis_read_local_docs`**: Reads the exact markdown file requested by the AI so it can learn ExisJS best practices.
+
+*Because this runs locally, the AI reads the exact documentation that matches the ExisJS version installed in your project, preventing version mismatches!*
+
+### 2. Code Generators
+
+When you ask the AI to build a new feature, it will use these strict scaffolding tools to generate the correct file structures instead of guessing the syntax.
+
+- **`exis_generate_route`**: Scaffolds an idiomatic ExisJS route controller (Functional or OOP).
+- **`exis_generate_plugin`**: Scaffolds a hybrid ExisJS plugin module.
+- **`exis_generate_gateway`**: Scaffolds a WebSockets gateway.
+- **`exis_generate_config`**: Scaffolds the strict `exis.config.ts` configuration system.
+
+## Usage Example
+
+Once configured, simply open your ExisJS project in your AI IDE and ask it a question! 
+
+Try asking:
+> *"I want to create a new WebSockets gateway in ExisJS. Can you read the docs on how Gateways work and then scaffold one for me?"*
+
+The AI will:
+1. Use `exis_list_local_docs` to find the documentation on Gateways.
+2. Use `exis_read_local_docs` to learn the exact syntax for your ExisJS version.
+3. Use `exis_generate_gateway` to safely write the boilerplate into your codebase.

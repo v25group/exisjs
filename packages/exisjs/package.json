@@ -268,6 +268,6 @@
   },
   "optionalDependencies": {
     "ioredis": "^5.11.1",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0"
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
   }
 }
