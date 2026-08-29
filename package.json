@@ -30,7 +30,12 @@
     "release": "npm run build && npm publish --workspace=packages/exisjs --workspace=packages/create --workspace=packages/fetch --access public",
     "bench": "tsx bench/basic.ts",
     "bench:compare": "tsx bench/compare.ts",
-    "bench:router": "tsx bench/router.ts"
+    "bench:router": "tsx bench/router.ts",
+    "profile:cpu:node": "clinic flame -- tsx bench/profile/node-server.ts",
+    "profile:mem:node": "clinic heapprofiler -- tsx bench/profile/node-server.ts",
+    "profile:cpu:uws": "clinic flame -- tsx bench/profile/uws-server.ts",
+    "profile:mem:uws": "clinic heapprofiler -- tsx bench/profile/uws-server.ts",
+    "bench:load:profile": "autocannon http://localhost:3000"
   },
   "lint-staged": {
     "packages/**/*.ts": [
@@ -40,28 +45,32 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@hono/node-server": "^2.0.12",
+    "@hono/node-server": "^2.1.1",
     "@napi-rs/cli": "^3.8.6",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.1.1",
-    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@types/node": "^26.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.68.0",
+    "0x": "^6.0.0",
+    "autocannon": "^8.0.0",
     "benchmark": "^2.1.4",
+    "clinic": "^13.0.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.8.0",
+    "eslint": "^10.9.1",
     "express": "^5.2.1",
-    "fastify": "^5.10.0",
-    "find-my-way": "^9.7.0",
-    "hono": "^4.12.32",
+    "fastify": "^5.12.1",
+    "find-my-way": "^9.9.0",
+    "hono": "^4.13.5",
     "husky": "^9.1.7",
-    "lint-staged": "^17.2.0",
+    "lint-staged": "^17.4.1",
     "mitata": "^1.0.34",
     "prettier": "^3.9.6",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.65.0"
+    "typescript-eslint": "^8.68.0"
   },
   "dependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0",
+    "ws": "^8.21.3"
   }
 }

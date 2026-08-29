@@ -799,7 +799,7 @@ export class RouteScanner {
           }
 
           // Build Context
-          const ctx = {
+          const ctx: any = {
             body: req.body,
             query: req.query,
             params: req.params,
@@ -811,8 +811,10 @@ export class RouteScanner {
               this.app.resolve(token, (req as any)._diCache),
             socket: (req as any).ws,
             state: executionContext.getStore()?.state || {},
-            ...req, // Spread req to allow access to user, session, etc.
           }
+          if (req.user !== undefined) ctx.user = req.user
+          if ((req as any).session !== undefined)
+            ctx.session = (req as any).session
 
           const result = await rc.handle(ctx)
 

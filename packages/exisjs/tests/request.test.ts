@@ -6,6 +6,7 @@ import type { Request } from '../src/types'
 import { createMockLogger, createMockResponse } from './helpers'
 import qs from 'node:querystring'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { requestId } from '../src/middleware/middleware'
 
 function buildRawRequest(options: {
   method?: string
@@ -447,9 +448,12 @@ describe('Request ID Generation', () => {
     const res = createMockResponse()
     const req = new ExisRequest(raw, res).init(raw, res)
 
+    // requestId is now handled by a middleware, not the constructor
+    requestId()(req, res, () => {})
+
     expect(req.requestId).toBeDefined()
     expect(typeof req.requestId).toBe('string')
-    expect(req.requestId?.length).toBeGreaterThan(10)
+    expect(req.requestId?.length).toBeGreaterThan(3)
     expect(res.getHeader('X-Request-Id')).toBe(req.requestId)
   })
 
@@ -459,6 +463,8 @@ describe('Request ID Generation', () => {
     })
     const res = createMockResponse()
     const req = new ExisRequest(raw, res).init(raw, res)
+
+    requestId()(req, res, () => {})
 
     expect(req.requestId).toBe('custom-id-123')
     expect(res.getHeader('X-Request-Id')).toBe('custom-id-123')

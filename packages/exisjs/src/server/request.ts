@@ -1,5 +1,4 @@
 import { IncomingMessage } from 'node:http'
-import { randomUUID } from 'node:crypto'
 import type { Logger } from '../types'
 import type { ExisResponse } from './response'
 import { HttpError } from '../utils/errors'
@@ -81,10 +80,7 @@ export class ExisRequest<
     this.user = undefined as any
     this.log = undefined as any
     this.session = undefined
-    this.requestId = (raw.headers['x-request-id'] as string) || randomUUID()
-    if (this.res && typeof this.res.setHeader === 'function') {
-      this.res.setHeader('X-Request-Id', this.requestId)
-    }
+    this.requestId = undefined
     this.tenantId = undefined
 
     this._dataloaderFns = undefined
@@ -123,7 +119,9 @@ export class ExisRequest<
     if (this._path !== undefined) return this._path
     const rawPath =
       this._qIdx === -1 ? this._urlStr : this._urlStr.slice(0, this._qIdx)
-    this._path = rawPath.replace(/\/+/g, '/')
+    // Fast path: skip regex if no consecutive slashes (99.9% of real traffic)
+    this._path =
+      rawPath.indexOf('//') === -1 ? rawPath : rawPath.replace(/\/+/g, '/')
     return this._path
   }
 

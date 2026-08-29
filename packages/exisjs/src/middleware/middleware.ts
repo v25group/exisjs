@@ -134,29 +134,46 @@ export function requestLogger(
   return (req, res, next) => {
     const start = Date.now()
 
-    // Create request-scoped child logger with context
-    req.log = log.child({
-      requestId: req.requestId,
-      method: req.method,
-      url: req.path,
+    // Lazy child logger creation — only allocate when req.log is first accessed.
+    // Most successful requests never call req.log, saving a Pino child allocation.
+    let _childLog: Logger | null = null
+    const parentLog = log
+    Object.defineProperty(req, 'log', {
+      get() {
+        if (!_childLog) {
+          _childLog = parentLog.child({
+            requestId: req.requestId,
+            method: req.method,
+            url: req.path,
+          })
+        }
+        return _childLog
+      },
+      set(v: Logger) {
+        _childLog = v
+      },
+      configurable: true,
+      enumerable: true,
     })
 
     // Use _onFinish to capture response timing without deoptimizing V8 hidden classes
     res._onFinish.push(() => {
       const responseTime = Date.now() - start
       const logData = { statusCode: res.statusCode, responseTime }
+      // Use child if already created, otherwise use parent with inline context
+      const logger = _childLog || parentLog
 
       if (res.statusCode >= 500) {
-        req.log.error(logData, `${req.method} ${req.path}`)
+        logger.error(logData, `${req.method} ${req.path}`)
       } else if (res.statusCode >= 400) {
         // Silently ignore favicon 404s to reduce noise
         if (req.path === '/favicon.ico' && res.statusCode === 404) {
           // ignore
         } else {
-          req.log.warn(logData, `${req.method} ${req.path}`)
+          logger.warn(logData, `${req.method} ${req.path}`)
         }
       } else {
-        req.log.info(logData, `${req.method} ${req.path}`)
+        logger.info(logData, `${req.method} ${req.path}`)
       }
     })
 

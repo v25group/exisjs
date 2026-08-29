@@ -504,6 +504,16 @@ export function runHandlers(
 
   let index = 0
   const total = handlers.length
+  // Track whether the current handler's next() was already called
+  let nextCalledForCurrentHandler = false
+
+  // Shared safeNext — guards against double next() calls without a new closure per handler
+  // Defined OUTSIDE next() to avoid allocation per iteration
+  const safeNext = (err?: Error) => {
+    if (nextCalledForCurrentHandler) return
+    nextCalledForCurrentHandler = true
+    return next(err)
+  }
 
   const next = (err?: Error): void | Promise<void> => {
     if (err) {
@@ -540,15 +550,9 @@ export function runHandlers(
     }
 
     const handler = handlers[index++]
+    nextCalledForCurrentHandler = false
 
     let result: unknown
-    let calledNext = false
-
-    const safeNext = (err?: Error) => {
-      if (calledNext) return
-      calledNext = true
-      return next(err)
-    }
 
     try {
       result = handler(req, res, safeNext)

@@ -5,7 +5,7 @@ const appDef = exis({
   logger: false, // Fully disable logger to match bare fastify
   helmet: false, // Fastify/Hono don't run helmet by default
   cors: false, // Fastify/Hono don't run cors by default
-  server: 'node',
+  server: 'uws',
   env: 'production',
   async onStart(app) {
     app.get('/api/health', (req, res) => {
@@ -16,7 +16,7 @@ const appDef = exis({
       res.send('shutting down')
       setTimeout(() => process.exit(0), 100)
     })
-  }
+  },
 })
 
 appDef.boot().then((app) => {

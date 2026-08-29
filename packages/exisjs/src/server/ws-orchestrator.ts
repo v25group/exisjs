@@ -48,18 +48,11 @@ export class WsOrchestrator {
     req.params = matched.params
     req.log = this.app.log
 
-    // Build the middleware pipeline specifically for this WebSocket route
-    const pipeline: Handler[] = [
-      ...this.app.globalMiddleware,
-      async (req, res, next) => {
-        // Exclude the last handler which is the actual WsHandler wrapper
-        const routeHandlers = matched.route.handlers.slice(0, -1)
-        runHandlers(routeHandlers, req, res, (err) => {
-          if (err) return next(err)
-          next()
-        })
-      },
-    ]
+    // Exclude the last WsHandler wrapper which will be manually executed below
+    const routeHandlers = matched.route.handlers.slice(0, -1)
+
+    // Build the flattened middleware pipeline
+    const pipeline: Handler[] = [...this.app.globalMiddleware, ...routeHandlers]
 
     await runHandlers(pipeline, req, res, async (err) => {
       if (err) {

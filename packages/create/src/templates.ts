@@ -30,7 +30,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.5.11',
+      exisjs: '^0.5.12',
     },
   }
 

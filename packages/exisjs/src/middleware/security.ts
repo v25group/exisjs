@@ -59,7 +59,9 @@ export function helmet(options: HelmetOptions = {}): Handler {
   }
 
   const hidePoweredBy = options.hidePoweredBy !== false
-  const headerEntries = Object.entries(staticHeaders)
+  const headerKeys = Object.keys(staticHeaders)
+  const headerValues = Object.values(staticHeaders)
+  const headerCount = headerKeys.length
 
   return (req: Request, res: Response, next: NextFunction) => {
     // Generate CSP nonce if needed
@@ -79,8 +81,9 @@ export function helmet(options: HelmetOptions = {}): Handler {
       res.removeHeader('X-Powered-By')
     }
 
-    for (const [key, value] of headerEntries) {
-      res.setHeader(key, value)
+    // Indexed loop — avoids allocating an iterator object on every request
+    for (let i = 0; i < headerCount; i++) {
+      res.setHeader(headerKeys[i], headerValues[i])
     }
     next()
   }

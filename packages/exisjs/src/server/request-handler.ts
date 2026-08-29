@@ -11,7 +11,47 @@ export class RequestHandler {
   private _compiledPipeline?: Handler[]
   public static activeRequests = 0
 
+  // ─── Object Pools ───────────────────────────────────────────────────────────
+  // Recycle ExisRequest and ExisResponse objects instead of allocating new ones
+  // per request. This dramatically reduces V8 GC pressure under high load.
+  private _reqPool: ExisRequest[] = []
+  private _resPool: ExisResponse[] = []
+  private static readonly MAX_POOL_SIZE = 2048
+
   constructor(private app: App<any>) {}
+
+  private _acquireReq(
+    rawReq: IncomingMessage,
+    res: ExisResponse,
+    trustProxy: boolean | number,
+    bodyLimit: number
+  ): ExisRequest {
+    const pooled = this._reqPool.pop()
+    if (pooled) {
+      return pooled.init(rawReq, res, trustProxy, bodyLimit)
+    }
+    return new ExisRequest(rawReq, res, trustProxy, bodyLimit)
+  }
+
+  private _acquireRes(rawRes: ServerResponse): ExisResponse {
+    const pooled = this._resPool.pop()
+    if (pooled) {
+      return pooled.init(rawRes)
+    }
+    return new ExisResponse(rawRes)
+  }
+
+  private _releaseReq(req: ExisRequest): void {
+    if (this._reqPool.length < RequestHandler.MAX_POOL_SIZE) {
+      this._reqPool.push(req)
+    }
+  }
+
+  private _releaseRes(res: ExisResponse): void {
+    if (this._resPool.length < RequestHandler.MAX_POOL_SIZE) {
+      this._resPool.push(res)
+    }
+  }
 
   public getCompiledPipeline(): Handler[] {
     if (this._compiledPipeline) return this._compiledPipeline
@@ -132,8 +172,8 @@ export class RequestHandler {
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
-    const res = new ExisResponse(rawRes)
-    const req = new ExisRequest(
+    const res = this._acquireRes(rawRes)
+    const req = this._acquireReq(
       rawReq,
       res,
       this.app.options.trustProxy,
@@ -144,6 +184,12 @@ export class RequestHandler {
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
     req._dataloaderFns = (this.app as any)._dataloaders
+
+    // Recycle objects back to pool when the response is fully done
+    rawRes.on('close', () => {
+      this._releaseReq(req)
+      this._releaseRes(res)
+    })
 
     this._executeWithContext(req, res, () => {
       if (

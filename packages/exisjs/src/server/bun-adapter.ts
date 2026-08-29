@@ -21,7 +21,7 @@ export class BunIncomingMessage {
     const pathStart = rawUrl.indexOf('/', rawUrl.indexOf('//') + 2)
     this.url = pathStart !== -1 ? rawUrl.substring(pathStart) : '/'
 
-    this.headers = {}
+    this.headers = Object.create(null)
     if (typeof req.headers.toJSON === 'function') {
       this.headers = req.headers.toJSON()
     } else {
@@ -101,7 +101,7 @@ export class BunIncomingMessage {
  */
 export class BunServerResponse {
   statusCode = 200
-  headers: Record<string, string | string[]> = {}
+  headers: Record<string, string | string[]> = Object.create(null)
   private chunks: Buffer[] = []
   private resolve: (res: any) => void
   private isEnded = false

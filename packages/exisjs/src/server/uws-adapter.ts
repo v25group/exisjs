@@ -11,7 +11,7 @@ try {
 export class UwsIncomingMessage {
   public method: string
   public url: string
-  public headers: Record<string, string> = {}
+  public headers: Record<string, string> = Object.create(null)
 
   public _aborted = false
   public complete = false
@@ -20,8 +20,8 @@ export class UwsIncomingMessage {
   private _listeners: Record<string, ((...args: any[]) => void)[]> = {}
 
   constructor(
-    public readonly _uwsReq: any,
-    public readonly _uwsRes: any
+    public _uwsReq: any,
+    public _uwsRes: any
   ) {
     this.method = _uwsReq.getMethod().toUpperCase()
     this.url = _uwsReq.getUrl()
@@ -33,6 +33,31 @@ export class UwsIncomingMessage {
     _uwsReq.forEach((k: string, v: string) => {
       this.headers[k] = v
     })
+  }
+
+  init(uwsReq: any, uwsRes: any): this {
+    this._uwsReq = uwsReq
+    this._uwsRes = uwsRes
+    this.method = uwsReq.getMethod().toUpperCase()
+    this.url = uwsReq.getUrl()
+    const query = uwsReq.getQuery()
+    if (query) {
+      this.url += '?' + query
+    }
+
+    // Reset headers — wipe all existing keys
+    const h = this.headers
+    for (const k in h) delete h[k]
+    uwsReq.forEach((k: string, v: string) => {
+      h[k] = v
+    })
+
+    this._aborted = false
+    this.complete = false
+    this._readBodyPromise = undefined
+    this._listeners = {}
+    this._remoteAddress = undefined
+    return this
   }
 
   private _remoteAddress?: string
@@ -106,12 +131,24 @@ export class UwsServerResponse {
   public statusCode = 200
   public headersSent = false
 
-  private _headers: Record<string, string> = {}
+  private _headers: Record<string, string> = Object.create(null)
   public _aborted = false
 
   private _listeners: Record<string, ((...args: any[]) => void)[]> = {}
 
-  constructor(public readonly _uwsRes: any) {}
+  constructor(public _uwsRes: any) {}
+
+  init(uwsRes: any): this {
+    this._uwsRes = uwsRes
+    this.statusCode = 200
+    this.headersSent = false
+    this._aborted = false
+    // Reset headers — wipe all existing keys
+    const h = this._headers
+    for (const k in h) delete h[k]
+    this._listeners = {}
+    return this
+  }
 
   setHeader(name: string, value: string | number | readonly string[]): void {
     this._headers[name.toLowerCase()] = String(value)
@@ -357,8 +394,8 @@ export function createUwsApp(
             reject(new Error('aborted'))
             return
           }
-          const copy = Buffer.allocUnsafe(chunk.byteLength)
-          Buffer.from(chunk).copy(copy)
+          // Buffer.from(ArrayBuffer) already copies the data
+          const copy = Buffer.from(chunk)
           chunks.push(copy)
 
           shimReq.emit('data', copy)

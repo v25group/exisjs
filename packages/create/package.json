@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/create",
-  "version": "0.5.11",
+  "version": "0.5.12",
   "description": "Scaffolding tool for ExisJS applications",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^26.1.1",
+    "@types/node": "^26.4.0",
     "@types/prompts": "^2.4.9",
     "typescript": "^5.9.3"
   }
