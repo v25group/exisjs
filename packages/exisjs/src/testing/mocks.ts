@@ -84,6 +84,13 @@ export function createMockResponse(): MockResponse {
     res._statusCode = res.statusCode
     // Still call original to set headersSent
     const result = originalEnd(...(args as Parameters<typeof originalEnd>))
+
+    // Manually trigger _onFinish hooks since our mock socket doesn't reliably trigger raw.end callbacks
+    for (const hook of res._onFinish) {
+      hook()
+    }
+    res._onFinish = [] // Clear to prevent double execution if raw.end callback does fire
+
     res.raw.emit('finish')
     return result
   }

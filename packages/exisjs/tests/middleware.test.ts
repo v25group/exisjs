@@ -14,6 +14,9 @@ import {
   getResponseHeader,
 } from './helpers'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
+import { serveStatic, requestLogger } from '../src/middleware/middleware'
+
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
 describe('cors()', () => {
@@ -332,7 +335,7 @@ describe('validate()', () => {
 // ─── Request Logger ──────────────────────────────────────────────────────────
 
 describe('requestLogger()', () => {
-  it('logs requests on res.end()', async () => {
+  it('logs requests on res.end()', () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -351,12 +354,11 @@ describe('requestLogger()', () => {
     // Simulate response ending
     res.statusCode = 200
     res.end()
-    await new Promise(setImmediate)
 
     expect(mockLog.info).toHaveBeenCalled()
   })
 
-  it('logs warnings for 4xx errors', async () => {
+  it('logs warnings for 4xx errors', () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -369,11 +371,10 @@ describe('requestLogger()', () => {
     handler(req, res, createMockNext())
     res.statusCode = 404
     res.end()
-    await new Promise(setImmediate)
     expect(mockLog.warn).toHaveBeenCalled()
   })
 
-  it('logs errors for 5xx errors', async () => {
+  it('logs errors for 5xx errors', () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -386,17 +387,11 @@ describe('requestLogger()', () => {
     handler(req, res, createMockNext())
     res.statusCode = 500
     res.end()
-    await new Promise(setImmediate)
     expect(mockLog.error).toHaveBeenCalled()
   })
 })
 
 // ─── Serve Static ────────────────────────────────────────────────────────────
-
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
-import { serveStatic, requestLogger } from '../src/middleware/middleware'
 
 describe('serveStatic()', () => {
   let tmpDir: string
