@@ -332,7 +332,7 @@ describe('validate()', () => {
 // ─── Request Logger ──────────────────────────────────────────────────────────
 
 describe('requestLogger()', () => {
-  it('logs requests on res.end()', () => {
+  it('logs requests on res.end()', async () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -351,11 +351,12 @@ describe('requestLogger()', () => {
     // Simulate response ending
     res.statusCode = 200
     res.end()
+    await new Promise(setImmediate)
 
     expect(mockLog.info).toHaveBeenCalled()
   })
 
-  it('logs warnings for 4xx errors', () => {
+  it('logs warnings for 4xx errors', async () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -368,10 +369,11 @@ describe('requestLogger()', () => {
     handler(req, res, createMockNext())
     res.statusCode = 404
     res.end()
+    await new Promise(setImmediate)
     expect(mockLog.warn).toHaveBeenCalled()
   })
 
-  it('logs errors for 5xx errors', () => {
+  it('logs errors for 5xx errors', async () => {
     const mockLog = {
       info: ex.fn(),
       warn: ex.fn(),
@@ -384,6 +386,7 @@ describe('requestLogger()', () => {
     handler(req, res, createMockNext())
     res.statusCode = 500
     res.end()
+    await new Promise(setImmediate)
     expect(mockLog.error).toHaveBeenCalled()
   })
 })
