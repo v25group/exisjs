@@ -166,7 +166,7 @@ program
   .description('Generate new features')
   .argument(
     '<type>',
-    'Type of feature to generate (route | resource | plugin | middleware | test)'
+    'Type to generate (resource|controller|service|gateway|guard|interceptor|filter|job|plugin|middleware|test)'
   )
   .argument('[name]', 'Name of the feature')
   .option(
@@ -174,24 +174,73 @@ program
     'Generate using Class-Based (OOP) paradigm instead of Functional'
   )
   .action(async (type, name, options) => {
-    const { generateRoute, generatePlugin, generateMiddleware, generateTest } =
-      await import('./commands/generate')
-    if (type === 'route' || type === 'r' || type === 'resource') {
-      if (!name) return console.error('Name is required for route/resource')
-      await generateRoute(name, process.cwd(), options)
-    } else if (type === 'plugin' || type === 'p') {
-      if (!name) return console.error('Name is required for plugin')
-      await generatePlugin(name)
-    } else if (type === 'middleware' || type === 'm') {
-      if (!name) return console.error('Name is required for middleware')
-      await generateMiddleware(name)
-    } else if (type === 'test' || type === 't') {
-      if (!name) return console.error('Name is required for test')
-      await generateTest(name)
-    } else {
-      console.error(
-        'Unknown generator type. Supported types: route, plugin, middleware, test'
-      )
+    const {
+      generateResource,
+      generateController,
+      generateService,
+      generateGateway,
+      generateGuard,
+      generateInterceptor,
+      generateFilter,
+      generateJob,
+      generatePlugin,
+      generateMiddleware,
+      generateTest,
+    } = await import('./commands/generate')
+
+    if (!name) return console.error('Name is required')
+    const cwd = process.cwd()
+
+    switch (type) {
+      case 'route':
+      case 'resource':
+      case 'r':
+        await generateResource(name, cwd, options)
+        break
+      case 'controller':
+      case 'c':
+        await generateController(name, cwd, options)
+        break
+      case 'service':
+      case 's':
+        await generateService(name, cwd, options)
+        break
+      case 'gateway':
+      case 'gw':
+        await generateGateway(name, cwd, options)
+        break
+      case 'guard':
+      case 'gu':
+        await generateGuard(name, cwd, options)
+        break
+      case 'interceptor':
+      case 'in':
+        await generateInterceptor(name, cwd, options)
+        break
+      case 'filter':
+      case 'f':
+        await generateFilter(name, cwd, options)
+        break
+      case 'job':
+      case 'j':
+        await generateJob(name, cwd, options)
+        break
+      case 'plugin':
+      case 'p':
+        await generatePlugin(name)
+        break
+      case 'middleware':
+      case 'm':
+        await generateMiddleware(name)
+        break
+      case 'test':
+      case 't':
+        await generateTest(name)
+        break
+      default:
+        console.error(
+          'Unknown type. Supported: resource, controller, service, gateway, guard, interceptor, filter, job, plugin, middleware, test'
+        )
     }
   })
 

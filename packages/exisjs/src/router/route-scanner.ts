@@ -1,11 +1,11 @@
-import type { App } from './app'
+import type { App } from '../server/app'
 import { Router } from '../router/router'
 import { cors } from '../middleware/middleware'
 import { tex } from '../validator/index'
 import { pathToFileURL } from 'node:url'
-import { executionContext } from './context'
+import { executionContext } from '../server/context'
 import type { Handler } from '../types'
-import { formatDevError } from './dev-error-overlay'
+import { formatDevError } from '../dev/error-overlay'
 
 export class RouteScanner {
   public lazyRoutes = new Map<string, { filePath: string; loaded: boolean }>()
@@ -13,6 +13,7 @@ export class RouteScanner {
   public apiDir: string | null = null
   public _allApiDirs?: string[]
   public hasGateways = false
+  public globalParadigm: 'oop' | 'functional' | null = null
 
   constructor(public app: App) {}
 
@@ -98,11 +99,25 @@ export class RouteScanner {
         const routerInstance = routeMod.router || routeMod.default || routeMod
 
         if (functionalControllerObj) {
+          if (this.globalParadigm === 'oop') {
+            console.error(
+              `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
+            )
+            process.exit(1)
+          }
+          this.globalParadigm = 'functional'
           const router = this.compileFunctionalController(
             functionalControllerObj
           )
           this.mountRouteWithSource(routePath, router, normalizedPath)
         } else if (isClassController(routerInstance)) {
+          if (this.globalParadigm === 'functional') {
+            console.error(
+              `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
+            )
+            process.exit(1)
+          }
+          this.globalParadigm = 'oop'
           this.app.registerControllers([routerInstance], routePath)
         } else {
           this.mountRouteWithSource(routePath, routerInstance, normalizedPath)
@@ -115,13 +130,10 @@ export class RouteScanner {
     const searchDirs = isProd
       ? [
           path.join(root, '.exis', 'server', 'src', 'http'),
-          path.join(root, '.exis', 'server', 'http'),
           path.join(root, 'dist', 'src', 'http'),
-          path.join(root, 'dist', 'http'),
           path.join(root, 'src', 'http'),
-          path.join(root, 'http'),
         ]
-      : [path.join(root, 'src', 'http'), path.join(root, 'http')]
+      : [path.join(root, 'src', 'http')]
 
     const appDirs: string[] = []
     for (const dir of searchDirs) {
@@ -194,8 +206,12 @@ export class RouteScanner {
                   const relative = path
                     .relative(process.cwd(), normalized)
                     .replace(/\\/g, '/')
+                  const now = new Date()
+                  const h = String(now.getHours()).padStart(2, '0')
+                  const m = String(now.getMinutes()).padStart(2, '0')
+                  const s = String(now.getSeconds()).padStart(2, '0')
                   console.log(
-                    ` ${cc.green}✓${cc.reset} Lazy loaded ${cc.cyan}${relative}${cc.reset}`
+                    `${cc.gray}[${h}:${m}:${s}]${cc.reset} ${cc.green}HMR:${cc.reset} Lazy loaded ${cc.cyan}${relative}${cc.reset}`
                   )
                 } catch (err) {
                   formatDevError(err as Error, normalized)
@@ -228,6 +244,66 @@ export class RouteScanner {
       }
     }
 
+    // ─── Eager Paradigm Validation ──────────────────────────────────────────────
+    // Even in dev mode (lazy routes), pre-scan all route files at startup to
+    // detect mixed paradigms (OOP + functional) and throw a fatal error immediately.
+    if (isDev && this.globalParadigm === null) {
+      const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
+      const routeFiles = [...this.routeMap.keys()]
+      const oopFiles: string[] = []
+      const functionalFiles: string[] = []
+      const dynamicImport = new Function(
+        'specifier',
+        'return import(specifier)'
+      )
+
+      for (const file of routeFiles) {
+        try {
+          const url = pathToFileURL(file).href
+          const mod = await dynamicImport(url)
+          const unwrapped =
+            mod && mod.default && mod.default.default
+              ? mod.default.default
+              : mod && mod.default
+                ? mod.default
+                : mod
+
+          if (unwrapped && unwrapped.__isController) {
+            functionalFiles.push(file)
+          } else if (
+            unwrapped &&
+            unwrapped.prototype &&
+            unwrapped.prototype[CONTROLLER_PREFIX] !== undefined
+          ) {
+            oopFiles.push(file)
+          }
+        } catch {
+          // Skip files that fail to import (TS errors will be caught by tsc)
+        }
+      }
+
+      if (oopFiles.length > 0 && functionalFiles.length > 0) {
+        const path = await import('node:path')
+        const cwd = process.cwd()
+        const formatFiles = (files: string[]) =>
+          files
+            .map((f) => `    → ${path.relative(cwd, f).replace(/\\/g, '/')}`)
+            .join('\n')
+
+        console.error(
+          `\n\x1b[31m[ExisJS] Mixed Paradigm Error\x1b[0m\n\n` +
+            `A project can only use one controller paradigm (OOP or Functional). Mixing them is not supported.\n\n` +
+            `\x1b[36mClass-Based (OOP) controllers found in:\x1b[0m\n${formatFiles(oopFiles)}\n\n` +
+            `\x1b[36mFunctional controllers found in:\x1b[0m\n${formatFiles(functionalFiles)}\n\n` +
+            `\x1b[33mFix: Choose one paradigm and update the files to match.\x1b[0m\n`
+        )
+        process.exit(1)
+      }
+
+      if (oopFiles.length > 0) this.globalParadigm = 'oop'
+      else if (functionalFiles.length > 0) this.globalParadigm = 'functional'
+    }
+
     if (!this.hasGateways && !isProd) {
       console.warn(
         '\x1b[33m[ExisJS] Warning: No gateway.ts found — applying default security headers.\x1b[0m'
@@ -249,13 +325,10 @@ export class RouteScanner {
     const searchDirs = isProd
       ? [
           path.join(root, '.exis', 'server', 'src', 'jobs'),
-          path.join(root, '.exis', 'server', 'jobs'),
           path.join(root, 'dist', 'src', 'jobs'),
-          path.join(root, 'dist', 'jobs'),
           path.join(root, 'src', 'jobs'),
-          path.join(root, 'jobs'),
         ]
-      : [path.join(root, 'src', 'jobs'), path.join(root, 'jobs')]
+      : [path.join(root, 'src', 'jobs')]
 
     let jobsDir = ''
     for (const dir of searchDirs) {
@@ -300,7 +373,9 @@ export class RouteScanner {
               if (this.app._cronScheduler && jobDef.cron) {
                 this.app._cronScheduler.registerJob(def)
               }
-              this.app.log.info(`Registered background job: ${name}`)
+              if (!process.env.__EXIS_IS_RESTART) {
+                this.app.log.info(`Registered background job: ${name}`)
+              }
             }
           } catch (err) {
             this.app.log.error(`Failed to load job file ${filePath}: ${err}`)
@@ -660,6 +735,13 @@ export class RouteScanner {
       unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
 
     if (functionalControllerObj) {
+      if (this.globalParadigm === 'oop') {
+        console.error(
+          `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
+        )
+        process.exit(1)
+      }
+      this.globalParadigm = 'functional'
       // ─── THE NEW PERFECT FUNCTIONAL CONTROLLER ───
       const compiledRouter = this.compileFunctionalController(
         functionalControllerObj
@@ -678,6 +760,13 @@ export class RouteScanner {
         prefixMiddlewares
       )
     } else if (unwrappedMod && isController(unwrappedMod)) {
+      if (this.globalParadigm === 'functional') {
+        console.error(
+          `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
+        )
+        process.exit(1)
+      }
+      this.globalParadigm = 'oop'
       this.app.registerControllers([unwrappedMod], routePath, prefixMiddlewares)
     } else if (unwrappedMod && isRouter(unwrappedMod)) {
       this.mountRouteWithSource(

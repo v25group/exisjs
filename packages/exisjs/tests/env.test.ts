@@ -1,5 +1,5 @@
 import * as path from 'node:path'
-import { parseEnv, loadEnv, resetEnv } from '../src/utils/env'
+import { parseEnv, loadEnv, resetEnv } from '../src/config/env'
 import { createTempDir, cleanupTempDir, writeTempFile } from './helpers'
 import { describe, it, expect, beforeEach, afterEach } from '../src/testing'
 

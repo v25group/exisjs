@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { Router } from '../router/router'
-import { formatDevError } from './dev-error-overlay'
-import { generateDependencyGraph } from './dep-graph'
+import { formatDevError } from '../dev/error-overlay'
+import { generateDependencyGraph } from '../dev/dep-graph'
 
 const c = {
   green: '\x1b[32m',
@@ -11,6 +11,14 @@ const c = {
   gray: '\x1b[90m',
   bold: '\x1b[1m',
   reset: '\x1b[0m',
+}
+
+function ts(): string {
+  const now = new Date()
+  const h = String(now.getHours()).padStart(2, '0')
+  const m = String(now.getMinutes()).padStart(2, '0')
+  const s = String(now.getSeconds()).padStart(2, '0')
+  return `${c.gray}[${h}:${m}:${s}]${c.reset}`
 }
 
 interface HotReloaderOptions {
@@ -158,7 +166,7 @@ export class HotReloader {
         .relative(process.cwd(), normalized)
         .replace(/\\/g, '/')
       console.log(
-        ` ${c.green}✓${c.reset} Hot reloaded ${c.cyan}${relative}${c.reset} in ${elapsed}ms`
+        `${ts()} ${c.green}HMR:${c.reset} Reloaded ${c.cyan}${relative}${c.reset} in ${elapsed}ms`
       )
     } catch (err) {
       formatDevError(err as Error, normalized)
@@ -191,7 +199,7 @@ export class HotReloader {
         .relative(process.cwd(), normalized)
         .replace(/\\/g, '/')
       console.log(
-        ` ${c.green}+${c.reset} Added route ${c.cyan}${relative}${c.reset} → ${c.yellow}${routePath}${c.reset}`
+        `${ts()} ${c.green}HMR:${c.reset} Added route ${c.cyan}${relative}${c.reset} → ${c.yellow}${routePath}${c.reset}`
       )
     } catch (err) {
       formatDevError(err as Error, normalized)
@@ -208,7 +216,7 @@ export class HotReloader {
         .relative(process.cwd(), normalized)
         .replace(/\\/g, '/')
       console.log(
-        ` ${c.red}-${c.reset} Removed route ${c.cyan}${relative}${c.reset} (${removed} handler${removed > 1 ? 's' : ''})`
+        `${ts()} ${c.red}HMR:${c.reset} Removed route ${c.cyan}${relative}${c.reset} (${removed} handler${removed > 1 ? 's' : ''})`
       )
     }
   }

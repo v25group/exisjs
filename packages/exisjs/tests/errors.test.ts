@@ -1,8 +1,4 @@
-import {
-  HttpError,
-  createErrorHandler,
-  asyncHandler,
-} from '../src/utils/errors'
+import { HttpError, createErrorHandler, asyncHandler } from '../src/error'
 import {
   createMockRequest,
   createMockResponse,

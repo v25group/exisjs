@@ -59,7 +59,7 @@ That's it! By default, the package will use `getNodeAutoInstrumentations()` to c
 
 If `exporter` is set to `'console'`, traces will print directly to your terminal (great for local development!). If set to `'otlp'`, traces will be sent to your telemetry backend (like Datadog, Jaeger, or Grafana Tempo).
 
-## Advanced Usage
+## Extended Usage
 
 You can use the exported tools from this package to manually add metadata or track specific logic within your route handlers:
 

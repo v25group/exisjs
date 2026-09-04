@@ -62,15 +62,92 @@ export class QueryBuilder<T = Record<string, unknown>> {
     return this
   }
 
-  // ─── WHERE ─────────────────────────────────────────────────────────────────
+  // ─── SQL-First API Extensions ──────────────────────────────────────────────
 
-  where(column: string, operator: WhereOperator, value: unknown): this {
-    this.whereClauses.push({ column, operator, value, conjunction: 'AND' })
+  setOperation(op: 'select' | 'insert' | 'update' | 'delete'): this {
+    this.operation = op
     return this
   }
 
-  orWhere(column: string, operator: WhereOperator, value: unknown): this {
-    this.whereClauses.push({ column, operator, value, conjunction: 'OR' })
+  from(tableDef: any): this {
+    this.tableName =
+      typeof tableDef === 'string' ? tableDef : tableDef.tableName
+    return this
+  }
+
+  values(data: Record<string, unknown> | Record<string, unknown>[]): this {
+    this.insertData = data
+    return this
+  }
+
+  set(data: Record<string, unknown>): this {
+    this.updateData = data
+    return this
+  }
+
+  // ─── WHERE ─────────────────────────────────────────────────────────────────
+
+  where(condition: any): this
+  where(column: string, operator: WhereOperator, value: unknown): this
+  where(
+    columnOrCondition: string | any,
+    operator?: WhereOperator,
+    value?: unknown
+  ): this {
+    if (
+      typeof columnOrCondition === 'object' &&
+      'column' in columnOrCondition
+    ) {
+      const cond = columnOrCondition
+      const colName =
+        typeof cond.column === 'string' ? cond.column : cond.column.name
+      this.whereClauses.push({
+        column: colName,
+        operator: cond.operator,
+        value: cond.value,
+        conjunction: 'AND',
+      })
+      return this
+    }
+
+    this.whereClauses.push({
+      column: columnOrCondition as string,
+      operator: operator as WhereOperator,
+      value,
+      conjunction: 'AND',
+    })
+    return this
+  }
+
+  orWhere(condition: any): this
+  orWhere(column: string, operator: WhereOperator, value: unknown): this
+  orWhere(
+    columnOrCondition: string | any,
+    operator?: WhereOperator,
+    value?: unknown
+  ): this {
+    if (
+      typeof columnOrCondition === 'object' &&
+      'column' in columnOrCondition
+    ) {
+      const cond = columnOrCondition
+      const colName =
+        typeof cond.column === 'string' ? cond.column : cond.column.name
+      this.whereClauses.push({
+        column: colName,
+        operator: cond.operator,
+        value: cond.value,
+        conjunction: 'OR',
+      })
+      return this
+    }
+
+    this.whereClauses.push({
+      column: columnOrCondition as string,
+      operator: operator as WhereOperator,
+      value,
+      conjunction: 'OR',
+    })
     return this
   }
 

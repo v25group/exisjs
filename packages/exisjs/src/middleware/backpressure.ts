@@ -1,5 +1,5 @@
 import type { Handler, Request, Response, NextFunction } from '../types'
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 
 export interface BackpressureOptions {
   /** Maximum number of concurrent requests being processed */

@@ -1,11 +1,13 @@
 {
   "name": "exis",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Exis workspace",
+  "description": "ExisJS workspace",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
+    "ExisJS",
     "exis",
+    "exis.js",
     "exisjs",
     "framework",
     "nodejs",

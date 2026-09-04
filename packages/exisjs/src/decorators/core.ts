@@ -19,6 +19,7 @@ import type {
   ServerConfig,
   GatewayConfig,
 } from './constants'
+import { MetadataEngine } from './core/metadata'
 
 /**
  * Marks a class as a controller, automatically grouping its routes under the provided prefix.
@@ -44,81 +45,70 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
     const host =
       typeof prefixOrOptions === 'object' ? prefixOrOptions.host : undefined
 
-    target.prototype[CONTROLLER_PREFIX] = prefix
-    if (host) target.prototype[CONTROLLER_HOST] = host
+    const proto = target.prototype
+    MetadataEngine.set(proto, CONTROLLER_PREFIX, prefix)
+    if (host) MetadataEngine.set(proto, CONTROLLER_HOST, host)
 
     if (context && context.metadata) {
       context.metadata[CONTROLLER_PREFIX] = prefix
       if (host) context.metadata[CONTROLLER_HOST] = host
     }
 
-    // Aggregate metadata from methods to the prototype registry
-    const proto = target.prototype
-    proto[ROUTE_REGISTRY] = proto[ROUTE_REGISTRY] || []
+    MetadataEngine.init(proto, ROUTE_REGISTRY, [])
 
     // Middlewares
-    const currentMiddlewares = proto[MIDDLEWARE_REGISTRY]
+    const currentMiddlewares = MetadataEngine.get(proto, MIDDLEWARE_REGISTRY)
     if (Array.isArray(currentMiddlewares)) {
-      proto[MIDDLEWARE_REGISTRY] = {
+      MetadataEngine.set(proto, MIDDLEWARE_REGISTRY, {
         _classMiddlewares: currentMiddlewares,
-      }
-    } else if (
-      !proto[MIDDLEWARE_REGISTRY] ||
-      typeof proto[MIDDLEWARE_REGISTRY] !== 'object'
-    ) {
-      proto[MIDDLEWARE_REGISTRY] = {
-        _classMiddlewares: [],
-      }
-    } else if (!proto[MIDDLEWARE_REGISTRY]._classMiddlewares) {
-      proto[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+      })
+    } else if (!currentMiddlewares || typeof currentMiddlewares !== 'object') {
+      MetadataEngine.set(proto, MIDDLEWARE_REGISTRY, { _classMiddlewares: [] })
+    } else if (!currentMiddlewares._classMiddlewares) {
+      currentMiddlewares._classMiddlewares = []
     }
 
-    // Response Metadata, Guards/Interceptors, and Parameters
-    const classLifecycle = proto[LIFECYCLE_METADATA_PROP] || {}
-    proto[ROUTE_METADATA] = proto[ROUTE_METADATA] || {}
-    proto[LIFECYCLE_METADATA] = proto[LIFECYCLE_METADATA] || {}
-    proto[PARAM_METADATA] = proto[PARAM_METADATA] || {}
+    const classLifecycle =
+      MetadataEngine.get(proto, LIFECYCLE_METADATA_PROP) || {}
+    MetadataEngine.init(proto, ROUTE_METADATA, {})
+    MetadataEngine.init(proto, LIFECYCLE_METADATA, {})
+    MetadataEngine.init(proto, PARAM_METADATA, {})
+
+    const routeRegistry = MetadataEngine.get(proto, ROUTE_REGISTRY)
+    const middlewareRegistry = MetadataEngine.get(proto, MIDDLEWARE_REGISTRY)
+    const routeMetadataMap = MetadataEngine.get(proto, ROUTE_METADATA)
+    const lifecycleMetadataMap = MetadataEngine.get(proto, LIFECYCLE_METADATA)
+    const paramMetadataMap = MetadataEngine.get(proto, PARAM_METADATA)
 
     for (const key of Object.getOwnPropertyNames(proto)) {
       const descriptor = Object.getOwnPropertyDescriptor(proto, key)
       if (descriptor && typeof descriptor.value === 'function') {
         const fn = descriptor.value
 
-        // 1. Collect route definition
-        const routeMeta = fn[ROUTE_META]
+        const routeMeta = MetadataEngine.get(fn, ROUTE_META)
         if (routeMeta) {
-          proto[ROUTE_REGISTRY].push({
-            method: routeMeta.method,
-            path: routeMeta.path,
-            schema: routeMeta.schema,
-            handlerName: key,
-          })
+          routeRegistry.push({ ...routeMeta, handlerName: key })
         }
 
-        // 2. Collect method middlewares
-        const methodMiddlewares = fn[METHOD_MIDDLEWARES]
+        const methodMiddlewares = MetadataEngine.get(fn, METHOD_MIDDLEWARES)
         if (methodMiddlewares) {
-          proto[MIDDLEWARE_REGISTRY][key] =
-            proto[MIDDLEWARE_REGISTRY][key] || []
-          proto[MIDDLEWARE_REGISTRY][key].push(...methodMiddlewares)
+          middlewareRegistry[key] = middlewareRegistry[key] || []
+          middlewareRegistry[key].push(...methodMiddlewares)
         }
 
-        // 3. Collect custom HttpCode / Header response metadata
-        const classRouteMetadata = proto[ROUTE_METADATA_PROP] || {}
-        const routeMetadata = fn[ROUTE_METADATA_PROP] || {}
+        const classRouteMetadata =
+          MetadataEngine.get(proto, ROUTE_METADATA_PROP) || {}
+        const routeMetadata = MetadataEngine.get(fn, ROUTE_METADATA_PROP) || {}
         if (
           Object.keys(classRouteMetadata).length > 0 ||
           Object.keys(routeMetadata).length > 0
         ) {
-          proto[ROUTE_METADATA][key] = {
-            ...classRouteMetadata,
-            ...routeMetadata,
-          }
+          routeMetadataMap[key] = { ...classRouteMetadata, ...routeMetadata }
         }
 
-        // 4. Collect Guards and Interceptors (merging class-level and method-level)
-        const lifecycleMetadata = fn[LIFECYCLE_METADATA_PROP] || {}
-        proto[LIFECYCLE_METADATA][key] = {
+        const lifecycleMetadata =
+          MetadataEngine.get(fn, LIFECYCLE_METADATA_PROP) || {}
+        lifecycleMetadataMap[key] = {
           guards: [
             ...(classLifecycle._classGuards || []),
             ...(lifecycleMetadata.guards || []),
@@ -133,10 +123,9 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
           ],
         }
 
-        // 5. Collect parameter injection metadata
-        const paramMetadata = fn[PARAM_METADATA_PROP]
+        const paramMetadata = MetadataEngine.get(fn, PARAM_METADATA_PROP)
         if (paramMetadata) {
-          proto[PARAM_METADATA][key] = paramMetadata
+          paramMetadataMap[key] = paramMetadata
         }
       }
     }
@@ -146,7 +135,11 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
 export function Injectable(options?: { scope?: 'singleton' | 'request' }): any {
   return function (target: any, _context?: ClassDecoratorContext) {
     if (options?.scope) {
-      target.prototype[Symbol.for('exisjs:scope')] = options.scope
+      MetadataEngine.set(
+        target.prototype,
+        Symbol.for('exisjs:scope'),
+        options.scope
+      )
     }
   }
 }
@@ -156,7 +149,7 @@ export function Injectable(options?: { scope?: 'singleton' | 'request' }): any {
  */
 export function Server(options?: ServerConfig): any {
   return function (target: any, _context?: ClassDecoratorContext) {
-    target.prototype[SERVER_CONFIG] = options || {}
+    MetadataEngine.set(target.prototype, SERVER_CONFIG, options || {})
   }
 }
 
@@ -165,6 +158,6 @@ export function Server(options?: ServerConfig): any {
  */
 export function Gateway(options?: GatewayConfig): any {
   return function (target: any, _context?: ClassDecoratorContext) {
-    target.prototype[GATEWAY_CONFIG] = options || {}
+    MetadataEngine.set(target.prototype, GATEWAY_CONFIG, options || {})
   }
 }

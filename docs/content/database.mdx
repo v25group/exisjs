@@ -1,13 +1,13 @@
 ---
 title: "Database Layer"
-description: "ExisJS includes a built-in, high-performance database layer with native support for PostgreSQL, MySQL, SQLite, and MongoDB, plus a powerful query builder and migration system."
+description: "ExisJS includes a built-in, efficient database layer with native support for PostgreSQL, MySQL, SQLite, and MongoDB, plus a powerful SQL-First auto-sync engine."
 ---
 
 # Database Layer
 
-Unlike other Node.js frameworks that rely entirely on third-party ORMs like Prisma or TypeORM, **ExisJS ships with a fully integrated, high-performance Database Layer.** 
+Unlike other Node.js frameworks that rely entirely on third-party ORMs like Prisma or TypeORM, **ExisJS ships with a fully integrated, efficient Database Layer.** 
 
-This provides a massive advantage in developer experience and reliability, as connections, query generation, and migrations are orchestrated directly by the framework.
+This provides a massive advantage in developer experience and reliability, as connections, query generation, schema synchronization, and migrations are orchestrated directly by the framework.
 
 <Info title="Functional vs OOP">
 ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP Paradigm** (for dependency injection and decorators). The database layer is seamlessly accessible through both approaches.
@@ -15,19 +15,23 @@ ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP 
 
 ## Setup and Connection
 
-You configure your database connections directly in your application entry point (`server.ts`). ExisJS manages their lifecycle (including graceful shutdown) automatically.
-
 #### Functional Paradigm
 ```typescript filename="src/http/server.ts"
-import { exis, db, createDatabase } from 'exisjs'
+import { exis } from 'exisjs'
+import { createDatabase } from 'exisjs/database'
+import { userTable, leadCustomerTable } from '../database/schema'
 
 export default exis({
   async onStart(app) {
     const database = createDatabase({
       dialect: 'postgres',
       url: process.env.DATABASE_URL,
+      autoSync: true // Enables automatic schema synchronization!
     })
     
+    // Register schemas for Auto-Sync
+    database.registerSchema([userTable, leadCustomerTable])
+
     // Connect on boot
     await database.connect()
   }
@@ -37,7 +41,8 @@ export default exis({
 #### Class-Based (OOP) Paradigm
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
-import { createDatabase } from 'exisjs'
+import { createDatabase } from 'exisjs/database'
+import { userTable, leadCustomerTable } from '../database/schema'
 
 @Server()
 export default class RootServer {
@@ -45,33 +50,66 @@ export default class RootServer {
     const database = createDatabase({
       dialect: 'postgres',
       url: process.env.DATABASE_URL,
+      autoSync: true
     })
     
-    // Connect on boot
+    database.registerSchema([userTable, leadCustomerTable])
     await database.connect()
   }
 }
 ```
 
-## Using the Query Builder in Routes
+## SQL-First Schema Definition
 
-ExisJS includes a powerful, chainable Query Builder that automatically generates the correct, parameterized SQL for your chosen dialect. Here is how you use it in your route controllers or services.
+ExisJS provides a strictly-typed, modern **SQL-First Schema API**. Instead of writing raw SQL migration files, you define your tables in TypeScript. When `autoSync` is enabled, ExisJS will read these definitions, diff them against your live PostgreSQL database, and automatically run `CREATE TABLE` and `ALTER TABLE` for you!
+
+```typescript filename="src/database/schema.ts"
+import { table, uuid, text, jsonb, timestamptz, boolean } from 'exisjs/database/sql'
+
+export const userTable = table('user', {
+  user_id: uuid('user_id').primaryKey().default('gen_random_uuid()'),
+  name: text('name').notNull(),
+  phone: text('phone').unique().notNull(),
+  email: text('email').unique().notNull(),
+  address: jsonb('address'),
+  date_of_birth: timestamptz('date_of_birth'),
+  role: text('role').notNull(),
+  password_hash: text('password_hash').notNull(),
+  created_at: timestamptz('created_at').default('NOW()')
+})
+
+export const leadCustomerTable = table('leadCustomer', {
+  record_id: uuid('record_id').primaryKey().default('gen_random_uuid()'),
+  name: text('name').notNull(),
+  email: text('email'),
+  is_customer: boolean('is_customer').default('false'),
+  // Perfect, strict SQL Foreign Key References!
+  assigned_to: uuid('assigned_to').references(() => userTable.user_id),
+})
+```
+
+## Querying
+
+ExisJS supports **two ways** to query your database. You can use the traditional string-based builder, or the new fully-typed SQL-First builder.
+
+### Method A: Typed SQL-First Querying (Recommended)
+This method gives you 100% type safety and auto-complete for your columns.
 
 #### Functional Paradigm
-In functional routes, you can easily use the global `db` object to fetch data directly, or use the `resolve` function to inject a dedicated Service that wraps the database calls.
-
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
-import { db } from 'exisjs'
+import { db } from 'exisjs/database'
+import { eq } from 'exisjs/database/sql'
+import { userTable } from '@/database/schema'
 
 export default controller({
   list: route.get('/', {
     async handle() {
-      // Query multiple rows
-      const users = await db.table('users')
-        .select('id', 'name', 'email')
-        .where('role', '=', 'admin')
-        .orderBy('created_at', 'desc')
+      // Fully typed! Auto-complete knows userTable has name, email, etc.
+      const users = await db
+        .select(userTable.user_id.name, userTable.name.name, userTable.email.name)
+        .from(userTable)
+        .where(eq(userTable.role, 'admin'))
         .limit(10)
         .rows()
         
@@ -81,69 +119,61 @@ export default controller({
 
   create: route.post('/', {
     async handle({ req }) {
-      const { name, email } = req.body
+      const { name, email, phone, password_hash } = req.body
       
-      // Insert a new row
-      const result = await db.table('users').insert({
-        name,
-        email,
-        role: 'user'
-      }).execute()
-      
-      return { id: result.insertId, name, email }
+      const result = await db
+        .insert(userTable)
+        .values({ name, email, phone, role: 'user', password_hash })
+        .returning(userTable.user_id.name)
+        .execute()
+        
+      return { id: result.rows[0].user_id }
     }
   })
 })
 ```
 
 #### Class-Based (OOP) Paradigm
-In the OOP paradigm, it is highly recommended to abstract database calls into `@Injectable()` services and inject them into your `@Controller()`.
-
 ```typescript filename="src/http/users/service.ts"
 import { Injectable } from 'exisjs/decorators'
-import { db } from 'exisjs'
+import { db } from 'exisjs/database'
+import { eq } from 'exisjs/database/sql'
+import { userTable } from '@/database/schema'
 
 @Injectable()
 export class UsersService {
   async getAdmins() {
-    return await db.table('users')
-      .select('id', 'name', 'email')
-      .where('role', '=', 'admin')
-      .orderBy('created_at', 'desc')
+    return await db
+      .select(userTable.user_id.name, userTable.name.name, userTable.email.name)
+      .from(userTable)
+      .where(eq(userTable.role, 'admin'))
       .limit(10)
       .rows()
   }
 
-  async createUser(data: { name: string, email: string }) {
-    const result = await db.table('users').insert({
-      ...data,
-      role: 'user'
-    }).execute()
-    
-    return { id: result.insertId, ...data }
+  async createUser(data: any) {
+    const result = await db
+      .insert(userTable)
+      .values({ ...data, role: 'user' })
+      .returning(userTable.user_id.name)
+      .execute()
+      
+    return { id: result.rows[0].user_id }
   }
 }
 ```
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Post, Body } from 'exisjs/decorators'
-import { UsersService } from './service'
+### Method B: String-Based Query Builder
+If you don't want to define schema files, you can still use the raw string builder.
 
-@Controller()
-export default class UsersController {
-  // ExisJS automatically injects the service!
-  constructor(private usersService: UsersService) {}
-
-  @Get('/')
-  async list() {
-    return await this.usersService.getAdmins()
-  }
-
-  @Post('/')
-  async create(@Body() body: any) {
-    return await this.usersService.createUser(body)
-  }
-}
+```typescript
+// Query multiple rows
+const users = await db.table('users')
+  .select('id', 'name', 'email')
+  .where('role', '=', 'admin')
+  .orderBy('created_at', 'desc')
+  .limit(10)
+  .rows()
 ```
 
 ## Transactions
@@ -151,43 +181,36 @@ export default class UsersController {
 ExisJS makes it trivial to perform safe database transactions. If the callback throws an error, the transaction is automatically rolled back.
 
 ```typescript
-import { db } from 'exisjs'
+import { db } from 'exisjs/database'
 
 await db.transaction(async (tx) => {
   // Deduct from inventory
   await tx.execute(
-    'UPDATE inventory SET stock = stock - ? WHERE id = ?', 
+    'UPDATE inventory SET stock = stock - $1 WHERE id = $2', 
     [1, itemId]
   )
   
   // Create order record
   await tx.execute(
-    'INSERT INTO orders (user_id, item_id) VALUES (?, ?)', 
+    'INSERT INTO orders (user_id, item_id) VALUES ($1, $2)', 
     [userId, itemId]
   )
 })
 ```
 
-## Built-in Migrations
+## Manual Migrations (Optional)
 
-Managing database schema changes is critical. ExisJS includes a built-in migration system that tracks applied migrations in your database automatically.
+If you prefer to write raw SQL instead of using the Auto-Sync engine, ExisJS still includes a built-in migration tracker.
 
 ```typescript
-import { db } from 'exisjs'
+import { db } from 'exisjs/database'
 
 const migrator = db.getMigrator({ directory: './migrations' })
 
 // Apply all pending migrations
 await migrator.up()
-
-// Rollback the last batch of migrations
-await migrator.down()
-
-// Check the status of all migrations
-const status = await migrator.status()
 ```
 
-### Creating a Migration
 A migration file simply exports `up` and `down` methods. You write raw SQL inside them for ultimate control.
 
 ```typescript filename="migrations/001_create_users.ts"
@@ -207,3 +230,49 @@ module.exports = {
   },
 }
 ```
+
+## API Reference
+
+To maintain a clean namespace, ExisJS separates the core database manager from the SQL schema utilities.
+
+### Core Database (`exisjs/database`)
+Imports related to connection management, raw queries, and migrations.
+
+- `db` - The global singleton database manager.
+- `createDatabase` - Factory to instantiate a new database connection.
+- `DatabaseManager` - The underlying class for `db`.
+- `Migrator` - The migration engine class.
+- `QueryBuilder` - The base query builder class.
+
+### SQL-First Schema & Queries (`exisjs/database/sql`)
+Imports related to defining tables, column types, and writing fluent queries.
+
+**Table Builder:**
+- `table` - Define a new SQL-first table.
+
+**Column Types:**
+- `uuid`
+- `text`
+- `varchar`
+- `integer`
+- `serial`
+- `bigint`
+- `numeric`
+- `real`
+- `boolean`
+- `json`
+- `jsonb`
+- `timestamp`
+- `timestamptz`
+- `date`
+
+**Condition Operators (for `.where()`):**
+- `eq` (Equal: `=`)
+- `ne` (Not Equal: `!=`)
+- `gt` (Greater Than: `>`)
+- `gte` (Greater Than or Equal: `>=`)
+- `lt` (Less Than: `<`)
+- `lte` (Less Than or Equal: `<=`)
+- `isNull` (IS NULL)
+- `isNotNull` (IS NOT NULL)
+- `inArray` (IN)

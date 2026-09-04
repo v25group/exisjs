@@ -77,7 +77,7 @@ export default class EmailsController {
   
   @Post('/welcome')
   async sendWelcomeEmail(@Body() body: any) {
-    // The resend client magically lazy-loads here!
+    // The resend client automatically lazy-loads here!
     const { data, error } = await resend.emails.send({
       from: 'Acme <onboarding@resend.dev>',
       to: [body.email],

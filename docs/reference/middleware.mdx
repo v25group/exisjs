@@ -5,7 +5,7 @@ description: "API Reference for ExisJS built-in Middleware functions."
 
 # Middleware (`exisjs/middleware`)
 
-ExisJS ships with a massive suite of highly optimized, zero-dependency middleware. Rather than relying on outdated Express middlewares (which are often unmaintained and have heavy dependency trees), ExisJS implements security and utility middleware natively.
+ExisJS ships with a massive suite of highly optimized, integrated middleware. Rather than relying on outdated Express middlewares (which are often unmaintained and have heavy dependency trees), ExisJS implements security and utility middleware natively.
 
 All middlewares can be applied globally in `server.ts`, directory-wide in `gateway.ts`, or locally on specific controllers/routes.
 
@@ -198,7 +198,7 @@ getStats() {
 Prevents duplicate identical requests from being processed simultaneously. If 1,000 clients request the exact same expensive resource at the exact same millisecond, `dedupe` forces 999 of them to wait for the 1st request to finish, and then serves the exact same response to all 1,000 clients simultaneously.
 
 ### `compress()`
-A blazing-fast payload compression middleware natively supporting `gzip`, `deflate`, and `brotli`. Automatically compresses responses based on the client's `Accept-Encoding` header.
+A highly optimized payload compression middleware natively supporting `gzip`, `deflate`, and `brotli`. Automatically compresses responses based on the client's `Accept-Encoding` header.
 
 ### `timeout(ms)`
 Automatically times out any request that hangs longer than the specified milliseconds, returning a clean 503 response. Crucial for preventing stalled requests from exhausting the Node.js event loop or database connection pools.
@@ -226,7 +226,7 @@ Monitors the Node.js Event Loop Delay in real-time. If the event loop gets too b
 ## Utility Middleware
 
 ### `cors(options)`
-Native, zero-dependency Cross-Origin Resource Sharing (CORS) handler. Features full support for preflight (`OPTIONS`), dynamic regex origins, and exposed headers.
+Native, integrated Cross-Origin Resource Sharing (CORS) handler. Features full support for preflight (`OPTIONS`), dynamic regex origins, and exposed headers.
 
 ```typescript
 import { cors } from 'exisjs/middleware'
@@ -242,7 +242,7 @@ app.use(cors({
 Injects a unique `X-Request-Id` into every incoming request and attaches it to `req.requestId`. Seamlessly respects incoming tracing headers (`traceparent`, `x-b3-traceid`) for distributed microservice tracing.
 
 ### `requestLogger(config)`
-A high-performance request logger powered by Pino. Automatically logs method, URL, status code, and response time. Integrates perfectly with `requestId()` to attach trace IDs to every single log line.
+A efficient request logger powered by Pino. Automatically logs method, URL, status code, and response time. Integrates perfectly with `requestId()` to attach trace IDs to every single log line.
 
 ```typescript
 import { requestLogger } from 'exisjs/middleware'

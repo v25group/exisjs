@@ -30,7 +30,7 @@ Exis JS gives you the raw performance of a minimal micro-framework and the end-t
 ### Why Exis JS?
 
 - **Zero-Config Simplicity**: Intuitive file-system routing (`src/http`) without bloated route registries.
-- **Batteries Included**: Built-in Dependency Injection, CRON jobs, WebSockets, and zero-dependency schema validation.
+- **Batteries Included**: Built-in Dependency Injection, CRON jobs, WebSockets, and integrated schema validation.
 - **Uncompromising Performance**: Highly optimized zero-allocation engine that natively rivals and edges out Fastify.
 - **End-to-End Type Safety**: Every route automatically generates a typed schema, enabling seamless frontend-backend integration.
 

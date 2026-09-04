@@ -6,9 +6,9 @@ import type {
   HookResponse,
   RouteSchema,
 } from '../types'
-import { App } from './app'
+import type { App } from '../server/app'
 import type { ExisWebSocket } from '../websocket/socket'
-import type { ExisSSE } from './sse'
+import type { ExisSSE } from '../server/sse'
 
 /**
  * The execution context passed to every route handler.

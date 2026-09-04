@@ -1,7 +1,7 @@
 /**
  * SQLite Database Adapter.
  *
- * Uses the `better-sqlite3` npm package for high-performance synchronous
+ * Uses the `better-sqlite3` npm package for efficient synchronous
  * SQLite operations, wrapped in an async interface for consistency.
  *
  * Peer Dependencies required:

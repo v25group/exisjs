@@ -1,4 +1,4 @@
-import type { App } from './app'
+import type { App } from '../server/app'
 
 export class ControllerRegistrar {
   constructor(private app: App<any>) {}
@@ -88,7 +88,10 @@ export class ControllerRegistrar {
 
             // 1. Run Guards
             const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
-            const guards = routeLifecycle.guards || []
+            const guards = [
+              ...(lifecycleMetadataMap._classGuards || []),
+              ...(routeLifecycle.guards || []),
+            ]
             for (const guard of guards) {
               let allowed = false
               if (typeof guard === 'function') {
@@ -250,7 +253,10 @@ export class ControllerRegistrar {
             }
 
             // 3. Execute Custom Interceptors
-            const interceptors = routeLifecycle.interceptors || []
+            const interceptors = [
+              ...(lifecycleMetadataMap._classInterceptors || []),
+              ...(routeLifecycle.interceptors || []),
+            ]
             for (const interceptor of interceptors) {
               if (typeof interceptor === 'function') {
                 if (
@@ -301,7 +307,10 @@ export class ControllerRegistrar {
           } catch (err) {
             let handled = false
             const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
-            const filters = routeLifecycle.filters || []
+            const filters = [
+              ...(lifecycleMetadataMap._classFilters || []),
+              ...(routeLifecycle.filters || []),
+            ]
             for (const filter of filters) {
               if (typeof filter === 'function' && filter.prototype?.catch) {
                 let filterInstance: any = this.app.container.resolve(filter)

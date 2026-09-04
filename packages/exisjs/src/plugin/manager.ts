@@ -1,4 +1,4 @@
-import type { App } from './app'
+import type { App } from '../server/app'
 import { Router } from '../router/router'
 import type {
   ExisPlugin,

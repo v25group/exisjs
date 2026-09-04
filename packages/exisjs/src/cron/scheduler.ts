@@ -29,7 +29,9 @@ export class CronScheduler {
   registerJob(job: JobDefinition) {
     if (job.cron) {
       this.jobs.push(job)
-      this.logger.info(`Scheduled cron job ${job.name} (${job.cron})`)
+      if (!process.env.__EXIS_IS_RESTART) {
+        this.logger.info(`Scheduled cron job ${job.name} (${job.cron})`)
+      }
     }
   }
 

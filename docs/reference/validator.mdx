@@ -5,7 +5,7 @@ description: "API Reference for ExisJS built-in Schema Validator (tex)."
 
 # Validation (`tex`)
 
-ExisJS ships with a blazingly fast, zero-dependency validation library out of the box, exposed as `tex` from `exisjs/validator`. It is powered by a high-performance Rust engine, fully isomorphic, and deeply integrated with TypeScript and OpenAPI (Swagger).
+ExisJS ships with a efficient, integrated validation library out of the box, exposed as `tex` from `exisjs/validator`. It is powered by a efficient Rust engine, fully isomorphic, and deeply integrated with TypeScript and OpenAPI (Swagger).
 
 ---
 
@@ -79,7 +79,7 @@ export default controller({
 All validators accept an options object that allows you to configure validation constraints and behaviors.
 
 - `optional`: Marks the field as optional (allows `undefined`).
-- `coerce`: Instructs the ultra-fast Rust engine to automatically convert types when possible before validating. For example, converting `"123"` into a number, or `3000` into a string.
+- `coerce`: Instructs the Rust engine to automatically convert types when possible before validating. For example, converting `"123"` into a number, or `3000` into a string.
 
 ```typescript
 // Type Conversion Examples using { coerce: true }

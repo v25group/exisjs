@@ -97,15 +97,15 @@ export default class UserController {
 
 The Node.js ecosystem is incredibly fragmented.
 
-- **Express / Fastify** are blazing fast, but require you to manually install and configure routers, validation libraries (Zod), DI containers, and OpenAPI generators.
+- **Express / Fastify** are highly performant, but require you to manually install and configure routers, validation libraries (Zod), DI containers, and OpenAPI generators.
 - **NestJS** provides enterprise structure, but comes with a massive learning curve, heavy boilerplates, and slow cold-starts.
 
 **ExisJS bridges the gap.**
 
 1. **File-System Routing**: Drop a `route.ts` file in `src/http/users/` and you instantly have a `/users` endpoint.
 2. **Auto-Generated Swagger**: Every `@Body`, `@Query`, and `@Returns` decorator automatically builds your interactive OpenAPI docs. No duplicate JSON schemas required.
-3. **End-to-End Type Safety**: Our `@exisjs/client` package gives your React/Vite frontend magical auto-completion of your backend routes and payloads without importing any Node.js code.
-4. **Blazing Fast**: Built on a zero-allocation Radix Tree, ExisJS routing scales effortlessly to thousands of endpoints with zero degradation in P99 latency.
+3. **End-to-End Type Safety**: Our `@exisjs/client` package gives your React/Vite frontend seamless auto-completion of your backend routes and payloads without importing any Node.js code.
+4. **High Performance**: Built on a zero-allocation Radix Tree, ExisJS routing scales effortlessly to thousands of endpoints with zero degradation in P99 latency.
 
 ---
 
@@ -125,7 +125,7 @@ Nobody trusts an unproven framework. That's why we've built full-scale examples 
 
 The Exis JS framework is meticulously organized as a monorepo containing three purpose-built packages:
 
-1. 📦 **`exisjs`** - The core backend engine. It handles high-performance HTTP routing, WebSockets, background tasks, and Swagger.
+1. 📦 **`exisjs`** - The core backend engine. It handles efficient HTTP routing, WebSockets, background tasks, and Swagger.
 2. 📦 **`@exisjs/client`** - The 0-dependency frontend proxy client. Connect your React app to your API with full types.
 3. 📦 **`@exisjs/create`** - The interactive CLI tool to instantly scaffold production-ready Exis JS projects.
 

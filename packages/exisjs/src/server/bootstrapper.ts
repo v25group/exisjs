@@ -374,6 +374,13 @@ export class ServerBootstrapper {
       return
     }
 
+    if (process.env.__EXIS_IS_RESTART) {
+      console.log(
+        `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  restarted in ${c.bold}${readyMs} ms${c.reset}\n`
+      )
+      return
+    }
+
     console.log(
       `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  ready in ${c.bold}${readyMs} ms${c.reset}\n`
     )

@@ -1,11 +1,11 @@
 import { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { ExisRequest } from './request'
-import { ExisResponse } from './response'
+import { ExisRequest } from '../server/request'
+import { ExisResponse } from '../server/response'
 import { runHandlers } from '../router/router'
 import { ExisWebSocket } from '../websocket/socket'
 import type { Handler, Request } from '../types'
-import type { App } from './app'
+import type { App } from '../server/app'
 
 export class WsOrchestrator {
   private app: App<any>

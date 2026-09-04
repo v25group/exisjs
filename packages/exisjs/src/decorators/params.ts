@@ -5,6 +5,7 @@ import {
   ROUTE_REGISTRY,
   ROUTE_METADATA_PROP,
 } from './constants'
+import { MetadataEngine } from './core/metadata'
 
 function createParamDecorator(
   type: string,
@@ -23,8 +24,8 @@ function createParamDecorator(
     const allPipes = isPipe ? [nameOrPipe, ...pipes] : pipes
 
     const fn = target[propertyKey]
-    fn[PARAM_METADATA_PROP] = fn[PARAM_METADATA_PROP] || []
-    fn[PARAM_METADATA_PROP][parameterIndex] = { type, name, pipes: allPipes }
+    const paramMeta = MetadataEngine.init<any[]>(fn, PARAM_METADATA_PROP, [])
+    paramMeta[parameterIndex] = { type, name, pipes: allPipes }
   }
 }
 
@@ -62,11 +63,11 @@ export const Res = (options?: { passthrough?: boolean }): any => {
     parameterIndex: number
   ) {
     const fn = target[propertyKey]
-    fn[PARAM_METADATA_PROP] = fn[PARAM_METADATA_PROP] || []
-    fn[PARAM_METADATA_PROP][parameterIndex] = { type: 'res' }
+    const paramMeta = MetadataEngine.init<any[]>(fn, PARAM_METADATA_PROP, [])
+    paramMeta[parameterIndex] = { type: 'res' }
 
-    fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
-    fn[ROUTE_METADATA_PROP].manualRes = !options?.passthrough
+    const routeMeta = MetadataEngine.init<any>(fn, ROUTE_METADATA_PROP, {})
+    routeMeta.manualRes = !options?.passthrough
   }
 }
 
@@ -100,8 +101,8 @@ export function Query(
 
       const parameterIndex = descriptorOrIndex
       const fn = target[contextOrPropertyKey]
-      fn[PARAM_METADATA_PROP] = fn[PARAM_METADATA_PROP] || []
-      fn[PARAM_METADATA_PROP][parameterIndex] = {
+      const paramMeta = MetadataEngine.init<any[]>(fn, PARAM_METADATA_PROP, [])
+      paramMeta[parameterIndex] = {
         type: 'query',
         name,
         pipes: pipesArray,
@@ -113,16 +114,15 @@ export function Query(
         contextOrPropertyKey !== null &&
         'name' in contextOrPropertyKey
       ) {
-        ;(target as any)[ROUTE_META] = {
+        MetadataEngine.set(target, ROUTE_META, {
           method: 'QUERY',
           path,
           schema: schemaOrPipe,
-        }
+        })
       } else {
         const proto = typeof target === 'function' ? target.prototype : target
         const name = contextOrPropertyKey || descriptorOrIndex?.name
-        if (!proto[ROUTE_REGISTRY]) proto[ROUTE_REGISTRY] = []
-        proto[ROUTE_REGISTRY].push({
+        MetadataEngine.push(proto, ROUTE_REGISTRY, {
           method: 'QUERY',
           path,
           schema: schemaOrPipe,

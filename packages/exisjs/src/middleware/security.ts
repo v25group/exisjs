@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
 import type { Handler, Request, Response, NextFunction } from '../types'
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 
 // ─── Security Headers (Helmet) ────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@ import type { Handler, CorsConfig, LoggerConfig, Logger } from '../types'
 import {
   ObjectValidator,
   ValidatorError as OldValidatorError,
-} from '../utils/validator'
+} from '../validator/validator'
 import {
   TexEngine,
   ValidatorError as NewValidatorError,

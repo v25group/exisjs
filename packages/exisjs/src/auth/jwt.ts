@@ -1,4 +1,4 @@
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 import { signJwt, verifyJwt } from '@exisjs/rs'
 
 export interface JWTOptions {

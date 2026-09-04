@@ -146,7 +146,7 @@ export default class UsersController {
 }
 ```
 
-## Advanced Options
+## Extended Options
 
 When enqueuing a job, or setting `defaultOptions` in your job definitions, you can configure:
 
@@ -169,7 +169,7 @@ The in-memory driver is designed for development, testing, or simple single-node
 ### The Redis Driver (`redis`)
 Designed for horizontal scale, the Redis driver powers distributed clusters.
 - **Atomic Operations**: Uses Lua scripts (`EVAL`) to atomically pop jobs from a pending `ZSET` (sorted set) into a processing state.
-- **Zero-Dependency Core**: It dynamically requires `ioredis` only if used, keeping the core framework lightweight.
+- **integrated Core**: It dynamically requires `ioredis` only if used, keeping the core framework lightweight.
 - **Cluster Safe**: All jobs for a specific topic map to consistent Redis hash slots.
 
 ### The Sweeper

@@ -25,7 +25,7 @@
  */
 
 import type { Request, Response, NextFunction } from '../../types'
-import { HttpError } from '../../utils/errors'
+import { HttpError } from '../../error/errors'
 import { OAuth } from './core'
 import type { OAuthCallbackOptions, OAuthFlowState } from './types'
 

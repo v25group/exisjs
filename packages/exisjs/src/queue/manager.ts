@@ -1,4 +1,4 @@
-import type { App } from './app'
+import type { App } from '../server/app'
 import { ExisQueue } from '../queue/client'
 import { ExisWorker } from '../queue/worker'
 import { CronScheduler } from '../cron/scheduler'

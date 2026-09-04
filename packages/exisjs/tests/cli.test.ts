@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs'
 import cp from 'node:child_process'
-import { generateRoute } from '../src/cli/commands/generate'
+import { generateController } from '../src/cli/commands/generate'
 import { buildCommand } from '../src/cli/commands/build'
 import { startCommand } from '../src/cli/commands/start'
 import { devCommand } from '../src/cli/commands/dev'
@@ -71,9 +71,9 @@ describe('CLI Commands', () => {
     }
   })
 
-  describe('generateRoute', () => {
+  describe('generateController', () => {
     it('scaffolds a route feature slice', async () => {
-      await generateRoute('users', tmpDir)
+      await generateController('users', tmpDir)
 
       const apiDir = path.join(tmpDir, 'src', 'http', 'users')
       expect(fs.existsSync(apiDir)).toBe(true)
@@ -85,14 +85,14 @@ describe('CLI Commands', () => {
 
     it('handles generating a route that already exists', async () => {
       // First generation
-      await generateRoute('existing', tmpDir)
+      await generateController('existing', tmpDir)
 
       // Clear mocks to track subsequent calls
       mockError.mockClear()
       mockExit.mockClear()
 
       // Second generation should call process.exit(1)
-      await generateRoute('existing', tmpDir)
+      await generateController('existing', tmpDir)
 
       expect(mockError).toHaveBeenCalled()
       expect(mockError.mock.calls[0].arguments[0]).toContain('already exists')

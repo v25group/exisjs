@@ -67,7 +67,7 @@ export default class UsersController {
 ExisJS utilizes a runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a minimal footprint. The `inject()` function is the primary and recommended way to resolve dependencies.
 </Info>
 
-### Advanced: Manual Resolution
+### Extended: Manual Resolution
 If you are operating completely outside of an ExisJS controller or route (for example, in a background worker, CRON job, or a raw script like a database seeder), you can manually resolve dependencies as an escape hatch via the app container:
 
 ```typescript filename="scripts/seed.ts"

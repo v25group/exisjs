@@ -42,11 +42,11 @@ export async function testCommand(options: TestOptions): Promise<void> {
   const testArgs = ['--test', '--test-reporter', reporterPath]
 
   process.env.NODE_ENV = 'test'
-  const { loadEnv } = await import('../../utils/env.js')
+  const { loadEnv } = await import('../../config/env.js')
   const { parsedEnv } = loadEnv(cwd, 'test')
 
   // Load Exis Config
-  const { loadConfig } = await import('../../utils/config.js')
+  const { loadConfig } = await import('../../config/config.js')
   let exisConfig: any = {}
   try {
     exisConfig = await loadConfig(cwd)

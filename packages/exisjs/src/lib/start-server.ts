@@ -29,7 +29,7 @@ async function start() {
     const dynamicImport = new Function('specifier', 'return import(specifier)')
 
     // 1. Load .env files so process.env is populated
-    const { loadEnv } = await import('../utils/env.js')
+    const { loadEnv } = await import('../config/env.js')
     loadEnv(cwd)
 
     // 2. Auto-load Environment variables validation file if it exists
@@ -176,10 +176,10 @@ async function start() {
 async function bootstrap() {
   let workers: number | 'safe' | 'max' = 1
   try {
-    const { loadEnv } = await import('../utils/env.js')
+    const { loadEnv } = await import('../config/env.js')
     loadEnv(process.cwd())
 
-    const { loadConfig } = await import('../utils/config.js')
+    const { loadConfig } = await import('../config/config.js')
     const config = await loadConfig(process.cwd())
     if (config.cluster && config.cluster.workers) {
       workers =

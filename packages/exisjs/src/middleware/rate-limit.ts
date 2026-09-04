@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction, Handler } from '../types'
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 
 export interface RateLimitOptions {
   windowMs?: number // How long to keep records of requests in memory

@@ -1,14 +1,14 @@
-import './utils/env'
+import './config/env'
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
 export { defineApp as exis } from './server/define'
 export { type App, getActiveApp } from './server/app'
-export { defineConfig } from './utils/config'
+export { defineConfig } from './config/config'
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
 export { createLogger } from './utils/logger'
 
-export { parseEnv, loadEnv } from './utils/env'
+export { parseEnv, loadEnv } from './config/env'
 
 // ─── Circuit Breaker ───────────────────────────────────────────────────────
 
@@ -17,19 +17,6 @@ export {
   CircuitBreakerError,
   CircuitState,
 } from './utils/circuit-breaker'
-
-// ─── Database ─────────────────────────────────────────────────────────────────
-export { db, createDatabase, DatabaseManager } from './database'
-export { Migrator } from './database/migration'
-export { QueryBuilder } from './database/query-builder'
-export type {
-  DatabaseConfig,
-  DatabaseDialect,
-  DatabaseAdapter,
-  QueryResult,
-  ExecuteResult,
-  Transaction,
-} from './database/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type {

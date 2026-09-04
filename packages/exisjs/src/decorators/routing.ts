@@ -1,5 +1,6 @@
 import type { HttpMethod, RouteSchema } from '../types'
 import { ROUTE_REGISTRY, ROUTE_META } from './constants'
+import { MetadataEngine } from './core/metadata'
 
 export function createMethodDecorator(method: HttpMethod) {
   return function (path = '', schema?: RouteSchema<any, any, any, any>): any {
@@ -20,17 +21,16 @@ export function createMethodDecorator(method: HttpMethod) {
         'name' in contextOrPropertyKey
       ) {
         // TS 5.0 Standard Method Decorator
-        ;(target as any)[ROUTE_META] = {
+        MetadataEngine.set(target, ROUTE_META, {
           method,
           path,
           schema,
-        }
+        })
       } else {
         // Legacy/Experimental Decorator fallback
         const proto = typeof target === 'function' ? target.prototype : target
         const name = contextOrPropertyKey || descriptor?.name
-        if (!proto[ROUTE_REGISTRY]) proto[ROUTE_REGISTRY] = []
-        proto[ROUTE_REGISTRY].push({
+        MetadataEngine.push(proto, ROUTE_REGISTRY, {
           method,
           path,
           schema,

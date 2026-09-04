@@ -8,14 +8,14 @@ import {
 } from '@exisjs/rs'
 
 /**
- * ExisJS Advanced Sanitization Engine
+ * ExisJS Sanitization Engine
  *
- * Offers dual-use standalone sanitization powered by ultra-fast native Rust
+ * Offers dual-use standalone sanitization powered by native Rust
  * bindings along with pure Javascript fallback utilities for complex object
  * manipulation.
  */
 export const sanitize = {
-  // ─── Native Rust Sanitizers (Ultra Fast) ─────────────────────────────────
+  // ─── Native Rust Sanitizers ──────────────────────────────────────────────
 
   escapeHtml: (val: string): string => rsEscapeHtml(val),
 

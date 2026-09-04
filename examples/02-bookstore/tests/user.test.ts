@@ -3,7 +3,7 @@ import { User } from '../src/models/User'
 import app from '../src/http/server'
 
 describe('User Model Native Tests', () => {
-  // Magically boot the framework, inject models, and cleanup on exit
+  // Automatically boot the framework, inject models, and cleanup on exit
   createTestContext(app)
 
   test('should query database correctly', async () => {

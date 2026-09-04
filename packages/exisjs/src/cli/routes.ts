@@ -2,7 +2,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { App } from '../server/app'
-import { loadConfig } from '../utils/config'
+import { loadConfig } from '../config/config'
 
 export async function routesCommand(
   cwd: string = process.cwd(),

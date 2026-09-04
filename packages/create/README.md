@@ -23,7 +23,7 @@
 
 ## Description
 
-`@exisjs/create` is the lightning-fast, interactive CLI tool used to bootstrap new Exis JS applications. It sets up a perfectly structured, production-ready environment in seconds so you can start building immediately.
+`@exisjs/create` is the optimized, interactive CLI tool used to bootstrap new Exis JS applications. It sets up a perfectly structured, production-ready environment in seconds so you can start building immediately.
 
 ## Usage
 

@@ -13,7 +13,7 @@ Before modifying any code, you MUST understand this architecture.
 - **Rule**: Whenever you compile the Rust engine, ALWAYS run `cargo build` in `packages/rs` or `npm run build` from the workspace root.
 
 ## 2. The "Graceful Fallback" Pattern
-Every high-performance system in ExisJS uses a strict "Fallback Pattern" to ensure the framework still works on obscure OS architectures where N-API binaries might fail to load.
+Every efficient system in ExisJS uses a strict "Fallback Pattern" to ensure the framework still works on obscure OS architectures where N-API binaries might fail to load.
 When writing TS classes, you MUST follow this structure:
 ```typescript
 export class ExampleService {

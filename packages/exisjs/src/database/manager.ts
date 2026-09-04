@@ -28,6 +28,8 @@ import type {
 } from './types'
 import { QueryBuilder } from './query-builder'
 import { Migrator } from './migration'
+import { SchemaSynchronizer } from './synchronizer'
+import type { TableDefinition } from './sql/schema'
 
 /**
  * Create a database adapter for the given dialect.
@@ -66,6 +68,8 @@ export class DatabaseManager {
   private configs = new Map<string, DatabaseConfig>()
   private defaultName = 'default'
   private migrator: Migrator | null = null
+  private synchronizer: SchemaSynchronizer | null = null
+  private registeredSchemas: TableDefinition[] = []
 
   /**
    * Add a named database connection.
@@ -96,6 +100,13 @@ export class DatabaseManager {
     }
     await Promise.all(promises)
     this.registerShutdownHook()
+
+    // Auto-sync if configured
+    for (const [name, config] of this.configs) {
+      if ((config as any).autoSync) {
+        await this.sync(name)
+      }
+    }
   }
 
   /**
@@ -119,6 +130,29 @@ export class DatabaseManager {
     await Promise.all(promises)
     this.connections.clear()
     this.configs.clear()
+    this.registeredSchemas = []
+  }
+
+  // ─── SQL-First Schema ──────────────────────────────────────────────────────
+
+  /**
+   * Register SQL-First Table Definitions to be auto-synced.
+   */
+  registerSchema(tables: TableDefinition[]): this {
+    this.registeredSchemas.push(...tables)
+    return this
+  }
+
+  /**
+   * Run the Auto-Sync Engine to automatically CREATE/ALTER tables.
+   */
+  async sync(connectionName?: string): Promise<void> {
+    if (this.registeredSchemas.length === 0) return
+    const adapter = this.getAdapter(connectionName || this.defaultName)
+    if (!this.synchronizer) {
+      this.synchronizer = new SchemaSynchronizer(adapter)
+    }
+    await this.synchronizer.sync(this.registeredSchemas)
   }
 
   /**
@@ -160,11 +194,54 @@ export class DatabaseManager {
    * Start building a query for a table (chainable query builder).
    */
   table<T = Record<string, unknown>>(
-    tableName: string,
+    tableName: string | any,
     connectionName?: string
   ): QueryBuilder<T> {
+    const name = typeof tableName === 'string' ? tableName : tableName.tableName
     const adapter = this.getAdapter(connectionName || this.defaultName)
-    return new QueryBuilder<T>(adapter, tableName)
+    return new QueryBuilder<T>(adapter, name)
+  }
+
+  // ─── SQL-First API ─────────────────────────────────────────────────────────
+
+  /**
+   * Start a SELECT query. Use .from(table) to specify the table.
+   */
+  select(...columns: string[]): QueryBuilder<any> {
+    const adapter = this.getAdapter(this.defaultName)
+    const qb = new QueryBuilder<any>(adapter, '')
+    return qb.select(...columns)
+  }
+
+  /**
+   * Start an INSERT query.
+   */
+  insert(tableDef: any): QueryBuilder<any> {
+    const name = typeof tableDef === 'string' ? tableDef : tableDef.tableName
+    const adapter = this.getAdapter(this.defaultName)
+    const qb = new QueryBuilder<any>(adapter, name)
+    // We override the default operation which is select
+    return qb.setOperation('insert')
+  }
+
+  /**
+   * Start an UPDATE query.
+   */
+  update(tableDef: any): QueryBuilder<any> {
+    const name = typeof tableDef === 'string' ? tableDef : tableDef.tableName
+    const adapter = this.getAdapter(this.defaultName)
+    const qb = new QueryBuilder<any>(adapter, name)
+    return qb.setOperation('update')
+  }
+
+  /**
+   * Start a DELETE query.
+   */
+  delete(tableDef: any): QueryBuilder<any> {
+    const name = typeof tableDef === 'string' ? tableDef : tableDef.tableName
+    const adapter = this.getAdapter(this.defaultName)
+    const qb = new QueryBuilder<any>(adapter, name)
+    return qb.setOperation('delete')
   }
 
   /**

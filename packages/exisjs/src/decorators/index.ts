@@ -1,5 +1,6 @@
 export * from './constants'
 export * from './core'
+export * from './core/index'
 export * from './routing'
 export * from './params'
 export * from './middleware'

@@ -17,6 +17,17 @@ import {
   eslintTemplate,
   rootRouteTemplate,
   agentsTemplate,
+  prettierrcTemplate,
+  prettierignoreTemplate,
+  commonAuthGuardTemplate,
+  dbConnectionTemplate,
+  exampleJobTemplate,
+  userDtoTemplate,
+  userEntityTemplate,
+  userServiceTemplate,
+  userGatewayTemplate,
+  userRouteTemplate,
+  userTestTemplate,
 } from './templates.js'
 
 const c = {
@@ -103,17 +114,9 @@ async function run() {
         active: 'Yes',
         inactive: 'No',
       },
+
       {
-        type: 'toggle',
-        name: 'srcDir',
-        message: 'Would you like your code inside a `src/` directory?',
-        initial: true,
-        active: 'Yes',
-        inactive: 'No',
-      },
-      {
-        type: (prev: unknown, values: any) =>
-          values.typescript ? 'select' : null,
+        type: 'select',
         name: 'paradigm',
         message: 'Which routing paradigm do you prefer?',
         choices: [
@@ -141,12 +144,12 @@ async function run() {
       },
     ])
 
-    if (answers.srcDir === undefined) {
+    if (answers.typescript === undefined) {
       process.exit(1)
     }
 
     useTypeScript = answers.typescript
-    useSrc = answers.srcDir
+    useSrc = true
     useEslint = answers.eslint
     paradigm = answers.paradigm || 'functional'
     alias = answers.alias || '@/*'
@@ -261,6 +264,7 @@ function writeTemplates(
 ): void {
   const isSrc = baseDir.startsWith('src')
   const ext = useTypeScript ? 'ts' : 'js'
+  const srcBase = isSrc ? 'src' : '.' // Helper for placing non-http src files
 
   write(
     dir,
@@ -273,7 +277,7 @@ function writeTemplates(
   }
 
   write(dir, `exis.config.${ext}`, exisConfigTemplate(useTypeScript))
-  write(dir, `env.${ext}`, envTsTemplate(useTypeScript))
+  write(dir, `${srcBase}/config/env.${ext}`, envTsTemplate(useTypeScript))
 
   write(
     dir,
@@ -283,6 +287,50 @@ function writeTemplates(
   write(dir, `${baseDir}/route.${ext}`, rootRouteTemplate(paradigm))
   write(dir, `${baseDir}/health/route.${ext}`, healthRouteTemplate(paradigm))
 
+  // Users Feature Module
+  write(
+    dir,
+    `${baseDir}/users/route.${ext}`,
+    userRouteTemplate(paradigm, useTypeScript)
+  )
+  write(dir, `${baseDir}/users/gateway.${ext}`, userGatewayTemplate(paradigm))
+  write(
+    dir,
+    `${baseDir}/users/user.service.${ext}`,
+    userServiceTemplate(paradigm, useTypeScript)
+  )
+  write(
+    dir,
+    `${baseDir}/users/dto/create-user.dto.${ext}`,
+    userDtoTemplate(useTypeScript)
+  )
+  write(
+    dir,
+    `${baseDir}/users/entities/user.entity.${ext}`,
+    userEntityTemplate(useTypeScript)
+  )
+  write(dir, `tests/users.e2e-spec.${ext}`, userTestTemplate(useTypeScript))
+
+  // Common, DB, Jobs
+  write(
+    dir,
+    `${srcBase}/common/guards/auth.guard.${ext}`,
+    commonAuthGuardTemplate(paradigm, useTypeScript)
+  )
+  write(
+    dir,
+    `${srcBase}/database/db.${ext}`,
+    dbConnectionTemplate(useTypeScript)
+  )
+  write(
+    dir,
+    `${srcBase}/jobs/cleanup.job.${ext}`,
+    exampleJobTemplate(useTypeScript)
+  )
+
+  // Tooling
+  write(dir, '.prettierrc', prettierrcTemplate())
+  write(dir, '.prettierignore', prettierignoreTemplate())
   write(dir, '.env', envTemplate())
   write(dir, '.gitignore', gitignoreTemplate())
   write(dir, 'README.md', readmeTemplate(name))

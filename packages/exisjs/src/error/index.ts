@@ -21,4 +21,4 @@ export {
   UnprocessableException,
   RateLimitException,
   InternalException,
-} from '../utils/errors'
+} from './errors'

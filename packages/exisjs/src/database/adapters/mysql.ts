@@ -1,7 +1,7 @@
 /**
  * MySQL Database Adapter.
  *
- * Uses the `mysql2` npm package for high-performance prepared statements,
+ * Uses the `mysql2` npm package for efficient prepared statements,
  * connection pooling, and transaction support.
  *
  * Peer Dependencies required:

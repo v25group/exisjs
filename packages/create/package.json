@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/create",
-  "version": "0.5.12",
+  "version": "0.6.0",
   "description": "Scaffolding tool for ExisJS applications",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [

@@ -11,7 +11,7 @@ ExisJS comes with a highly sophisticated built-in caching system that natively s
 
 ## `cacheMiddleware(options)`
 
-The primary way to use the cache is by attaching the `cacheMiddleware` directly to your GET routes. It intercepts responses, stores them in the cache, and serves them blazingly fast on subsequent identical requests.
+The primary way to use the cache is by attaching the `cacheMiddleware` directly to your GET routes. It intercepts responses, stores them in the cache, and serves them efficiently on subsequent identical requests.
 
 ExisJS automatically injects an `X-Exis-Cache: HIT` or `X-Exis-Cache: MISS` header into the HTTP response so you can debug your cache behavior instantly!
 

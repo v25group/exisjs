@@ -11,12 +11,12 @@ import {
   requestId,
   requestLogger,
 } from '../middleware/middleware'
-import { createErrorHandler } from '../utils/errors'
+import { createErrorHandler } from '../error/errors'
 import { ExisWebSocketServer } from '../websocket/server'
-import { defaultConfig, mergeConfig } from '../utils/config'
-import type { ResolvedConfig } from '../utils/config'
+import { defaultConfig, mergeConfig } from '../config/config'
+import type { ResolvedConfig } from '../config/config'
 import { createLogger, resolveLoggerConfig } from '../utils/logger'
-import { HotReloader } from './hot-reload'
+import { HotReloader } from '../dev/hot-reload'
 import type { JobOptions } from '../queue/types'
 import { Container } from '../di/container'
 import type { ProviderToken, ProviderDefinition } from '../di/container'
@@ -38,12 +38,12 @@ import type {
 } from '../types'
 
 import { ServerBootstrapper } from './bootstrapper'
-import { WsOrchestrator } from './ws-orchestrator'
-import { PluginManager } from './plugin-manager'
-import { RouteScanner } from './route-scanner'
-import { QueueManager } from './queue-manager'
+import { WsOrchestrator } from '../websocket/orchestrator'
+import { PluginManager } from '../plugin/manager'
+import { RouteScanner } from '../router/route-scanner'
+import { QueueManager } from '../queue/manager'
 import { RequestHandler } from './request-handler'
-import { ControllerRegistrar } from './controller-registrar'
+import { ControllerRegistrar } from '../router/controller-registrar'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export class App<TRoutes extends Record<string, any> = {}> {
@@ -675,7 +675,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     const root = cwd ?? process.cwd()
 
     if (!this._configLoaded) {
-      const { loadConfig } = await import('../utils/config')
+      const { loadConfig } = await import('../config/config')
       const fileConfig = await loadConfig(root)
       // File config takes precedence over defaults, but explicit options take highest precedence
       this.options = mergeConfig(defaultConfig, fileConfig)

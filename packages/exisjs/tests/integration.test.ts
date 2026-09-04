@@ -1,6 +1,6 @@
 import { App } from '../src/server/app'
 import { Router } from '../src/router/router'
-import { HttpError, asyncHandler } from '../src/utils/errors'
+import { HttpError, asyncHandler } from '../src/error'
 import { createTestApp, TestApp } from '../src/testing/client'
 import { describe, expect, it, beforeAll, afterAll } from '../src/testing'
 // ─── Integration Tests ───────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 {
   "name": "exisjs",
-  "version": "0.5.12",
-  "description": "High-performance full-stack web framework for Node.js",
+  "version": "0.6.0",
+  "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
     "exis",
@@ -24,6 +24,14 @@
     "./router": {
       "types": "./dist/router/index.d.ts",
       "default": "./dist/router/index.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "default": "./dist/database/index.js"
+    },
+    "./database/sql": {
+      "types": "./dist/database/sql/index.d.ts",
+      "default": "./dist/database/sql/index.js"
     },
     "./app": {
       "types": "./dist/app/index.d.ts",

@@ -1,7 +1,7 @@
 /**
  * PostgreSQL Database Adapter.
  *
- * Uses the `postgres` (postgres.js) npm package for high-performance connection pooling,
+ * Uses the `postgres` (postgres.js) npm package for efficient connection pooling,
  * parameterized queries, and transaction support.
  *
  * Peer Dependencies required:

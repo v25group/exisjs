@@ -8,7 +8,7 @@ export async function exportsCommand() {
 
   const categories = [
     {
-      name: '🚀 Core Framework',
+      name: 'Core Framework',
       items: [
         { path: 'exisjs', desc: 'Main entrypoint (cors, helmet, setup)' },
         { path: 'exisjs/app', desc: 'App lifecycle, workers, and resilience' },
@@ -20,7 +20,7 @@ export async function exportsCommand() {
       ],
     },
     {
-      name: '⚙️ Built-in Subsystems',
+      name: 'Built-in Subsystems',
       items: [
         { path: 'exisjs/auth', desc: 'Authentication, JWT, Passwords, RBAC' },
         { path: 'exisjs/cache', desc: 'Tag-based Cache Stores' },

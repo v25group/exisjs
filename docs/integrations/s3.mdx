@@ -88,7 +88,7 @@ export default class UploadsController {
       ContentType: file.mimetype,
     })
 
-    // The s3 client magically lazy-loads here!
+    // The s3 client automatically lazy-loads here!
     await s3.send(command)
 
     return { success: true, url: `https://my-exis-bucket.s3.amazonaws.com/${file.filename}` }

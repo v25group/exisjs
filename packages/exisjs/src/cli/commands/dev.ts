@@ -2,6 +2,7 @@ import { spawn, spawnSync, ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import http from 'node:http'
+import net from 'node:net'
 import { log, error, c, warn } from '../utils'
 
 interface DevOptions {
@@ -30,15 +31,58 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     process.exit(1)
   }
 
+  // 1. Prevent duplicate dev servers using a PID lockfile
+  const exisDir = path.join(cwd, '.exis')
+  const pidFile = path.join(exisDir, 'dev.pid')
+
+  if (fs.existsSync(pidFile)) {
+    try {
+      const existingPid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10)
+      if (existingPid && existingPid !== process.pid) {
+        try {
+          process.kill(existingPid, 0)
+          console.error(
+            '\n\x1b[31m[ExisJS] This application is already running in another terminal.\x1b[0m\n' +
+              'Stop the existing development server before starting a new one.'
+          )
+          process.exit(1)
+        } catch {
+          // Process not running, safe to proceed
+        }
+      }
+    } catch {
+      // Ignore read error
+    }
+  }
+
+  if (!fs.existsSync(exisDir)) fs.mkdirSync(exisDir, { recursive: true })
+  fs.writeFileSync(pidFile, String(process.pid))
+
+  // 2. Automatic Port Finding
+  const startPort = parseInt(options.port || process.env.PORT || '3000', 10)
+
+  function findAvailablePort(port: number): Promise<number> {
+    return new Promise((resolve) => {
+      const server = net.createServer()
+      server.listen(port, () => {
+        server.once('close', () => resolve(port))
+        server.close()
+      })
+      server.on('error', () => {
+        resolve(findAvailablePort(port + 1))
+      })
+    })
+  }
+
+  const actualPort = await findAvailablePort(startPort)
+
   // Check for tsconfig (only warn for TypeScript projects)
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
   if (!fs.existsSync(tsconfigPath) && entryFile.endsWith('.ts')) {
     warn('No tsconfig.json found — using default TypeScript settings.')
   }
 
-  if (options.port) {
-    process.env.PORT = options.port
-  }
+  process.env.PORT = String(actualPort)
   if (options.host) {
     process.env.HOST = options.host
   }
@@ -84,9 +128,20 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
   const CHILD_EXIT_TIMEOUT_MS = 10000
 
+  function cleanupPid() {
+    try {
+      if (fs.existsSync(pidFile)) {
+        fs.unlinkSync(pidFile)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handleSessionStop(_signal: string) {
     if (isShuttingDown) return
     isShuttingDown = true
+    cleanupPid()
 
     const time = new Date()
       .toLocaleTimeString('en-US', {
@@ -101,7 +156,6 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
     )
 
-    // Also need to declare tscProcess up at the top
     if ((global as any)._tscProcess) {
       try {
         ;(global as any)._tscProcess.kill()
@@ -111,6 +165,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     }
 
     if (child && child.pid) {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        process.exit(0)
+      }
+
       const exitTimeout = setTimeout(() => {
         if (child && !child.killed) {
           console.log(
@@ -222,11 +280,14 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       env: {
         ...env,
         __EXIS_DEV_SERVER: '1',
+        __EXIS_IS_RESTART: (global as any)._hasStartedBefore ? '1' : '',
         EXIS_ENTRY_FILE: entryFile!,
       },
       stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
       shell: runner!.bin === process.execPath ? false : true,
     })
+
+    ;(global as any)._hasStartedBefore = true
 
     let stderrBuffer = ''
 
@@ -282,6 +343,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           /\.exis/,
           /dist/,
           /exis\.d\.ts$/,
+          /src[\\/]http/, // Let HotReloader handle HTTP routes natively!
         ],
       })
 

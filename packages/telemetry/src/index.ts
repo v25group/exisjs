@@ -60,8 +60,12 @@ export function initTelemetry(config: TelemetryConfig) {
       .finally(() => process.exit(0))
   })
 
+  const now = new Date()
+  const h = String(now.getHours()).padStart(2, '0')
+  const m = String(now.getMinutes()).padStart(2, '0')
+  const s = String(now.getSeconds()).padStart(2, '0')
   console.log(
-    `\x1b[36m[ExisJS Telemetry]\x1b[0m Started OpenTelemetry with ${isOtlp ? 'OTLP' : 'Console'} exporter`
+    `\x1b[90m[${h}:${m}:${s}]\x1b[0m \x1b[36m[ExisJS Telemetry]\x1b[0m Started OpenTelemetry with ${isOtlp ? 'OTLP' : 'Console'} exporter`
   )
 }
 

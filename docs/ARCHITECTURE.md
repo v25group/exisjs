@@ -117,7 +117,7 @@ Test coverage here is dense and correctness-focused (string/number/boolean/objec
 The framework achieves production optimizations directly within its core engine rather than relying on brittle post-processing build scripts:
 
 - **AOT Routing (O(1) Boot Time)** — During `exis build`, `manifest.ts` generates a `.exis/routes-manifest.js` file. In production, `RouteScanner` detects this manifest and uses it to load routes instantly, skipping the expensive `fs.readdir` recursive scan entirely.
-- **JIT Fast JSON Serialization** — During route registration at boot time, the `Router` checks if `fast-json-stringify` is installed. If a route has an ExisJS `v` response schema, the router automatically converts it to JSON Schema via `.toOpenApi()` and compiles an ultra-fast serializer Just-In-Time, attaching it to the route's response handler (`res._serializer`). This eliminates the need to precompile serializers to disk.
+- **JIT Fast JSON Serialization** — During route registration at boot time, the `Router` checks if `fast-json-stringify` is installed. If a route has an ExisJS `v` response schema, the router automatically converts it to JSON Schema via `.toOpenApi()` and compiles an optimized serializer Just-In-Time, attaching it to the route's response handler (`res._serializer`). This eliminates the need to precompile serializers to disk.
 
 ---
 
@@ -129,7 +129,7 @@ The framework achieves production optimizations directly within its core engine 
 
 - **Redis driver** (`queue/drivers/RedisDriver.ts`): pending jobs live in a Redis **sorted set** (`{prefix}:{name}:pending`, score = ready-at timestamp) with payloads stored separately in a **hash** (`{prefix}:{name}:payloads`). `enqueue()` uses a Lua script for atomic `ZADD` + `HSET` (with an optional max-queue-size check baked into the same script for backpressure). `poll()` atomically pops the earliest-ready job via `ZRANGEBYSCORE` + moves it to a `processing` zset with a visibility-timeout score, using another Lua script. `sweep()` periodically requeues anything left in `processing` past its visibility timeout (crash recovery for workers that died mid-job).
 - **Memory driver** (`queue/drivers/MemoryDriver.ts`): the same conceptual model (pending list, processing list, sweep-based recovery) implemented with in-process arrays instead of Redis — correctly mirrors the Redis driver's semantics for single-process/dev use.
-- **Job execution:** `ExisWorker` (`queue/worker.ts`) polls continuously (`setImmediate`-chained, with backoff on connection errors), and for jobs with a `filePath` (rather than an inline `handler`), dispatches execution to a `ThreadPool` (`threads/pool.ts`) — a zero-dependency `worker_threads` pool — so CPU-heavy job handlers don't block the main event loop.
+- **Job execution:** `ExisWorker` (`queue/worker.ts`) polls continuously (`setImmediate`-chained, with backoff on connection errors), and for jobs with a `filePath` (rather than an inline `handler`), dispatches execution to a `ThreadPool` (`threads/pool.ts`) — a integrated `worker_threads` pool — so CPU-heavy job handlers don't block the main event loop.
 
 **Retry behavior:** on failure, `attemptsMade` increments and the job is requeued (with optional exponential/fixed backoff) if under `maxAttempts`; once attempts are exhausted, the job is moved to a dead-letter queue (`{prefix}:{name}:dead` in Redis, or a `deadLetter` list in Memory) and an `onJobFailedPermanently` hook is fired, ensuring no data is lost for permanently failed jobs.
 
@@ -170,7 +170,7 @@ The framework achieves production optimizations directly within its core engine 
 
 **What it is:** An optional high-throughput backend that swaps Node's native HTTP server for `uWebSockets.js`, auto-detected if installed (or forced via `server: 'uws'` config).
 
-**How it's implemented:** `uws-adapter.ts` provides `UwsIncomingMessage`/`UwsServerResponse` shims that emulate the subset of Node's `IncomingMessage`/`ServerResponse` interface the rest of the framework depends on. Response writes use `res.cork()` to batch header/status/body into a single write. The shim correctly emulates asynchronous Node stream semantics (e.g., buffered `data`/`end` events delivered via microtasks for late listener registration), making it a robust and high-performance drop-in replacement.
+**How it's implemented:** `uws-adapter.ts` provides `UwsIncomingMessage`/`UwsServerResponse` shims that emulate the subset of Node's `IncomingMessage`/`ServerResponse` interface the rest of the framework depends on. Response writes use `res.cork()` to batch header/status/body into a single write. The shim correctly emulates asynchronous Node stream semantics (e.g., buffered `data`/`end` events delivered via microtasks for late listener registration), making it a robust and efficient drop-in replacement.
 
 ---
 
@@ -245,7 +245,7 @@ The framework achieves production optimizations directly within its core engine 
 
 ## 20. Security Middleware Suite
 
-Split by actual strength, not lumped together as one "Advanced Security Suite":
+Split by actual strength, not lumped together as one "Security Suite":
 
 ### 20a. Solid, standard-pattern implementations 🟢
 
@@ -291,7 +291,7 @@ Split by actual strength, not lumped together as one "Advanced Security Suite":
 
 ## 24. Native Test Runner Integration 🟢
 
-**What it is:** A zero-dependency test runner built on `node:test`, with a custom Jest/Vitest-style terminal reporter, a Jest-compatible `expect()` assertion library, and `createTestContext()` for booting a full `App` (DI container, database connections) inside tests without mocking.
+**What it is:** A integrated test runner built on `node:test`, with a custom Jest/Vitest-style terminal reporter, a Jest-compatible `expect()` assertion library, and `createTestContext()` for booting a full `App` (DI container, database connections) inside tests without mocking.
 
 **How it's implemented:** `testing/reporter.mts` consumes `node:test`'s async iterable of `TestEvent`s and renders grouped, colorized, file-scoped PASS/FAIL output with a Jest-style failure summary — genuinely nicer than raw TAP output. `testing/expect.ts` implements the common Jest matcher surface (`toBe`, `toEqual`, `toMatchObject`, `toHaveBeenCalledWith`, `resolves`/`rejects`, etc.) on top of `node:assert`. `createTestContext()` (`testing/index.ts`) wires `before`/`after` hooks that boot the app, and on teardown, correctly awaits and closes Mongoose, Redis, and Prisma connections if detected in use.
 

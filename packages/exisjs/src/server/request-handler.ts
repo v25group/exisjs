@@ -274,7 +274,7 @@ export class RequestHandler {
       if (!handled || res.headersSent) return
     }
 
-    const { createErrorHandler } = await import('../utils/errors')
+    const { createErrorHandler } = await import('../error/errors')
     const defaultHandler = createErrorHandler(
       this.app.options.env === 'development'
     )

@@ -3,7 +3,7 @@ import assert from 'node:assert'
 import { sanitize } from '../src/sanitize/index.js'
 import { tex } from '../src/validator/index.js'
 
-test('Advanced Sanitization Engine Tests', async (t) => {
+test('Sanitization Engine Tests', async (t) => {
   await t.test('Standalone Rust Sanitization (escapeHtml)', () => {
     const malicious = '<script>alert("hacked")</script>'
     const safe = sanitize.escapeHtml(malicious)

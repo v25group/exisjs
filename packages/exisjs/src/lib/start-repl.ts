@@ -16,7 +16,7 @@ async function startRepl() {
     const dynamicImport = new Function('specifier', 'return import(specifier)')
 
     // 1. Load .env files so process.env is populated
-    const { loadEnv } = await import('../utils/env.js')
+    const { loadEnv } = await import('../config/env.js')
     loadEnv(cwd)
 
     // 2. Auto-load Environment variables validation file if it exists

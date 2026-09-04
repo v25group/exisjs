@@ -72,7 +72,7 @@ export default class AIController {
   
   @Post('/joke')
   async generateJoke() {
-    // The openai client magically lazy-loads here!
+    // The openai client automatically lazy-loads here!
     const completion = await openai.chat.completions.create({
       messages: [{ role: 'user', content: 'Tell me a programming joke.' }],
       model: 'gpt-4o-mini',

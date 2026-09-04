@@ -3,7 +3,7 @@
  * Please migrate to `tex.type({ ... })` for native Rust-powered validation.
  */
 import { TexEngine } from './tex'
-import type { ValidatorType } from '../utils/validator'
+import type { ValidatorType } from './validator'
 
 export type Infer<T> =
   T extends TexEngine<infer U>
@@ -12,6 +12,6 @@ export type Infer<T> =
       ? V
       : never
 
-export { v, ValidatorError, ValidatorType } from '../utils/validator'
+export { v, ValidatorError, ValidatorType } from './validator'
 
 export { tex } from './tex'

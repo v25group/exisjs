@@ -1,5 +1,5 @@
 import type { Handler, Request, Response, NextFunction } from '../types'
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 
 export interface IpFilterOptions {
   /** List of IPs or CIDR blocks to allow. If provided, only these are allowed. */

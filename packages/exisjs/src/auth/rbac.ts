@@ -1,4 +1,4 @@
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 import type { Request, Response, NextFunction } from '../types'
 
 /**

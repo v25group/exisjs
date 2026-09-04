@@ -1,7 +1,7 @@
 import { IncomingMessage } from 'node:http'
 import type { Logger } from '../types'
 import type { ExisResponse } from './response'
-import { HttpError } from '../utils/errors'
+import { HttpError } from '../error/errors'
 import { Dataloader } from '../dataloader/dataloader'
 import type { BatchLoadFn } from '../dataloader/dataloader'
 

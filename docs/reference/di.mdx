@@ -85,7 +85,7 @@ import { Database } from '../db' // The class definition
 export default controller({
   getUsers: route.get('/', {
     async handle() {
-      // Magically resolves the correct instance from the global container!
+      // Automatically resolves the correct instance from the global container!
       // Type is automatically inferred as `Database`.
       const db = inject(Database) 
       
@@ -104,7 +104,7 @@ export default controller({
 
 Unlike other frameworks like NestJS, ExisJS does **not** rely on slow, metadata-heavy Constructor Injection. 
 
-Instead, you use the exact same blazingly fast `inject()` function directly inside your Controller methods! This completely eliminates the need for `@Inject()` decorators or massive constructor boilerplate.
+Instead, you use the exact same `inject()` function directly inside your Controller methods! This completely eliminates the need for `@Inject()` decorators or massive constructor boilerplate.
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get } from 'exisjs/decorators'

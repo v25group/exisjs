@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <b>A zero-dependency, fully-typed HTTP and RPC client for Exis JS.</b>
+  <b>A integrated, fully-typed HTTP and RPC client for Exis JS.</b>
 </p>
 
 <p align="center">
@@ -23,7 +23,7 @@
 
 ## Description
 
-`@exisjs/fetch` is the official HTTP client for Exis JS. Built entirely on the native `fetch` API, it is a zero-dependency, extremely lightweight client that acts as a 100% drop-in replacement for axios, with the added benefit of a highly-typed RPC Proxy for your Exis backend!
+`@exisjs/fetch` is the official HTTP client for Exis JS. Built entirely on the native `fetch` API, it is a integrated, extremely lightweight client that acts as a 100% drop-in replacement for axios, with the added benefit of a highly-typed RPC Proxy for your Exis backend!
 
 - **0 dependencies.** Supply-chain safe.
 - **100% axios-compatible API.** Interceptors, error handling, config.
