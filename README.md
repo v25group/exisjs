@@ -24,7 +24,7 @@
 ## ⚡ What is ExisJS?
 
 **A unified approach to building web applications.**
-ExisJS provides a comprehensive foundation for Node.js backends. It integrates the intuitive developer experience of file-system routing with the robust organizational patterns needed for large-scale applications—all supported by a deeply integrated native core.
+ExisJS provides a comprehensive foundation for Node.js backends. It integrates the intuitive developer experience of file-system routing with the robust organizational patterns needed for large-scale applications all supported by a deeply integrated native core.
 
 If you appreciate the straightforward nature of traditional frameworks but require built-in TypeScript support, dependency injection, automatic OpenAPI documentation, and end-to-end type safety, ExisJS provides those out of the box.
 
