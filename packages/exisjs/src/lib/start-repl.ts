@@ -21,10 +21,8 @@ async function startRepl() {
 
     // 2. Auto-load Environment variables validation file if it exists
     const envFiles = [
-      path.join(cwd, 'src', 'env.ts'),
-      path.join(cwd, 'src', 'env.js'),
-      path.join(cwd, 'env.ts'),
-      path.join(cwd, 'env.js'),
+      path.join(cwd, 'src', 'config', 'env.ts'),
+      path.join(cwd, 'src', 'config', 'env.js'),
     ]
 
     for (const envFile of envFiles) {

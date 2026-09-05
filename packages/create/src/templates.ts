@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.6.0',
+      exisjs: '^0.6.1',
     },
   }
 
@@ -51,9 +51,9 @@ export function packageJsonTemplate(
   if (useEslint) {
     pkg.devDependencies = {
       ...(pkg.devDependencies || {}),
-      eslint: '^9.9.0',
-      '@eslint/js': '^9.9.0',
-      'eslint-config-prettier': '^9.1.0',
+      eslint: '^10.0.0',
+      '@eslint/js': '^10.0.0',
+      'eslint-config-prettier': '^10.0.0',
     }
     if (useTypeScript) {
       pkg.devDependencies['typescript-eslint'] = '^8.0.0'
@@ -95,8 +95,8 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
 
 export function exisConfigTemplate(useTypeScript: boolean): string {
   const importStatement = useTypeScript
-    ? `import type { ExisConfig } from 'exisjs/config'\nimport { env } from './config/env'\n\nconst config: ExisConfig = {`
-    : `/** @type {import('exisjs/config').ExisConfig} */\nimport { env } from './config/env'\n\nconst config = {`
+    ? `import type { ExisConfig } from 'exisjs/config'\nimport { env } from '@/config/env'\n\nconst config: ExisConfig = {`
+    : `/** @type {import('exisjs/config').ExisConfig} */\nimport { env } from '@/config/env'\n\nconst config = {`
 
   return `${importStatement}
   port: Number(env.PORT) || 4000,
@@ -466,7 +466,10 @@ export default {
 }
 
 export function userDtoTemplate(useTypeScript: boolean): string {
-  return `import { tex } from 'exisjs/validator'
+  const importSchema = useTypeScript
+    ? "import type { ResolveSchema } from 'exisjs/validator'\n"
+    : ''
+  return `${importSchema}import { tex } from 'exisjs/validator'
 
 export const createUserSchema = tex.object({
   name: tex.string(),
@@ -474,7 +477,7 @@ export const createUserSchema = tex.object({
   password: tex.string().min(8),
 })
 
-${useTypeScript ? 'export type CreateUserDto = tex.infer<typeof createUserSchema>' : ''}
+${useTypeScript ? 'export type CreateUserDto = ResolveSchema<typeof createUserSchema>' : ''}
 `
 }
 
@@ -558,7 +561,7 @@ export default class UsersGateway {}
 `
   }
 
-  return `import { defineGateway } from 'exisjs'
+  return `import { defineGateway } from 'exisjs/router'
 import { UserService } from './user.service'
 
 export default defineGateway({

@@ -375,8 +375,16 @@ export class ServerBootstrapper {
     }
 
     if (process.env.__EXIS_IS_RESTART) {
+      const time = new Date()
+        .toLocaleTimeString('en-US', {
+          hour12: true,
+          hour: 'numeric',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+        .toLowerCase()
       console.log(
-        `\n  ${c.primary}${c.bold}EXIS v${fwVersion}${c.reset}  restarted in ${c.bold}${readyMs} ms${c.reset}\n`
+        `${c.dim}${time}${c.reset} ${c.primary}[exis]${c.reset} ${c.dim}restarted in ${readyMs} ms${c.reset}`
       )
       return
     }

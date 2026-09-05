@@ -3,7 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
-import { log, error, c, warn } from '../utils'
+import { error, c, warn } from '../utils'
 
 interface DevOptions {
   port?: string
@@ -348,7 +348,18 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       })
 
       watcher.on('all', async (eventName: string, file: string) => {
-        log(`Reloading due to ${eventName} in ${c.cyan}${file}${c.reset}`)
+        const time = new Date()
+          .toLocaleTimeString('en-US', {
+            hour12: true,
+            hour: 'numeric',
+            minute: '2-digit',
+            second: '2-digit',
+          })
+          .toLowerCase()
+        const primary = '\x1b[38;2;160;70;255m'
+        console.log(
+          `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${file}${c.reset}`
+        )
         await generateManifest(cwd, '', true)
         startProcess()
       })

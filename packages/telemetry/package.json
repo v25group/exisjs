@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/telemetry",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Zero-Config OpenTelemetry Integration for ExisJS",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,11 +34,11 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/auto-instrumentations-node": "^0.79.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
-    "@opentelemetry/resources": "^2.10.0",
-    "@opentelemetry/sdk-node": "^0.221.0",
-    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.80.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
     "@opentelemetry/semantic-conventions": "^1.43.0"
   },
   "devDependencies": {

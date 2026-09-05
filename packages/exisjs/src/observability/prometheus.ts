@@ -24,7 +24,7 @@ export interface HttpMetricsAdapter {
 /**
  * Creates a metrics collection middleware.
  * Exis uses a 'Bring Your Own Metrics' approach to stay dependency-free.
- * You can pass adapters for prom-client, statsd, or any custom tracking.
+ * You can pass adapters for @prometheus-io/client, statsd, or any custom tracking.
  */
 export function metrics(adapter: HttpMetricsAdapter): Handler {
   return (req, res, next) => {

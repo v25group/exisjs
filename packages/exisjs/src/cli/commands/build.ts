@@ -178,7 +178,16 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   await fixPathAliases(cwd, outDir)
 
   // Generate the .exis/manifest.js route map
-  await generateManifest(cwd, outDir)
+  try {
+    await generateManifest(cwd, outDir)
+  } catch (err: any) {
+    console.error('')
+    error(`ROUTE_SCAN_FAILED: ${err.message}`)
+    console.error(
+      `\n${c.yellow}  Fix the routing errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+    )
+    process.exit(1)
+  }
 
   // ─── Build-time Validation ──────────────────────────────────────────────────
   // Eagerly import the generated manifest to catch route-level configuration
