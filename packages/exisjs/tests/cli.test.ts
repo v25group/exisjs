@@ -99,6 +99,48 @@ describe('CLI Commands', () => {
     })
   })
 
+  describe('generateSchema, Boundary & Resource', () => {
+    it('generates a schema.ts using tex validator', async () => {
+      const { generateSchema } = await import('../src/cli/commands/generate')
+      await generateSchema('posts', tmpDir)
+
+      const schemaFile = path.join(tmpDir, 'src', 'http', 'posts', 'schema.ts')
+      expect(fs.existsSync(schemaFile)).toBe(true)
+
+      const content = fs.readFileSync(schemaFile, 'utf8')
+      expect(content).toContain("import { tex } from 'exisjs/validator'")
+      expect(content).toContain('PostsParamsSchema')
+    })
+
+    it('generates a boundary.ts file', async () => {
+      const { generateBoundary } = await import('../src/cli/commands/generate')
+      await generateBoundary('admin', tmpDir)
+
+      const boundaryFile = path.join(
+        tmpDir,
+        'src',
+        'http',
+        'admin',
+        'boundary.ts'
+      )
+      expect(fs.existsSync(boundaryFile)).toBe(true)
+
+      const content = fs.readFileSync(boundaryFile, 'utf8')
+      expect(content).toContain('defineBoundary')
+    })
+
+    it('generates a full resource slice (schema, service, boundary, route)', async () => {
+      const { generateResource } = await import('../src/cli/commands/generate')
+      await generateResource('articles', tmpDir)
+
+      const dir = path.join(tmpDir, 'src', 'http', 'articles')
+      expect(fs.existsSync(path.join(dir, 'schema.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'service.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'boundary.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'route.ts'))).toBe(true)
+    })
+  })
+
   describe('buildCommand', () => {
     it('skips compilation if tsconfig.json is missing', async () => {
       await expect(buildCommand()).resolves.toBeUndefined()

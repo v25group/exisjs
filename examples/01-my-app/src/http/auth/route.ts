@@ -1,8 +1,8 @@
 import { controller, route, after } from 'exisjs/router'
 import { tex } from 'exisjs/validator'
-import { enqueue } from 'exisjs/queue'
-import { JWT, Password } from 'exisjs/auth'
 import { UnauthorizedError, BadRequestError } from 'exisjs/error'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
 
 // Simple in-memory database to store registered users
 interface User {
@@ -23,10 +23,7 @@ export default controller({
     }),
     async handle({ body, req, app }) {
       after(() => {
-        app.log.info(
-          { email: body.email },
-          'User logged in (deferred logging)'
-        )
+        app.log.info({ email: body.email }, 'User logged in (deferred logging)')
       })
 
       // 1. Look up user by email
@@ -36,7 +33,7 @@ export default controller({
       }
 
       // 2. Verify scrypt password hash
-      const isPasswordCorrect = await Password.verifyPassword(
+      const isPasswordCorrect = await bcrypt.compare(
         body.password,
         user.passwordHash
       )
@@ -45,7 +42,7 @@ export default controller({
       }
 
       // 3. Sign JWT natively
-      const token = JWT.signJWT(
+      const token = jwt.sign(
         { id: user.id, role: 'user' },
         process.env.JWT_SECRET || 'my-super-secret-jwt-key'
       )
@@ -69,7 +66,7 @@ export default controller({
       }
 
       // 2. Hash password with Scrypt natively
-      const passwordHash = await Password.hashPassword(body.password)
+      const passwordHash = await bcrypt.hash(body.password, 10)
 
       // 3. Save user to in-memory store
       const userId = nextUserId++
@@ -80,14 +77,8 @@ export default controller({
         passwordHash,
       })
 
-      // 4. Dispatch background job
-      await enqueue('welcome-email', {
-        email: body.email,
-        name: body.name || 'Anonymous',
-      })
-
       // 5. Sign JWT natively
-      const token = JWT.signJWT(
+      const token = jwt.sign(
         { id: userId, role: 'user' },
         process.env.JWT_SECRET || 'my-super-secret-jwt-key'
       )

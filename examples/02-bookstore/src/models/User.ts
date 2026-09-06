@@ -1,5 +1,5 @@
 import mongoose from 'mongoose'
-import { Password } from 'exisjs/auth'
+import bcrypt from 'bcryptjs'
 
 const userSchema = new mongoose.Schema(
   {
@@ -26,16 +26,16 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 )
 
-// hash password before saving user to db using ExisJS native auth
+// hash password before saving user to db
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) return
 
-  this.password = await Password.hashPassword(this.password)
+  this.password = await bcrypt.hash(this.password, 10)
 })
 
 // compare password func
 userSchema.methods.comparePassword = async function (userPassword: string) {
-  return await Password.verifyPassword(userPassword, this.password)
+  return await bcrypt.compare(userPassword, this.password)
 }
 
 export const User = mongoose.models.User || mongoose.model('User', userSchema)

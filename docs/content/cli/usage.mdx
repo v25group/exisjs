@@ -5,19 +5,21 @@ nextTitle: "CLI Commands"
 
 # CLI Usage
 
-The ExisJS CLI can be executed in two primary contexts: **globally** via your operating system's PATH, or **locally** via your project's `package.json` scripts. Understanding the distinction between these execution contexts is critical for maintaining stable development environments.
+The ExisJS CLI (`exis` / `exisjs`) can be executed in two primary contexts: **globally / on-demand** via `npx`, or **locally** via your project's `package.json` scripts.
 
 ## Global vs. Local Execution
 
-When you install the CLI globally (`npm install -g exisjs`) or run it on-demand via `npx`, the binary operates outside of your project's dependency tree. While this is necessary for initializing new projects, it presents a challenge for long-term maintenance: if two developers have different global versions of the CLI installed, they may experience inconsistent build outputs or behavior.
+When bootstrapping a brand-new project, invoke the initialization tool using `npx`:
 
-To solve this, ExisJS manages its build and execution tools as **local development dependencies**. When you run `exisjs init`, the framework automatically installs the `exisjs` package into your `node_modules` and wires it up to your `package.json` scripts. 
+```bash
+$ npx exisjs init my-api
+```
 
-By executing the CLI through `npm run`, npm automatically resolves the binary to the exact version pinned in your `package.json`, ensuring deterministic behavior across your entire engineering team and CI/CD pipelines.
+Once inside an initialized ExisJS project, execution through `npm run` ensures deterministic behavior pinned to the local `exisjs` version in `node_modules`.
 
 ## Default Package Scripts
 
-Every ExisJS project is scaffolded with a standard set of `package.json` scripts that wrap the underlying CLI commands:
+Every ExisJS project scaffolded with `init` includes the standard script targets in `package.json`:
 
 ```json
 {
@@ -30,32 +32,44 @@ Every ExisJS project is scaffolded with a standard set of `package.json` scripts
 }
 ```
 
-You invoke these scripts using your package manager:
+Invoke these scripts using your package manager:
 
 ```bash
 $ npm run dev
 $ npm run build
 $ npm run start
+$ npm test
 ```
 
 ## Passing Arguments via Scripts
 
-If you need to pass additional arguments or options to the CLI while using package scripts, append a double-dash (`--`) before the CLI options. This instructs npm to pass the remaining arguments directly to the underlying `exisjs` command.
-
-For example, to start the development server on a custom port:
+To pass options through `npm run`, append a double-dash (`--`) before the CLI flags:
 
 ```bash
-$ npm run dev -- --port 4000
+# Start the dev server on port 5000
+$ npm run dev -- -p 5000
+
+# Run a specific test file
+$ npm test -- tests/users.test.ts
 ```
 
-To generate a new route using `npx` (which bypasses the script requirement while still using the local binary):
+Direct commands can also be called via `npx exisjs`:
 
 ```bash
-$ npx exisjs generate route users
+# Scaffold a new resource slice
+$ npx exisjs g resource users
+
+# Print the routing table
+$ npx exisjs routes
+
+# Inspect available public exports
+$ npx exisjs exports
 ```
 
 ## Recommended Workflow
 
-1. Use the global CLI (or `npx exisjs`) **only** for scaffolding new projects (`exisjs init`).
-2. Use the `package.json` scripts (e.g., `npm run dev`) for all day-to-day development, building, and testing.
-3. Use `npx exisjs` inside an existing project directory for one-off commands (like `generate`, `routes`, or `repl`).
+1. Use `npx exisjs init <name>` to scaffold new applications.
+2. Use `npm run dev` for local hot-reloading development with automatic port conflict handling.
+3. Use `npx exisjs generate <type> <name>` to scaffold file conventions (`route`, `service`, `schema`, `boundary`, `resource`).
+4. Use `npm test` to run the integrated test runner.
+5. Use `npm run build` and `npm run start` for production deployment.

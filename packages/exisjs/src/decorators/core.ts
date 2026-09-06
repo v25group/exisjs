@@ -12,12 +12,12 @@ import {
   LIFECYCLE_METADATA_PROP,
   PARAM_METADATA_PROP,
   SERVER_CONFIG,
-  GATEWAY_CONFIG,
+  BOUNDARY_CONFIG,
 } from './constants'
 import type {
   ControllerOptions,
   ServerConfig,
-  GatewayConfig,
+  BoundaryConfig,
 } from './constants'
 import { MetadataEngine } from './core/metadata'
 
@@ -132,8 +132,11 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
   }
 }
 
+export const INJECTABLE_REGISTRY = new Set<any>()
+
 export function Injectable(options?: { scope?: 'singleton' | 'request' }): any {
   return function (target: any, _context?: ClassDecoratorContext) {
+    INJECTABLE_REGISTRY.add(target)
     if (options?.scope) {
       MetadataEngine.set(
         target.prototype,
@@ -154,10 +157,10 @@ export function Server(options?: ServerConfig): any {
 }
 
 /**
- * Marks a class as a Gateway module.
+ * Marks a class as a Boundary module (folder-scoped config + request pipeline).
  */
-export function Gateway(options?: GatewayConfig): any {
+export function Boundary(options?: BoundaryConfig): any {
   return function (target: any, _context?: ClassDecoratorContext) {
-    MetadataEngine.set(target.prototype, GATEWAY_CONFIG, options || {})
+    MetadataEngine.set(target.prototype, BOUNDARY_CONFIG, options || {})
   }
 }

@@ -19,7 +19,7 @@ describe('Tex Native Validation Engine', () => {
       name: tex.string(),
     })
 
-    expect(() => schema.parse({})).toThrow(/Missing required field/)
+    expect(() => schema.parse({})).toThrow(/Expected value, received undefined/)
   })
 
   it('rejects completely invalid payloads', () => {
@@ -45,7 +45,7 @@ describe('Tex Native Validation Engine', () => {
       )
 
       expect(() => schema.parse({ name: 'Bob', extra: 'hacker' })).toThrow(
-        /Strict mode error/
+        /Unknown field not allowed in strict mode/
       )
     })
 
@@ -57,6 +57,58 @@ describe('Tex Native Validation Engine', () => {
       const res = schema.parse({ name: 'Bob', extra: 'hacker' })
       expect(res.name).toBe('Bob')
       // Currently native validator ignores unknown fields and does not return them, but does not throw.
+    })
+  })
+
+  describe('Nullable Fields', () => {
+    it('accepts null when nullable() is used', () => {
+      const schema = tex.object({
+        name: tex.string().nullable(),
+      })
+
+      const res = schema.parse({ name: null })
+      expect(res.name).toBe(null)
+    })
+
+    it('rejects null when not nullable', () => {
+      const schema = tex.object({
+        name: tex.string(),
+      })
+
+      expect(() => schema.parse({ name: null })).toThrow(
+        /Expected value, received undefined/
+      )
+    })
+
+    it('rejects undefined when nullable but not optional', () => {
+      const schema = tex.object({
+        name: tex.string().nullable(),
+      })
+
+      expect(() => schema.parse({})).toThrow(
+        /Expected value, received undefined/
+      )
+    })
+  })
+
+  describe('Optional Fields', () => {
+    it('accepts undefined when optional() is used', () => {
+      const schema = tex.object({
+        name: tex.string().optional(),
+      })
+
+      const res = schema.parse({})
+      expect(res.name).toBe(undefined)
+    })
+
+    it('rejects undefined when not optional', () => {
+      const schema = tex.object({
+        name: tex.string(),
+      })
+
+      expect(() => schema.parse({})).toThrow(
+        /Expected value, received undefined/
+      )
     })
   })
 
@@ -82,7 +134,7 @@ describe('Tex Native Validation Engine', () => {
           email: 'not-an-email',
           uuid: '123e4567-e89b-12d3-a456-426614174000',
         })
-      ).toThrow(/must be a valid email/)
+      ).toThrow(/Must be a valid email/)
     })
   })
 
@@ -97,12 +149,14 @@ describe('Tex Native Validation Engine', () => {
     })
 
     it('rejects numbers outside range', () => {
-      expect(() => numSchema.parse({ price: 5 })).toThrow(/must be >=/)
-      expect(() => numSchema.parse({ price: 200 })).toThrow(/must be <=/)
+      expect(() => numSchema.parse({ price: 5 })).toThrow(/Must be >=/)
+      expect(() => numSchema.parse({ price: 200 })).toThrow(/Must be <=/)
     })
 
     it('rejects invalid types', () => {
-      expect(() => numSchema.parse({ price: '50' })).toThrow(/must be a number/)
+      expect(() => numSchema.parse({ price: '100' })).toThrow(
+        /Must be a number/
+      )
     })
   })
 
@@ -117,8 +171,8 @@ describe('Tex Native Validation Engine', () => {
     })
 
     it('rejects invalid boolean strings', () => {
-      expect(() => boolSchema.parse({ isActive: 'true' })).toThrow(
-        /must be a boolean/
+      expect(() => boolSchema.parse({ isActive: 'yes' })).toThrow(
+        /Must be a boolean/
       )
     })
   })
@@ -134,8 +188,8 @@ describe('Tex Native Validation Engine', () => {
     })
 
     it('rejects invalid enums', () => {
-      expect(() => enumSchema.parse({ role: 'guest' })).toThrow(
-        /must be one of/
+      expect(() => enumSchema.parse({ role: 'SUPERADMIN' })).toThrow(
+        /Must be one of/
       )
     })
   })
@@ -153,13 +207,13 @@ describe('Tex Native Validation Engine', () => {
 
     it('rejects arrays exceeding max limit', () => {
       expect(() => arrSchema.parse({ tags: ['a', 'b', 'c', 'd'] })).toThrow(
-        /array exceeds maximum length/
+        /Array exceeds maximum length/
       )
     })
 
     it('rejects incorrect array element types', () => {
-      expect(() => arrSchema.parse({ tags: ['a', 2] })).toThrow(
-        /must be a string/
+      expect(() => arrSchema.parse({ tags: [1, 2, 3] })).toThrow(
+        /Must be a string/
       )
     })
   })

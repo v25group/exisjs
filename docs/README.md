@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <b>Enterprise ambition with zero-config simplicity. The ultimate batteries-included Node.js backend.</b>
+  <b>Ultra-high-performance TypeScript web framework with a raw Rust engine under the hood.</b>
 </p>
 
 <p align="center">
@@ -19,16 +19,13 @@
   </a>
 </p>
 
-Welcome to the Exis JS documentation! Exis JS is a powerful, folder-based routing framework designed for building scalable and type-safe backend APIs with ease. It features out-of-the-box RPC client generation, modular route organization, and intuitive middleware/gateway configurations.
+Welcome to the ExisJS documentation! ExisJS is a minimal, opinionated core framework featuring file-system routing, dependency injection, validation (`tex`), sanitization, and an auto-detected request pipeline (`boundary.ts`).
+
+Additional capabilities (databases, auth, queues, websockets, caching) are provided as official `@exisjs/*` packages.
 
 ## Documentation Structure
 
-This documentation is split into the following main sections:
-
-- **[Content](./content/)**: Core concepts, tutorials, and deep-dives into building applications with Exis JS. Learn about folder-based routing, setting up your `gateway.ts`, and leveraging the RPC client.
-- **[Integrations](./integrations/)**: Guides on how to integrate Exis JS with external services and libraries.
-- **[Architecture](./ARCHITECTURE.md)**: Catalog of features supported by Exis JS and their internal implementation details.
-
-*(Note: Detailed API Reference will be added at a later time)*
-
-Dive into the respective folders to get started!
+- **[Content](./content/)**: Core concepts, guides, and deep-dives into building applications with ExisJS. Learn about folder-based routing, setting up your `boundary.ts`, dependency injection, and schema validation with `tex`.
+- **[Reference](./reference/)**: API reference for the core framework modules (`router`, `di`, `validator`, `middleware`, `decorators`, `config`, etc.).
+- **[Architecture](./ARCHITECTURE.md)**: Catalog of core features and internal architectural details.
+- **[Benchmarks](./BENCHMARKS.md)**: Performance benchmarks against other Node.js frameworks.

@@ -14,15 +14,14 @@ export async function initCommand() {
     /* ignore */
   }
 
-  // In development, the create-exis package is located relative to the exis package
+  // In development, the create-exisjs package is located relative to the exis package
   // dist/cli/commands/init.js -> ../../../../create/dist/index.js
   const localCreateExis = path.join(
     __dirname,
     '..',
     '..',
     '..',
-    '..',
-    'create-exis',
+    'create',
     'dist',
     'index.js'
   )
@@ -32,8 +31,8 @@ export async function initCommand() {
       stdio: 'inherit',
     })
   } else {
-    // In production, run the exact matching version of create-exis to prevent skew
-    cp.spawnSync('npx', [`create-exis@${version}`, '.'], {
+    // In production, run the exact matching version of create-exisjs to prevent skew
+    cp.spawnSync('npx', [`create-exisjs@${version}`, '.'], {
       stdio: 'inherit',
       shell: true,
     })

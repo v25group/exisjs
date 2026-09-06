@@ -11,10 +11,13 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "exisjs": "*"
+    "bcryptjs": "^3.0.3",
+    "exisjs": "*",
+    "jsonwebtoken": "^9.0.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.19.43",
     "eslint": "^9.39.5",
     "typescript": "^5.9.3",

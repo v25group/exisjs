@@ -39,12 +39,12 @@ export async function generateController(
   const capitalizedName = toPascalCase(name)
 
   const code = options.oop
-    ? `import { Controller, Get, Post, Body } from 'exisjs/decorators'\n\n@Controller()\nexport default class ${capitalizedName}Controller {\n  @Get('/')\n  async list() { return { success: true, data: [] } }\n}\n`
-    : `import { controller, route } from 'exisjs/router'\n\nexport default controller({\n  list: route.get('/', {\n    handle: async () => { return { success: true, data: [] } }\n  })\n})\n`
+    ? `import { Controller, Get } from 'exisjs/decorators'\n\n@Controller('/${name}')\nexport default class ${capitalizedName}Controller {\n  @Get('/')\n  async list() {\n    return { success: true, data: [] }\n  }\n}\n`
+    : `import { controller, route } from 'exisjs/router'\n\nexport default controller({\n  list: route.get('/', {\n    handle: async () => {\n      return { success: true, data: [] }\n    }\n  })\n})\n`
 
   await fs.writeFile(filePath, code)
   success(
-    `Generated ${options.oop ? 'OOP' : 'Functional'} controller in src/http/${name}/route.ts`
+    `Generated ${options.oop ? 'OOP' : 'Functional'} route in src/http/${name}/route.ts`
   )
 }
 
@@ -58,8 +58,8 @@ export async function generateService(
   const capitalizedName = toPascalCase(name)
 
   const code = options.oop
-    ? `import { Injectable } from 'exisjs/decorators'\n\n@Injectable()\nexport class ${capitalizedName}Service {\n  async list() { return [] }\n}\n`
-    : `export async function get${capitalizedName}s() { return [] }\n`
+    ? `import { Injectable } from 'exisjs/decorators'\n\n@Injectable({ scope: 'singleton' })\nexport class ${capitalizedName}Service {\n  async list() {\n    return []\n  }\n}\n`
+    : `export async function get${capitalizedName}s() {\n  return []\n}\n`
 
   await fs.writeFile(path.join(targetDir, 'service.ts'), code)
   success(
@@ -67,7 +67,18 @@ export async function generateService(
   )
 }
 
-export async function generateGateway(
+export async function generateSchema(name: string, cwd = process.cwd()) {
+  const targetDir = path.join(cwd, 'src', 'http', name)
+  await ensureDir(targetDir)
+  const capitalizedName = toPascalCase(name)
+
+  const code = `import { tex } from 'exisjs/validator'\nimport type { ResolveSchema } from 'exisjs/validator'\n\nexport const ${capitalizedName}ParamsSchema = tex.object({\n  id: tex.string(),\n})\n\nexport const Create${capitalizedName}Schema = tex.object({\n  name: tex.string({ min: 1 }),\n})\n\nexport type Create${capitalizedName}Dto = ResolveSchema<typeof Create${capitalizedName}Schema>\n`
+
+  await fs.writeFile(path.join(targetDir, 'schema.ts'), code)
+  success(`Generated validation schema in src/http/${name}/schema.ts`)
+}
+
+export async function generateBoundary(
   name: string,
   cwd = process.cwd(),
   options: { oop?: boolean } = {}
@@ -77,80 +88,13 @@ export async function generateGateway(
   const capitalizedName = toPascalCase(name)
 
   const code = options.oop
-    ? `import { Gateway } from 'exisjs/decorators'\n\n@Gateway()\nexport default class ${capitalizedName}Gateway {}\n`
-    : `import { defineGateway } from 'exisjs/router'\n\nexport default defineGateway({\n  // middlewares: [],\n})\n`
+    ? `import { Boundary } from 'exisjs/decorators'\nimport type { Request, Response, Next, BoundaryContext } from 'exisjs/router'\n\n@Boundary({\n  cors: { origin: ['*'], credentials: true },\n  headers: { 'X-Powered-By': 'ExisJS' },\n})\nexport default class ${capitalizedName}Boundary {\n  // Named chain step auto-detected by (req, res, next) signature\n  // auth(req: Request, res: Response, next: Next) {\n  //   next()\n  // }\n\n  // Wrapper around all routes and child boundaries\n  async handle(ctx: BoundaryContext, next: Next) {\n    return next()\n  }\n}\n`
+    : `import { defineBoundary } from 'exisjs/router'\nimport type { Request, Response, Next, BoundaryContext } from 'exisjs/router'\n\nexport const config = defineBoundary({\n  cors: { origin: ['*'], credentials: true },\n  headers: { 'X-Powered-By': 'ExisJS' },\n  // exclude: [{ path: '/health', method: 'GET' }],\n})\n\n// Named chain step: auto-detected by (req, res, next) signature\n// export function auth(req: Request, res: Response, next: Next) {\n//   next()\n// }\n\n// Pipeline wrapper: auto-detected as default export with (ctx, next) signature\nexport default async function (ctx: BoundaryContext, next: Next) {\n  return next()\n}\n`
 
-  await fs.writeFile(path.join(targetDir, 'gateway.ts'), code)
+  await fs.writeFile(path.join(targetDir, 'boundary.ts'), code)
   success(
-    `Generated ${options.oop ? 'OOP' : 'Functional'} gateway in src/http/${name}/gateway.ts`
+    `Generated ${options.oop ? 'OOP' : 'Functional'} boundary in src/http/${name}/boundary.ts`
   )
-}
-
-export async function generateGuard(
-  name: string,
-  cwd = process.cwd(),
-  options: { oop?: boolean } = {}
-) {
-  const targetDir = path.join(cwd, 'src', 'common', 'guards')
-  await ensureDir(targetDir)
-  const capitalizedName = toPascalCase(name)
-
-  const code = options.oop
-    ? `import { Injectable } from 'exisjs/decorators'\nimport type { Request } from 'exisjs'\n\n@Injectable()\nexport class ${capitalizedName}Guard {\n  async canActivate(req: Request): Promise<boolean> {\n    return true\n  }\n}\n`
-    : `import type { Request } from 'exisjs'\n\nexport async function ${name}Guard(req: Request): Promise<boolean> {\n  return true\n}\n`
-
-  await fs.writeFile(path.join(targetDir, `${name}.guard.ts`), code)
-  success(`Generated guard in src/common/guards/${name}.guard.ts`)
-}
-
-export async function generateInterceptor(
-  name: string,
-  cwd = process.cwd(),
-  options: { oop?: boolean } = {}
-) {
-  const targetDir = path.join(cwd, 'src', 'common', 'interceptors')
-  await ensureDir(targetDir)
-  const capitalizedName = toPascalCase(name)
-
-  const code = options.oop
-    ? `import { Injectable } from 'exisjs/decorators'\nimport type { Request, Response } from 'exisjs'\n\n@Injectable()\nexport class ${capitalizedName}Interceptor {\n  async intercept(req: Request, res: Response) {\n    // Intercept logic here\n  }\n}\n`
-    : `import type { Request, Response } from 'exisjs'\n\nexport async function ${name}Interceptor(req: Request, res: Response) {\n  // Intercept logic here\n}\n`
-
-  await fs.writeFile(path.join(targetDir, `${name}.interceptor.ts`), code)
-  success(
-    `Generated interceptor in src/common/interceptors/${name}.interceptor.ts`
-  )
-}
-
-export async function generateFilter(
-  name: string,
-  cwd = process.cwd(),
-  options: { oop?: boolean } = {}
-) {
-  const targetDir = path.join(cwd, 'src', 'common', 'filters')
-  await ensureDir(targetDir)
-  const capitalizedName = toPascalCase(name)
-
-  const code = options.oop
-    ? `import { Injectable } from 'exisjs/decorators'\n\n@Injectable()\nexport class ${capitalizedName}Filter {\n  async catch(error: any, ctx: { req: any; res: any }) {\n    ctx.res.status(500).json({ success: false, message: error.message })\n  }\n}\n`
-    : `export async function ${name}Filter(error: any, ctx: { req: any; res: any }) {\n  ctx.res.status(500).json({ success: false, message: error.message })\n}\n`
-
-  await fs.writeFile(path.join(targetDir, `${name}.filter.ts`), code)
-  success(`Generated filter in src/common/filters/${name}.filter.ts`)
-}
-
-export async function generateJob(
-  name: string,
-  cwd = process.cwd(),
-  _options: { oop?: boolean } = {}
-) {
-  const targetDir = path.join(cwd, 'src', 'jobs')
-  await ensureDir(targetDir)
-
-  const code = `import type { JobHandler } from 'exisjs'\n\nexport const name = '${name}-job'\n\nexport const handle: JobHandler<any> = async (payload, { log }) => {\n  log.info('Running ${name} job', payload)\n}\n`
-
-  await fs.writeFile(path.join(targetDir, `${name}.job.ts`), code)
-  success(`Generated job in src/jobs/${name}.job.ts`)
 }
 
 export async function generateResource(
@@ -160,23 +104,25 @@ export async function generateResource(
 ) {
   const targetDir = path.join(cwd, 'src', 'http', name)
   await ensureDir(targetDir)
-  const dtoDir = path.join(targetDir, 'dto')
-  await ensureDir(dtoDir)
   const capitalizedName = toPascalCase(name)
 
-  const createDtoCode = `import { tex } from 'exisjs/validator'\n\nexport const Create${capitalizedName}Dto = tex.object({\n  name: tex.string()\n})\n`
-  await fs.writeFile(path.join(dtoDir, `create-${name}.dto.ts`), createDtoCode)
+  // 1. Generate schema.ts
+  await generateSchema(name, cwd)
 
-  await generateGateway(name, cwd, options)
+  // 2. Generate boundary.ts
+  await generateBoundary(name, cwd, options)
+
+  // 3. Generate service.ts
   await generateService(name, cwd, options)
 
+  // 4. Generate route.ts
   const routeCode = options.oop
-    ? `import { Controller, Get, Post, Body } from 'exisjs/decorators'\nimport { ${capitalizedName}Service } from './service'\nimport { Create${capitalizedName}Dto } from './dto/create-${name}.dto'\n\n@Controller()\nexport default class ${capitalizedName}Controller {\n  constructor(private readonly service: ${capitalizedName}Service) {}\n\n  @Get('/')\n  async list() {\n    const result = await this.service.list()\n    return { success: true, data: result }\n  }\n}\n`
-    : `import { controller, route } from 'exisjs/router'\nimport * as service from './service'\nimport { Create${capitalizedName}Dto } from './dto/create-${name}.dto'\n\nexport default controller({\n  list: route.get('/', {\n    handle: async () => {\n      const data = await service.get${capitalizedName}s()\n      return { success: true, data }\n    }\n  })\n})\n`
+    ? `import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'\nimport { ${capitalizedName}Service } from './service'\nimport { Create${capitalizedName}Schema, ${capitalizedName}ParamsSchema } from './schema'\nimport type { Create${capitalizedName}Dto } from './schema'\n\n@Controller('/${name}')\nexport default class ${capitalizedName}Controller {\n  constructor(private readonly service: ${capitalizedName}Service) {}\n\n  @Get('/')\n  async list() {\n    const data = await this.service.list()\n    return { success: true, data }\n  }\n\n  @Get('/:id', ${capitalizedName}ParamsSchema)\n  async getById(@Param('id') id: string) {\n    return { success: true, id }\n  }\n\n  @Post('/', Create${capitalizedName}Schema)\n  async create(@Body() body: Create${capitalizedName}Dto) {\n    return { success: true, data: body }\n  }\n}\n`
+    : `import { controller, route } from 'exisjs/router'\nimport * as service from './service'\nimport { Create${capitalizedName}Schema, ${capitalizedName}ParamsSchema } from './schema'\n\nexport default controller({\n  list: route.get('/', {\n    handle: async () => {\n      const data = await service.get${capitalizedName}s()\n      return { success: true, data }\n    }\n  }),\n\n  getById: route.get('/:id', {\n    params: ${capitalizedName}ParamsSchema,\n    handle: async ({ params }) => {\n      return { success: true, id: params.id }\n    }\n  }),\n\n  create: route.post('/', {\n    body: Create${capitalizedName}Schema,\n    handle: async ({ body }) => {\n      return { success: true, data: body }\n    }\n  })\n})\n`
 
   await fs.writeFile(path.join(targetDir, 'route.ts'), routeCode)
   success(
-    `Generated ${options.oop ? 'OOP' : 'Functional'} resource in src/http/${name}/`
+    `Generated ${options.oop ? 'OOP' : 'Functional'} resource slice in src/http/${name}/`
   )
 }
 
@@ -253,14 +199,12 @@ export async function generateTest(name: string) {
 
   const testCode = `import { test, describe, assert, createTestContext } from 'exisjs/testing'
 import app from '../src/http/server'
-// import { ${capitalizedName} } from '../src/models/${capitalizedName}'
 
 describe('${capitalizedName} Native Tests', () => {
-  // Automatically boot the framework, inject dependencies, and cleanup on exit
+  // Automatically boot the framework and cleanup on exit
   createTestContext(app)
 
   test('should pass a basic test', async () => {
-    // Write your test logic here
     assert.strictEqual(1 + 1, 2, 'Math works')
   })
 })

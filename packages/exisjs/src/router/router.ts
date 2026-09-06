@@ -8,9 +8,7 @@ import type {
   Request,
   Response,
 } from '../types'
-
 import { RadixTree } from './radix'
-
 let fastJsonStringify: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,6 +25,10 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   private middlewares: Handler<any, any, any>[] = []
   private prefix: string
   private tree: RadixTree = new RadixTree()
+  public validatorCompiler?: (req: {
+    schema: any
+    httpPart: string
+  }) => (data: any) => any
 
   constructor(prefix = '') {
     this.prefix = prefix
@@ -88,8 +90,17 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           } else {
             body = await req.json()
           }
-          if (typeof bodyValidator.parse === 'function') {
-            req.body = bodyValidator.parse(body)
+          let compiledBodyValidator: ((val: any) => any) | null = null
+          if (this.validatorCompiler) {
+            compiledBodyValidator = this.validatorCompiler({
+              schema: bodyValidator,
+              httpPart: 'body',
+            })
+          } else if (typeof bodyValidator.parse === 'function') {
+            compiledBodyValidator = (val) => bodyValidator.parse(val)
+          }
+          if (compiledBodyValidator) {
+            req.body = compiledBodyValidator(body)
           } else if (typeof bodyValidator.transform === 'function') {
             req.body = await bodyValidator.transform(body, {
               type: 'body',
@@ -113,8 +124,17 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       const queryValidator: any = schema.query
       actualHandlers.unshift(async (req, res, next) => {
         try {
-          if (typeof queryValidator.parse === 'function') {
-            req.query = queryValidator.parse(req.query) as Record<
+          let compiledQueryValidator: ((val: any) => any) | null = null
+          if (this.validatorCompiler) {
+            compiledQueryValidator = this.validatorCompiler({
+              schema: queryValidator,
+              httpPart: 'query',
+            })
+          } else if (typeof queryValidator.parse === 'function') {
+            compiledQueryValidator = (val) => queryValidator.parse(val)
+          }
+          if (compiledQueryValidator) {
+            req.query = compiledQueryValidator(req.query) as Record<
               string,
               string
             >
@@ -146,8 +166,17 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       // So we push it (not unshift) to run after route matching populates params
       actualHandlers.unshift(async (req, res, next) => {
         try {
-          if (typeof paramsValidator.parse === 'function') {
-            req.params = paramsValidator.parse(req.params) as Record<
+          let compiledParamsValidator: ((val: any) => any) | null = null
+          if (this.validatorCompiler) {
+            compiledParamsValidator = this.validatorCompiler({
+              schema: paramsValidator,
+              httpPart: 'params',
+            })
+          } else if (typeof paramsValidator.parse === 'function') {
+            compiledParamsValidator = (val) => paramsValidator.parse(val)
+          }
+          if (compiledParamsValidator) {
+            req.params = compiledParamsValidator(req.params) as Record<
               string,
               string
             >
@@ -313,45 +342,6 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   ): Router<TRoutes & { query: Record<Path, Schema> }> {
     this.addRoute('QUERY', path, handlers as any)
     return this as any
-  }
-
-  ws<Path extends string>(
-    path: Path,
-    ...handlers: (Handler<any, any, any> | import('../types').WsHandler)[]
-  ): Router<TRoutes & { ws: Record<Path, any> }> {
-    const wsHandler = handlers.pop() as import('../types').WsHandler
-    const wrapped: Handler = (req, res, next) => {
-      const socket = (req as import('../types').Request & { ws?: unknown }).ws
-      if (socket) {
-        // If the handler is superHandler from app.ts, it expects (req, res, next)
-        if (wsHandler.length === 3) {
-          ;(wsHandler as any)(req, res, next)
-        } else {
-          wsHandler(socket as import('../websocket/socket').ExisWebSocket, req)
-        }
-      } else {
-        next()
-      }
-    }
-    handlers.push(wrapped)
-    return this.addRoute('WS', path, handlers as RouteHandler[])
-  }
-
-  sse<Path extends string>(
-    path: Path,
-    ...handlers: (Handler<any, any, any> | import('../types').SseHandler)[]
-  ): Router<TRoutes & { sse: Record<Path, any> }> {
-    const sseHandler = handlers.pop() as import('../types').SseHandler
-    const wrappedHandler: RouteHandler = async (req, res) => {
-      // 1. Create the SSE wrapper which sends the correct HTTP headers and maintains state
-      const ExisSSE = (await import('../server/sse')).ExisSSE
-      const sse = new ExisSSE(res)
-
-      // 2. Execute the user's handler
-      await sseHandler(sse, req)
-    }
-    handlers.push(wrappedHandler)
-    return this.addRoute('GET', path, handlers as RouteHandler[])
   }
 
   all<Path extends string, Schema extends RouteSchema<any, any, any, any>>(

@@ -6,7 +6,7 @@ export { type App, getActiveApp } from './server/app'
 export { defineConfig } from './config/config'
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
-export { createLogger } from './utils/logger'
+export { logger, configureLogger, setLogger, createLogger } from './logger'
 
 export { parseEnv, loadEnv } from './config/env'
 

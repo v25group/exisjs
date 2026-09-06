@@ -1,12 +1,21 @@
-import { Controller, Use, Get, Post, Delete, Body, Query, Param, Req } from 'exisjs/decorators'
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Query,
+  Param,
+  Req,
+  UploadedFile,
+} from 'exisjs/decorators'
 import { Idempotent } from 'exisjs/decorators'
-import { streamUpload } from 'exisjs/storage'
+import type { ExisFile } from 'exisjs/router'
 import { tex } from 'exisjs/validator'
 import type { Infer } from 'exisjs/validator'
 import { HttpError } from 'exisjs/error'
 import cloudinary from '@/lib/cloudinary'
 import { Book } from '@/models/Book'
-import { protectRoute } from '@/middleware/auth'
 
 const CreateBookSchema = tex.object({
   title: tex.string(),
@@ -20,7 +29,6 @@ type CreateBookDto = Infer<typeof CreateBookSchema>
 // @Use(protectRoute)
 @Controller()
 export default class BooksController {
-  
   @Get('/')
   async list(@Query('page') pageStr: string, @Query('limit') limitStr: string) {
     const page = parseInt(pageStr) || 1
@@ -76,14 +84,29 @@ export default class BooksController {
     console.log('Processing checkout for book:', body.bookId)
     // simulate a long checkout process
     await new Promise((resolve) => setTimeout(resolve, 1000))
-    return { success: true, message: 'Checkout successful', bookId: body.bookId }
+    return {
+      success: true,
+      message: 'Checkout successful',
+      bookId: body.bookId,
+    }
   }
 
   @Post('/cover')
-  async uploadCover(@Req() req: any) {
+  async uploadCover(@UploadedFile() file: ExisFile) {
+    if (!file) {
+      throw HttpError.badRequest('No cover file uploaded')
+    }
+
     const destDir = './uploads'
-    const { fields, files } = await streamUpload(req, { dest: destDir })
-    return { success: true, message: 'Cover uploaded via streaming', fields, files }
+    const savedPath = await file.saveToDisk(destDir)
+
+    return {
+      success: true,
+      message: 'Cover uploaded successfully',
+      filename: file.filename,
+      size: file.size,
+      path: savedPath,
+    }
   }
 
   @Delete('/:id')

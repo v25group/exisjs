@@ -5,9 +5,9 @@ nextTitle: "Modules & Plugins"
 
 # Middleware
 
-ExisJS comes with a collection of built-in middleware out of the box. 
+ExisJS comes with a collection of built-in middleware out of the box.
 
-ExisJS provides first-party implementations for features like CORS, Request Logging, Backpressure, and Deduplication.
+ExisJS provides first-party implementations for features like CORS, Request Logging, Backpressure, In-Memory Rate Limiting, Idempotency, and Deduplication.
 
 All middleware can be imported directly from the `exisjs/middleware` package.
 
@@ -17,58 +17,41 @@ All middleware can be imported directly from the `exisjs/middleware` package.
 
 ExisJS gives you granular control over where your middleware executes:
 
-1. **Globally (`server.ts`)**: Applies to every request hitting your server.
-2. **Folder-Scoped (`gateway.ts`)**: Applies only to routes inside that specific folder.
+1. **Globally (`server.ts`)**: Applies to every request hitting your server via `app.use()`.
+2. **Folder-Scoped (`boundary.ts`)**: Applies to routes inside that folder and all subfolders automatically.
 3. **Route-Scoped (`route.ts`)**: Applies only to a specific endpoint.
 
-```typescript filename="src/http/admin/gateway.ts"
-import { defineGateway } from 'exisjs/router'
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import type { Request, Response, Next } from 'exisjs/router'
 import { requestLogger } from 'exisjs/middleware'
 
-// This logger will ONLY run for requests to /admin/*
-export default defineGateway({
-  middlewares: [
-    requestLogger({ level: 'debug' })
-  ]
-})
+export const config = defineBoundary({})
+
+// Auto-detected chain step for /admin/*
+export const logger = requestLogger({ level: 'debug' })
 ```
 
 ### Middleware vs Inline Execution
 
-It is critical to understand that middleware executes **before** your route handler. If you are using [Custom Typed Contexts](/docs/requests#strongly-typed-context--native-destructuring) to destructure variables (e.g., `async handle({ user })`), you **must** use middleware to populate `req.user`.
-
-If you try to call an authentication function *inline* inside the handler, the `user` variable will be `undefined` because destructuring occurs at the moment the handler is invoked—before the inline function has a chance to execute!
-
-```typescript
-// ❌ BAD: Destructuring happens before requireAuth mutates the request
-create: route.post('/', {
-  async handle({ user, req }) {
-    requireAuth(req); 
-    console.log(user); // undefined
-  }
-})
-
-// ✅ GOOD: Middleware runs first, so `user` is fully populated and strongly typed
-create: route.post('/', {
-  middleware: [requireAuth],
-  async handle({ user }) {
-    console.log(user); // Populated and typed
-  }
-})
-```
+Middleware executes **before** your route handler. If you are using custom typed contexts to destructure variables (e.g., `async handle({ user })`), you must use middleware to populate `req.user`.
 
 #### Functional Paradigm
 
 ```typescript filename="src/http/route.ts"
 import { controller, route } from 'exisjs/router'
 import { validate } from 'exisjs/middleware'
+import { tex } from 'exisjs/validator'
+
+const mySchema = {
+  body: tex.object({ name: tex.string() })
+}
 
 export default controller({
-  // This middleware ONLY runs for this specific endpoint
   create: route.post('/', {
     middlewares: [validate(mySchema)],
-    handle(req, res) {
-      return { ok: true }
+    handle({ req }) {
+      return { ok: true, name: req.body.name }
     }
   })
 })
@@ -79,10 +62,14 @@ export default controller({
 ```typescript filename="src/http/route.ts"
 import { Controller, Post, Use } from 'exisjs/decorators'
 import { validate } from 'exisjs/middleware'
+import { tex } from 'exisjs/validator'
+
+const mySchema = {
+  body: tex.object({ name: tex.string() })
+}
 
 @Controller()
 export default class MyController {
-  // This middleware ONLY runs for this specific endpoint
   @Use(validate(mySchema))
   @Post('/')
   async create() {
@@ -95,9 +82,9 @@ export default class MyController {
 
 ## 1. CORS
 
-The `cors` middleware handles Cross-Origin Resource Sharing. It is configurable and optimized for low overhead on preflight requests.
+The `cors` middleware handles Cross-Origin Resource Sharing.
 
-The recommended practice in ExisJS is to configure CORS globally in your **`exis.config.ts`** file (the Single Source of Truth). The framework will automatically merge and apply it globally for you.
+The recommended practice in ExisJS is to configure CORS globally in your **`exis.config.ts`** file or per-folder in `boundary.ts`.
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
@@ -108,65 +95,30 @@ export default async () => defineConfig({
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
     maxAge: 86400,
-    preflightContinue: true // Set this to true if you want OPTIONS requests to hit your custom route.options() handlers!
   }
 })
 ```
-
-By default, ExisJS intercepts `OPTIONS` requests at the middleware level and responds with a `204 No Content` (and the appropriate CORS headers) to save server resources. However, if you need to run custom logic on preflight requests—such as hitting a specific `route.options('/', ...)` handler or a `@Options()` decorated controller method—you can set `preflightContinue: true`. 
-
-You can also configure CORS locally per-route by passing it to your controller config or gateway.
 
 ---
 
 ## 2. Request Logger
 
-ExisJS uses **Pino** under the hood. The `requestLogger` injects a request-scoped logger instance (`req.log`) and times response cycles automatically.
+ExisJS uses Pino under the hood. The `requestLogger` injects a request-scoped logger instance (`req.log`) and times response cycles automatically.
 
 ```typescript filename="src/http/server.ts"
 import { requestLogger } from 'exisjs/middleware'
 
 app.use(requestLogger({
   level: 'debug',
-  pretty: true // Enable beautiful CLI formatting
+  pretty: true
 }))
-```
-
-#### Functional Paradigm
-
-```typescript filename="src/http/route.ts"
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  index: route.get('/', {
-    handle(req, res) {
-      req.log.info({ userId: 123 }, "User hit the index route")
-      return { ok: true }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-
-@Controller()
-export default class MyController {
-  @Get('/')
-  async index(@Req() req: any) {
-    req.log.info({ userId: 123 }, "User hit the index route")
-    return { ok: true }
-  }
-}
 ```
 
 ---
 
 ## 3. Request ID
 
-Injects a unique `X-Request-Id` into every incoming request and outgoing response header. It natively supports distributed tracing headers (`traceparent`, `x-b3-traceid`).
+Injects a unique `X-Request-Id` into every incoming request and outgoing response header. Supports distributed tracing headers (`traceparent`, `x-b3-traceid`).
 
 ```typescript filename="src/http/server.ts"
 import { requestId } from 'exisjs/middleware'
@@ -174,192 +126,37 @@ import { requestId } from 'exisjs/middleware'
 app.use(requestId())
 ```
 
-#### Functional Paradigm
+---
 
-```typescript filename="src/http/route.ts"
-import { controller, route } from 'exisjs/router'
+## 4. Rate Limiting (In-Memory / Native Off-Heap)
 
-export default controller({
-  index: route.get('/', {
-    handle(req, res) {
-      console.log("Trace ID:", req.requestId)
-      return { ok: true }
-    }
-  })
+ExisJS provides high-performance rate limiting powered by Rust native memory:
+
+```typescript filename="src/http/boundary.ts"
+import { rateLimit } from 'exisjs/middleware'
+
+export const limiter = rateLimit({
+  windowMs: 60000,
+  max: 100,
 })
 ```
 
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-
-@Controller()
-export default class MyController {
-  @Get('/')
-  async index(@Req() req: any) {
-    console.log("Trace ID:", req.requestId)
-    return { ok: true }
-  }
-}
-```
+> [!NOTE]
+> Core rate limiting runs completely off-heap in-memory. For Redis-backed distributed rate limiting across clusters, use `@exisjs/cache`.
 
 ---
 
-## 4. Static File Serving
+## 5. Idempotency (In-Memory / Native Off-Heap)
 
-A static file server that resolves MIME types, streams files, and provides Cache-Control configuration out of the box.
+Idempotency caches responses based on the `Idempotency-Key` header, preventing duplicate mutations:
 
-```typescript
-import { serveStatic } from 'exisjs/middleware'
-import path from 'node:path'
-
-app.use('/public', serveStatic(path.join(process.cwd(), 'public'), {
-  maxAge: 31536000 // Cache for 1 year
-}))
-```
-
----
-
-## 5. Security Middlewares
-
-ExisJS bundles several security middlewares. (We will cover these in the Security documentation, but here is a preview):
-
-- **`helmet()`**: Automatically sets 14+ secure HTTP headers.
-- **`hpp()`**: Prevents HTTP Parameter Pollution attacks.
-- **`dbSanitize()`**: A universal scraper that protects against NoSQL injection patterns (`$where` and other malicious operators).
-- **`timeout(ms)`**: Kills requests that hang longer than a specified duration.
-- **`ipFilter()`**: Restricts access based on IP Whitelists/Blacklists.
-
-```typescript
-import { helmet, timeout, dbSanitize } from 'exisjs/middleware'
-
-app.use(helmet())
-app.use(dbSanitize({ mongo: true }))
-app.use(timeout(5000)) // 5 second timeout
-```
-
----
-
-## 6. Advanced Performance Middlewares
-
-These middlewares provide additional scaling and performance capabilities.
-
-- **`cache()`**: An in-memory route caching engine. Requires a `keyGenerator` to prevent data leaks.
-- **`dedupe()`**: Request deduplication (In-flight request collapsing). If 1,000 users hit a heavy `/stats` route at the exact same millisecond, ExisJS will only compute it **once**, and send the same response to all 1,000 users simultaneously. Requires a `keyGenerator`.
-- **`backpressure()`**: Protects your server from traffic spikes by shedding load or queuing requests when the Node.js Event Loop lags.
-
-> [!WARNING]
-> **Authentication Leak Hazard**: When using `cache()` or `dedupe()` on authenticated routes, you **must** include the user's ID or session token in your `keyGenerator`. Failing to do so will result in User B receiving a cached/deduped response generated for User A.
-
----
-
-## 7. Interceptors & Error Filters
-
-As covered in our [Error Handling](/docs/errors) guide, you can centrally mutate responses or catch specific Exception classes using `intercept()` and `catchError()`.
-
-```typescript
-import { intercept, catchError } from 'exisjs/middleware'
-
-// Wrap all responses in { data: ... }
-app.use(intercept((data) => ({ data })))
-
-// Catch specific errors
-app.use(catchError(DatabaseError, (err, req, res) => {
-  res.status(503).json({ error: 'Database Offline' })
-}))
-```
-
----
-
-## 8. Schema Validation
-
-ExisJS includes a validation engine. You can validate `body`, `query`, or `params` directly at the middleware layer. If validation fails, it automatically rejects the request with a structured HTTP 400 JSON response.
-
-#### Functional Paradigm
-
-```typescript filename="src/http/users/route.ts"
-import { controller, route } from 'exisjs/router'
-import { validate } from 'exisjs/middleware'
-import { tex } from 'exisjs/validator'
-
-const createUserSchema = {
-  body: tex.object({
-    email: tex.email(),
-    age: tex.number({ min: 18 })
-  })
-}
-
-export default controller({
-  // Automatically rejects invalid payloads with 400 Bad Request
-  create: route.post('/', {
-    middlewares: [validate(createUserSchema)],
-    handle(req, res) {
-      // req.body is fully validated, but we also type-cast it safely
-      const body = req.body as { email: string, age: number }
-      
-      return { success: true, email: body.email }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Post, Use, Body } from 'exisjs/decorators'
-import { validate } from 'exisjs/middleware'
-import { tex } from 'exisjs/validator'
-
-const createUserSchema = {
-  body: tex.object({
-    email: tex.email(),
-    age: tex.number({ min: 18 })
-  })
-}
-
-@Controller()
-export default class UsersController {
-  // Automatically rejects invalid payloads with 400 Bad Request
-  @Use(validate(createUserSchema))
-  @Post('/')
-  async create(@Body() body: { email: string, age: number }) {
-    return { success: true, email: body.email }
-  }
-}
-```
-
----
-
-## 9. Idempotency
-
-Idempotency ensures that retrying an identical request multiple times (e.g., due to network timeouts) will not result in duplicate operations on the server. ExisJS provides a Redis-backed (or in-memory) idempotency engine.
-
-#### Functional Paradigm
-
-```typescript
-import { controller, route } from 'exisjs/router'
-import { IdempotentMiddleware } from 'exisjs/middleware'
-
-export default controller({
-  checkout: route.post('/checkout', {
-    middlewares: [IdempotentMiddleware({ ttl: 86400, headerName: 'Idempotency-Key' })],
-    handle(req, res) {
-      return { success: true }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript
+```typescript filename="src/http/checkout/route.ts"
 import { Controller, Post, Idempotent } from 'exisjs/decorators'
 
-@Controller()
+@Controller('/checkout')
 export default class CheckoutController {
-  @Idempotent({ ttl: 86400 }) // Caches the response for 24 hours based on the Idempotency-Key header
-  @Post('/checkout')
+  @Idempotent({ ttlMs: 86400000 })
+  @Post('/')
   async checkout() {
     return { success: true }
   }
@@ -368,74 +165,51 @@ export default class CheckoutController {
 
 ---
 
-## 10. Cache Engine
+## 6. Request Deduplication (`dedupe`)
 
-ExisJS provides a built-in Cache Engine for `GET` requests. It allows you to reduce database load and response times for frequently requested data.
+If multiple clients request the exact same resource concurrently, `dedupe` collapses identical in-flight requests into a single operation:
 
-#### Functional Paradigm
-
-```typescript
+```typescript filename="src/http/stats/route.ts"
 import { controller, route } from 'exisjs/router'
-import { cache } from 'exisjs/middleware'
+import { dedupe } from 'exisjs/middleware'
 
 export default controller({
-  popular: route.get('/popular', {
-    middlewares: [
-      cache({
-        ttlMs: 60000,
-        keyGenerator: (req) => req.url // Critical: Define how cache keys are built
-      })
-    ], 
-    handle(req, res) {
-      return { success: true, books: [] }
+  getStats: route.get('/', {
+    middlewares: [dedupe({ ttlMs: 5000 })],
+    async handle() {
+      return { activeUsers: 1000 }
     }
   })
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+---
+
+## 7. Static File Serving
+
+A static file server that resolves MIME types and streams files:
 
 ```typescript
-import { Controller, Get, Cache } from 'exisjs/decorators'
+import { serveStatic } from 'exisjs/middleware'
+import path from 'node:path'
 
-@Controller()
-export default class BooksController {
-  @Cache({ ttlMs: 60000, keyGenerator: (req) => req.url }) // Caches the response for 60 seconds
-  @Get('/popular')
-  async getPopular() {
-    return { success: true, books: [] }
-  }
-}
+app.use('/public', serveStatic(path.join(process.cwd(), 'public'), {
+  maxAge: 31536000
+}))
 ```
 
 ---
 
-## 11. Compression (Gzip / Brotli / Deflate)
+## 8. Compression (Gzip / Brotli / Deflate)
 
-ExisJS includes a stream-based Compression middleware. It natively hooks into the `uWebSockets` core and compresses JSON, streams, and text on-the-fly, reducing your outbound network bandwidth.
-
-The best practice is to configure Compression globally in your **`exis.config.ts`**. By default, if `compression: true` is passed, the framework will add the `compress` middleware for you automatically.
+Stream-based compression middleware supporting Gzip, Deflate, and Brotli:
 
 ```typescript filename="exis.config.ts"
 import type { ExisConfig } from 'exisjs/config'
 
 const config: ExisConfig = {
-  // Enables Gzip, Brotli, and Deflate compression globally for all routes
-  compression: true, 
+  compression: true,
 }
 
 export default config
-```
-
-If you prefer to manually apply it to specific routes or gateways instead of globally, you can import it:
-
-```typescript filename="src/http/api/gateway.ts"
-import { defineGateway } from 'exisjs/router'
-import { compress } from 'exisjs/middleware'
-
-export default defineGateway({
-  middlewares: [
-    compress() // Only compress responses within this Gateway
-  ]
-})
 ```

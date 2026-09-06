@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -25,14 +25,6 @@
       "types": "./dist/router/index.d.ts",
       "default": "./dist/router/index.js"
     },
-    "./database": {
-      "types": "./dist/database/index.d.ts",
-      "default": "./dist/database/index.js"
-    },
-    "./database/sql": {
-      "types": "./dist/database/sql/index.d.ts",
-      "default": "./dist/database/sql/index.js"
-    },
     "./app": {
       "types": "./dist/app/index.d.ts",
       "default": "./dist/app/index.js"
@@ -53,37 +45,9 @@
       "types": "./dist/middleware/middleware.d.ts",
       "default": "./dist/middleware/middleware.js"
     },
-    "./auth": {
-      "types": "./dist/auth/index.d.ts",
-      "default": "./dist/auth/index.js"
-    },
-    "./cache": {
-      "types": "./dist/cache/index.d.ts",
-      "default": "./dist/cache/index.js"
-    },
-    "./queue": {
-      "types": "./dist/queue/index.d.ts",
-      "default": "./dist/queue/index.js"
-    },
-    "./swagger": {
-      "types": "./dist/swagger/index.d.ts",
-      "default": "./dist/swagger/index.js"
-    },
-    "./validator": {
-      "types": "./dist/validator/index.d.ts",
-      "default": "./dist/validator/index.js"
-    },
     "./testing": {
       "types": "./dist/testing/index.d.ts",
       "default": "./dist/testing/index.js"
-    },
-    "./dataloader": {
-      "types": "./dist/dataloader/index.d.ts",
-      "default": "./dist/dataloader/index.js"
-    },
-    "./observability": {
-      "types": "./dist/observability/index.d.ts",
-      "default": "./dist/observability/index.js"
     },
     "./config": {
       "types": "./dist/config/index.d.ts",
@@ -101,65 +65,17 @@
       "types": "./dist/response/index.d.ts",
       "default": "./dist/response/index.js"
     },
-    "./adapters": {
-      "types": "./dist/adapters/index.d.ts",
-      "default": "./dist/adapters/index.js"
-    },
-    "./drizzle": {
-      "types": "./dist/integrations/drizzle.d.ts",
-      "default": "./dist/integrations/drizzle.js"
-    },
-    "./jwt": {
-      "types": "./dist/integrations/jwt.d.ts",
-      "default": "./dist/integrations/jwt.js"
-    },
-    "./mongodb": {
-      "types": "./dist/integrations/mongodb.d.ts",
-      "default": "./dist/integrations/mongodb.js"
-    },
-    "./mongoose": {
-      "types": "./dist/integrations/mongoose.d.ts",
-      "default": "./dist/integrations/mongoose.js"
-    },
-    "./openai": {
-      "types": "./dist/integrations/openai.d.ts",
-      "default": "./dist/integrations/openai.js"
-    },
-    "./posthog": {
-      "types": "./dist/integrations/posthog.d.ts",
-      "default": "./dist/integrations/posthog.js"
-    },
-    "./postgres": {
-      "types": "./dist/integrations/postgres.d.ts",
-      "default": "./dist/integrations/postgres.js"
-    },
-    "./prisma": {
-      "types": "./dist/integrations/prisma.d.ts",
-      "default": "./dist/integrations/prisma.js"
-    },
-    "./redis": {
-      "types": "./dist/integrations/redis.d.ts",
-      "default": "./dist/integrations/redis.js"
-    },
-    "./resend": {
-      "types": "./dist/integrations/resend.d.ts",
-      "default": "./dist/integrations/resend.js"
-    },
-    "./s3": {
-      "types": "./dist/integrations/s3.d.ts",
-      "default": "./dist/integrations/s3.js"
-    },
-    "./supabase": {
-      "types": "./dist/integrations/supabase.d.ts",
-      "default": "./dist/integrations/supabase.js"
+    "./validator": {
+      "types": "./dist/validator/index.d.ts",
+      "default": "./dist/validator/index.js"
     },
     "./sanitize": {
       "types": "./dist/sanitize/index.d.ts",
       "default": "./dist/sanitize/index.js"
     },
-    "./storage": {
-      "types": "./dist/storage/index.d.ts",
-      "default": "./dist/storage/index.js"
+    "./logger": {
+      "types": "./dist/logger/index.d.ts",
+      "default": "./dist/logger/index.js"
     }
   },
   "files": [
@@ -181,8 +97,7 @@
   },
   "dependencies": {
     "@exisjs/rs": "*",
-    "@exisjs/telemetry": "^0.5.0",
-    "@prometheus-io/client": "^0.16.1",
+    "@exisjs/telemetry": "^0.7.0",
     "accepts": "^1.3.8",
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
@@ -202,60 +117,7 @@
     "pino-pretty": "^13.1.3",
     "tsc-alias": "^1.9.2",
     "tsx": "^4.23.12",
-    "typescript": "^5.9.3",
-    "ws": "^8.21.3"
-  },
-  "peerDependencies": {
-    "@aws-sdk/client-s3": "*",
-    "@prisma/client": "*",
-    "@supabase/supabase-js": "*",
-    "better-sqlite3": "*",
-    "drizzle-orm": "*",
-    "ioredis": "*",
-    "mongodb": "*",
-    "mongoose": "*",
-    "openai": "*",
-    "postgres": "*",
-    "posthog-node": "*",
-    "resend": "*"
-  },
-  "peerDependenciesMeta": {
-    "better-sqlite3": {
-      "optional": true
-    },
-    "drizzle-orm": {
-      "optional": true
-    },
-    "postgres": {
-      "optional": true
-    },
-    "@prisma/client": {
-      "optional": true
-    },
-    "ioredis": {
-      "optional": true
-    },
-    "@aws-sdk/client-s3": {
-      "optional": true
-    },
-    "resend": {
-      "optional": true
-    },
-    "openai": {
-      "optional": true
-    },
-    "@supabase/supabase-js": {
-      "optional": true
-    },
-    "posthog-node": {
-      "optional": true
-    },
-    "mongodb": {
-      "optional": true
-    },
-    "mongoose": {
-      "optional": true
-    }
+    "typescript": "^5.9.3"
   },
   "devDependencies": {
     "@types/accepts": "^1.3.7",
@@ -268,14 +130,10 @@
     "@types/mime-types": "^3.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^26.4.0",
-    "@types/ws": "^8.18.1",
-    "better-sqlite3": "^13.0.3",
     "find-my-way": "^9.9.0",
-    "ioredis-mock": "^8.13.1",
     "mitata": "^1.0.34"
   },
   "optionalDependencies": {
-    "ioredis": "^5.11.1",
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
   }
 }

@@ -2,8 +2,6 @@ import { IncomingMessage } from 'node:http'
 import type { Logger } from '../types'
 import type { ExisResponse } from './response'
 import { HttpError } from '../error/errors'
-import { Dataloader } from '../dataloader/dataloader'
-import type { BatchLoadFn } from '../dataloader/dataloader'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const accepts = require('accepts')
@@ -32,14 +30,6 @@ export class ExisRequest<
   public requestId?: string
   public tenantId?: string
 
-  public _dataloaderFns?: Map<
-    string,
-    {
-      batchFn: BatchLoadFn<any, any>
-      options?: import('../dataloader/dataloader').DataloaderOptions<any, any>
-    }
-  >
-  private _dataloaderCache = new Map<string, Dataloader<any, any, any>>()
   public _diCache = new Map<any, any>()
 
   private _urlStr: string
@@ -83,8 +73,6 @@ export class ExisRequest<
     this.requestId = undefined
     this.tenantId = undefined
 
-    this._dataloaderFns = undefined
-    this._dataloaderCache.clear()
     this._diCache.clear()
 
     this._urlStr = raw.url ?? '/'
@@ -420,19 +408,6 @@ export class ExisRequest<
     if (this.rawBody !== undefined) return this.rawBody
     await this._parseBody()
     return this.rawBody!
-  }
-
-  dataloader<K, V, C = K>(name: string): Dataloader<K, V, C> {
-    if (this._dataloaderCache.has(name)) {
-      return this._dataloaderCache.get(name)! as Dataloader<K, V, C>
-    }
-    if (!this._dataloaderFns || !this._dataloaderFns.has(name)) {
-      throw new Error(`Dataloader '${name}' is not registered on the App`)
-    }
-    const def = this._dataloaderFns.get(name)!
-    const dl = new Dataloader<K, V, C>(def.batchFn, def.options)
-    this._dataloaderCache.set(name, dl)
-    return dl
   }
 
   async json<T = unknown>(): Promise<T> {

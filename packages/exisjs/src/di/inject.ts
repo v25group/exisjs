@@ -1,5 +1,4 @@
 import { executionContext } from '../server/context'
-import type { ProviderToken } from './container'
 
 /**
  * Injects a dependency from the Exis Application container.
@@ -18,7 +17,7 @@ import type { ProviderToken } from './container'
  * @return {T} The resolved dependency
  * @public
  */
-export function inject<T>(token: ProviderToken<T>): T {
+export function inject<T>(token: (new (...args: any[]) => T) | string): T {
   const store = executionContext.getStore()
   if (!store || !store.app) {
     throw new Error(

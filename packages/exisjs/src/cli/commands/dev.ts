@@ -4,6 +4,9 @@ import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
 import { error, c, warn } from '../utils'
+import { getFormattedTime } from '../../utils/time'
+import { loadEnv } from '../../config/env'
+import { loadConfig } from '../../config/config'
 
 interface DevOptions {
   port?: string
@@ -58,8 +61,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (!fs.existsSync(exisDir)) fs.mkdirSync(exisDir, { recursive: true })
   fs.writeFileSync(pidFile, String(process.pid))
 
-  // 2. Automatic Port Finding
-  const startPort = parseInt(options.port || process.env.PORT || '3000', 10)
+  // 2. Load .env files early so process.env.PORT is available
+  loadEnv(cwd)
+
+  // 3. Read exis.config.ts to pick up user-defined port
+  const userConfig = await loadConfig(cwd)
+
+  // 4. Automatic Port Finding — priority: CLI flag > env > config > default(4000)
+  const startPort = parseInt(
+    options.port || process.env.PORT || String(userConfig.port) || '4000',
+    10
+  )
 
   function findAvailablePort(port: number): Promise<number> {
     return new Promise((resolve) => {
@@ -103,14 +115,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   }
 
   const primary = '\x1b[38;2;160;70;255m'
-  const time = new Date()
-    .toLocaleTimeString('en-US', {
-      hour12: true,
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-    })
-    .toLowerCase()
+  const time = getFormattedTime()
   console.log(
     `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}starting development server (v${version})...${c.reset}`
   )
@@ -143,14 +148,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     isShuttingDown = true
     cleanupPid()
 
-    const time = new Date()
-      .toLocaleTimeString('en-US', {
-        hour12: true,
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-      .toLowerCase()
+    const time = getFormattedTime()
     const primary = '\x1b[38;2;160;70;255m'
     console.log(
       `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
@@ -232,7 +230,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
   function startFallbackServer(errorMessage: string) {
     closeFallbackServer()
-    const port = parseInt(process.env.PORT || '3000', 10)
+    const port = parseInt(process.env.PORT || '4000', 10)
     fallbackServer = http.createServer((req, res) => {
       res.writeHead(500, { 'Content-Type': 'text/html' })
       res.end(`
@@ -268,11 +266,25 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       })
   }
 
-  function startProcess(): void {
+  let isRestarting = false
+  async function startProcess(): Promise<void> {
+    if (isRestarting) return
+    isRestarting = true
     closeFallbackServer()
 
     if (child) {
       child.kill('SIGTERM')
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          if (child) child.kill('SIGKILL')
+          resolve()
+        }, 5000)
+
+        child!.once('exit', () => {
+          clearTimeout(timeout)
+          resolve()
+        })
+      })
     }
 
     child = spawn(runner!.bin, [...runner!.args, startServerPath], {
@@ -327,6 +339,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         )
       }
     })
+
+    isRestarting = false
   }
 
   // Handle restarts for runners that don't support watch natively
@@ -343,22 +357,14 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           /\.exis/,
           /dist/,
           /exis\.d\.ts$/,
-          /src[\\/]http/, // Let HotReloader handle HTTP routes natively!
         ],
       })
 
       watcher.on('all', async (eventName: string, file: string) => {
-        const time = new Date()
-          .toLocaleTimeString('en-US', {
-            hour12: true,
-            hour: 'numeric',
-            minute: '2-digit',
-            second: '2-digit',
-          })
-          .toLowerCase()
+        const time = getFormattedTime()
         const primary = '\x1b[38;2;160;70;255m'
         console.log(
-          `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${file}${c.reset}`
+          `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${file}${c.reset}`
         )
         await generateManifest(cwd, '', true)
         startProcess()
@@ -393,12 +399,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       const lines = data.toString().trim().split('\n')
 
       const getTime = () => {
-        return new Date().toLocaleTimeString('en-US', {
-          hour12: false,
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-        })
+        return getFormattedTime()
       }
 
       for (const line of lines) {
@@ -449,14 +450,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   ${c.dim}press${c.reset} ${c.bold}q + enter${c.reset} ${c.dim}to quit${c.reset}
 `)
       } else if (key === 'r') {
-        const time = new Date()
-          .toLocaleTimeString('en-US', {
-            hour12: true,
-            hour: 'numeric',
-            minute: '2-digit',
-            second: '2-digit',
-          })
-          .toLowerCase()
+        const time = getFormattedTime()
         console.log(
           `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}restarting server...${c.reset}`
         )

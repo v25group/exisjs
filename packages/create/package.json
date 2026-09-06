@@ -1,6 +1,6 @@
 {
-  "name": "@exisjs/create",
-  "version": "0.6.1",
+  "name": "create-exisjs",
+  "version": "0.7.0",
   "description": "Scaffolding tool for ExisJS applications",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -12,10 +12,13 @@
     "backend",
     "api",
     "rpc",
-    "type-safe"
+    "type-safe",
+    "create-exisjs",
+    "create-exis"
   ],
   "main": "dist/index.js",
   "bin": {
+    "create-exisjs": "bin/create-exis.js",
     "create-exis": "bin/create-exis.js"
   },
   "repository": {

@@ -1,7 +1,7 @@
 import { App } from '../src/server/app'
 import { defineModule } from '../src/module/module'
 import { inject } from '../src/di/inject'
-import { defineGateway } from '../src/router/gateway'
+import { defineBoundary } from '../src/router/boundary'
 import { describe, expect, it } from '../src/testing'
 
 describe('Modular Architecture', () => {
@@ -46,7 +46,7 @@ describe('Modular Architecture', () => {
     expect(res.body).toEqual({ db: 'postgres://localhost', user: 'john' })
   })
 
-  it('should support defineGateway as a module in file-based routing', async () => {
+  it('should support defineBoundary as a module in file-based routing', async () => {
     const app = new App({ asyncContext: true })
 
     const DatabaseModule = defineModule({
@@ -54,20 +54,20 @@ describe('Modular Architecture', () => {
       providers: [['DB_CONN', { useValue: 'mysql://localhost' }]],
     })
 
-    const gateway = defineGateway({
+    const boundary = defineBoundary({
       imports: [DatabaseModule],
       providers: [['LocalService', { useValue: 'local' }]],
     })
 
-    // Simulate file-based router loading the gateway
-    if (gateway.imports) {
-      for (const mod of gateway.imports) {
+    // Simulate file-based router loading the boundary
+    if (boundary.imports) {
+      for (const mod of boundary.imports) {
         const name = 'plugin' in mod ? mod.plugin.name : mod.name
         if (!app.hasPlugin(name)) await app.register(mod)
       }
     }
-    if (gateway.providers) {
-      for (const [token, providerConfig] of gateway.providers) {
+    if (boundary.providers) {
+      for (const [token, providerConfig] of boundary.providers) {
         app.provide(token, providerConfig)
       }
     }

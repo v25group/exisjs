@@ -2,6 +2,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { error, c } from '../utils'
+import { getFormattedTime } from '../../utils/time'
 import { generateManifest, generateExisEnv } from '../manifest.js'
 import { resolvePathAliases } from '../resolve-aliases.js'
 
@@ -14,14 +15,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   process.env.__EXIS_BUILD = 'true'
 
   process.on('SIGINT', () => {
-    const time = new Date()
-      .toLocaleTimeString('en-US', {
-        hour12: true,
-        hour: 'numeric',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-      .toLowerCase()
+    const time = getFormattedTime()
     const primary = '\x1b[38;2;160;70;255m'
     console.log(
       `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}build cancelled.${c.reset}`

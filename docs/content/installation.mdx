@@ -20,8 +20,27 @@ Please make sure that **Node.js (version >= 20)** is installed on your operating
 Setting up a new project can be done using our CLI tool. Open your terminal and run the following command to scaffold a new ExisJS project:
 
 <div className="my-6 max-w-lg">
-  <CopyCommand command="npx @exisjs/create@latest my-backend" />
+  <CopyCommand command="npm create exisjs@latest my-backend" />
 </div>
+
+You can also use your package manager of choice:
+
+```bash
+# npm
+$ npm create exisjs@latest my-backend
+
+# pnpm
+$ pnpm create exisjs my-backend
+
+# yarn
+$ yarn create exisjs my-backend
+
+# bun
+$ bun create exisjs my-backend
+
+# npx
+$ npx create-exisjs@latest my-backend
+```
 
 The CLI will prompt you with a few simple questions to customize your project:
 

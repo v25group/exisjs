@@ -94,22 +94,22 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
 }
 
 export function exisConfigTemplate(useTypeScript: boolean): string {
-  const importStatement = useTypeScript
-    ? `import type { ExisConfig } from 'exisjs/config'\nimport { env } from '@/config/env'\n\nconst config: ExisConfig = {`
-    : `/** @type {import('exisjs/config').ExisConfig} */\nimport { env } from '@/config/env'\n\nconst config = {`
+  const typeHeader = useTypeScript
+    ? `import { defineConfig } from 'exisjs'\n\nexport default defineConfig({`
+    : `import { defineConfig } from 'exisjs'\n\nexport default defineConfig({`
 
-  return `${importStatement}
-  port: Number(env.PORT) || 4000,
+  return `${typeHeader}
+  port: Number(process.env.PORT) || 4000,
   host: '0.0.0.0',
 
   cors: {
-    origin: env.CORS_ORIGIN || '*',
+    origin: process.env.CORS_ORIGIN || '*',
     credentials: true,
   },
 
   logger: {
     level: 'info',
-    pretty: env.NODE_ENV !== 'production',
+    pretty: process.env.NODE_ENV !== 'production',
   },
 
   helmet: { enabled: true },
@@ -120,9 +120,7 @@ export function exisConfigTemplate(useTypeScript: boolean): string {
   test: {
     include: ['tests/**/*.test.ts']
   }
-}
-
-export default config
+})
 `
 }
 
@@ -546,25 +544,68 @@ export class UserService {
 `
 }
 
-export function userGatewayTemplate(paradigm: string): string {
+export function rootBoundaryTemplate(paradigm: string): string {
   if (paradigm === 'oop') {
-    return `import { Gateway } from 'exisjs/decorators'
+    return `import { Boundary } from 'exisjs/decorators'
+import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
+
+@Boundary({
+  cors: { origin: '*', credentials: true },
+  headers: { 'X-Powered-By': 'ExisJS' },
+})
+export default class RootBoundary {
+  // Named middleware running in declaration order before child routes
+  logRequest(req: Request, res: Response, next: Next) {
+    next()
+  }
+
+  // Wrapper around all requests in this boundary
+  async handle(ctx: BoundaryContext, next: Next) {
+    return next()
+  }
+}
+`
+  }
+
+  return `import { defineBoundary } from 'exisjs/router'
+import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
+
+export const config = defineBoundary({
+  cors: { origin: '*', credentials: true },
+  headers: { 'X-Powered-By': 'ExisJS' },
+})
+
+// Named middleware running in declaration order before child routes
+export function logRequest(req: Request, res: Response, next: Next) {
+  next()
+}
+
+// Wrapper around all requests in this boundary
+export default async function (ctx: BoundaryContext, next: Next) {
+  return next()
+}
+`
+}
+
+export function userBoundaryTemplate(paradigm: string): string {
+  if (paradigm === 'oop') {
+    return `import { Boundary } from 'exisjs/decorators'
 import { UserService } from './user.service'
 
-// The Gateway acts as a Module, providing the UserService to all routes in this folder.
-@Gateway({
+// The Boundary scopes config + DI providers to all routes in this folder.
+@Boundary({
   providers: [
     ['UserService', { useClass: UserService }]
   ]
 })
-export default class UsersGateway {}
+export default class UsersBoundary {}
 `
   }
 
-  return `import { defineGateway } from 'exisjs/router'
+  return `import { defineBoundary } from 'exisjs/router'
 import { UserService } from './user.service'
 
-export default defineGateway({
+export const config = defineBoundary({
   providers: [
     ['UserService', { useClass: UserService }]
   ]

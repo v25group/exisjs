@@ -10,8 +10,9 @@ export function defineConfig(config: ExisConfig): ExisConfig {
 
 // ─── Default Config ───────────────────────────────────────────────────────────
 
-export type ResolvedConfig = Omit<Required<ExisConfig>, 'ssl'> & {
+export type ResolvedConfig = Omit<Required<ExisConfig>, 'ssl' | 'queue'> & {
   ssl?: ExisConfig['ssl']
+  queue?: ExisConfig['queue']
 }
 
 export const defaultConfig: ResolvedConfig = {
@@ -20,7 +21,7 @@ export const defaultConfig: ResolvedConfig = {
 
   http2: true,
   redirectHttp: false,
-  etag: false,
+  etag: true,
   telemetry: {
     enabled: false,
     exporter: 'console',
@@ -46,7 +47,7 @@ export const defaultConfig: ResolvedConfig = {
   compression: false,
   keepAlive: false,
   server: 'auto' as 'auto' | 'node' | 'bun' | 'uws', // Auto-detect backend
-  queue: undefined as any,
+
   test: undefined as any,
   plugins: [],
   workers: 1,
@@ -87,6 +88,9 @@ export function mergeConfig(
       ;(result as Record<string, unknown>)[key] = val
     }
   }
+
+  result.port =
+    typeof result.port === 'number' && !isNaN(result.port) ? result.port : 4000
 
   return result
 }

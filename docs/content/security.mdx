@@ -1,263 +1,76 @@
 ---
-nextUrl: "/docs/circuit-breaker"
-nextTitle: "Circuit Breaker"
+nextUrl: "/docs/structure"
+nextTitle: "Project Structure"
 ---
 
-# Security & Authentication
+# Security & Edge Middleware
 
-ExisJS includes native implementations for Cryptography, JWT generation, Role-Based Access Control (RBAC), and Edge Security.
-
----
-
-## 1. Password Hashing (Scrypt)
-
-ExisJS includes a password hashing engine powered by Node.js's built-in `crypto.scrypt`. 
-
-It automatically generates a secure salt, derives the key, and formats the output into a single safely-storable string (`scrypt:cost:blockSize:parallelization:keyLength:salt:hash`).
-
-#### Functional Paradigm
-
-```typescript filename="src/http/auth/route.ts"
-import { controller, route } from 'exisjs/router'
-import { Password } from 'exisjs/auth'
-
-export default controller({
-  register: route.post('/register', {
-    async handle(req, res) {
-      const plaintext = req.body.password
-
-      // 1. Hash the password
-      // Uses secure defaults (cost: 16384, block: 8)
-      const hashedPassword = await Password.hashPassword(plaintext)
-
-      await db.users.create({ password: hashedPassword })
-      return { success: true }
-    }
-  }),
-
-  login: route.post('/login', {
-    async handle(req, res) {
-      const user = await db.users.findByEmail(req.body.email)
-      
-      // 2. Verify the hash (timing-safe)
-      const isValid = await Password.verifyPassword(req.body.password, user.password)
-      
-      if (!isValid) throw new Error("Invalid credentials")
-      return { success: true }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/auth/route.ts"
-import { Controller, Post, Body } from 'exisjs/decorators'
-import { Password } from 'exisjs/auth'
-
-@Controller()
-export default class AuthController {
-  @Post('/register')
-  async register(@Body() body: any) {
-    const plaintext = body.password
-
-    // 1. Hash the password
-    // Uses secure defaults (cost: 16384, block: 8)
-    const hashedPassword = await Password.hashPassword(plaintext)
-
-    await db.users.create({ password: hashedPassword })
-    return { success: true }
-  }
-
-  @Post('/login')
-  async login(@Body() body: any) {
-    const user = await db.users.findByEmail(body.email)
-    
-    // 2. Verify the hash (timing-safe)
-    const isValid = await Password.verifyPassword(body.password, user.password)
-    
-    if (!isValid) throw new Error("Invalid credentials")
-    return { success: true }
-  }
-}
-```
+ExisJS provides native, zero-dependency edge and request security middleware built directly into core.
 
 ---
 
-## 2. JSON Web Tokens (JWT)
+## 1. Edge Security Middlewares
 
-ExisJS provides a JWT engine using native `createHmac('sha256')`.
+The following security middlewares are available from `exisjs/middleware` and can be registered globally in `server.ts` or scoped to route trees via `boundary.ts`:
 
-```typescript filename="src/http/auth/route.ts"
-import { JWT } from 'exisjs/auth'
-
-// Generate a Token (Expires in 24 hours)
-const token = JWT.signJWT({ userId: 123, role: 'admin' }, process.env.JWT_SECRET, {
-  expiresIn: 86400
-})
-
-// Verify a Token
-// Automatically throws 401 Unauthorized or TokenExpiredError if invalid
-const payload = JWT.verifyJWT<{ userId: number, role: string }>(token, process.env.JWT_SECRET)
-```
-
-### Creating an Auth Middleware
-
-You can wrap this in a gateway middleware to protect entire folders:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/admin/gateway.ts"
-import { defineGateway } from 'exisjs/router'
-import { JWT } from 'exisjs/auth'
-
-export default defineGateway({
-  middlewares: [
-    (req, res, next) => {
-      const token = req.headers.authorization?.split(' ')[1]
-      // Verifies the token and attaches the payload to the request
-      req.user = JWT.verifyJWT(token, process.env.JWT_SECRET)
-      next()
-    }
-  ]
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/admin/gateway.ts"
-import { Gateway } from 'exisjs/decorators'
-import { JWT } from 'exisjs/auth'
-
-@Gateway({
-  middlewares: [
-    (req, res, next) => {
-      const token = req.headers.authorization?.split(' ')[1]
-      req.user = JWT.verifyJWT(token, process.env.JWT_SECRET)
-      next()
-    }
-  ]
-})
-export default class AdminGateway {}
-```
-
----
-
-## 3. Role-Based Access Control (RBAC)
-
-Once your user is authenticated and their payload is attached to `req.user`, ExisJS provides native Role-Based Access Control right inside the route configuration. You don't need any custom middlewares for this.
-
-#### Functional Paradigm
-
-```typescript filename="src/http/admin/route.ts"
-import { controller, route } from 'exisjs/router'
-import { parseUser } from '../middlewares/auth.js'
-
-export default controller({
-  // Intercepts the request and checks req.user.permissions (or req.user.role) 
-  // before the handler even executes. Throws 403 Forbidden if missing.
-  deleteDatabase: route.delete('/db', {
-    permissions: ['superadmin'],
-    middleware: [parseUser()],
-    handle() {
-      return { success: true }
-    }
-  }),
-  
-  // Accepts an array of allowed permissions
-  viewDashboard: route.get('/dashboard', {
-    permissions: ['admin', 'superadmin', 'manager'],
-    middleware: [parseUser()],
-    handle() {
-      return { metrics: [] }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/admin/route.ts"
-import { Controller, Delete, Get, Use, Permissions } from 'exisjs/decorators'
-import { parseUser } from '../middlewares/auth.js'
-
-@Use(parseUser())
-@Controller()
-export default class AdminController {
-  // Only users with superadmin permission can access this
-  @Permissions('superadmin')
-  @Delete('/db')
-  async deleteDatabase() {
-    return { success: true }
-  }
-  
-  // Accepts an array of allowed permissions
-  @Permissions(['admin', 'superadmin', 'manager'])
-  @Get('/dashboard')
-  async viewDashboard() {
-    return { metrics: [] }
-  }
-}
-```
-
----
-
-## 4. Stateful Sessions
-
-If you prefer stateful authentication over JWTs, ExisJS ships with a secure session middleware. It securely signs the session cookie (`exis_sid`) and automatically persists changes to `req.session` back to the active store.
-
-By default, it uses a `MemorySessionStore`, but you can plug in any distributed store (like Redis) by implementing the `SessionStore` interface.
-
-#### Functional Paradigm
+- `helmet(options?)`: Sets 14+ secure HTTP headers (Strict-Transport-Security, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, and CSP).
+- `csrf(options)`: Enforces the Signed Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE) from CSRF attacks.
+- `hpp()`: Protects against HTTP Parameter Pollution attacks by ensuring array query parameters/form fields are safely handled.
+- `dbSanitize(options?)`: Protects against NoSQL query operator injection (`$where` and other malicious keys) before reaching database layers.
+- `timeout(ms)`: Automatically terminates requests that exceed the specified timeout limit, returning a 503 response.
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
-import { session } from 'exisjs/auth'
+import { helmet, csrf, timeout, hpp } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
-    // 1. Mount the session globally
-    app.use(session({ 
-      secret: process.env.SESSION_SECRET_KEY, // Must be 32+ chars
-      ttl: 86400 * 1000 // 1 day
-    }))
+    app.use(helmet())
+    app.use(timeout(10000))
+    app.use(hpp())
   }
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+---
 
-```typescript filename="src/http/server.ts"
-import { Server } from 'exisjs/decorators'
-import { session } from 'exisjs/auth'
-import type { App } from 'exisjs'
+## 2. In-Memory Rate Limiting
 
-@Server()
-export default class RootServer {
-  async onStart(app: App) {
-    // 1. Mount the session globally
-    app.use(session({ 
-      secret: process.env.SESSION_SECRET_KEY, // Must be 32+ chars
-      ttl: 86400 * 1000 // 1 day
-    }))
-  }
-}
+The core `rateLimit` middleware provides high-performance in-memory and off-heap native rate limiting:
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { rateLimit } from 'exisjs/middleware'
+
+export const config = defineBoundary({})
+
+// Apply rate limiting chain step across the boundary
+export const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  message: 'Too many requests from this IP, please try again after a minute'
+})
 ```
+
+> [!NOTE]
+> The core `rateLimit` middleware runs using an in-memory native off-heap store. For distributed, multi-instance rate limiting backed by Redis, use `@exisjs/cache`.
+
+---
+
+## 3. Role-Based Access Control (RBAC) Metadata
+
+ExisJS allows declarative permission metadata to be attached to routes:
 
 #### Functional Paradigm
 
-```typescript filename="src/http/cart/route.ts"
+```typescript filename="src/http/admin/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  addItem: route.post('/', {
-    handle(req, res) {
-      // 2. Read and Write natively to req.session
-      // ExisJS automatically saves this back to the Store when the request ends
-      if (!req.session.cart) req.session.cart = []
-      
-      req.session.cart.push(req.body.itemId)
-      return { cart: req.session.cart }
+  deleteItem: route.delete('/:id', {
+    permissions: ['admin'],
+    handle({ params }) {
+      return { success: true, deleted: params.id }
     }
   })
 })
@@ -265,30 +78,15 @@ export default controller({
 
 #### Class-Based (OOP) Paradigm
 
-```typescript filename="src/http/cart/route.ts"
-import { Controller, Post, Req, Body } from 'exisjs/decorators'
+```typescript filename="src/http/admin/route.ts"
+import { Controller, Delete, Param, Permissions } from 'exisjs/decorators'
 
 @Controller()
-export default class CartController {
-  @Post('/')
-  async addItem(@Req() req: any, @Body() body: any) {
-    // 2. Read and Write natively to req.session
-    // ExisJS automatically saves this back to the Store when the request ends
-    if (!req.session.cart) req.session.cart = []
-    
-    req.session.cart.push(body.itemId)
-    return { cart: req.session.cart }
+export default class AdminController {
+  @Permissions('admin')
+  @Delete('/:id')
+  async deleteItem(@Param('id') id: string) {
+    return { success: true, deleted: id }
   }
 }
 ```
-
----
-
-## 5. Edge Security Middleware
-
-As mentioned in the [Middleware Guide](/docs/middleware), you should strongly consider registering the following global security middleware in your `server.ts`:
-
-- `helmet()`: Enforces Strict-Transport-Security (HSTS), X-Content-Type-Options (nosniff), and prevents Clickjacking (`X-Frame-Options: DENY`).
-- `dbSanitize({ mongo: true })`: A universal scraper that strips NoSQL operators (`$where`) to provide defense-in-depth for MongoDB databases.
-- `csrf({ secret })`: Enforces the Signed Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE) from Cookie Tossing attacks.
-- `hpp()`: HTTP Parameter Pollution protection (removes duplicate array keys).

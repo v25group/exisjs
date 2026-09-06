@@ -1,0 +1,151 @@
+---
+nextUrl: "/docs/validation"
+nextTitle: "Validation"
+---
+
+# Boundaries (Config & Request Pipeline)
+
+A `boundary.ts` acts as a folder-scoped configuration and request pipeline in your file-system routing architecture.
+
+Any `boundary.ts` applies to every route in its folder and all subfolders recursively. Instead of manually registering middleware chains or route guards, placing a `boundary.ts` configures **CORS**, **Headers**, **Excluded Paths**, **Dependency Injection**, and an **auto-detected request pipeline** cleanly scoped to that sub-tree.
+
+---
+
+## Anatomy of a Boundary
+
+A `boundary.ts` has two distinct, independent parts:
+
+1. **Config** — pure data, declared via `defineBoundary()` (functional) or the `@Boundary()` class decorator (OOP). It configures CORS, headers, DI providers, timeout, and exclusion rules.
+2. **Pipeline** — real code, auto-detected by function signature. No manual pipeline registration is needed.
+
+| Signature | Detected as | Execution timing |
+|---|---|---|
+| `(req, res, next)` | Chain Step | Runs in file/declaration order, before the route |
+| `(ctx, next)` — default export (functional) or class method `handle(ctx, next)` (OOP) | Request Wrapper | Wraps around all chain steps and the nested route/boundary |
+
+---
+
+## 1. Functional Paradigm
+
+In functional style, export `config = defineBoundary(...)`, export named middleware functions `(req, res, next)` for chain steps, and optionally provide a `default export` function `(ctx, next)` as an onion-style wrapper.
+
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
+import { UnauthorizedError } from 'exisjs/error'
+
+// 1. Configuration (CORS, Headers, Exclusions, DI Providers)
+export const config = defineBoundary({
+  cors: {
+    origin: ['https://admin.yourdomain.com'],
+    credentials: true,
+  },
+  headers: {
+    'X-Admin-Api-Version': '2.0',
+  },
+  exclude: [
+    '/admin/health',
+    { path: '/admin/public/*', method: 'GET' }
+  ],
+})
+
+// 2. Chain Step (auto-detected by (req, res, next) signature)
+export function requireAuth(req: Request, res: Response, next: Next) {
+  if (!req.headers['x-api-key']) {
+    throw new UnauthorizedError('Missing API key')
+  }
+  next()
+}
+
+// 3. Wrapper (auto-detected as default export with (ctx, next) signature)
+export default async function (ctx: BoundaryContext, next: Next) {
+  const start = Date.now()
+  try {
+    const result = await next()
+    const duration = Date.now() - start
+    ctx.res.setHeader('X-Response-Time', `${duration}ms`)
+    return { success: true, data: result }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: { message: err.message || 'Internal error' },
+    }
+  }
+}
+```
+
+---
+
+## 2. Class-Based (OOP) Paradigm
+
+In OOP style, decorate a class with `@Boundary(...)`. Named methods taking `(req, res, next)` are auto-detected as chain steps, and a method named `handle(ctx, next)` serves as the request wrapper.
+
+```typescript filename="src/http/admin/boundary.ts"
+import { Boundary } from 'exisjs/decorators'
+import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
+import { UnauthorizedError } from 'exisjs/error'
+
+@Boundary({
+  cors: {
+    origin: ['https://admin.yourdomain.com'],
+    credentials: true,
+  },
+  headers: {
+    'X-Admin-Api-Version': '2.0',
+  },
+  exclude: ['/admin/health'],
+})
+export default class AdminBoundary {
+  // Chain step
+  requireAuth(req: Request, res: Response, next: Next) {
+    if (!req.headers['x-api-key']) {
+      throw new UnauthorizedError('Missing API key')
+    }
+    next()
+  }
+
+  // Wrapper
+  async handle(ctx: BoundaryContext, next: Next) {
+    const start = Date.now()
+    const result = await next()
+    ctx.res.setHeader('X-Response-Time', `${Date.now() - start}ms`)
+    return result
+  }
+}
+```
+
+---
+
+## Cascading & Inheritance
+
+Boundaries cascade down the directory tree. For instance:
+
+```text
+src/http/
+├── boundary.ts       # Root Boundary (applies to /api/*)
+└── admin/
+    ├── boundary.ts   # Admin Boundary (applies to /api/admin/*)
+    └── users/
+        └── route.ts  # Handled by both Root Boundary and Admin Boundary
+```
+
+1. **Wrappers & Chain Steps**: Outer boundaries execute first. Root wrappers wrap nested wrappers, and root chain steps run before nested chain steps.
+2. **CORS & Headers**: Sub-boundaries inherit and merge or override parent headers and CORS policies.
+3. **Exclusions**: When a route matches an exclusion pattern (e.g. `/admin/health` in `exclude`), that boundary's chain steps and wrappers are bypassed for the request.
+
+---
+
+## Dependency Injection via Providers
+
+Boundaries also act as IoC module scopes. You can scope providers to a directory tree using `providers`:
+
+```typescript filename="src/http/users/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { UsersRepository } from './repository'
+
+export const config = defineBoundary({
+  providers: [
+    ['UsersRepository', { useClass: UsersRepository }],
+  ],
+})
+```

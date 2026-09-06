@@ -5,50 +5,49 @@ nextTitle: "CLI Usage"
 
 # Overview
 
-The ExisJS CLI is a command-line interface tool that helps you initialize, develop, and maintain your ExisJS applications. It assists in scaffolding the project, serving it in development mode, and building the application for production. 
+The ExisJS CLI (`exis` / `exisjs`) is a developer tool that assists in initializing, developing, building, and running ExisJS applications.
 
-An ExisJS application is a standard TypeScript application that needs to be compiled to JavaScript before execution. The CLI provides a standard build and execute process with reasonable defaults, while ensuring developers can access the underlying tools (like `tsc` and `node`) to customize them if necessary.
+The CLI is engineered around ExisJS core conventions: file-system routing under `src/http/`, schema validation with `tex`, directory-scoped boundaries (`boundary.ts`), and high-performance production builds with route manifests.
 
 ## Installation
 
-You have several options available for managing how your OS command line resolves the location of the `exisjs` binary file. 
-
-You can install the CLI globally using the `npm install -g` command. This provides convenience and ensures the `exisjs` binary is available across your system.
+The CLI can be run on-demand via `npx` or installed globally via npm:
 
 ```bash
+# Run on-demand (recommended for scaffolding new projects)
+$ npx exisjs init my-api
+
+# Or install globally
 $ npm install -g exisjs
 ```
 
-> [!NOTE]
-> Alternatively, you can use `npx exisjs` to run the CLI without installing it globally. This ensures you run the latest version or a managed local version.
+Inside an initialized ExisJS project, the CLI is locally available and executed via `npx exisjs` or `npm run <script>`.
 
-## Basic workflow
+## Basic Workflow
 
-Once installed, you can invoke CLI commands directly from your OS command line through the `exisjs` executable. See the available commands by entering the following:
+Once in your terminal, invoke CLI commands directly:
 
 ```bash
-$ exisjs --help
+# View help for all commands
+$ npx exisjs --help
+
+# View help for a specific command
+$ npx exisjs generate --help
 ```
 
-Get help on an individual command using the `--help` flag. Substitute any command to get detailed help:
+To create and run a new project:
 
 ```bash
-$ exisjs generate --help
-```
-
-To create, build, and run a new basic ExisJS project in development mode, navigate to the folder that should be the parent of your new project, and run the following commands:
-
-```bash
-$ exisjs init my-project
-$ cd my-project
+$ npx exisjs init my-app
+$ cd my-app
 $ npm run dev
 ```
 
-In your browser, open `http://localhost:3000` to see the new application running. The application will automatically recompile and reload when you change any source files.
+Open `http://localhost:4000` (or the dynamically resolved available port) to access your running API.
 
-## CLI command syntax
+## CLI Command Syntax
 
-All `exisjs` commands follow the same format:
+All ExisJS CLI commands follow this standard structure:
 
 ```bash
 exisjs <command> [arguments] [options]
@@ -57,36 +56,27 @@ exisjs <command> [arguments] [options]
 For example:
 
 ```bash
-$ exisjs generate route users --oop
+# Scaffold a new route with functional syntax
+$ npx exisjs generate route users
+
+# Scaffold with class-based (OOP) decorators
+$ npx exisjs generate route users --oop
+
+# Use the short alias
+$ npx exisjs g r users --oop
 ```
 
-Here, `generate` is the command, `route` and `users` are the arguments, and `--oop` is the option. 
-
-Most commands and some options have aliases. For example, `generate` can be invoked as `g`:
-
-```bash
-$ exisjs g route users --oop
-```
-
-## Command overview
-
-Run `exisjs <command> --help` for any of the following commands to see command-specific options.
-
-See [CLI Commands](/docs/cli/commands) for detailed descriptions of each command.
+## Command Overview
 
 | Command | Alias | Description |
 | :--- | :--- | :--- |
-| `init` | | Creates and initializes a new ExisJS project. |
-| `generate` | `g` | Generates features based on schematics (routes, plugins, etc.). |
-| `build` | | Compiles an application into an output folder. |
-| `start` | | Runs an application from the compiled directory. |
-| `dev` | | Starts the development server with hot module replacement. |
-| `test` | | Runs the native Node.js test runner across your project. |
-| `routes` | | Prints a tabular representation of your routing table. |
-| `repl` | `console` | Starts an interactive REPL console loaded with your application context. |
-| `exports` | | Lists all available framework exports. |
-| `info` | | Displays environment and version information. |
-
-## Requirements
-
-The ExisJS CLI requires a Node.js binary. We recommend Node.js v20+ to ensure compatibility with modern native features, such as the built-in test runner.
+| `dev` | | Starts the development server with HMR and automatic port collision avoidance. |
+| `build` | | Type-checks and compiles TypeScript to production JavaScript with route manifest generation. |
+| `start` | | Runs the compiled production server. |
+| `routes` | | Prints the application routing table to the terminal. |
+| `generate` | `g` | Scaffolds framework slices (resource, route, service, schema, boundary, plugin, middleware, test). |
+| `test` | | Runs the native Node.js test suite (`node:test`) with custom Jest-style reporting. |
+| `repl` | `console` | Starts an interactive Node.js REPL loaded with the application context. |
+| `exports` | | Displays all available `@exisjs` and `exisjs/*` subpath exports. |
+| `info` | | Displays system, Node.js, and ExisJS runtime information. |
+| `init` | | Initializes a new ExisJS application in the current directory. |

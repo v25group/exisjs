@@ -64,6 +64,11 @@ impl TexValidator {
             let mut val = obj.get(key).cloned();
 
             if val.is_none() || val.as_ref().unwrap().is_null() {
+                if val.as_ref().map_or(false, |v| v.is_null()) && field.is_nullable {
+                    result.insert(key.clone(), Value::Null);
+                    continue;
+                }
+
                 if let Some(ref def) = field.default_val {
                     val = Some(Value::String(def.clone()));
                     if field.coerce {

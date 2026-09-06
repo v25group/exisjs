@@ -5,162 +5,289 @@ nextTitle: "Configuration"
 
 # Project Structure
 
-When you bootstrap a new ExisJS project using `@exisjs/create`, it generates a clean, opinionated folder structure designed for scalability and maintainability.
+ExisJS is a minimal, opinionated core: file-system routing, dependency injection,
+validation, sanitization, and a request pipeline. Everything else — databases,
+auth, caching, queues, websockets — is an official `@exisjs/*` package you add
+only when you need it. Nothing in this structure requires them.
 
-ExisJS enforces a strict `src/` directory convention. All application code **must** live inside the `src/` directory. The framework relies on File-System Routing and centralized configurations to keep your project lean and predictable.
+ExisJS enforces a strict `src/` directory convention. All application code
+**must** live inside `src/`.
 
 ---
 
 ## The Default Structure
-
-Here is a look at a standard ExisJS project structure:
 
 ```text
 my-backend/
 ├── .exis/                    # Internal framework cache and build artifacts
 ├── src/
 │   ├── http/
-│   │   ├── server.ts         # The main backend entry point
-│   │   ├── route.ts          # Root API routes (e.g. `GET /api`)
-│   │   ├── gateway.ts        # Root-level gateway (middleware, guards)
+│   │   ├── server.ts         # Application entry point
+│   │   ├── route.ts          # Root routes (e.g. GET /api)
+│   │   ├── boundary.ts       # Root boundary (config + request pipeline)
 │   │   ├── users/
-│   │   │   ├── route.ts      # User endpoints (e.g. `GET /api/users`)
-│   │   │   ├── schema.ts     # Validation schemas (tex)
-│   │   │   └── controller.ts # Business logic helpers
+│   │   │   ├── route.ts      # User endpoints
+│   │   │   └── schema.ts     # Validation schemas (tex) — mandatory alongside route.ts
 │   │   ├── posts/
-│   │   │   └── route.ts      # Post endpoints (e.g. `GET /api/posts`)
+│   │   │   ├── route.ts
+│   │   │   ├── schema.ts
+│   │   │   └── service.ts    # Business logic / data access, DI-injectable
 │   │   └── admin/
-│   │       ├── gateway.ts    # Admin gateway (e.g. role guards)
-│   │       ├── route.ts      # Admin endpoints
+│   │       ├── boundary.ts   # Applies to /admin/* and everything nested
+│   │       ├── route.ts
 │   │       └── posts/
-│   │           ├── route.ts  # Nested admin posts
+│   │           ├── route.ts
+│   │           ├── schema.ts
 │   │           └── service.ts
-│   ├── jobs/
-│   │   ├── cleanup.ts        # Background cron/queue jobs
-│   │   └── process-image.ts
-│   ├── models/               # Database models/schemas (optional)
-│   ├── services/             # Reusable business logic (optional)
-│   ├── dto/                  # Data Transfer Objects (optional)
-│   └── env.ts                # Type-safe environment variable schema
-├── tests/                    # Test files
-├── .env                      # Local environment variables
-├── exis.config.ts            # The ExisJS server configuration file
+│   ├── models/                # Free-form. Populated once you add a data package.
+│   ├── services/               # Free-form. Shared business logic.
+│   ├── dto/                    # Free-form. Request/response types.
+│   └── config/env.ts                  # Type-safe environment schema (tex)
+├── tests/
+├── .env
+├── exis.config.ts
 ├── package.json
 └── tsconfig.json
 ```
 
+> `src/jobs/` is **not** part of the core structure. It only appears once you
+> install `@exisjs/queue` — see that package's docs for its convention.
+
 ---
 
-## Key Files & Directories
+## File Roles (identical meaning in both paradigms)
 
-### 1. `exis.config.ts`
-This configures the global application infrastructure. Here, you define network ports, SSL certificates, global CORS policies, Helmet security, and register native framework Plugins (like GraphQL or Drizzle).
+A file's name declares its role. Functional vs. class-based (OOP) only changes
+_syntax_, never _responsibility_.
 
-[Read the full Configuration Guide](/docs/config)
+| File          | Role                                                                                                 | Never contains                   |
+| ------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `route.ts`    | Binds a URL + method to a handler.                                                                   | Business logic, validation logic |
+| `schema.ts`   | `tex` validation schemas, imported by `route.ts`. Mandatory for every `route.ts` that accepts input. | Handlers, routing                |
+| `service.ts`  | Business logic and data access. DI-injectable.                                                       | Routing, response shaping        |
+| `boundary.ts` | Folder-scoped config + request pipeline for everything in this folder and below.                     | —                                |
 
-### 2. `src/env.ts`
-ExisJS strongly encourages type-safe environment variables. By defining an `env.ts` file using the built-in validator (`tex.env()`), your application will crash at boot if a required environment variable (like `DATABASE_URL`) is missing — preventing silent runtime failures.
+---
 
-```typescript filename="src/env.ts"
-import { tex } from 'exisjs/validator'
+## `src/http/**/route.ts`
 
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
-  NODE_ENV: tex.enum(['development', 'production', 'test']),
-  DATABASE_URL: tex.string()
-}).parse(process.env)
+Any `route.ts` (or `.js`) under `src/http/` maps to a URL from its folder path:
+
+- `src/http/route.ts` → `/api`
+- `src/http/users/route.ts` → `/api/users`
+- `src/http/users/[id]/route.ts` → `/api/users/:id`
+- `src/http/(internal)/debug/route.ts` → `/api/debug` (group folders are ignored)
+
+### Functional
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from "exisjs/router";
+import { UserParamsSchema } from "./schema";
+import { fetchUser } from "./service";
+
+export default controller({
+  getUser: route.get("/users/:id", {
+    params: UserParamsSchema,
+    async handle({ params }) {
+      return fetchUser(params.id);
+    },
+  }),
+});
 ```
 
-### 3. `src/http/server.ts`
-This is your application's bootstrap file. Instead of manually invoking `app.listen()`, you export your server configuration. The ExisJS CLI automatically reads this file, connects your plugins, mounts the file-system router, and starts the server.
+### Class-based (OOP)
 
-### Functional Server Setup
+The decorated class **is** the route file — no separate controller file:
 
-```typescript filename="src/http/server.ts"
-import { exis } from 'exisjs'
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from "exisjs/decorators";
+import { UserParamsSchema } from "./schema";
+import { UserService } from "./service";
 
-export default exis({
-  async onStart(app) {
-    // Connect to database, provide global DI services, etc.
-  },
-  async onClose(app) {
-    // Gracefully close connections
-  }
-})
-```
+@Controller("/users")
+export default class UserRoute {
+  constructor(private userService: UserService) {}
 
-### Class-Based (OOP) Server Setup
-
-```typescript filename="src/http/server.ts"
-import { Server } from 'exisjs/decorators'
-import type { App } from 'exisjs'
-
-@Server()
-export default class RootServer {
-  async onStart(app: App) {
-    // Connect to database, provide global DI services, etc.
-  }
-  async onClose(app: App) {
-    // Gracefully close connections
+  @Get("/:id", UserParamsSchema)
+  async getUser(@Param("id") id: string) {
+    return this.userService.fetchUser(id);
   }
 }
 ```
 
 > [!IMPORTANT]
-> ExisJS is an opinionated framework. You must choose **one paradigm** — either Functional or Class-Based (OOP) — for your entire project. Mixing paradigms within the same project will result in a fatal error at startup.
+> Choose **one paradigm** — Functional or OOP — for the entire project.
+> Mixing them causes a fatal error at startup.
 
-### 4. `src/http/**/route.ts`
-ExisJS uses **File-System Routing** out of the box. Any file named `route.ts` (or `route.js`) inside the `src/http/` directory is automatically mapped to a URL based on its folder path.
+---
 
-- `src/http/route.ts` maps to `/api`
-- `src/http/health/route.ts` maps to `/api/health`
-- `src/http/users/route.ts` maps to `/api/users`
-- `src/http/users/[id]/route.ts` maps to `/api/users/:id`
-- `src/http/users/settings/route.ts` maps to `/api/users/settings`
-- `src/http/(internal)/debug/route.ts` maps to `/api/debug` (group folders are ignored)
+## `src/http/**/schema.ts`
 
-### 5. `src/http/**/gateway.ts`
-Gateways allow you to apply configurations to entire folders. If you place a `gateway.ts` file inside `src/http/admin/`, the Guards, Middlewares, and Providers defined in that Gateway will automatically apply to every single route inside `/admin/*`. Like servers, these can be built using `defineGateway({...})` or the `@Gateway()` decorator.
+```typescript filename="src/http/users/schema.ts"
+import { tex } from "exisjs/validator";
 
-### 6. `src/jobs/`
-Background jobs and cron tasks live here. Each file exports a job definition with a handler and optional cron schedule. These are automatically discovered and registered by the framework at startup.
-
-```typescript filename="src/jobs/cleanup.ts"
-import type { JobDefinition } from 'exisjs/queue'
-
-export default {
-  name: 'cleanup',
-  cron: '* * * * *',
-  async handler() {
-    // Perform periodic cleanup
-  }
-} satisfies JobDefinition
+export const UserParamsSchema = tex.object({ id: tex.string() });
 ```
 
-### 7. `src/http/**/schema.ts`
-Co-locate your validation schemas alongside your route files. Schemas defined using `tex` are automatically integrated with OpenAPI documentation.
+`tex` is the only validation engine. Schemas here are also the source for
+OpenAPI generation once `@exisjs/swagger` is installed.
 
-### 8. `src/http/**/controller.ts`
-Co-locate your business logic helpers alongside your route files. These are plain functions or classes that handle the core logic, keeping your `route.ts` files clean and focused on request/response mapping.
+---
 
-### 9. `.exis/`
-This is an internal, hidden directory generated by the ExisJS CLI. It holds compiled router mappings and runtime cache to skip filesystem scanning in production. You should add `.exis/` to your `.gitignore`.
+## `src/http/**/service.ts`
 
-### 10. Custom Directories (e.g., `src/services/`, `src/models/`, `src/dto/`)
-ExisJS only enforces structure inside `src/http/` (for routing) and `src/jobs/` (for background tasks). For the rest of your application logic, you are free to organize it however you see fit. Common patterns include:
+Plain functions (functional) or an `@Injectable()` class (OOP) — the data/business
+layer, identical concept in both paradigms:
 
-- **`src/models/`** — Database schemas and ORM models
-- **`src/services/`** — Reusable business logic injected via DI
-- **`src/dto/`** — Data Transfer Objects for request/response typing
+```typescript filename="src/http/users/service.ts"
+// Functional
+export async function fetchUser(id: string) {
+  // ...
+}
+```
+
+```typescript filename="src/http/users/service.ts"
+// OOP
+import { Injectable } from "exisjs/decorators";
+
+@Injectable()
+export class UserService {
+  async fetchUser(id: string) {
+    // ...
+  }
+}
+```
+
+---
+
+## `src/http/**/boundary.ts`
+
+A `boundary.ts` applies to every route in its folder and all subfolders. It has
+two independent halves:
+
+1. **Config** — pure data, via `defineBoundary()` (functional) or `@Boundary()`
+   (OOP argument). CORS, headers, DI providers, excluded paths.
+2. **Pipeline** — real code, auto-detected by function signature. No imports,
+   no manual registration required.
+
+| Signature                                                                    | Detected as  | Runs                                                 |
+| ---------------------------------------------------------------------------- | ------------ | ---------------------------------------------------- |
+| `(req, res, next)`                                                           | A chain step | In file/declaration order, before the route          |
+| `(ctx, next)` — default export (functional) or a method named `handle` (OOP) | The wrapper  | Around all chain steps and the nested route/boundary |
+
+### Functional
+
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from "exisjs/router";
+import type { Request, Response, Next, BoundaryContext } from "exisjs/router";
+
+export const config = defineBoundary({
+  cors: { origin: ["https://myapp.com"], credentials: true },
+  headers: { "X-Powered-By": "ExisJS" },
+  exclude: [{ path: "/health", method: "GET" }],
+});
+
+export function auth(req: Request, res: Response, next: Next) {
+  if (!req.headers["x-api-key"]) throw new UnauthorizedError("Missing API key");
+  next();
+}
+
+export default async function (ctx: BoundaryContext, next: Next) {
+  try {
+    return { success: true, data: await next() };
+  } catch (err) {
+    return { success: false, error: { message: (err as Error).message } };
+  }
+}
+```
+
+### Class-based (OOP)
+
+```typescript filename="src/http/admin/boundary.ts"
+import { Boundary } from "exisjs/decorators";
+import type { Request, Response, Next, BoundaryContext } from "exisjs/router";
+
+@Boundary({
+  cors: { origin: ["https://myapp.com"], credentials: true },
+  headers: { "X-Powered-By": "ExisJS" },
+})
+export default class AdminBoundary {
+  auth(req: Request, res: Response, next: Next) {
+    if (!req.headers["x-api-key"])
+      throw new UnauthorizedError("Missing API key");
+    next();
+  }
+
+  async handle(ctx: BoundaryContext, next: Next) {
+    try {
+      return { success: true, data: await next() };
+    } catch (err) {
+      return { success: false, error: { message: (err as Error).message } };
+    }
+  }
+}
+```
+
+A nested folder's `boundary.ts` always runs _inside_ its parent's `next()` —
+pipeline depth mirrors folder depth automatically.
+
+---
+
+## `exis.config.ts`
+
+Global infrastructure: port, SSL, CORS defaults, security headers, and
+official package registration.
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from "exisjs";
+
+export default defineConfig({
+  port: 3000,
+  cors: { origin: "*" },
+  // plugins: [] — official packages (@exisjs/database, @exisjs/auth, etc.)
+  // are registered here once installed. None are required by default.
+});
+```
+
+---
+
+## `src/env.ts`
+
+```typescript filename="src/env.ts"
+import { tex } from "exisjs/validator";
+
+export const env = tex
+  .object({
+    PORT: tex.number({ coerce: true, optional: true }),
+    NODE_ENV: tex.enum(["development", "production", "test"]),
+  })
+  .parse(process.env);
+```
+
+Boot fails immediately if a required variable is missing.
+
+---
+
+## `.exis/`
+
+Internal build cache — compiled route manifest, used for O(1) boot in
+production. Add to `.gitignore`.
+
+---
+
+## Custom Directories
+
+Only `src/http/` (routing) and, if `@exisjs/queue` is installed, `src/jobs/`
+are enforced. Everything else — `src/models/`, `src/services/`, `src/dto/` —
+is free-form.
 
 ---
 
 ## The ExisJS CLI
 
-Your project is driven entirely by the `exis` CLI tool, which is typically mapped in your `package.json` scripts:
-
-- `exis dev`: Starts the development server with Hot-Module Replacement (HMR).
-- `exis build`: Compiles your TypeScript code to JavaScript for production.
-- `exis start`: Starts the production server using the compiled output.
-- `exis routes`: Prints a formatted table of every compiled API endpoint and WebSocket in your application.
-- `exis generate <type>`: Scaffolds new routes, gateways, services, models, DTOs, and more.
+- `exis dev` — dev server with HMR
+- `exis build` — compile for production
+- `exis start` — run compiled output
+- `exis routes` — print every compiled endpoint
+- `exis generate <type>` — scaffold a route, boundary, service, or schema
+- `exis add <package>` — install and wire an official package (e.g. `exis add database`)

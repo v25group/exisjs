@@ -26,6 +26,7 @@ pub enum TexType {
 pub struct TexField {
     pub field_type: TexType,
     pub is_optional: bool,
+    pub is_nullable: bool,
     
     // Constraints
     pub min: Option<f64>,
@@ -66,6 +67,7 @@ impl Default for TexField {
         TexField {
             field_type: TexType::Unknown,
             is_optional: false,
+            is_nullable: false,
             min: None,
             max: None,
             trim: false,

@@ -1,5 +1,5 @@
 import { controller, route } from 'exisjs/router'
-import { cache, guard, pipe } from 'exisjs/middleware'
+import { guard, pipe } from 'exisjs/middleware'
 import { UserParamsSchema } from './schema'
 import { getUsers, getUserById } from './controller'
 import { tex } from 'exisjs/validator'
@@ -30,9 +30,6 @@ export default controller({
   },
 
   list: route.get('/', {
-    middleware: [
-      cache({ tags: ['users'], ttlMs: 60000, keyGenerator: (req) => req.path }),
-    ],
     async handle({ req, res, resolve }) {
       // Test Dependency Injection
       const myService = resolve(MyService)

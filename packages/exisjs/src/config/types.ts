@@ -4,7 +4,12 @@ import type { SslConfig } from '../types'
 // ─── Config Types ─────────────────────────────────────────────────────────────
 
 export interface CorsConfig {
-  origin?: string | string[] | RegExp | RegExp[] | ((origin: string) => boolean)
+  origin?:
+    | boolean
+    | string
+    | RegExp
+    | (string | RegExp)[]
+    | ((origin: string) => boolean)
   methods?: string[]
   allowedHeaders?: string[]
   exposedHeaders?: string[]
@@ -90,7 +95,7 @@ export interface ExisConfig {
   cluster?: {
     workers?: number | 'auto' | 'safe' | 'max' // Number of CPU workers for cluster. 'auto' or 'max' uses all cores.
   }
-  debugRouting?: boolean // Enables detailed logging of the resolved route file and applied gateways for every incoming request
+  debugRouting?: boolean // Enables detailed logging of the resolved route file and applied boundaries for every incoming request
   asyncContext?: boolean // Enables AsyncLocalStorage for global getContext() (adds ~10% overhead). Default false.
   /**
    * Defines the HTTP server backend.
@@ -99,7 +104,13 @@ export interface ExisConfig {
    * 'auto' will use Bun if detected, otherwise Node.
    */
   server?: 'auto' | 'node' | 'bun' | 'uws'
-  queue?: import('../queue/types').QueueConfig
+
+  queue?: {
+    driver?: 'memory' | 'redis' | string
+    maxConcurrent?: number
+    maxQueue?: number
+    [key: string]: any
+  }
   plugins?: ExisPlugin[]
   test?: {
     include?: string[]

@@ -58,9 +58,27 @@ export async function routesCommand(
         typeof (obj as Record<string, unknown>).getRoutes === 'function'
       )
 
-    const appExport = Object.values(mod).find(isApp)
-    const app = (isApp(mod.default) ? mod.default : appExport) as
-      App | undefined
+    const rawApp = mod.default || mod.app
+    let app: App | undefined
+
+    if (rawApp && rawApp._isExisAppDefinition) {
+      const { App, setActiveAppInstance } = await import('../server/app')
+      app = new App(rawApp.options)
+      setActiveAppInstance(app)
+    } else if (
+      rawApp &&
+      typeof rawApp === 'function' &&
+      rawApp.prototype &&
+      rawApp.prototype[Symbol.for('exisjs:server_config')]
+    ) {
+      const serverConfig = rawApp.prototype[Symbol.for('exisjs:server_config')]
+      const { App, setActiveAppInstance } = await import('../server/app')
+      app = new App({ plugins: serverConfig.plugins })
+      setActiveAppInstance(app)
+    } else {
+      const appExport = Object.values(mod).find(isApp)
+      app = (isApp(rawApp) ? rawApp : appExport) as App | undefined
+    }
 
     if (!app) {
       console.error(
@@ -110,12 +128,6 @@ export async function routesCommand(
         case 'PATCH':
           methodColor = '\x1b[35m'
           break // magenta
-        case 'WS':
-          methodColor = '\x1b[36m'
-          break // cyan
-        case 'SSE':
-          methodColor = '\x1b[34m'
-          break // blue
         case 'OPTIONS':
         case 'HEAD':
         case 'CONNECT':

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { error, c } from '../utils'
+import { getFormattedTime } from '../../utils/time'
 
 interface StartOptions {
   entry?: string
@@ -64,12 +65,7 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     if (isShuttingDown) return
     isShuttingDown = true
 
-    const time = new Date().toLocaleTimeString('en-US', {
-      hour12: false,
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-    })
+    const time = getFormattedTime()
     const primary = '\x1b[38;2;160;70;255m'
     console.log(
       `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`

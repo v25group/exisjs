@@ -1,18 +1,21 @@
 import type { ExisConfig } from 'exisjs/config'
-import { env } from './env'
+import { configureLogger } from 'exisjs/logger'
+
+// ─── Configure Logger (once, before anything else) ────────────────────────────
+// Every `logger.info()` across the entire app picks up these settings.
+configureLogger({
+  level: 'debug',
+  pretty: process.env.NODE_ENV !== 'production',
+  redact: ['*.apiKey', '*.creditCard'], // merged with built-in defaults
+})
 
 const config: ExisConfig = {
-  port: Number(env.PORT) || 5000,
+  port: Number(process.env.PORT) || 5000,
   host: '0.0.0.0',
 
   cors: {
-    origin: env.CORS_ORIGIN || '*',
+    origin: process.env.CORS_ORIGIN || '*',
     credentials: true,
-  },
-
-  logger: {
-    level: 'info',
-    pretty: env.NODE_ENV !== 'production',
   },
 
   helmet: { enabled: true },

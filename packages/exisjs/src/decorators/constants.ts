@@ -9,7 +9,7 @@ export const ROUTE_METADATA = Symbol.for('exisjs:route_metadata')
 export const LIFECYCLE_METADATA = Symbol.for('exisjs:lifecycle_metadata')
 export const PARAM_METADATA = Symbol.for('exisjs:param_metadata')
 export const SERVER_CONFIG = Symbol.for('exisjs:server_config')
-export const GATEWAY_CONFIG = Symbol.for('exisjs:gateway_config')
+export const BOUNDARY_CONFIG = Symbol.for('exisjs:boundary_config')
 
 export const ROUTE_META = Symbol.for('exisjs:route_meta')
 export const METHOD_MIDDLEWARES = Symbol.for('exisjs:method_middlewares')
@@ -38,7 +38,7 @@ export interface ServerConfig {
   queue?: any[]
 }
 
-export interface GatewayConfig {
+export interface BoundaryConfig {
   exclude?: any[]
   middleware?: any[]
   filters?: any[]

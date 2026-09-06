@@ -418,8 +418,29 @@ export class TexEngine<T = any> {
     try {
       parsedData = this.validator.parse(data)
     } catch (err: any) {
-      // N-API throws generic Error strings from Rust
-      throw new ValidatorError([{ path: 'root', message: err.message }])
+      let path = 'root'
+      let message = err.message || 'Validation failed'
+
+      if (message.startsWith('Missing required field: ')) {
+        path = message.replace('Missing required field: ', '').trim()
+        message = 'Expected value, received undefined'
+      } else if (message.startsWith("Field '")) {
+        const match = message.match(/Field '([^']+)' (.+)/)
+        if (match) {
+          path = match[1]
+          message = match[2].charAt(0).toUpperCase() + match[2].slice(1)
+        }
+      } else if (message.startsWith("Strict mode error: Unknown field '")) {
+        const match = message.match(
+          /Strict mode error: Unknown field '([^']+)'/
+        )
+        if (match) {
+          path = match[1]
+          message = 'Unknown field not allowed in strict mode'
+        }
+      }
+
+      throw new ValidatorError([{ path, message }])
     }
 
     // 3. Post-validation synchronous refinements

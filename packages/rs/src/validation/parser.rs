@@ -112,6 +112,8 @@ pub fn parse_tex_rule(rule: &str) -> TexField {
                 "mask" => field.mask = true,
                 "coerce" => field.coerce = true,
                 "dedupe" => field.dedupe = true,
+                "nullable" => field.is_nullable = true,
+                "optional" => field.is_optional = true,
                 "preventSql" => field.prevent_sql = true,
                 "preventTraversal" => field.prevent_traversal = true,
                 "requireNumbers" => field.require_numbers = true,

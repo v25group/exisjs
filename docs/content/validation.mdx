@@ -216,23 +216,6 @@ export default class BooksController {
 }
 ```
 
-### Database Integration (Mongoose)
-
-Because the ExisJS Validator is native to the framework, it is tightly coupled with our database and documentation adapters. You can generate Mongoose schemas directly from your validation schemas using `.toMongoSchema()`!
-
-```typescript filename="src/models/User.ts"
-import mongoose from 'mongoose'
-import { tex } from 'exisjs/validator'
-
-export const UserValidator = tex.object({
-  email: tex.email(),
-  password: tex.string({ min: 8 }),
-  role: tex.enum(['admin', 'user'], { default: 'user' })
-})
-
-// Pass the ExisJS Validator directly into Mongoose!
-export const User = mongoose.model('User', new mongoose.Schema(UserValidator.toMongoSchema()))
-```
 
 ## Error Handling
 

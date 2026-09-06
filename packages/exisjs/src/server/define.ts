@@ -58,5 +58,5 @@ export function defineApp(options?: ExisAppOptions): ExisAppDefinition {
   return new ExisAppDefinition(options)
 }
 
-export { defineGateway } from '../router/gateway'
-export type { GatewayConfig } from '../router/gateway'
+export { defineBoundary } from '../router/boundary'
+export type { BoundaryConfig } from '../router/boundary'

@@ -1,5 +1,5 @@
 import type { App } from './app'
-import { IncomingMessage, ServerResponse } from 'node:http'
+import http, { IncomingMessage, ServerResponse } from 'node:http'
 import { ExisRequest } from './request'
 import { ExisResponse } from './response'
 import { executionContext } from './context'
@@ -64,76 +64,97 @@ export class RequestHandler {
     return this._compiledPipeline
   }
 
-  public async fetch(
-    request: globalThis.Request,
-    env?: any,
-    ctx?: any
-  ): Promise<globalThis.Response> {
-    if (!(this.app as any)._routesMounted) {
-      if (typeof this.app.create === 'function') await this.app.create()
-      if (typeof this.app.onStartHook === 'function')
-        await this.app.onStartHook(this.app)
-    }
-    const { handleFetch } = await import('../adapters/fetch')
-    return handleFetch(this.app, request, env, ctx)
-  }
-
   public async inject(options: {
     method?: string
     url: string
     headers?: Record<string, string>
     body?: any
   }): Promise<import('../testing/client').TestResponse> {
+    if (!(this.app as any)._routesMounted) {
+      if (typeof this.app.create === 'function') await this.app.create()
+      if (typeof this.app.onStartHook === 'function')
+        await this.app.onStartHook(this.app)
+    }
+
     const method = (options.method || 'GET').toUpperCase()
-    const url = options.url.startsWith('http')
-      ? options.url
-      : `http://localhost${options.url}`
+    const path = options.url
+    const payload = options.body
 
-    const headers = new Headers()
-    if (options.headers) {
-      for (const [k, v] of Object.entries(options.headers)) {
-        headers.set(k, v)
-      }
-    }
+    return new Promise((resolve, reject) => {
+      const server = http.createServer((req, res) => {
+        this.app.handle(req, res)
+      })
 
-    let bodyStr: string | undefined
-    if (options.body) {
-      bodyStr =
-        typeof options.body === 'string'
-          ? options.body
-          : JSON.stringify(options.body)
-      if (!headers.has('content-type') && typeof options.body !== 'string') {
-        headers.set('content-type', 'application/json')
-      }
-    }
+      server.listen(0, '127.0.0.1', () => {
+        const address = server.address() as import('node:net').AddressInfo
+        const port = address.port
 
-    const req = new Request(url, {
-      method,
-      headers,
-      body: ['GET', 'HEAD', 'OPTIONS'].includes(method) ? undefined : bodyStr,
+        const headers: Record<string, string> = {}
+        if (options.headers) {
+          for (const [k, v] of Object.entries(options.headers)) {
+            headers[k.toLowerCase()] = v
+          }
+        }
+
+        let bodyStr: string | undefined
+
+        if (payload && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+          bodyStr =
+            typeof payload === 'string' ? payload : JSON.stringify(payload)
+          if (typeof payload === 'object' && !headers['content-type']) {
+            headers['content-type'] = 'application/json'
+          }
+          headers['content-length'] = Buffer.byteLength(bodyStr).toString()
+        }
+
+        const reqOpts: import('node:http').RequestOptions = {
+          hostname: '127.0.0.1',
+          port,
+          path,
+          method,
+          headers,
+        }
+
+        const req = http.request(reqOpts, (res) => {
+          const chunks: Buffer[] = []
+          res.on('data', (chunk) => chunks.push(chunk))
+          res.on('end', () => {
+            const bodyBuffer = Buffer.concat(chunks)
+            const text = bodyBuffer.toString('utf8')
+            let parsedBody: any = text
+            try {
+              if (text) parsedBody = JSON.parse(text)
+            } catch {
+              // Ignore
+            }
+
+            const resHeaders: Record<string, string> = {}
+            for (const k in res.headers) {
+              const val = res.headers[k]
+              if (val) resHeaders[k] = Array.isArray(val) ? val.join(',') : val
+            }
+
+            server.close(() => {
+              resolve({
+                status: res.statusCode || 200,
+                headers: resHeaders,
+                body: parsedBody,
+                text,
+              })
+            })
+          })
+        })
+
+        req.on('error', (err) => {
+          server.close(() => reject(err))
+        })
+
+        if (bodyStr) {
+          req.write(bodyStr)
+        }
+        req.end()
+      })
     })
-
-    const fetchRes = await this.fetch(req)
-    const resText = await fetchRes.text()
-
-    let parsedBody: any = resText
-    try {
-      parsedBody = JSON.parse(resText)
-    } catch {
-      // ignore
-    }
-
-    const resHeaders: Record<string, string> = {}
-    fetchRes.headers.forEach((v, k) => {
-      resHeaders[k] = v
-    })
-
-    return {
-      status: fetchRes.status,
-      headers: resHeaders,
-      body: parsedBody,
-      text: resText,
-    }
   }
 
   public _executeWithContext(
@@ -183,7 +204,6 @@ export class RequestHandler {
     res.req = req
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
-    req._dataloaderFns = (this.app as any)._dataloaders
 
     // Recycle objects back to pool when the response is fully done
     rawRes.on('close', () => {

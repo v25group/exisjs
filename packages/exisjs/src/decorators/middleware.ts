@@ -126,42 +126,6 @@ export function Idempotent(
   }
 }
 
-/**
- * Cache Decorator.
- * Caches responses for GET requests.
- *
- * Example:
- *     @Get('/popular')
- *     @Cache({ ttlMs: 60000 })
- *     getPopular() {}
- */
-export function Cache(
-  options: import('../middleware/cache').CacheOptions
-): any {
-  return function (
-    target: any,
-    contextOrPropertyKey?: string | symbol | any,
-    descriptor?: PropertyDescriptor | any
-  ) {
-    const isStandard =
-      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
-    const fn = isStandard ? target : descriptor.value
-
-    fn[METHOD_MIDDLEWARES] = fn[METHOD_MIDDLEWARES] || []
-
-    const opts = options
-
-    // Defer import to avoid circular dependencies
-    const middlewareProxy = async (req: any, res: any, next: any) => {
-      const { cacheMiddleware } = await import('../middleware/cache')
-      const handler = cacheMiddleware(opts)
-      return handler(req, res, next)
-    }
-
-    fn[METHOD_MIDDLEWARES].push(middlewareProxy)
-  }
-}
-
 export function UseGuards(...guards: any[]): any {
   return function (
     target: any,

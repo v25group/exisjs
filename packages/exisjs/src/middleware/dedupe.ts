@@ -16,7 +16,7 @@ export interface DedupeOptions {
  * while subsequent requests for the same key wait and share the same response.
  *
  * @example
- * // in gateway.ts
+ * // in boundary.ts
  * dedupe({ keyGenerator: (req) => req.user?.id || req.ip })
  */
 export function dedupeMiddleware(options: DedupeOptions): Handler {

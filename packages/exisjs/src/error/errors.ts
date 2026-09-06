@@ -320,7 +320,24 @@ export function createErrorHandler(isDev = false): ErrorHandler {
           'Validation Error: ' +
           yupErrors.map((e: any) => `${e.path}: ${e.message}`).join(', ')
       }
-
+      // Normalize Tex ValidatorError
+      else if (
+        err.name === 'ValidatorError' &&
+        'errors' in err &&
+        Array.isArray((err as any).errors)
+      ) {
+        const texErrors = (err as any).errors
+        res.status(400).json({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Validation Error',
+          errors: texErrors.reduce((acc: any, e: any) => {
+            acc[e.path] = e.message
+            return acc
+          }, {}),
+        })
+        return
+      }
       res.status(400).json({
         statusCode: 400,
         error: 'Bad Request',

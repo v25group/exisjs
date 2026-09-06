@@ -7,8 +7,6 @@ import type {
   RouteSchema,
 } from '../types'
 import type { App } from '../server/app'
-import type { ExisWebSocket } from '../websocket/socket'
-import type { ExisSSE } from '../server/sse'
 
 /**
  * The execution context passed to every route handler.
@@ -70,52 +68,6 @@ export type RouteConfig<
 > = BaseRouteConfig<TContext> &
   RouteSchema<B, Q, P, any, TContext> & {
     handle: (ctx: SuperContext<B, Q, P, TContext>) => any | Promise<any>
-  }
-
-/**
- * The execution context for a WebSocket route.
- * Injects a fully-typed native `ExisWebSocket` instance.
- */
-export type WsSuperContext<
-  B = any,
-  Q = any,
-  P = any,
-  TContext = Record<string, any>,
-> = SuperContext<B, Q, P, TContext> & {
-  socket: ExisWebSocket
-}
-
-export type WsRouteConfig<
-  B = any,
-  Q = any,
-  P = any,
-  TContext = Record<string, any>,
-> = BaseRouteConfig<TContext> &
-  RouteSchema<B, Q, P, any, TContext> & {
-    handle: (ctx: WsSuperContext<B, Q, P, TContext>) => any | Promise<any>
-  }
-
-/**
- * The execution context for a Server-Sent Events (SSE) route.
- * Injects a fully-typed native `ExisSSE` stream instance.
- */
-export type SseSuperContext<
-  B = any,
-  Q = any,
-  P = any,
-  TContext = Record<string, any>,
-> = SuperContext<B, Q, P, TContext> & {
-  stream: ExisSSE
-}
-
-export type SseRouteConfig<
-  B = any,
-  Q = any,
-  P = any,
-  TContext = Record<string, any>,
-> = BaseRouteConfig<TContext> &
-  RouteSchema<B, Q, P, any, TContext> & {
-    handle: (ctx: SseSuperContext<B, Q, P, TContext>) => any | Promise<any>
   }
 
 /**
@@ -279,28 +231,6 @@ export const route = {
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'all', path, ...config }) as any,
-  /** Defines a WebSocket route. */
-  ws: <
-    B = unknown,
-    Q = Record<string, string>,
-    P = Record<string, string>,
-    TContext = Record<string, any>,
-  >(
-    path: string,
-    config: WsRouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
-    ({ method: 'ws', path, ...config }) as any,
-  /** Defines a Server-Sent Events (SSE) route. */
-  sse: <
-    B = unknown,
-    Q = Record<string, string>,
-    P = Record<string, string>,
-    TContext = Record<string, any>,
-  >(
-    path: string,
-    config: SseRouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
-    ({ method: 'sse', path, ...config }) as any,
 }
 
 /**
@@ -385,14 +315,6 @@ export function createRouter<TContext = Record<string, any>>() {
       all: <B = any, Q = any, P = any>(
         path: string,
         config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
-      ws: <B = any, Q = any, P = any>(
-        path: string,
-        config: WsRouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
-      sse: <B = any, Q = any, P = any>(
-        path: string,
-        config: SseRouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
     },
     controller: <T extends ControllerConfig>(

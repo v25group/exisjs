@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/telemetry",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Zero-Config OpenTelemetry Integration for ExisJS",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

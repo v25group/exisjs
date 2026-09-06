@@ -7,8 +7,13 @@ export type {
 export { validate } from '../middleware/middleware'
 export { createErrorHandler, HttpError, asyncHandler } from '../error/errors'
 export type { Request, Response, NextFunction, InferHandler } from '../types'
-export { defineGateway } from './gateway'
-export type { GatewayConfig } from './gateway'
+export { defineBoundary } from './boundary'
+export type {
+  BoundaryConfig,
+  BoundaryContext,
+  BoundaryExcludeRule,
+} from './boundary'
+export type Next = import('../types').NextFunction
 export {
   getContext,
   setContext,
@@ -16,12 +21,6 @@ export {
   getResponse,
   after,
 } from '../server/context'
-
-export { ExisWebSocket } from '../websocket/socket'
-export type { WsHandler } from '../types'
-
-export { ExisSSE } from '../server/sse'
-export type { SseHandler } from '../types'
 
 // File Uploads
 export type { ExisFile } from '../types'

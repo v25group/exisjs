@@ -12,16 +12,16 @@
 - **Trials:** 3 per framework, order randomized each trial, median reported
 - **Warmup:** 2s untimed warmup run before each timed trial
 - **Cores:** single-core, no clustering, for all four frameworks
-- **Framework versions:** Express ^5.2.1, Fastify ^5.10.0, Hono ^4.12.32, ExisJS 0.5.0
+- **Framework versions:** Express ^5.2.1, Fastify ^5.12.1, Hono ^4.13.5, ExisJS 0.6.1
 
 ### Performance Metrics
 
 | Framework | Req/Sec (median) | Latency avg (ms) | Latency p50 (ms) | Latency p99 (ms) | Errors | Server backend |
 |---|---|---|---|---|---|---|
-| Express | 25186.19 | 3.36 | 3.00 | 5.00 | 0 | n/a |
-| Fastify | 42916.37 | 2.04 | 2.00 | 3.00 | 0 | n/a |
-| Hono | 40938.19 | 2.08 | 2.00 | 4.00 | 0 | n/a |
-| Exis JS | 53619.20 | 1.17 | 1.00 | 2.00 | 0 | uws |
+| Express | 16821.82 | 5.40 | 6.00 | 7.00 | 0 | n/a |
+| Fastify | 27625.46 | 3.12 | 3.00 | 5.00 | 0 | n/a |
+| Hono | 30645.82 | 2.79 | 3.00 | 4.00 | 0 | n/a |
+| Exis JS | 38022.55 | 2.14 | 2.00 | 4.00 | 0 | uws |
 
 ### Handler Parity Note
 

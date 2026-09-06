@@ -160,12 +160,9 @@ type Profile = ResolveSchema<typeof ProfileSchema>
 
 ---
 
-## Integrations
+## OpenAPI Generation
 
-Because the ExisJS Validator is native to the framework, it is tightly coupled with our database and documentation adapters.
-
-### OpenAPI Generation
-The `TexEngine` automatically converts validation schemas into strictly compliant OpenAPI/Swagger JSON schemas when attached to routes. This powers the zero-config ExisJS Swagger integration without any manual YAML authoring.
+The `TexEngine` automatically converts validation schemas into strictly compliant OpenAPI/Swagger JSON schemas when attached to routes. This powers zero-config Swagger documentation once `@exisjs/swagger` is added.
 
 ---
 

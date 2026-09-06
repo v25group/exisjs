@@ -29,6 +29,16 @@ export class TexType<IsOpt extends boolean = false> {
     this.refinements.push({ async: true, fn, message })
     return this
   }
+
+  nullable(): this & { readonly __isNullable: true } {
+    this._raw += ' | nullable'
+    return this as any
+  }
+
+  optional(): this & { readonly __isOptional: true } {
+    this._raw += ' | optional'
+    return this as any
+  }
 }
 
 export interface TexString<
@@ -120,7 +130,6 @@ export type ResolveTexType<T> = T extends { __kind: 'TexString' }
                         ? U // Handles nested TexEngine
                         : never
 
-// Check if a field is optional
 export type IsOptional<T> = T extends { __isOptional: infer IsOpt }
   ? IsOpt extends true
     ? true
@@ -129,14 +138,27 @@ export type IsOptional<T> = T extends { __isOptional: infer IsOpt }
     ? true
     : false // Handle TexEngine
 
+export type IsNullable<T> = T extends { __isNullable: infer IsNull }
+  ? IsNull extends true
+    ? true
+    : false
+  : false
+
+export type ApplyNullable<T, Type> =
+  IsNullable<T> extends true ? Type | null : Type
+
 export type ResolveSchema<T extends Record<string, any>> = {
   // Required fields
-  [K in keyof T as IsOptional<T[K]> extends false ? K : never]: ResolveTexType<
-    T[K]
+  [K in keyof T as IsOptional<T[K]> extends false ? K : never]: ApplyNullable<
+    T[K],
+    ResolveTexType<T[K]>
   >
 } & {
   // Optional fields
-  [K in keyof T as IsOptional<T[K]> extends true ? K : never]?: ResolveTexType<
-    T[K]
+  [K in keyof T as IsOptional<T[K]> extends true ? K : never]?: ApplyNullable<
+    T[K],
+    ResolveTexType<T[K]>
   >
 }
+
+export type Infer<T extends { _type: any }> = T['_type']

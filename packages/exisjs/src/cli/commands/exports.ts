@@ -12,8 +12,8 @@ export async function exportsCommand() {
       items: [
         { path: 'exisjs', desc: 'Main entrypoint (cors, helmet, setup)' },
         { path: 'exisjs/app', desc: 'App lifecycle, workers, and resilience' },
-        { path: 'exisjs/router', desc: 'Routing decorators and contexts' },
-        { path: 'exisjs/module', desc: 'Module and Gateway definitions' },
+        { path: 'exisjs/router', desc: 'Routing, controllers, and boundaries' },
+        { path: 'exisjs/module', desc: 'Module and Boundary definitions' },
         { path: 'exisjs/di', desc: 'Dependency Injection container' },
         { path: 'exisjs/decorators', desc: 'Class-based routing decorators' },
         { path: 'exisjs/middleware', desc: 'Core middleware utilities' },
@@ -22,14 +22,10 @@ export async function exportsCommand() {
     {
       name: 'Built-in Subsystems',
       items: [
-        { path: 'exisjs/auth', desc: 'Authentication, JWT, Passwords, RBAC' },
-        { path: 'exisjs/cache', desc: 'Tag-based Cache Stores' },
-        { path: 'exisjs/queue', desc: 'Background Job Queues & Workers' },
         { path: 'exisjs/testing', desc: 'Native Test Runner Utilities' },
-        { path: 'exisjs/validator', desc: 'Zod-like Schema Validation (v)' },
-        { path: 'exisjs/dataloader', desc: 'GraphQL-style Dataloaders' },
-        { path: 'exisjs/observability', desc: 'Metrics, Tracing, Health' },
-        { path: 'exisjs/swagger', desc: 'Auto-generated OpenAPI docs' },
+        { path: 'exisjs/validator', desc: 'Zod-like Schema Validation (tex)' },
+        { path: 'exisjs/sanitize', desc: 'Input sanitization utilities' },
+        { path: 'exisjs/logger', desc: 'Structured logging (pino-based)' },
       ],
     },
     {
@@ -39,29 +35,6 @@ export async function exportsCommand() {
         { path: 'exisjs/error', desc: 'Global exception formatting' },
         { path: 'exisjs/plugin', desc: 'Plugin isolation wrapper' },
         { path: 'exisjs/response', desc: 'Standardized JSON responses' },
-      ],
-    },
-    {
-      name: 'Adapters',
-      items: [
-        { path: 'exisjs/adapters', desc: 'Edge and Serverless polyfills' },
-      ],
-    },
-    {
-      name: 'Integrations',
-      items: [
-        { path: 'exisjs/drizzle', desc: 'Drizzle ORM' },
-        { path: 'exisjs/jwt', desc: 'JSON Web Tokens' },
-        { path: 'exisjs/mongodb', desc: 'MongoDB Native' },
-        { path: 'exisjs/mongoose', desc: 'Mongoose ODM' },
-        { path: 'exisjs/openai', desc: 'OpenAI SDK' },
-        { path: 'exisjs/postgres', desc: 'PostgreSQL Native' },
-        { path: 'exisjs/posthog', desc: 'PostHog Analytics' },
-        { path: 'exisjs/prisma', desc: 'Prisma Client' },
-        { path: 'exisjs/redis', desc: 'ioredis' },
-        { path: 'exisjs/resend', desc: 'Resend Email API' },
-        { path: 'exisjs/s3', desc: 'AWS S3 Client' },
-        { path: 'exisjs/supabase', desc: 'Supabase JS' },
       ],
     },
   ]

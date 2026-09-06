@@ -12,7 +12,7 @@ export class RouteScanner {
   public routeMap = new Map<string, string>()
   public apiDir: string | null = null
   public _allApiDirs?: string[]
-  public hasGateways = false
+  public hasBoundaries = false
   public globalParadigm: 'oop' | 'functional' | null = null
 
   constructor(public app: App) {}
@@ -167,22 +167,15 @@ export class RouteScanner {
     this.apiDir = appDirs[0] // keep property name for backwards compatibility
     ;(this as any)._allApiDirs = appDirs
 
-    const cc = {
-      green: '\x1b[32m',
-      cyan: '\x1b[36m',
-      gray: '\x1b[90m',
-      reset: '\x1b[0m',
-    }
-
     for (const appDir of appDirs) {
       const routes = await this.scanDirectory(appDir)
 
       for (const { filePath, routePath } of routes) {
         if (
-          filePath.endsWith('gateway.ts') ||
-          filePath.endsWith('gateway.js')
+          filePath.endsWith('boundary.ts') ||
+          filePath.endsWith('boundary.js')
         ) {
-          this.hasGateways = true
+          this.hasBoundaries = true
         }
 
         if (filePath.endsWith('route.ts') || filePath.endsWith('route.js')) {
@@ -203,16 +196,6 @@ export class RouteScanner {
                 this.app.getRouter().removeRoutesBySource('lazy:' + lazyKey)
                 try {
                   await this.mountRouteFile(normalized, routePath)
-                  const relative = path
-                    .relative(process.cwd(), normalized)
-                    .replace(/\\/g, '/')
-                  const now = new Date()
-                  const h = String(now.getHours()).padStart(2, '0')
-                  const m = String(now.getMinutes()).padStart(2, '0')
-                  const s = String(now.getSeconds()).padStart(2, '0')
-                  console.log(
-                    `${cc.gray}[${h}:${m}:${s}]${cc.reset} ${cc.green}HMR:${cc.reset} Lazy loaded ${cc.cyan}${relative}${cc.reset}`
-                  )
                 } catch (err) {
                   formatDevError(err as Error, normalized)
                   return
@@ -304,88 +287,14 @@ export class RouteScanner {
       else if (functionalFiles.length > 0) this.globalParadigm = 'functional'
     }
 
-    if (!this.hasGateways && !isProd) {
+    if (!this.hasBoundaries && !isProd) {
       console.warn(
-        '\x1b[33m[ExisJS] Warning: No gateway.ts found — applying default security headers.\x1b[0m'
+        '\x1b[33m[ExisJS] Warning: No boundary.ts found — applying default security headers.\x1b[0m'
       )
     }
   }
 
   // ─── Route File Mounting (shared by autoMount and HotReloader) ──────────────
-
-  // ─── Auto-Mount File-Based Jobs ──────────────────────────────────────────────
-
-  public async autoMountJobs(root: string): Promise<void> {
-    if (!this.app._queueWorker) return
-
-    const fs = await import('node:fs/promises')
-    const path = await import('node:path')
-
-    const isProd = process.env.NODE_ENV === 'production'
-    const searchDirs = isProd
-      ? [
-          path.join(root, '.exis', 'server', 'src', 'jobs'),
-          path.join(root, 'dist', 'src', 'jobs'),
-          path.join(root, 'src', 'jobs'),
-        ]
-      : [path.join(root, 'src', 'jobs')]
-
-    let jobsDir = ''
-    for (const dir of searchDirs) {
-      try {
-        const stat = await fs.stat(dir)
-        if (stat.isDirectory()) {
-          jobsDir = dir
-          break
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-
-    if (!jobsDir) return
-
-    try {
-      const entries = await fs.readdir(jobsDir, { withFileTypes: true })
-      for (const entry of entries) {
-        if (
-          entry.isFile() &&
-          (entry.name.endsWith('.ts') || entry.name.endsWith('.js'))
-        ) {
-          const filePath = path.join(jobsDir, entry.name)
-          const name = entry.name.replace(/\.(ts|js)$/, '')
-
-          try {
-            // Load the definition directly (no compilation needed here just to get the schema)
-            const mod = await import(filePath)
-            const jobDef = mod.default || mod
-
-            if (jobDef) {
-              const def = {
-                name: jobDef.name || name,
-                filePath, // Attach filePath for Thread Pool execution
-                cron: jobDef.cron,
-                schema: jobDef.schema,
-                defaultOptions: jobDef.defaultOptions,
-              }
-              this.app._queueWorker.registerJob(def)
-
-              if (this.app._cronScheduler && jobDef.cron) {
-                this.app._cronScheduler.registerJob(def)
-              }
-              if (!process.env.__EXIS_IS_RESTART) {
-                this.app.log.info(`Registered background job: ${name}`)
-              }
-            }
-          } catch (err) {
-            this.app.log.error(`Failed to load job file ${filePath}: ${err}`)
-          }
-        }
-      }
-    } catch {
-      // Ignore if jobs directory does not exist
-    }
-  }
 
   async mountRouteFile(filePath: string, routePath: string): Promise<void> {
     let mod: any
@@ -429,7 +338,7 @@ export class RouteScanner {
     let allMetadata: Record<string, any> = {}
     let allCors: any = undefined
     let allHeaders: Record<string, string> = {}
-    const activeGateways: string[] = []
+    const activeBoundaries: string[] = []
 
     const dirsToCheck = [apiDir]
     let tempDir = apiDir
@@ -440,74 +349,225 @@ export class RouteScanner {
 
     for (const dir of dirsToCheck) {
       try {
-        const gwPathJs = path.join(dir, 'gateway.js')
-        const gwPathTs = path.join(dir, 'gateway.ts')
+        const boundaryPathTs = path.join(dir, 'boundary.ts')
+        const boundaryPathJs = path.join(dir, 'boundary.js')
+        let targetBoundary = ''
+        if (await fs.stat(boundaryPathTs).catch(() => null))
+          targetBoundary = boundaryPathTs
+        else if (await fs.stat(boundaryPathJs).catch(() => null))
+          targetBoundary = boundaryPathJs
 
-        let targetGw = ''
-        if (await fs.stat(gwPathTs).catch(() => null)) targetGw = gwPathTs
-        else if (await fs.stat(gwPathJs).catch(() => null)) targetGw = gwPathJs
-
-        if (targetGw) {
-          activeGateways.push(targetGw)
-          this.hasGateways = true
-          const gwUrl =
+        if (targetBoundary) {
+          activeBoundaries.push(targetBoundary)
+          this.hasBoundaries = true
+          const boundaryUrl =
             process.env.VITEST || process.env.NODE_ENV === 'test'
-              ? pathToFileURL(targetGw).href
-              : pathToFileURL(targetGw).href + '?t=' + Date.now()
-          let gwMod: any
+              ? pathToFileURL(targetBoundary).href
+              : pathToFileURL(targetBoundary).href + '?t=' + Date.now()
+          let boundaryMod: any
           try {
             if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-              gwMod = await import(gwUrl)
+              boundaryMod = await import(boundaryUrl)
             } else {
-              const dynamicImportGw = new Function(
+              const dynamicImportBoundary = new Function(
                 'specifier',
                 'return import(specifier)'
               )
-              gwMod = await dynamicImportGw(gwUrl)
+              boundaryMod = await dynamicImportBoundary(boundaryUrl)
             }
           } catch {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
-            gwMod = require(targetGw)
+            boundaryMod = require(targetBoundary)
           }
-          const gwConfig =
-            gwMod && gwMod.default && gwMod.default.default
-              ? gwMod.default.default
-              : gwMod && gwMod.default
-                ? gwMod.default
-                : gwMod
-          if (gwConfig) {
-            const isExcluded = (reqPath: string, reqMethod: string) => {
-              if (!gwConfig.exclude) return false
-              for (const rule of gwConfig.exclude) {
-                if (typeof rule === 'string') {
-                  if (rule.endsWith('/*')) {
-                    if (reqPath.startsWith(rule.slice(0, -2))) return true
-                  } else if (reqPath === rule) return true
-                } else {
-                  const pathMatch = rule.path.endsWith('/*')
-                    ? reqPath.startsWith(rule.path.slice(0, -2))
-                    : reqPath === rule.path
-                  if (pathMatch) {
-                    if (
-                      !rule.methods ||
-                      rule.methods.includes(reqMethod as any)
-                    )
-                      return true
-                  }
+
+          // Extract config: check boundaryMod.config, boundaryMod.default, or boundaryMod itself
+          let boundaryConfig: any = null
+          const BOUNDARY_CONFIG = Symbol.for('exisjs:boundary_config')
+          const boundaryDefault =
+            boundaryMod && boundaryMod.default && boundaryMod.default.default
+              ? boundaryMod.default.default
+              : boundaryMod && boundaryMod.default
+                ? boundaryMod.default
+                : null
+
+          if (
+            boundaryMod &&
+            boundaryMod.config &&
+            typeof boundaryMod.config === 'object'
+          ) {
+            boundaryConfig = boundaryMod.config
+          } else if (
+            boundaryDefault &&
+            typeof boundaryDefault === 'function' &&
+            boundaryDefault.prototype &&
+            boundaryDefault.prototype[BOUNDARY_CONFIG]
+          ) {
+            // Class-based boundary with @Boundary
+            boundaryConfig = boundaryDefault.prototype[BOUNDARY_CONFIG]
+          } else if (boundaryDefault && typeof boundaryDefault === 'object') {
+            boundaryConfig = boundaryDefault
+          } else if (boundaryMod && typeof boundaryMod === 'object') {
+            boundaryConfig = boundaryMod
+          }
+          const isExcluded = (reqPath: string, reqMethod: string) => {
+            if (!boundaryConfig || !boundaryConfig.exclude) return false
+            for (const rule of boundaryConfig.exclude) {
+              if (typeof rule === 'string') {
+                if (rule.endsWith('/*')) {
+                  if (reqPath.startsWith(rule.slice(0, -2))) return true
+                } else if (reqPath === rule) return true
+              } else {
+                const pathMatch = rule.path.endsWith('/*')
+                  ? reqPath.startsWith(rule.path.slice(0, -2))
+                  : reqPath === rule.path
+                if (pathMatch) {
+                  const methods =
+                    rule.methods || (rule.method ? [rule.method] : undefined)
+                  if (!methods || methods.includes(reqMethod as any))
+                    return true
                 }
               }
-              return false
             }
+            return false
+          }
 
-            if (gwConfig.middleware) {
-              const wrapped = gwConfig.middleware.map(
+          // 1. Auto-detect named middleware functions: (req, res, next)
+          if (boundaryMod && typeof boundaryMod === 'object') {
+            for (const [exportKey, exportVal] of Object.entries(boundaryMod)) {
+              if (
+                exportKey !== 'default' &&
+                exportKey !== 'config' &&
+                typeof exportVal === 'function' &&
+                exportVal.length >= 3 // (req, res, next)
+              ) {
+                const namedMiddleware = (req: any, res: any, next: any) =>
+                  isExcluded(req.path, req.method)
+                    ? next()
+                    : (exportVal as any)(req, res, next)
+                allMiddlewares.push(namedMiddleware)
+              }
+            }
+          }
+
+          // 2. Auto-detect pipeline wrapper function: export default async function(ctx, next)
+          // or class method named `handle(ctx, next)`
+          let wrapperFn:
+            ((ctx: any, next: () => Promise<any>) => Promise<any>) | null = null
+          if (
+            boundaryDefault &&
+            typeof boundaryDefault === 'function' &&
+            boundaryDefault.length === 2 &&
+            !boundaryDefault.prototype?.[BOUNDARY_CONFIG]
+          ) {
+            wrapperFn = boundaryDefault
+          } else if (
+            boundaryDefault &&
+            typeof boundaryDefault === 'function' &&
+            boundaryDefault.prototype &&
+            boundaryDefault.prototype[BOUNDARY_CONFIG]
+          ) {
+            const proto = boundaryDefault.prototype
+            if (typeof proto.handle === 'function') {
+              const boundaryInstance = new boundaryDefault()
+              wrapperFn = proto.handle.bind(boundaryInstance)
+            }
+            // Also inspect method middlewares on class boundary
+            for (const prop of Object.getOwnPropertyNames(proto)) {
+              if (prop !== 'constructor' && prop !== 'handle') {
+                const methodVal = proto[prop]
+                if (typeof methodVal === 'function' && methodVal.length >= 3) {
+                  const boundaryInstance = new boundaryDefault()
+                  const namedMiddleware = (req: any, res: any, next: any) =>
+                    isExcluded(req.path, req.method)
+                      ? next()
+                      : methodVal.call(boundaryInstance, req, res, next)
+                  allMiddlewares.push(namedMiddleware)
+                }
+              }
+            }
+          }
+
+          if (wrapperFn) {
+            const capturedWrapper = wrapperFn
+            const wrapperMiddleware = (req: any, res: any, next: any) => {
+              if (isExcluded(req.path, req.method)) return next()
+
+              let nextCalled = false
+              let nextResolve: (val: any) => void
+              let _nextReject: (err: any) => void
+              const nextPromise = new Promise((resolve, reject) => {
+                nextResolve = resolve
+                _nextReject = reject
+              })
+
+              // Intercept response methods to catch handler return values
+              const originalJson = res.json.bind(res)
+              const originalSend = res.send.bind(res)
+              let handledByRoute = false
+
+              res.json = function (body: any) {
+                if (!handledByRoute) {
+                  handledByRoute = true
+                  nextResolve(body)
+                } else {
+                  return originalJson(body)
+                }
+                return this
+              }
+              res.send = function (body: any) {
+                if (!handledByRoute) {
+                  handledByRoute = true
+                  nextResolve(body)
+                } else {
+                  return originalSend(body)
+                }
+                return this
+              }
+
+              const ctx = {
+                req,
+                res,
+                app: this.app,
+                resolve: <T>(token: any): T =>
+                  this.app.resolve(token, (req as any)._diCache),
+              }
+
+              capturedWrapper(ctx, async () => {
+                if (!nextCalled) {
+                  nextCalled = true
+                  next()
+                }
+                return nextPromise
+              })
+                .then((wrapperResult: any) => {
+                  if (wrapperResult !== undefined && !res.headersSent) {
+                    if (
+                      typeof wrapperResult === 'object' &&
+                      wrapperResult !== null
+                    ) {
+                      originalJson(wrapperResult)
+                    } else {
+                      originalSend(String(wrapperResult))
+                    }
+                  }
+                })
+                .catch((wrapperErr: any) => {
+                  next(wrapperErr)
+                })
+            }
+            allMiddlewares.push(wrapperMiddleware)
+          }
+
+          if (boundaryConfig) {
+            if (boundaryConfig.middleware) {
+              const wrapped = boundaryConfig.middleware.map(
                 (m: any) => (req: any, res: any, next: any) =>
                   isExcluded(req.path, req.method) ? next() : m(req, res, next)
               )
               allMiddlewares.push(...wrapped)
             }
-            if (gwConfig.filters) {
-              const wrapped = gwConfig.filters.map(
+            if (boundaryConfig.filters) {
+              const wrapped = boundaryConfig.filters.map(
                 (f: any) => (err: any, req: any, res: any, next: any) =>
                   isExcluded(req.path, req.method)
                     ? next(err)
@@ -517,8 +577,8 @@ export class RouteScanner {
               )
               allFilters.push(...wrapped)
             }
-            if (gwConfig.guards) {
-              const wrapped = gwConfig.guards.map((g: any) => {
+            if (boundaryConfig.guards) {
+              const wrapped = boundaryConfig.guards.map((g: any) => {
                 return async (req: any) => {
                   if (isExcluded(req.path, req.method)) return true
                   return typeof g === 'function'
@@ -530,8 +590,8 @@ export class RouteScanner {
               })
               allGuards.push(...wrapped)
             }
-            if (gwConfig.interceptors) {
-              const wrapped = gwConfig.interceptors.map((i: any) => {
+            if (boundaryConfig.interceptors) {
+              const wrapped = boundaryConfig.interceptors.map((i: any) => {
                 return async (req: any, res: any) => {
                   if (isExcluded(req.path, req.method)) return
                   return typeof i === 'function'
@@ -543,8 +603,8 @@ export class RouteScanner {
               })
               allInterceptors.push(...wrapped)
             }
-            if (gwConfig.timeout !== undefined) {
-              const baseTimeout = gwConfig.timeout
+            if (boundaryConfig.timeout !== undefined) {
+              const baseTimeout = boundaryConfig.timeout
               const timeoutMiddleware = (req: any, res: any, next: any) => {
                 if (isExcluded(req.path, req.method)) return next()
                 const ms =
@@ -569,27 +629,27 @@ export class RouteScanner {
               }
               allMiddlewares.push(timeoutMiddleware)
             }
-            if (gwConfig.metadata) {
-              allMetadata = { ...allMetadata, ...gwConfig.metadata }
+            if (boundaryConfig.metadata) {
+              allMetadata = { ...allMetadata, ...boundaryConfig.metadata }
             }
-            if (gwConfig.cors !== undefined) allCors = gwConfig.cors
-            if (gwConfig.headers)
-              allHeaders = { ...allHeaders, ...gwConfig.headers }
-            if (gwConfig.plugins) {
-              for (const plugin of gwConfig.plugins) {
+            if (boundaryConfig.cors !== undefined) allCors = boundaryConfig.cors
+            if (boundaryConfig.headers)
+              allHeaders = { ...allHeaders, ...boundaryConfig.headers }
+            if (boundaryConfig.plugins) {
+              for (const plugin of boundaryConfig.plugins) {
                 await this.app.pluginManager.register(plugin)
               }
             }
-            if (gwConfig.imports) {
-              for (const mod of gwConfig.imports) {
+            if (boundaryConfig.imports) {
+              for (const mod of boundaryConfig.imports) {
                 const name = 'plugin' in mod ? mod.plugin.name : mod.name
                 if (!this.app.pluginManager.hasPlugin(name)) {
                   await this.app.pluginManager.register(mod)
                 }
               }
             }
-            if (gwConfig.providers) {
-              for (const [token, providerConfig] of gwConfig.providers) {
+            if (boundaryConfig.providers) {
+              for (const [token, providerConfig] of boundaryConfig.providers) {
                 this.app.container.provide(token, providerConfig)
               }
             }
@@ -613,7 +673,7 @@ export class RouteScanner {
       ...(mod.config || {}),
     }
 
-    // Fallback to global app.options.cors if neither gateway nor route specify it
+    // Fallback to global app.options.cors if neither boundary nor route specify it
     if (routeConfig.cors !== undefined) allCors = routeConfig.cors
     else if (allCors === undefined && this.app.options.cors !== undefined)
       allCors = this.app.options.cors
@@ -632,7 +692,7 @@ export class RouteScanner {
       }
     }
 
-    // Pass gateway features to controllers via metadata if necessary
+    // Pass boundary features to controllers via metadata if necessary
     const combinedFilters = [
       ...allFilters,
       ...(routeConfig.filters
@@ -687,9 +747,9 @@ export class RouteScanner {
       const relFile = pathLib
         .relative(process.cwd(), filePath)
         .replace(/\\/g, '/')
-      const gwStr =
-        activeGateways.length > 0
-          ? activeGateways
+      const boundaryStr =
+        activeBoundaries.length > 0
+          ? activeBoundaries
               .map((g: string) =>
                 pathLib.relative(process.cwd(), g).replace(/\\/g, '/')
               )
@@ -698,7 +758,7 @@ export class RouteScanner {
 
       prefixMiddlewares.push((req: any, res: any, next: any) => {
         this.app.log.debug(
-          `[Request] ${req.method} ${req.path} -> ${gwStr}${relFile}`
+          `[Request] ${req.method} ${req.path} -> ${boundaryStr}${relFile}`
         )
         next()
       })
@@ -989,43 +1049,15 @@ export class RouteScanner {
       if (Object.keys(combinedMetadata).length > 0) {
         schema.metadata = combinedMetadata
       }
-      if (method === 'sse') {
-        const sseHandler = async (stream: any, rawReq: any) => {
-          try {
-            const ctx = {
-              body: rawReq.body,
-              query: rawReq.query,
-              params: rawReq.params,
-              headers: rawReq.headers,
-              req: rawReq,
-              res: undefined as any, // Res is not available in standard SSE after handshake
-              app: this.app,
-              resolve: <T>(token: any): T =>
-                this.app.resolve(token, rawReq._diCache),
-              stream,
-              ...rawReq,
-            }
-            await rc.handle(ctx)
-          } catch (err) {
-            if (onError) {
-              await onError(err, rawReq, {} as any)
-            } else {
-              console.error('[Exis SSE Error]', err)
-            }
-          }
-        }
-        router.sse(rc.path, ...routeMiddlewares, sseHandler)
+      if (Object.keys(schema).length > 0) {
+        ;(router as any)[method](
+          rc.path,
+          ...routeMiddlewares,
+          schema,
+          superHandler
+        )
       } else {
-        if (Object.keys(schema).length > 0) {
-          ;(router as any)[method](
-            rc.path,
-            ...routeMiddlewares,
-            schema,
-            superHandler
-          )
-        } else {
-          ;(router as any)[method](rc.path, ...routeMiddlewares, superHandler)
-        }
+        ;(router as any)[method](rc.path, ...routeMiddlewares, superHandler)
       }
     }
 

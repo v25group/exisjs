@@ -82,6 +82,9 @@ describe('create-exis scaffolding', () => {
     expect(fs.existsSync(path.join(targetDir, 'package.json'))).toBe(true)
     expect(fs.existsSync(path.join(targetDir, 'exis.config.ts'))).toBe(true)
     expect(fs.existsSync(path.join(targetDir, 'src/http/server.ts'))).toBe(true)
+    expect(fs.existsSync(path.join(targetDir, 'src/http/boundary.ts'))).toBe(
+      true
+    )
     expect(
       fs.existsSync(path.join(targetDir, 'src/http/health/route.ts'))
     ).toBe(true)

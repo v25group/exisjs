@@ -25,7 +25,8 @@ import {
   userDtoTemplate,
   userEntityTemplate,
   userServiceTemplate,
-  userGatewayTemplate,
+  userBoundaryTemplate,
+  rootBoundaryTemplate,
   userRouteTemplate,
   userTestTemplate,
 } from './templates.js'
@@ -284,6 +285,7 @@ function writeTemplates(
     `${baseDir}/server.${ext}`,
     serverTemplate(paradigm, useTypeScript)
   )
+  write(dir, `${baseDir}/boundary.${ext}`, rootBoundaryTemplate(paradigm))
   write(dir, `${baseDir}/route.${ext}`, rootRouteTemplate(paradigm))
   write(dir, `${baseDir}/health/route.${ext}`, healthRouteTemplate(paradigm))
 
@@ -293,7 +295,7 @@ function writeTemplates(
     `${baseDir}/users/route.${ext}`,
     userRouteTemplate(paradigm, useTypeScript)
   )
-  write(dir, `${baseDir}/users/gateway.${ext}`, userGatewayTemplate(paradigm))
+  write(dir, `${baseDir}/users/boundary.${ext}`, userBoundaryTemplate(paradigm))
   write(
     dir,
     `${baseDir}/users/user.service.${ext}`,

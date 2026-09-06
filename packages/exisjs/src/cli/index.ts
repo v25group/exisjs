@@ -166,7 +166,7 @@ program
   .description('Generate new features')
   .argument(
     '<type>',
-    'Type to generate (resource|controller|service|gateway|guard|interceptor|filter|job|plugin|middleware|test)'
+    'Type to generate (resource|route|controller|service|schema|boundary|plugin|middleware|test)'
   )
   .argument('[name]', 'Name of the feature')
   .option(
@@ -178,11 +178,8 @@ program
       generateResource,
       generateController,
       generateService,
-      generateGateway,
-      generateGuard,
-      generateInterceptor,
-      generateFilter,
-      generateJob,
+      generateSchema,
+      generateBoundary,
       generatePlugin,
       generateMiddleware,
       generateTest,
@@ -192,12 +189,12 @@ program
     const cwd = process.cwd()
 
     switch (type) {
-      case 'route':
       case 'resource':
-      case 'r':
         await generateResource(name, cwd, options)
         break
+      case 'route':
       case 'controller':
+      case 'r':
       case 'c':
         await generateController(name, cwd, options)
         break
@@ -205,25 +202,13 @@ program
       case 's':
         await generateService(name, cwd, options)
         break
-      case 'gateway':
-      case 'gw':
-        await generateGateway(name, cwd, options)
+      case 'schema':
+      case 'sc':
+        await generateSchema(name, cwd)
         break
-      case 'guard':
-      case 'gu':
-        await generateGuard(name, cwd, options)
-        break
-      case 'interceptor':
-      case 'in':
-        await generateInterceptor(name, cwd, options)
-        break
-      case 'filter':
-      case 'f':
-        await generateFilter(name, cwd, options)
-        break
-      case 'job':
-      case 'j':
-        await generateJob(name, cwd, options)
+      case 'boundary':
+      case 'b':
+        await generateBoundary(name, cwd, options)
         break
       case 'plugin':
       case 'p':
@@ -239,7 +224,7 @@ program
         break
       default:
         console.error(
-          'Unknown type. Supported: resource, controller, service, gateway, guard, interceptor, filter, job, plugin, middleware, test'
+          'Unknown type. Supported: resource, route, controller, service, schema, boundary, plugin, middleware, test'
         )
     }
   })

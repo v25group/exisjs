@@ -160,6 +160,17 @@ async function start() {
 
       process.once('SIGTERM', () => shutdown('SIGTERM'))
       process.once('SIGINT', () => shutdown('SIGINT'))
+
+      // ─── Dev Server Error Boundary ───────────────────────────────────────────
+      // Prevent dev server from fatally crashing on strict unhandled errors (e.g. Postgres disconnected)
+      if (process.env.__EXIS_DEV_SERVER) {
+        process.on('unhandledRejection', (reason) => {
+          console.error('\n\x1b[31m[Exis Unhandled Error]\x1b[0m', reason)
+        })
+        process.on('uncaughtException', (error) => {
+          console.error('\n\x1b[31m[Exis Uncaught Exception]\x1b[0m', error)
+        })
+      }
     }
   } catch (err) {
     console.error(err)

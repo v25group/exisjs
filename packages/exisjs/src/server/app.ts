@@ -2,7 +2,6 @@ import { IncomingMessage, ServerResponse } from 'node:http'
 import type { Server as HttpServer } from 'node:http'
 import type { Server as HttpsServer } from 'node:https'
 import type { Http2SecureServer } from 'node:http2'
-import { WebSocketServer } from 'ws'
 import { Router } from '../router/router'
 import {
   cors,
@@ -12,12 +11,10 @@ import {
   requestLogger,
 } from '../middleware/middleware'
 import { createErrorHandler } from '../error/errors'
-import { ExisWebSocketServer } from '../websocket/server'
 import { defaultConfig, mergeConfig } from '../config/config'
 import type { ResolvedConfig } from '../config/config'
 import { createLogger, resolveLoggerConfig } from '../utils/logger'
-import { HotReloader } from '../dev/hot-reload'
-import type { JobOptions } from '../queue/types'
+import { getLoggerInstance, isLoggerConfigured } from '../logger'
 import { Container } from '../di/container'
 import type { ProviderToken, ProviderDefinition } from '../di/container'
 
@@ -38,22 +35,19 @@ import type {
 } from '../types'
 
 import { ServerBootstrapper } from './bootstrapper'
-import { WsOrchestrator } from '../websocket/orchestrator'
 import { PluginManager } from '../plugin/manager'
 import { RouteScanner } from '../router/route-scanner'
-import { QueueManager } from '../queue/manager'
 import { RequestHandler } from './request-handler'
 import { ControllerRegistrar } from '../router/controller-registrar'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export class App<TRoutes extends Record<string, any> = {}> {
   public bootstrapper!: ServerBootstrapper
-  public wsOrchestrator!: WsOrchestrator
   get server() {
     return this.bootstrapper.getServer()
   }
   get redirectServer() {
-    return (this.bootstrapper as any).redirectServer
+    return (this.bootstrapper.engine as any).redirectServer
   }
   public router: Router
   public options: ResolvedConfig
@@ -62,15 +56,10 @@ export class App<TRoutes extends Record<string, any> = {}> {
   private _configured = false
   private _routesMounted = false
   private _loggerCreated = false
-  public hotReloader: HotReloader | null = null
-
-  public wsServer = new ExisWebSocketServer()
-  public rawWsServer = new WebSocketServer({ noServer: true })
 
   // ─── Component Managers ───────────────────────────────────────────────────
   public pluginManager: PluginManager
   public routeScanner: RouteScanner
-  public queueManager: QueueManager
   public requestHandler: RequestHandler
   public controllerRegistrar: ControllerRegistrar
 
@@ -93,50 +82,32 @@ export class App<TRoutes extends Record<string, any> = {}> {
     return this.pluginManager.hooks
   }
 
-  // ─── Dataloaders Registry ───────────────────────────────────────────────────
-  public _dataloaders = new Map<
-    string,
-    {
-      batchFn: import('../dataloader/dataloader').BatchLoadFn<any, any>
-      options?: import('../dataloader/dataloader').DataloaderOptions<any, any>
-    }
-  >()
-
   // ─── Public Logger ──────────────────────────────────────────────────────────
   public log!: Logger
   public explicitOptions: ExisConfig = {}
 
+  // ─── Validation ─────────────────────────────────────────────────────────────
+  public validatorCompiler?: (req: {
+    schema: any
+    httpPart: string
+  }) => (data: any) => any
+
+  public setValidatorCompiler(
+    compiler: (req: { schema: any; httpPart: string }) => (data: any) => any
+  ) {
+    this.validatorCompiler = compiler
+    this.router.validatorCompiler = compiler
+    return this
+  }
+
   // ─── Dependency Injection ───────────────────────────────────────────────────
   public container = new Container()
 
-  // ─── Queue ──────────────────────────────────────────────────────────────────
   public get apiDir(): string | null {
     return this.routeScanner.apiDir
   }
   public set apiDir(val: string | null) {
     this.routeScanner.apiDir = val
-  }
-  public get _queueClient() {
-    return this.queueManager._queueClient
-  }
-  public get _queueWorker() {
-    return this.queueManager._queueWorker
-  }
-  public get _cronScheduler() {
-    return this.queueManager._cronScheduler
-  }
-  public get _pendingQueueJobs() {
-    return this.queueManager._pendingQueueJobs
-  }
-  public set _pendingQueueJobs(v) {
-    this.queueManager._pendingQueueJobs = v
-  }
-
-  public get queueClient() {
-    return this._queueClient
-  }
-  public get queueWorker() {
-    return this._queueWorker
   }
 
   constructor(options: ExisConfig = {}) {
@@ -146,21 +117,23 @@ export class App<TRoutes extends Record<string, any> = {}> {
     this.ensureLogger()
 
     this.pluginManager = new PluginManager(this)
-    this.wsOrchestrator = new WsOrchestrator(this)
     this.bootstrapper = new ServerBootstrapper(this)
     this.routeScanner = new RouteScanner(this)
-    this.queueManager = new QueueManager(this)
     this.requestHandler = new RequestHandler(this)
     this.controllerRegistrar = new ControllerRegistrar(this)
-
-    if (this.options.queue) {
-      this.queueManager._initQueue(this.options.queue)
-    }
   }
 
   private ensureLogger() {
     if (this._loggerCreated) return
     this._loggerCreated = true
+
+    // If the developer already called configureLogger() or setLogger(),
+    // use their instance so everything shares the same output.
+    if (isLoggerConfigured()) {
+      this.log = getLoggerInstance()
+      return
+    }
+
     const loggerOptions = resolveLoggerConfig(this.options.logger)
     if (process.env.__EXIS_REPL || process.env.__EXIS_TEST) {
       loggerOptions.level = 'warn'
@@ -193,20 +166,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
   }
   onRoute(cb: HookRoute): this {
     this.pluginManager.onRoute(cb)
-    return this
-  }
-
-  // ─── Dataloaders ────────────────────────────────────────────────────────────
-
-  dataloader<K, V, C = K>(
-    name: string,
-    batchFn: import('../dataloader/dataloader').BatchLoadFn<K, V>,
-    options?: import('../dataloader/dataloader').DataloaderOptions<K, C>
-  ): this {
-    if (this._dataloaders.has(name)) {
-      throw new Error(`Dataloader '${name}' is already registered`)
-    }
-    this._dataloaders.set(name, { batchFn, options })
     return this
   }
 
@@ -441,23 +400,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
     return this as any
   }
 
-  // ─── WebSocket Registration ──────────────────────────────────────────────────
-
-  ws<Path extends string>(
-    path: Path,
-    ...handlers: (
-      import('../types').Handler<any, any, any> | import('../types').WsHandler
-    )[]
-  ): App<TRoutes & { ws: Record<Path, any> }> {
-    this.router.ws(path, ...(handlers as any))
-    this.hooks.route.forEach((hook) => hook({ method: 'WS', path }))
-    return this as any
-  }
-
-  publish(room: string, data: unknown): void {
-    this.wsServer.publish(room, data)
-  }
-
   // ─── Mount Sub-Router ─────────────────────────────────────────────────────────
 
   mount(prefix: string, subRouter: Router): this {
@@ -596,36 +538,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
     }
 
     // Metrics Route
-    if (
-      this.options.metrics &&
-      typeof this.options.metrics === 'object' &&
-      this.options.metrics.enabled
-    ) {
-      const metricsPath = this.options.metrics.path || '/metrics'
-
-      this.get(metricsPath as any, async (req, res) => {
-        try {
-          const { initMetrics, getMetrics } =
-            await import('../observability/metrics')
-          initMetrics()
-          const metricsStr = await getMetrics()
-          return res
-            .status(200)
-            .set('Content-Type', 'text/plain')
-            .send(metricsStr)
-        } catch {
-          return res.status(500).json({ error: 'Failed to generate metrics' })
-        }
-      })
-    }
-  }
-
-  public async fetch(
-    request: globalThis.Request,
-    env?: any,
-    ctx?: any
-  ): Promise<globalThis.Response> {
-    return this.requestHandler.fetch(request, env, ctx)
   }
 
   public async inject(options: {
@@ -709,80 +621,18 @@ export class App<TRoutes extends Record<string, any> = {}> {
       }
     }
 
-    // Initialize Queue after config is loaded
-    if (this.options.queue && !this.queueManager._queueClient) {
-      this.queueManager._initQueue(this.options.queue)
-    }
-
-    // Flush any pending jobs that were registered before config was loaded
-    if (this.queueManager._pendingQueueJobs.length > 0) {
-      if (!this.queueManager._queueWorker) {
-        if (this.options.queue?.enableWorkers !== false) {
-          throw new Error(
-            'Queue worker is not initialized. Please configure ExisConfig.queue first.'
-          )
-        }
-      } else {
-        for (const job of this.queueManager._pendingQueueJobs) {
-          this.queueManager._queueWorker.registerJob(job as any)
-          if (this.queueManager._cronScheduler && job.cron) {
-            this.queueManager._cronScheduler.registerJob(job as any)
-          }
-        }
-      }
-      this.queueManager._pendingQueueJobs = []
-    }
-
     if (this._routesMounted) return this
 
-    // Automatically scan and mount file-based routes and jobs
+    // Automatically scan and mount file-based routes
     await this.routeScanner.autoMountRoutes(root)
-    await this.routeScanner.autoMountJobs(root)
+
+    // Auto-register discovered Injectables
+    const { INJECTABLE_REGISTRY } = await import('../decorators/core')
+    for (const injectable of INJECTABLE_REGISTRY) {
+      this.container.provide(injectable, { useClass: injectable })
+    }
+
     this._routesMounted = true
-
-    // Start Hot Route Reloading in dev mode
-    if (
-      this.options.env === 'development' &&
-      (this.routeScanner as any)._allApiDirs
-    ) {
-      this.hotReloader = new HotReloader({
-        apiDirs: (this.routeScanner as any)._allApiDirs,
-        router: this.router,
-        routeMap: this.routeScanner.routeMap,
-        mountRoute: (filePath, routePath) =>
-          this.routeScanner.mountRouteFile(filePath, routePath),
-        clearCache: () => this.container.clearCache(),
-      })
-      await this.hotReloader.start()
-    }
-
-    if (this.options.env === 'production') {
-      const hasRateLimit = this.globalMiddleware.some(
-        (m) =>
-          m.name.toLowerCase().includes('ratelimit') ||
-          m.name.toLowerCase().includes('rate_limit')
-      )
-
-      let hasGatewayRateLimit = false
-      for (const route of this.router.getRoutes()) {
-        if (
-          route.handlers.some(
-            (m) =>
-              m.name.toLowerCase().includes('ratelimit') ||
-              m.name.toLowerCase().includes('rate_limit')
-          )
-        ) {
-          hasGatewayRateLimit = true
-          break
-        }
-      }
-
-      if (!hasRateLimit && !hasGatewayRateLimit) {
-        this.log.warn(
-          '\x1b[33m[ExisJS] Warning: No rate limiter detected — your API is unprotected against abuse in production.\x1b[0m'
-        )
-      }
-    }
 
     return this
   }
@@ -816,27 +666,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   getRouter(): Router {
     return this.router
-  }
-
-  // ─── Queues ─────────────────────────────────────────────────────────────────
-
-  public queue<T = unknown>(
-    name: string,
-    handler: import('../queue/types').JobHandler<T>,
-    options?: Omit<
-      import('../queue/types').JobDefinition<T>,
-      'name' | 'handler'
-    >
-  ) {
-    return this.queueManager.queue(name, handler, options)
-  }
-
-  public async enqueue<T = unknown>(
-    name: string,
-    payload: T,
-    opts?: JobOptions
-  ): Promise<string> {
-    return this.queueManager.enqueue(name, payload, opts)
   }
 }
 

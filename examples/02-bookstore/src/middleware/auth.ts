@@ -1,4 +1,4 @@
-import { JWT } from 'exisjs/auth'
+import jwt from 'jsonwebtoken'
 import { User } from '@/models/User'
 import { HttpError } from 'exisjs/error'
 import type { NextFunction, Request, Response } from 'exisjs/router'
@@ -20,13 +20,11 @@ export const protectRoute = async (
     }
 
     // verify token using native ExisJS JWT integration
-    const decoded = JWT.verifyJWT<{ userId: string }>(
-      token,
-      process.env.JWT_SECRET as string
-    )
+    const decoded = jwt.verify(token, process.env.JWT_SECRET as string)
+    const { userId } = decoded as { userId: string }
 
     // find user
-    const user = await User.findById(decoded.userId).select('-password')
+    const user = await User.findById(userId).select('-password')
     if (!user) {
       throw HttpError.unauthorized('Token is not valid')
     }

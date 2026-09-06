@@ -1,6 +1,3 @@
-import { App } from '../src/server/app'
-import { cacheMiddleware } from '../src/middleware/cache'
-import { MemoryCacheStore } from '../src/cache/store'
 import { dedupeMiddleware } from '../src/middleware/dedupe'
 import { backpressureMiddleware } from '../src/middleware/backpressure'
 import { ipFilterMiddleware } from '../src/middleware/ip-filter'
@@ -12,124 +9,11 @@ import {
 import {
   createMockRequest,
   createMockResponse,
-  getResponseHeader,
   getResponseBody,
 } from './helpers'
 import { describe, expect, it } from '../src/testing'
 
 describe('Advanced Middleware', () => {
-  describe('Cache Middleware', () => {
-    it('caches GET responses in memory', async () => {
-      const store = new MemoryCacheStore()
-      const middleware = cacheMiddleware({
-        store,
-        ttlMs: 1000,
-        keyGenerator: (req: any) => req.path,
-      })
-
-      let callCount = 0
-
-      const req = createMockRequest({ method: 'GET', url: '/data' })
-      const res = createMockResponse()
-
-      // Request 1: should miss
-      await new Promise<void>((resolve) => {
-        middleware(req, res, () => {
-          callCount++
-          res.json({ hello: 'world' })
-          resolve()
-        })
-      })
-
-      expect(getResponseHeader(res, 'x-exis-cache')).toBe('MISS')
-      expect(getResponseBody(res)).toEqual({ hello: 'world' })
-      expect(callCount).toBe(1)
-
-      // Request 2: should hit
-      const res2 = createMockResponse()
-      await new Promise<void>((resolve) => {
-        middleware(req, res2, () => {
-          callCount++ // Shouldn't be called
-        })
-        resolve()
-      })
-
-      // Delay slightly for Promise.resolve in cache set to finish
-      await new Promise((r) => setTimeout(r, 10))
-
-      const req3 = createMockRequest({ method: 'GET', url: '/data' })
-      const res3 = createMockResponse()
-      await new Promise<void>((resolve) => {
-        middleware(req3, res3, () => {
-          callCount++ // Shouldn't be called
-        })
-        // middleware might end request synchronously if cache hit
-        resolve()
-      })
-
-      expect(getResponseHeader(res3, 'x-exis-cache')).toBe('HIT')
-      expect(getResponseBody(res3)).toEqual({ hello: 'world' })
-      expect(callCount).toBe(1) // still 1
-    })
-
-    it('separates cache by identity if keyGenerator includes user ID', async () => {
-      const store = new MemoryCacheStore()
-      const middleware = cacheMiddleware({
-        store,
-        ttlMs: 1000,
-        keyGenerator: (req: any) => `${req.user?.id}:${req.path}`,
-      })
-
-      let callCount = 0
-
-      // User A requests /data
-      const reqA = createMockRequest({ method: 'GET', url: '/data' })
-      ;(reqA as any).user = { id: 'user-a' }
-      const resA = createMockResponse()
-
-      // User B requests /data
-      const reqB = createMockRequest({ method: 'GET', url: '/data' })
-      ;(reqB as any).user = { id: 'user-b' }
-      const resB = createMockResponse()
-
-      await new Promise<void>((resolve) => {
-        middleware(reqA, resA, () => {
-          callCount++
-          resA.json({ data: 'A' })
-          resolve()
-        })
-      })
-
-      await new Promise<void>((resolve) => {
-        middleware(reqB, resB, () => {
-          callCount++
-          resB.json({ data: 'B' })
-          resolve()
-        })
-      })
-
-      expect(callCount).toBe(2)
-      expect(getResponseHeader(resA, 'x-exis-cache')).toBe('MISS')
-      expect(getResponseHeader(resB, 'x-exis-cache')).toBe('MISS')
-      expect(getResponseBody(resA)).toEqual({ data: 'A' })
-      expect(getResponseBody(resB)).toEqual({ data: 'B' })
-
-      // User A requests again
-      const resA2 = createMockResponse()
-      await new Promise<void>((resolve) => {
-        middleware(reqA, resA2, () => {
-          callCount++ // Shouldn't be called
-        })
-        resolve()
-      })
-      // Delay slightly for Promise.resolve
-      await new Promise((r) => setTimeout(r, 10))
-
-      expect(callCount).toBe(2)
-      expect(getResponseHeader(resA2, 'x-exis-cache')).toBe('HIT')
-    })
-  })
-
   describe('Deduplication Middleware', () => {
     it('deduplicates concurrent requests', async () => {
       const middleware = dedupeMiddleware({

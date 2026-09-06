@@ -1,7 +1,5 @@
 import type { ExisRequest } from '../server/request'
 import type { ExisResponse } from '../server/response'
-import type { ExisWebSocket } from '../websocket/socket'
-import type { ExisSSE } from '../server/sse'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ExisUser {}
@@ -64,26 +62,6 @@ export type ErrorHandler = (
   next: NextFunction
 ) => void | Promise<void>
 
-export type WsHandler<
-  TBody = any,
-  TQuery = any,
-  TParams = any,
-  TContext = Record<string, any>,
-> = (
-  ws: ExisWebSocket,
-  req: Request<TBody, TQuery, TParams, TContext>
-) => void | Promise<void>
-
-export type SseHandler<
-  TBody = any,
-  TQuery = any,
-  TParams = any,
-  TContext = Record<string, any>,
-> = (
-  sse: ExisSSE,
-  req: Request<TBody, TQuery, TParams, TContext>
-) => void | Promise<void>
-
 // ─── Route Types ─────────────────────────────────────────────────────────────
 
 export type HttpMethod =
@@ -98,8 +76,6 @@ export type HttpMethod =
   | 'TRACE'
   | 'QUERY'
   | 'ALL'
-  | 'WS'
-  | 'SSE'
 
 export type RouteValidator<T> =
   | { parse: (val: unknown) => T; transform?: unknown }
@@ -170,7 +146,7 @@ export type RouteHandler<
   | RouteSchema<TBody, TQuery, TParams, TResponse, TContext>
 
 export interface Route {
-  method: HttpMethod | 'ALL' | 'WS'
+  method: HttpMethod | 'ALL'
   path: string
   handlers: Handler<any, any, any, any, any>[]
   sourceFile?: string

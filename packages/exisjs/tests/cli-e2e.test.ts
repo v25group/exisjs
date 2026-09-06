@@ -51,7 +51,7 @@ describe('Exis CLI E2E', () => {
     )
 
     expect(stdout).toContain(
-      'Generated Functional resource in src/http/e2eTest/'
+      'Generated Functional route in src/http/e2eTest/route.ts'
     )
 
     const apiDir = path.join(tmpDir, 'src', 'http', 'e2eTest')
