@@ -32,6 +32,15 @@ async function start() {
     const { loadEnv } = await import('../config/env.js')
     loadEnv(cwd)
 
+    // Register path aliases loader
+    try {
+      const { registerPathAliasLoader } =
+        await import('../cli/resolve-aliases.js')
+      registerPathAliasLoader(cwd)
+    } catch {
+      // ignore
+    }
+
     // 2. Auto-load Environment variables validation file if it exists
     const envFiles = [
       path.join(cwd, 'src', 'config', 'env.ts'),

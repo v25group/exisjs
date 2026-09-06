@@ -3,7 +3,7 @@ import { defineBoundary, controller, route } from '../src/router/index'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { createTestApp } from '../src/testing/client'
-import { describe, it, expect, beforeEach, afterEach } from '../src/testing'
+import { describe, it, expect, beforeEach, afterEach, ex } from '../src/testing'
 import os from 'node:os'
 
 describe('Boundary & Enhanced Pipeline', () => {
@@ -148,7 +148,7 @@ describe('Boundary & Enhanced Pipeline', () => {
         env: 'production',
         server: 'node',
       })
-      legacyApp.apiDir = httpDir
+      const warnSpy = ex.spyOn(legacyApp.log, 'warn')
 
       await (legacyApp as any).routeScanner.mountRouteFile(
         path.join(httpDir, 'route.js'),
@@ -160,8 +160,83 @@ describe('Boundary & Enhanced Pipeline', () => {
       expect(res.status).toBe(200)
       expect(res.body.ok).toBe(true)
       expect(res.headers['x-legacy-gateway']).toBeUndefined()
+      expect(warnSpy).toHaveBeenCalled()
+      const warningMessage = warnSpy.mock.calls.some(
+        (call: any) =>
+          typeof call.arguments[0] === 'string' &&
+          call.arguments[0].includes('Found deprecated') &&
+          call.arguments[0].includes('boundary.ts')
+      )
+      expect(warningMessage).toBe(true)
+      warnSpy.mockRestore()
     } finally {
       await fs.rm(legacyDir, { recursive: true, force: true })
+    }
+  })
+
+  it('supports plural "middlewares" in controllers and boundaries', async () => {
+    const testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exis-plural-mid-'))
+    try {
+      const httpDir = path.join(testDir, 'src', 'http')
+      await fs.mkdir(httpDir, { recursive: true })
+      const routerPath = path
+        .join(__dirname, '../src/router/index')
+        .replace(/\\/g, '/')
+
+      await fs.writeFile(
+        path.join(httpDir, 'boundary.js'),
+        `
+        const { defineBoundary } = require('${routerPath}')
+        exports.config = defineBoundary({
+          middlewares: [
+            (req, res, next) => {
+              res.setHeader('X-Boundary-Plural', 'yes')
+              next()
+            }
+          ]
+        })
+        `
+      )
+
+      await fs.writeFile(
+        path.join(httpDir, 'route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          middlewares: [
+            (req, res, next) => {
+              res.setHeader('X-Controller-Plural', 'yes')
+              next()
+            }
+          ],
+          testRoute: route.get('/hello', {
+            middlewares: [
+              (req, res, next) => {
+                res.setHeader('X-Route-Plural', 'yes')
+                next()
+              }
+            ],
+            handle: () => ({ hello: 'world' })
+          })
+        })
+        `
+      )
+
+      const testApp = new App({ env: 'production', server: 'node' })
+      testApp.apiDir = httpDir
+      await (testApp as any).routeScanner.mountRouteFile(
+        path.join(httpDir, 'route.js'),
+        '/'
+      )
+
+      const res = await createTestApp(testApp).get('/hello')
+      expect(res.status).toBe(200)
+      expect(res.body).toEqual({ hello: 'world' })
+      expect(res.headers['x-boundary-plural']).toBe('yes')
+      expect(res.headers['x-controller-plural']).toBe('yes')
+      expect(res.headers['x-route-plural']).toBe('yes')
+    } finally {
+      await fs.rm(testDir, { recursive: true, force: true })
     }
   })
 })

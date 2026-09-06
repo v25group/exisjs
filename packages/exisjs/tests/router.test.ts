@@ -7,6 +7,7 @@ import {
 } from './helpers'
 import type { Request, Response, NextFunction } from '../src/types'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
+import { route } from '../src/router/route-builder'
 // ─── Path Compilation & Route Matching ────────────────────────────────────────
 
 describe('Router route matching', () => {
@@ -399,5 +400,21 @@ describe('runHandlers()', () => {
     await runHandlers(handlers, req, res, done)
 
     expect(done).toHaveBeenCalledWith() // no error
+  })
+
+  it('infers route param types on handler context', () => {
+    const userRoute = route.get('/users/:userId/posts/:postId', {
+      handle({ params }) {
+        // TypeScript compilation checks params.userId and params.postId
+        return { userId: params.userId, postId: params.postId }
+      },
+    })
+
+    expect(userRoute.method).toBe('get')
+    expect(userRoute.path).toBe('/users/:userId/posts/:postId')
+    const executed = (userRoute as any).handle({
+      params: { userId: 'u1', postId: 'p2' },
+    })
+    expect(executed).toEqual({ userId: 'u1', postId: 'p2' })
   })
 })

@@ -192,6 +192,13 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   try {
     const manifestPath = path.join(cwd, '.exis', 'routes-manifest.js')
     if (fs.existsSync(manifestPath)) {
+      try {
+        const { registerPathAliasLoader } =
+          await import('../resolve-aliases.js')
+        registerPathAliasLoader(cwd)
+      } catch {
+        // ignore
+      }
       const dynamicImport = new Function(
         'specifier',
         'return import(specifier)'

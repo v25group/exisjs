@@ -1,7 +1,8 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import Module from 'node:module'
 
-interface AliasMapping {
+export interface AliasMapping {
   /** The alias prefix without the wildcard, e.g. "@/" */
   prefix: string
   /** The absolute target directory the alias maps to */
@@ -12,7 +13,7 @@ interface AliasMapping {
  * Parses tsconfig.json and extracts path alias mappings.
  * Supports patterns like: "@/*": ["./src/*"]
  */
-function parseAliases(cwd: string): AliasMapping[] {
+export function parseAliases(cwd: string): AliasMapping[] {
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
   if (!fs.existsSync(tsconfigPath)) return []
 
@@ -58,6 +59,43 @@ function parseAliases(cwd: string): AliasMapping[] {
 }
 
 /**
+ * Registers a runtime resolver hook or module interception so Node can resolve @/* aliases.
+ */
+let isRegistered = false
+export function registerPathAliasLoader(cwd: string): void {
+  if (isRegistered) return
+  const aliases = parseAliases(cwd)
+  if (!aliases.length) return
+
+  // Register for CJS require
+  try {
+    const modObj = Module as any
+    if (modObj && modObj._resolveFilename) {
+      const originalResolve = modObj._resolveFilename
+      modObj._resolveFilename = function (
+        request: string,
+        parent: any,
+        isMain: boolean,
+        options: any
+      ) {
+        for (const alias of aliases) {
+          if (request.startsWith(alias.prefix)) {
+            const remainder = request.slice(alias.prefix.length)
+            const target = path.join(alias.targetDir, remainder)
+            return originalResolve.call(this, target, parent, isMain, options)
+          }
+        }
+        return originalResolve.call(this, request, parent, isMain, options)
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  isRegistered = true
+}
+
+/**
  * Collects all .js and .mjs files recursively from a directory.
  */
 function collectJsFiles(dir: string): string[] {
@@ -92,6 +130,8 @@ function computeRelativePath(fromFile: string, toFile: string): string {
   return rel
 }
 
+const KNOWN_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.json', '.node'])
+
 /**
  * Resolves a single alias import specifier to a relative path.
  * Returns null if the specifier doesn't match any alias.
@@ -111,28 +151,42 @@ function resolveSpecifier(
       const targetOutputPath = path.join(outDir, relFromCwd)
 
       let resolvedTarget = targetOutputPath
-      if (!path.extname(resolvedTarget)) {
-        resolvedTarget = resolvedTarget + '.js'
-      }
-      if (
-        fs.existsSync(targetOutputPath) &&
-        fs.statSync(targetOutputPath).isDirectory()
-      ) {
-        resolvedTarget = path.join(targetOutputPath, 'index.js')
+      const ext = path.extname(resolvedTarget)
+      if (!KNOWN_EXTENSIONS.has(ext)) {
+        if (
+          fs.existsSync(targetOutputPath) &&
+          fs.statSync(targetOutputPath).isDirectory()
+        ) {
+          resolvedTarget = path.join(targetOutputPath, 'index.js')
+        } else if (fs.existsSync(targetOutputPath + '.js')) {
+          resolvedTarget = targetOutputPath + '.js'
+        } else if (fs.existsSync(targetOutputPath + '.mjs')) {
+          resolvedTarget = targetOutputPath + '.mjs'
+        } else {
+          resolvedTarget = targetOutputPath + '.js'
+        }
       }
       return computeRelativePath(sourceFile, resolvedTarget)
     }
   }
 
-  // Also fix missing extensions for relative imports
+  // Also fix missing extensions for relative imports (e.g. './user.model', '../utils', './dir')
   if (specifier.startsWith('./') || specifier.startsWith('../')) {
-    if (!path.extname(specifier)) {
+    const ext = path.extname(specifier)
+    if (!KNOWN_EXTENSIONS.has(ext)) {
       const targetAbs = path.resolve(path.dirname(sourceFile), specifier)
       if (fs.existsSync(targetAbs) && fs.statSync(targetAbs).isDirectory()) {
         return specifier.endsWith('/')
           ? specifier + 'index.js'
           : specifier + '/index.js'
       }
+      if (fs.existsSync(targetAbs + '.js')) {
+        return specifier + '.js'
+      }
+      if (fs.existsSync(targetAbs + '.mjs')) {
+        return specifier + '.mjs'
+      }
+      // If it doesn't exist on disk yet (or fallback), append .js
       return specifier + '.js'
     }
   }
@@ -145,14 +199,14 @@ function resolveSpecifier(
  *
  * Matches:
  * - import ... from '@/...'
- * - import ... from "@/..."
+ * - import '@/...'
  * - export ... from '@/...'
- * - export ... from "@/..."
+ * - export * from '@/...'
  * - import('@/...')
  * - require('@/...')
  */
 const IMPORT_REGEX =
-  /(?:(?:import|export)\s+.*?\s+from\s+|(?:import|require)\s*\(\s*)(['"])([^'"]+)\1/g
+  /(?:(?:import|export)\s+(?:(?:(?!\bfrom\b)[^\r\n;])*?\s+from\s+)?|(?:import|require)\s*\(\s*)(['"])([^'"]+)\1/g
 
 /**
  * Rewrites all alias imports in a single file's content.
@@ -199,11 +253,27 @@ export async function resolvePathAliases(
   for (const file of files) {
     const content = fs.readFileSync(file, 'utf-8')
 
-    // Quick check: does this file contain any alias prefix OR any extensionless relative import?
+    // Quick check: does this file contain any alias prefix OR any relative import?
     const hasAlias = aliases.some((a) => content.includes(a.prefix))
-    const hasExtensionlessRelative =
-      /from\s+['"](\.\.?\/[^'"]*[^/.'"])['"]/g.test(content)
-    if (!hasAlias && !hasExtensionlessRelative) continue
+    const hasRelative =
+      content.includes("from './") ||
+      content.includes('from "./') ||
+      content.includes("from '../") ||
+      content.includes('from "../') ||
+      content.includes("import('./") ||
+      content.includes('import("./') ||
+      content.includes("import('../") ||
+      content.includes('import("../') ||
+      content.includes("import './") ||
+      content.includes('import "./') ||
+      content.includes("import '../") ||
+      content.includes('import "../') ||
+      content.includes("require('./") ||
+      content.includes('require("./') ||
+      content.includes("require('../") ||
+      content.includes('require("../')
+
+    if (!hasAlias && !hasRelative) continue
 
     const rewritten = rewriteFileContent(
       content,

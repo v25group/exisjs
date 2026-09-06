@@ -19,7 +19,11 @@ export interface BoundaryConfig {
    * Middleware to apply to all routes in this directory and subdirectories.
    * Replaces the old router.use() globally for a folder.
    */
-  middleware?: Handler[]
+  middleware?: Handler[] | Handler
+  /**
+   * Alias for `middleware`. Supports plural naming.
+   */
+  middlewares?: Handler[] | Handler
 
   /**
    * CORS configuration applied to all routes in this directory and subdirectories.

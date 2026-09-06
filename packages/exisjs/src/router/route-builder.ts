@@ -54,9 +54,25 @@ export type SuperContext<
  * })
  */
 
+/**
+ * Extracts route parameter names from a path string literal (e.g. '/users/:id/posts/:postId' -> { id: string; postId: string }).
+ */
+export type ExtractRouteParams<T extends string> = string extends T
+  ? Record<string, string>
+  : T extends `${infer _Start}:${infer Param}/${infer Rest}`
+    ? Record<Param | keyof ExtractRouteParams<`/${Rest}`>, string>
+    : T extends `${infer _Start}:${infer Param}`
+      ? Record<Param, string>
+      : Record<string, string>
+
 export interface BaseRouteConfig<TContext = Record<string, any>> {
   cors?: any
-  middleware?: Handler<any, any, any, any, TContext>[]
+  middleware?:
+    | Handler<any, any, any, any, TContext>[]
+    | Handler<any, any, any, any, TContext>
+  middlewares?:
+    | Handler<any, any, any, any, TContext>[]
+    | Handler<any, any, any, any, TContext>
   filters?: any | any[]
   host?: string | string[]
 }
@@ -107,12 +123,13 @@ export const route = {
    * @public
    */
   get: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> => {
     if ('body' in config && config.body) {
@@ -124,111 +141,121 @@ export const route = {
   },
 
   post: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'post', path, ...config }) as any,
 
   put: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'put', path, ...config }) as any,
 
   delete: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'delete', path, ...config }) as any,
 
   patch: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'patch', path, ...config }) as any,
 
   options: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'options', path, ...config }) as any,
 
   head: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'head', path, ...config }) as any,
 
   connect: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'connect', path, ...config }) as any,
 
   trace: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'trace', path, ...config }) as any,
 
   query: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'query', path, ...config }) as any,
 
   all: <
+    TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
-    P = Record<string, string>,
+    P = ExtractRouteParams<TPath>,
     TContext = Record<string, any>,
   >(
-    path: string,
+    path: TPath,
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> =>
     ({ method: 'all', path, ...config }) as any,
@@ -249,7 +276,8 @@ export const route = {
  */
 export interface ControllerConfig {
   cors?: any
-  middleware?: Handler[]
+  middleware?: Handler[] | Handler
+  middlewares?: Handler[] | Handler
   filters?: any | any[]
   onError?: HookError
   onResponse?: HookResponse
@@ -293,28 +321,58 @@ export function controller<T extends ControllerConfig>(
 export function createRouter<TContext = Record<string, any>>() {
   return {
     route: route as unknown as typeof route & {
-      get: <B = any, Q = any, P = any>(
-        path: string,
+      get: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
-      post: <B = any, Q = any, P = any>(
-        path: string,
+      post: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
-      put: <B = any, Q = any, P = any>(
-        path: string,
+      put: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
-      patch: <B = any, Q = any, P = any>(
-        path: string,
+      patch: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
-      delete: <B = any, Q = any, P = any>(
-        path: string,
+      delete: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
-      all: <B = any, Q = any, P = any>(
-        path: string,
+      all: <
+        TPath extends string = string,
+        B = any,
+        Q = any,
+        P = ExtractRouteParams<TPath>,
+      >(
+        path: TPath,
         config: RouteConfig<B, Q, P, TContext>
       ) => RouteDefinition<B, Q, P, TContext>
     },

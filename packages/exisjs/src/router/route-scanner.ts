@@ -44,6 +44,14 @@ export class RouteScanner {
     const isProd = process.env.NODE_ENV === 'production'
     const isDev = this.app.options.env === 'development'
 
+    try {
+      const { registerPathAliasLoader } =
+        await import('../cli/resolve-aliases.js')
+      registerPathAliasLoader(root)
+    } catch {
+      // ignore
+    }
+
     // Try to load the pre-built manifest first (O(1) boot)
     let manifest: any = undefined
 
@@ -351,6 +359,18 @@ export class RouteScanner {
 
     for (const dir of dirsToCheck) {
       try {
+        // Detect deprecated gateway.ts / gateway.js
+        const gatewayPathTs = path.join(dir, 'gateway.ts')
+        const gatewayPathJs = path.join(dir, 'gateway.js')
+        if (
+          (await fs.stat(gatewayPathTs).catch(() => null)) ||
+          (await fs.stat(gatewayPathJs).catch(() => null))
+        ) {
+          this.app.log.warn(
+            `Found deprecated 'gateway' file in '${dir}'. Gateways have been renamed to 'boundary.ts' in ExisJS v0.7+. Please rename it to boundary.ts.`
+          )
+        }
+
         const boundaryPathTs = path.join(dir, 'boundary.ts')
         const boundaryPathJs = path.join(dir, 'boundary.js')
         let targetBoundary = ''
@@ -561,8 +581,13 @@ export class RouteScanner {
           }
 
           if (boundaryConfig) {
-            if (boundaryConfig.middleware) {
-              const wrapped = boundaryConfig.middleware.map(
+            const bMiddleware =
+              boundaryConfig.middleware || boundaryConfig.middlewares
+            if (bMiddleware) {
+              const mList = Array.isArray(bMiddleware)
+                ? bMiddleware
+                : [bMiddleware]
+              const wrapped = mList.map(
                 (m: any) => (req: any, res: any, next: any) =>
                   isExcluded(req.path, req.method) ? next() : m(req, res, next)
               )
@@ -680,11 +705,10 @@ export class RouteScanner {
     else if (allCors === undefined && this.app.options.cors !== undefined)
       allCors = this.app.options.cors
 
-    if (routeConfig.middleware)
+    const rMiddleware = routeConfig.middleware || routeConfig.middlewares
+    if (rMiddleware)
       allMiddlewares.push(
-        ...(Array.isArray(routeConfig.middleware)
-          ? routeConfig.middleware
-          : [routeConfig.middleware])
+        ...(Array.isArray(rMiddleware) ? rMiddleware : [rMiddleware])
       )
     if (routeConfig.headers)
       allHeaders = { ...allHeaders, ...routeConfig.headers }
@@ -855,11 +879,12 @@ export class RouteScanner {
     if (config.cors) {
       fileMiddleware.push(config.cors === true ? cors({}) : cors(config.cors))
     }
-    if (config.middleware) {
+    const fileMiddlewareConfig = config.middleware || config.middlewares
+    if (fileMiddlewareConfig) {
       fileMiddleware.push(
-        ...(Array.isArray(config.middleware)
-          ? config.middleware
-          : [config.middleware])
+        ...(Array.isArray(fileMiddlewareConfig)
+          ? fileMiddlewareConfig
+          : [fileMiddlewareConfig])
       )
     }
 
@@ -870,6 +895,7 @@ export class RouteScanner {
         [
           'cors',
           'middleware',
+          'middlewares',
           'onError',
           'onResponse',
           '__isController',
@@ -885,9 +911,10 @@ export class RouteScanner {
       if (rc.cors) {
         routeMiddlewares.push(rc.cors === true ? cors({}) : cors(rc.cors))
       }
-      if (rc.middleware) {
+      const rcMiddleware = rc.middleware || rc.middlewares
+      if (rcMiddleware) {
         routeMiddlewares.push(
-          ...(Array.isArray(rc.middleware) ? rc.middleware : [rc.middleware])
+          ...(Array.isArray(rcMiddleware) ? rcMiddleware : [rcMiddleware])
         )
       }
 
