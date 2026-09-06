@@ -134,14 +134,46 @@ import { UsersService } from './users/service'
 export default class RootServer {}
 ```
 
+### Constructor Injection (`@Inject` and `@Optional`)
+
+In addition to property-level `inject()`, ExisJS provides full OOP constructor parameter injection with `@Inject(token)` and `@Optional()`:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
+import { UsersService } from './service'
+
+@Controller('/users')
+export default class UsersController {
+  constructor(
+    private usersService: UsersService,
+    @Inject('DATABASE_URL') private dbUrl: string,
+    @Optional() @Inject('METRICS') private metrics?: any
+  ) {}
+
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    return this.usersService.findAll()
+  }
+}
+```
+
 ## Injection Scopes
 
 For people coming from different programming language backgrounds, it might be unexpected to learn that in ExisJS, almost everything is shared across incoming requests. We have a connection pool to the database, singleton services with global state, etc. This is because Node.js doesn't follow the request/response Multi-Threaded Stateless Model.
 
-However, there are edge-cases when request-based lifetime may be the desired behavior (e.g., per-request caching in GraphQL, request tracking, multi-tenancy). ExisJS supports scopes directly in the `@Injectable()` decorator:
+However, there are use-cases when request-based or transient lifetime is desired. ExisJS supports three provider scopes in the `@Injectable()` decorator and `app.provide()`:
 
 - **Singleton (Default)**: A single instance of the provider is shared across the entire application.
 - **Request**: A new instance of the provider is created exclusively for each incoming request, and garbage collected afterward.
+- **Transient**: A brand-new instance is created every single time the dependency is requested/injected.
+
+```typescript
+@Injectable({ scope: 'transient' })
+export class OperationContext {
+  public readonly id = crypto.randomUUID()
+}
+```
 
 > [!WARNING]
 > **Request Scope Constraints**: A provider marked as `scope: 'request'` **must** be resolved within the lifecycle of an active HTTP request. If you try to `inject()` or resolve a request-scoped provider during application startup, inside a background queue worker, or from a cron job, the container will throw a runtime error.
+

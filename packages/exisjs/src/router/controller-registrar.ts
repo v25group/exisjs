@@ -1,4 +1,5 @@
 import type { App } from '../server/app'
+import { executionContext } from '../server/context'
 
 export class ControllerRegistrar {
   constructor(private app: App<any>) {}
@@ -25,6 +26,7 @@ export class ControllerRegistrar {
     const ROUTE_METADATA = Symbol.for('exisjs:route_metadata')
     const LIFECYCLE_METADATA = Symbol.for('exisjs:lifecycle_metadata')
     const PARAM_METADATA = Symbol.for('exisjs:param_metadata')
+    const PARAM_METADATA_PROP = Symbol.for('exisjs:param_metadata_prop')
 
     for (const ControllerClass of controllers) {
       const prefix = ControllerClass.prototype[CONTROLLER_PREFIX] || ''
@@ -55,12 +57,14 @@ export class ControllerRegistrar {
           next: import('../types').NextFunction,
           streamOrSocket?: any
         ) => {
-          let instance: any = this.app.container.resolve(ControllerClass)
-          if (!instance) {
-            // Auto-instantiate if not provided via DI
-            instance = new ControllerClass()
+          let instance: any
+          try {
+            instance = this.app.container.resolve(ControllerClass)
+          } catch {
+            instance = this.app.container.instantiateClass(ControllerClass)
             this.app.container.provide(ControllerClass, { useValue: instance })
           }
+
           try {
             // 0. Enforce Route Permissions (Role Authorization)
             const routeMetadata = routeMetadataMap[route.handlerName] || {}
@@ -120,7 +124,13 @@ export class ControllerRegistrar {
             }
 
             // 2. Resolve parameters
-            const paramMetadata = paramMetadataMap[route.handlerName] || []
+            const paramMetadata =
+              paramMetadataMap[route.handlerName] ||
+              (ControllerClass.prototype[route.handlerName] &&
+                ControllerClass.prototype[route.handlerName][
+                  PARAM_METADATA_PROP
+                ]) ||
+              []
             const args: any[] = []
 
             if (paramMetadata.length === 0) {
@@ -211,6 +221,25 @@ export class ControllerRegistrar {
                         files = req.files
                       }
                       rawArg = isMulti ? files : files[0]
+                    }
+                    break
+                  case 'customParam':
+                    if (typeof param.customFactory === 'function') {
+                      const executionCtx = {
+                        req,
+                        res,
+                        next,
+                        app: this.app,
+                        state: executionContext.getStore()?.state || {},
+                        switchToHttp: () => ({
+                          getRequest: () => req,
+                          getResponse: () => res,
+                          getNext: () => next,
+                        }),
+                      }
+                      rawArg = param.customFactory(param.name, executionCtx)
+                    } else {
+                      rawArg = undefined
                     }
                     break
                   default:
@@ -329,7 +358,8 @@ export class ControllerRegistrar {
             }
             if (!handled) {
               if (next) next(err as Error)
-              else console.error(`[Exis ${method.toUpperCase()} Error]`, err)
+              else
+                this.app.log.error({ err, method }, '[Exis Controller Error]')
             }
           }
         }

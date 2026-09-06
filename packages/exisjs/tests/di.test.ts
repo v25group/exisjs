@@ -137,4 +137,111 @@ describe('Dependency Injection', () => {
     expect(singletonInstance1).toBe(singletonInstance2)
     expect(requestInstance1).not.toBe(requestInstance2)
   })
+
+  it('should support transient scope (returns new instance on every resolve)', () => {
+    const app = new App({ asyncContext: true })
+    let count = 0
+    class TransientService {
+      id = ++count
+    }
+
+    app.provide(TransientService, {
+      useClass: TransientService,
+      scope: 'transient',
+    })
+
+    const t1 = app.resolve(TransientService)
+    const t2 = app.resolve(TransientService)
+
+    expect(t1.id).toBe(1)
+    expect(t2.id).toBe(2)
+    expect(t1).not.toBe(t2)
+  })
+
+  it('should support @Injectable({ scope: "transient" }) on class', () => {
+    const app = new App({ asyncContext: true })
+    const { Injectable } = require('../src/decorators/core')
+
+    let count = 0
+    @Injectable({ scope: 'transient' })
+    class TransientWorker {
+      id = ++count
+    }
+
+    const w1 = app.resolve(TransientWorker)
+    const w2 = app.resolve(TransientWorker)
+
+    expect(w1.id).toBe(1)
+    expect(w2.id).toBe(2)
+    expect(w1).not.toBe(w2)
+  })
+
+  it('should support @Inject(token) parameter decorator on constructor', () => {
+    const app = new App({ asyncContext: true })
+    const { Inject } = require('../src/di/decorators')
+
+    class ConfigService {
+      apiUrl = 'https://api.exis.dev'
+    }
+
+    app.provide('API_KEY', { useValue: 'secret-123' })
+    app.provide(ConfigService, { useClass: ConfigService })
+
+    class ApiClient {
+      apiKey: string
+      config: ConfigService
+      constructor(apiKey: string, config: ConfigService) {
+        this.apiKey = apiKey
+        this.config = config
+      }
+    }
+    Inject('API_KEY')(ApiClient, undefined, 0)
+    Inject(ConfigService)(ApiClient, undefined, 1)
+
+    const client = app.resolve(ApiClient)
+    expect(client).toBeInstanceOf(ApiClient)
+    expect(client.apiKey).toBe('secret-123')
+    expect(client.config).toBeInstanceOf(ConfigService)
+    expect(client.config.apiUrl).toBe('https://api.exis.dev')
+  })
+
+  it('should support @Optional() decorator resolving missing dependency to undefined', () => {
+    const app = new App({ asyncContext: true })
+    const { Inject, Optional } = require('../src/di/decorators')
+
+    app.provide('REQUIRED_TOKEN', { useValue: 'present' })
+
+    class ServiceWithOptional {
+      required: string
+      optional?: string
+      constructor(required: string, optional?: string) {
+        this.required = required
+        this.optional = optional
+      }
+    }
+    Inject('REQUIRED_TOKEN')(ServiceWithOptional, undefined, 0)
+    Inject('MISSING_TOKEN')(ServiceWithOptional, undefined, 1)
+    Optional()(ServiceWithOptional, undefined, 1)
+
+    const instance = app.resolve(ServiceWithOptional)
+    expect(instance.required).toBe('present')
+    expect(instance.optional).toBeUndefined()
+  })
+
+  it('should throw when non-optional dependency is missing in constructor injection', () => {
+    const app = new App({ asyncContext: true })
+    const { Inject } = require('../src/di/decorators')
+
+    class ServiceWithMissing {
+      dep: string
+      constructor(dep: string) {
+        this.dep = dep
+      }
+    }
+    Inject('NON_EXISTENT_TOKEN')(ServiceWithMissing, undefined, 0)
+
+    expect(() => app.resolve(ServiceWithMissing)).toThrow(
+      'Provider not found for token: NON_EXISTENT_TOKEN'
+    )
+  })
 })

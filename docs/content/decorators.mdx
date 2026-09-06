@@ -132,18 +132,25 @@ export default class UsersController {
 ### Available Parameter Decorators
 - `@Body(nameOrPipe?)` — Extracts `req.body` or runs through a validation schema/pipe.
 - `@Param(nameOrPipe?)` — Extracts a route path param (e.g. `:id`).
+- `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)` — Extracts a query parameter from the URL query string.
 - `@Headers(nameOrPipe?)` — Extracts a request header by name.
 - `@HostParam(nameOrPipe?)` — Extracts a host subdomain parameter.
 - `@Req()` — Injects the raw request object.
 - `@Res(options?)` — Injects the response object (e.g. `{ passthrough: true }`).
 - `@Ip()` — Injects the client IP address.
 - `@Next()` — Injects the `next` function.
+- `createParamDecorator(factory)` — Creates custom reusable route parameter decorators:
+  ```typescript
+  export const CurrentUser = createParamDecorator((data: string | undefined, ctx) => {
+    return data ? ctx.req.user?.[data] : ctx.req.user
+  })
+  ```
 
 ---
 
 ## 4. Middleware & Pipeline Decorators
 
-You can bind middleware, rate limiting, and idempotency to controllers or route methods using `@Use()` and utility decorators:
+You can bind middlewares, guards, interceptors, and exception filters to controllers or route methods using the unified `@Use()` decorator:
 
 ```typescript filename="src/http/checkout/route.ts"
 import { Controller, Post, Use, Idempotent } from 'exisjs/decorators'
@@ -161,23 +168,25 @@ export default class CheckoutController {
 ```
 
 ### Available Lifecycle & Middleware Decorators
-- `@Use(...middlewares)` — Attaches middleware functions to a class or method.
+- `@Use(...items)` — Unified decorator that attaches middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a class or method.
 - `@Idempotent(options?)` — Caches responses based on the `Idempotency-Key` header using off-heap native memory.
 
 ---
 
-## 5. Response Modifiers
+## 5. Response & Metadata Modifiers
 
 Modify HTTP response status codes, redirect clients, or set headers declaratively:
 
 ```typescript filename="src/http/api/route.ts"
-import { Controller, Post, Get, HttpCode, Header, Redirect } from 'exisjs/decorators'
+import { Controller, Post, Get, HttpCode, Header, Redirect, SetMetadata, Reflector } from 'exisjs/decorators'
 
 @Controller('/api')
+@SetMetadata('roles', ['admin'])
 export default class ApiController {
   @Post('/create')
   @HttpCode(201) // Forces 201 Created
   @Header('X-Custom-Version', '2.0')
+  @SetMetadata('permissions', ['write:api'])
   async create() {
     return { success: true }
   }
@@ -195,17 +204,19 @@ export default class ApiController {
 - `@Redirect(url: string, statusCode?: number)` — Redirects the client.
 - `@Permissions(...permissions: string[])` — Attaches route permissions metadata.
 - `@Hosts(...hosts: string[])` — Restricts route/controller to specific Host headers.
+- `@SetMetadata(key, value)` — Attaches custom metadata to a class or method.
+- `Reflector` — Static utility to inspect metadata attached via `@SetMetadata` across classes and methods (`Reflector.get`, `Reflector.getAllAndOverride`, `Reflector.getAllAndMerge`).
 
 ---
 
-## 6. Dependency Injection
+## 6. Dependency Injection & Modules
 
-To mark a service class as an injectable provider for the IoC container, use the `@Injectable()` decorator:
+To mark a service class as an injectable provider for the IoC container, use the `@Injectable()` decorator. ExisJS supports `singleton` (default), `request`, and `transient` scopes:
 
 ```typescript filename="src/http/users/service.ts"
 import { Injectable } from 'exisjs/decorators'
 
-@Injectable({ scope: 'singleton' })
+@Injectable({ scope: 'transient' })
 export class UserService {
   async fetchUser(id: string) {
     return { id, name: 'Alice' }
@@ -213,19 +224,42 @@ export class UserService {
 }
 ```
 
-Inside your route classes or controllers, inject services via constructor injection:
+### Constructor Parameter Injection (`@Inject` & `@Optional`)
+
+You can inject dependencies using tokens or classes, and mark optional dependencies with `@Optional()`:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param } from 'exisjs/decorators'
+import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
 import { UserService } from './service'
 
 @Controller('/users')
 export default class UsersController {
-  constructor(private userService: UserService) {}
+  constructor(
+    private userService: UserService,
+    @Inject('DATABASE_URL') private dbUrl: string,
+    @Optional() @Inject('ANALYTICS_SERVICE') private analytics?: any
+  ) {}
 
   @Get('/:id')
   async getUser(@Param('id') id: string) {
     return this.userService.fetchUser(id)
   }
 }
+```
+
+### Application Modules (`@Module`)
+
+You can group controllers, providers, and imports into high-level OOP modules using `@Module`:
+
+```typescript filename="src/http/users/users.module.ts"
+import { Module } from 'exisjs/module' // or 'exisjs/decorators'
+import UsersController from './route'
+import { UserService } from './service'
+
+@Module({
+  controllers: [UsersController],
+  providers: [UserService],
+  exports: [UserService]
+})
+export class UsersModule {}
 ```

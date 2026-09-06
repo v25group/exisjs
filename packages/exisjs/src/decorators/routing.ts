@@ -1,12 +1,13 @@
 import type { HttpMethod, RouteSchema } from '../types'
 import { ROUTE_REGISTRY, ROUTE_META } from './constants'
 import { MetadataEngine } from './core/metadata'
+import { logger } from '../logger'
 
 export function createMethodDecorator(method: HttpMethod) {
   return function (path = '', schema?: RouteSchema<any, any, any, any>): any {
     if (method === 'GET' && schema?.body) {
-      console.warn(
-        `\x1b[33m[ExisJS] Warning: GET route '${path}' defines a body schema, but GET requests cannot have bodies.\x1b[0m`
+      logger.warn(
+        `GET route '${path}' defines a body schema, but GET requests cannot have bodies.`
       )
     }
 

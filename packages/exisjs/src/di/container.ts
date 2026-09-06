@@ -2,7 +2,7 @@ export type ProviderToken<T = any> =
   string | symbol | (new (...args: any[]) => T)
 
 export interface BaseProvider {
-  scope?: 'singleton' | 'request'
+  scope?: 'singleton' | 'request' | 'transient'
 }
 
 export interface ValueProvider<T> extends BaseProvider {
@@ -20,6 +20,10 @@ export interface ClassProvider<T> extends BaseProvider {
 export type ProviderDefinition<T> =
   ValueProvider<T> | FactoryProvider<T> | ClassProvider<T> | T
 
+export const INJECT_METADATA = Symbol.for('exisjs:inject_tokens')
+export const OPTIONAL_METADATA = Symbol.for('exisjs:optional_tokens')
+export const SCOPE_METADATA = Symbol.for('exisjs:scope')
+
 export class Container {
   private providers = new Map<ProviderToken, any>()
   private singletonCache = new Map<ProviderToken, any>()
@@ -31,6 +35,60 @@ export class Container {
 
   clearCache(): void {
     this.singletonCache.clear()
+  }
+
+  instantiateClass<T>(
+    TargetClass: new (...args: any[]) => T,
+    requestCache?: Map<ProviderToken, any>
+  ): T {
+    const injectTokens: Record<number, ProviderToken> =
+      (TargetClass as any)[INJECT_METADATA] ||
+      (TargetClass.prototype &&
+        (TargetClass.prototype as any)[INJECT_METADATA]) ||
+      {}
+    const optionalParams: Set<number> =
+      (TargetClass as any)[OPTIONAL_METADATA] ||
+      (TargetClass.prototype &&
+        (TargetClass.prototype as any)[OPTIONAL_METADATA]) ||
+      new Set()
+
+    const maxIndex = Object.keys(injectTokens).reduce(
+      (max, curr) => Math.max(max, Number(curr)),
+      -1
+    )
+
+    if (maxIndex === -1 && optionalParams.size === 0) {
+      return new TargetClass()
+    }
+
+    const args: any[] = []
+    const totalParams = Math.max(
+      maxIndex + 1,
+      ...Array.from(optionalParams).map((idx) => idx + 1)
+    )
+
+    for (let i = 0; i < totalParams; i++) {
+      const token = injectTokens[i]
+      const isOptional = optionalParams.has(i)
+
+      if (token !== undefined) {
+        try {
+          args.push(this.resolve(token, requestCache))
+        } catch (err) {
+          if (isOptional) {
+            args.push(undefined)
+          } else {
+            throw err
+          }
+        }
+      } else if (isOptional) {
+        args.push(undefined)
+      } else {
+        args.push(undefined)
+      }
+    }
+
+    return new TargetClass(...args)
   }
 
   resolve<T>(
@@ -51,10 +109,16 @@ export class Container {
     if (provider === undefined) {
       if (typeof token === 'function') {
         try {
-          const SCOPE_METADATA = Symbol.for('exisjs:scope')
-          const scope = token.prototype[SCOPE_METADATA] || 'singleton'
+          const scope = token.prototype?.[SCOPE_METADATA] || 'singleton'
+          const instance = this.instantiateClass(
+            token as new (...args: any[]) => T,
+            requestCache
+          )
 
-          const instance = new (token as new (...args: any[]) => T)()
+          if (scope === 'transient') {
+            return instance
+          }
+
           if (scope === 'request') {
             if (!requestCache) {
               throw new Error(
@@ -81,11 +145,11 @@ export class Container {
     }
 
     let resolvedValue: any
-    let scope: 'singleton' | 'request' = 'singleton'
+    let scope: 'singleton' | 'request' | 'transient' = 'singleton'
 
     if (provider && typeof provider === 'object') {
-      if ('scope' in provider && provider.scope === 'request') {
-        scope = 'request'
+      if ('scope' in provider && provider.scope) {
+        scope = provider.scope
       }
 
       if ('useValue' in provider) {
@@ -93,12 +157,19 @@ export class Container {
       } else if ('useFactory' in provider) {
         resolvedValue = (provider as FactoryProvider<T>).useFactory()
       } else if ('useClass' in provider) {
-        resolvedValue = new (provider as ClassProvider<T>).useClass()
+        resolvedValue = this.instantiateClass(
+          (provider as ClassProvider<T>).useClass,
+          requestCache
+        )
       } else {
-        resolvedValue = provider // For T that happens to be an object without these keys
+        resolvedValue = provider
       }
     } else {
       resolvedValue = provider
+    }
+
+    if (scope === 'transient') {
+      return resolvedValue
     }
 
     if (scope === 'request') {

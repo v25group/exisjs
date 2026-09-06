@@ -2,6 +2,7 @@ import { ServerResponse } from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { CookieOptions, Request as IRequest } from '../types'
+import { logger } from '../logger/index'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const contentDisposition = require('content-disposition')
@@ -256,7 +257,7 @@ export class ExisResponse<TResponse = any> {
       if (this.req && this.req.log) {
         this.req.log.error({ err }, '[ExisJS] Serialization error')
       } else {
-        console.error('[ExisJS] Serialization error:', err)
+        logger.error({ err }, '[ExisJS] Serialization error')
       }
       this.statusCode = 500
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')

@@ -74,7 +74,28 @@ export default exis({
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+```
+
+#### Class-Based (OOP) Paradigm (`@Module`)
+
+For applications following the OOP paradigm, you can define modules using the `@Module` class decorator:
+
+```typescript filename="src/modules/auth.module.ts"
+import { Module } from 'exisjs/module'
+import { AuthService } from './auth.service'
+import { AuthController } from './auth.controller'
+import { DatabaseModule } from './database.module'
+
+@Module({
+  imports: [DatabaseModule],
+  controllers: [AuthController],
+  providers: [AuthService],
+  exports: [AuthService]
+})
+export class AuthModule {}
+```
+
+You can then register it into your server:
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'

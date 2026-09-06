@@ -95,3 +95,36 @@ describe('resolveLoggerConfig()', () => {
     expect(resolveLoggerConfig(config)).toBe(config) // same reference
   })
 })
+
+// ─── Public Logger API (Singleton & Configuration) ───────────────────────────
+
+import { logger, configureLogger, setLogger } from '../src/logger'
+import { QueryParam, Query } from '../src/decorators/params'
+
+describe('Public Logger API & QueryParam', () => {
+  it('exports singleton logger with logging methods', () => {
+    expect(logger).toBeDefined()
+    expect(typeof logger.info).toBe('function')
+    expect(typeof logger.warn).toBe('function')
+    expect(typeof logger.error).toBe('function')
+    expect(typeof logger.debug).toBe('function')
+  })
+
+  it('configures the global logger via configureLogger()', () => {
+    configureLogger({ level: 'debug' })
+    expect(logger.level).toBe('debug')
+  })
+
+  it('allows replacing global logger via setLogger()', () => {
+    const customLogger = createLogger({ level: 'warn', pretty: false })
+    setLogger(customLogger)
+    expect(logger.level).toBe('warn')
+  })
+
+  it('exports QueryParam and Query decorators', () => {
+    expect(QueryParam).toBeDefined()
+    expect(typeof QueryParam).toBe('function')
+    expect(Query).toBeDefined()
+    expect(typeof Query).toBe('function')
+  })
+})

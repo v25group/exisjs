@@ -4,10 +4,6 @@ import './config/env'
 export { defineApp as exis } from './server/define'
 export { type App, getActiveApp } from './server/app'
 export { defineConfig } from './config/config'
-
-// ─── Logger ───────────────────────────────────────────────────────────────────
-export { logger, configureLogger, setLogger, createLogger } from './logger'
-
 export { parseEnv, loadEnv } from './config/env'
 
 // ─── Circuit Breaker ───────────────────────────────────────────────────────

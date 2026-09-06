@@ -218,31 +218,31 @@ Use parameter decorators to automatically extract data from the incoming request
 
 - `@Body()`: Injects the parsed JSON request body.
 - `@Param('id')`: Injects a specific URL path parameter.
-- `@Query('search')`: Injects a specific query string parameter.
+- `@QueryParam('search')` / `@Query('search')`: Injects a specific query string parameter.
 - `@Headers('authorization')`: Injects a specific HTTP header.
 - `@Req()`: Injects the raw ExisJS Request object.
 - `@Res()`: Injects the raw ExisJS Response object.
 - `@Next()`: Injects the next function.
 - `@Socket()`: Injects the active WebSocket instance (for `@Ws` routes).
 - `@Stream()`: Injects the active SSE instance (for `@Sse` routes).
+- `createParamDecorator(factory)`: Factory to construct custom parameter decorators.
 
 ### Extended Decorators
 
 ExisJS provides a rich ecosystem of decorators to apply middleware, configure responses, and enforce security on both individual routes and entire controllers:
 
-#### Configuration & Middleware
-- `@Use(...middlewares)`: Applies Express-style middleware to a route or entire controller.
+#### Configuration & Pipeline
+- `@Use(...items)`: Unified decorator that applies middlewares, Guards (`canActivate`), Interceptors (`intercept`), and Exception Filters (`catch`) to a route or entire controller.
 - `@Hosts('api.example.com')`: Restricts the route or controller to specific domains.
 
-#### Security & Lifecycle
+#### Security & Metadata
 - `@Permissions('admin')`: Requires specific permission flags.
-- `@UseGuards(...guards)`: Attaches Guards (like auth checks) to a route/controller.
-- `@UseInterceptors(...interceptors)`: Attaches Interceptors to mutate requests/responses.
-- `@UseFilters(...filters)`: Attaches Exception Filters to handle specific errors.
+- `@SetMetadata(key, value)`: Attaches arbitrary metadata to classes and handler methods (retrieved via `Reflector`).
+- `Reflector`: Reads and merges metadata attached with `@SetMetadata`.
 
-#### Responses & Caching
+#### Responses & Reliability
 - `@HttpCode(201)`: Forces a specific HTTP status code for successful responses.
 - `@Header('X-Custom', 'Value')`: Automatically injects a specific response header.
 - `@Returns(schema)`: Explicitly defines the response schema for OpenAPI generation.
-- `@Cache({ ttlMs: 60000 })`: Automatically caches GET responses.
 - `@Idempotent()`: Enforces idempotency keys for mutations (e.g., checkout/payments).
+

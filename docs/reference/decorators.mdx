@@ -67,17 +67,19 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Body(nameOrPipe?)`: Parses and injects the JSON request body (or passes it through a validator/pipe).
 - `@Param(nameOrPipe?)`: Injects a URL path parameter (e.g., `id` from `/:id`).
 - `@Headers(nameOrPipe?)`: Injects an HTTP header by name.
+- `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)`: Injects a URL query parameter (e.g., `?search=term`).
 - `@HostParam(nameOrPipe?)`: Injects a subdomain parameter.
 - `@Req()`: Injects the raw ExisJS Request object.
 - `@Res(options?)`: Injects the raw ExisJS Response object (`{ passthrough: true }`).
 - `@Ip()`: Injects the client's IP address.
 - `@Next()`: Injects the Next function.
+- `createParamDecorator(factory)`: Exports a factory to create custom parameter decorators (e.g. `@CurrentUser()`).
 
 ---
 
 ## 3. Middleware & Pipeline Decorators
 
-- `@Use(...middlewares)`: Binds standard Express-style or ExisJS middleware to a controller class or method.
+- `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
 - `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
 
 ---
@@ -90,11 +92,20 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Redirect(url: string, statusCode?: number)`: Redirects request to target URL.
 - `@Permissions(...permissions: string[])`: Sets required permissions on the route.
 - `@Hosts(...hosts: string[])`: Restricts routes to specific Host headers.
+- `@SetMetadata(key, value)`: Attaches arbitrary custom metadata to a class or handler method, retrievable via `Reflector`.
+- `Reflector`: Utility class to inspect metadata attached by `@SetMetadata`:
+  - `Reflector.get(key, target)`: Retrieves metadata for a specific target.
+  - `Reflector.getAllAndOverride(key, targets)`: Retrieves metadata, overriding higher-level targets with lower-level targets.
+  - `Reflector.getAllAndMerge(key, targets)`: Merges array/object metadata across multiple targets.
 
 ---
 
-## 5. Dependency Injection
+## 5. Dependency Injection & Modules
 
-- `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container.
+- `@Module({ imports?, controllers?, providers?, exports? })`: OOP class decorator equivalent to `defineModule()` for structuring application modules.
+- `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container. Supports `{ scope: 'singleton' | 'request' | 'transient' }`.
+- `@Inject(token)`: Constructor parameter decorator for injecting dependencies by class, string, or symbol token.
+- `@Optional()`: Constructor parameter decorator resolving missing dependencies to `undefined` without throwing.
 - `@Boundary(config)`: Marks a class as a folder-scoped Boundary configuring CORS, headers, exclusions, and pipeline steps.
 - `@Server(config)`: Marks a class as a root server definition.
+

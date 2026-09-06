@@ -10,6 +10,7 @@ export const LIFECYCLE_METADATA = Symbol.for('exisjs:lifecycle_metadata')
 export const PARAM_METADATA = Symbol.for('exisjs:param_metadata')
 export const SERVER_CONFIG = Symbol.for('exisjs:server_config')
 export const BOUNDARY_CONFIG = Symbol.for('exisjs:boundary_config')
+export const MODULE_METADATA = Symbol.for('exisjs:module_metadata')
 
 export const ROUTE_META = Symbol.for('exisjs:route_meta')
 export const METHOD_MIDDLEWARES = Symbol.for('exisjs:method_middlewares')
@@ -50,4 +51,11 @@ export interface BoundaryConfig {
   headers?: Record<string, string>
   imports?: any[]
   providers?: any[]
+}
+
+export interface ClassModuleOptions {
+  imports?: any[]
+  controllers?: any[]
+  providers?: any[]
+  exports?: any[]
 }

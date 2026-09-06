@@ -89,8 +89,6 @@ export function isLogger(obj: unknown): obj is Logger {
   )
 }
 
-// ─── Resolve Config ───────────────────────────────────────────────────────────
-
 export function resolveLoggerConfig(
   config: LoggerConfig | boolean | undefined
 ): LoggerConfig {

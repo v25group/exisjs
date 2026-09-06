@@ -72,7 +72,10 @@ export class RouteScanner {
         }
       } catch (err: any) {
         if (err.code !== 'ENOENT') {
-          console.warn('exisjs: Failed to load routes manifest:', err.message)
+          this.app.log.warn(
+            { err: err.message },
+            'Failed to load routes manifest'
+          )
         }
       }
     }
@@ -100,8 +103,8 @@ export class RouteScanner {
 
         if (functionalControllerObj) {
           if (this.globalParadigm === 'oop') {
-            console.error(
-              `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
+            this.app.log.error(
+              `Mixed Paradigm Error: File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
             )
             process.exit(1)
           }
@@ -112,8 +115,8 @@ export class RouteScanner {
           this.mountRouteWithSource(routePath, router, normalizedPath)
         } else if (isClassController(routerInstance)) {
           if (this.globalParadigm === 'functional') {
-            console.error(
-              `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
+            this.app.log.error(
+              `Mixed Paradigm Error: File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
             )
             process.exit(1)
           }
@@ -273,12 +276,11 @@ export class RouteScanner {
             .map((f) => `    → ${path.relative(cwd, f).replace(/\\/g, '/')}`)
             .join('\n')
 
-        console.error(
-          `\n\x1b[31m[ExisJS] Mixed Paradigm Error\x1b[0m\n\n` +
-            `A project can only use one controller paradigm (OOP or Functional). Mixing them is not supported.\n\n` +
-            `\x1b[36mClass-Based (OOP) controllers found in:\x1b[0m\n${formatFiles(oopFiles)}\n\n` +
-            `\x1b[36mFunctional controllers found in:\x1b[0m\n${formatFiles(functionalFiles)}\n\n` +
-            `\x1b[33mFix: Choose one paradigm and update the files to match.\x1b[0m\n`
+        this.app.log.error(
+          `Mixed Paradigm Error: A project can only use one controller paradigm (OOP or Functional). Mixing them is not supported.\n\n` +
+            `Class-Based (OOP) controllers found in:\n${formatFiles(oopFiles)}\n\n` +
+            `Functional controllers found in:\n${formatFiles(functionalFiles)}\n\n` +
+            `Fix: Choose one paradigm and update the files to match.`
         )
         process.exit(1)
       }
@@ -288,8 +290,8 @@ export class RouteScanner {
     }
 
     if (!this.hasBoundaries && !isProd) {
-      console.warn(
-        '\x1b[33m[ExisJS] Warning: No boundary.ts found — applying default security headers.\x1b[0m'
+      this.app.log.warn(
+        'No boundary.ts found — applying default security headers.'
       )
     }
   }
@@ -796,8 +798,8 @@ export class RouteScanner {
 
     if (functionalControllerObj) {
       if (this.globalParadigm === 'oop') {
-        console.error(
-          `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
+        this.app.log.error(
+          `Mixed Paradigm Error: File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
         )
         process.exit(1)
       }
@@ -821,8 +823,8 @@ export class RouteScanner {
       )
     } else if (unwrappedMod && isController(unwrappedMod)) {
       if (this.globalParadigm === 'functional') {
-        console.error(
-          `\x1b[31m[ExisJS] Mixed Paradigm Error:\x1b[0m File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
+        this.app.log.error(
+          `Mixed Paradigm Error: File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
         )
         process.exit(1)
       }

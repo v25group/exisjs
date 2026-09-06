@@ -3,92 +3,155 @@ import {
   METHOD_MIDDLEWARES,
   LIFECYCLE_METADATA_PROP,
 } from './constants'
+import { MetadataEngine } from './core/metadata'
 
 /**
- * Applies middleware to a Controller class or route method.
+ * Classifies a handler item into middleware, guard, interceptor, or filter.
+ */
+function classifyItem(
+  item: any
+): 'guard' | 'interceptor' | 'filter' | 'middleware' {
+  if (!item) return 'middleware'
+
+  // Class instances or class prototypes
+  const proto = typeof item === 'function' ? item.prototype : item
+
+  if (proto) {
+    if (typeof proto.canActivate === 'function') return 'guard'
+    if (typeof proto.intercept === 'function') return 'interceptor'
+    if (typeof proto.catch === 'function') return 'filter'
+  }
+
+  // Functional duck-typing checks
+  if (typeof item === 'object') {
+    if (typeof item.canActivate === 'function') return 'guard'
+    if (typeof item.intercept === 'function') return 'interceptor'
+    if (typeof item.catch === 'function') return 'filter'
+  }
+
+  return 'middleware'
+}
+
+/**
+ * Applies middleware, guards, interceptors, or exception filters to a Controller class or route method.
+ * Unifies @Use, @UseGuards, @UseInterceptors, and @UseFilters into a single, cohesive decorator.
  *
  * Example:
- *
  *     @Use(requireAuth)
+ *     @Use(AdminGuard)
  *     @Get('/dashboard')
  *     getDashboard() {}
  *
- * @param {...any} middlewares Middleware functions
+ * @param {...any} items Middleware functions, Guards, Interceptors, or Filters
  * @public
  */
-export function Use(...middlewares: any[]): any {
+export function Use(...items: any[]): any {
   return function (
     target: any,
     contextOrPropertyKey?: string | symbol | any,
-    _descriptor?: PropertyDescriptor | any
+    descriptor?: PropertyDescriptor | any
   ) {
-    if (
-      typeof contextOrPropertyKey === 'object' &&
-      contextOrPropertyKey !== null
-    ) {
-      const context = contextOrPropertyKey
-      if (context.kind === 'class') {
-        if (context.metadata) {
-          if (
-            !context.metadata[MIDDLEWARE_REGISTRY] ||
-            Array.isArray(context.metadata[MIDDLEWARE_REGISTRY])
-          ) {
-            context.metadata[MIDDLEWARE_REGISTRY] = {
-              _classMiddlewares: context.metadata[MIDDLEWARE_REGISTRY] || [],
-            }
-          } else if (!context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares) {
-            context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares = []
-          }
-          context.metadata[MIDDLEWARE_REGISTRY]._classMiddlewares.push(
-            ...middlewares
-          )
-        }
+    const isStandard =
+      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
 
-        if (
-          !target.prototype[MIDDLEWARE_REGISTRY] ||
-          Array.isArray(target.prototype[MIDDLEWARE_REGISTRY])
-        ) {
-          target.prototype[MIDDLEWARE_REGISTRY] = {
-            _classMiddlewares: target.prototype[MIDDLEWARE_REGISTRY] || [],
-          }
-        } else if (!target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares) {
-          target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+    const kind = isStandard ? contextOrPropertyKey.kind : undefined
+
+    if (
+      kind === 'class' ||
+      (!isStandard && typeof target === 'function' && !contextOrPropertyKey)
+    ) {
+      // Class-level decorator
+      const proto = target.prototype || target
+      const classLifecycle = MetadataEngine.init<any>(
+        proto,
+        LIFECYCLE_METADATA_PROP,
+        {}
+      )
+      classLifecycle._classGuards = classLifecycle._classGuards || []
+      classLifecycle._classInterceptors =
+        classLifecycle._classInterceptors || []
+      classLifecycle._classFilters = classLifecycle._classFilters || []
+
+      const classMiddlewares = MetadataEngine.init<any>(
+        proto,
+        MIDDLEWARE_REGISTRY,
+        {
+          _classMiddlewares: [],
         }
-        target.prototype[MIDDLEWARE_REGISTRY]._classMiddlewares.push(
-          ...middlewares
-        )
-      } else if (context.kind === 'method') {
-        // TS 5.0 Standard Method Decorator
-        ;(target as any)[METHOD_MIDDLEWARES] =
-          (target as any)[METHOD_MIDDLEWARES] || []
-        ;(target as any)[METHOD_MIDDLEWARES].push(...middlewares)
+      )
+      if (!classMiddlewares._classMiddlewares) {
+        classMiddlewares._classMiddlewares = []
+      }
+
+      for (const item of items) {
+        const type = classifyItem(item)
+        if (type === 'guard') {
+          classLifecycle._classGuards.push(item)
+        } else if (type === 'interceptor') {
+          classLifecycle._classInterceptors.push(item)
+        } else if (type === 'filter') {
+          classLifecycle._classFilters.push(item)
+        } else {
+          classMiddlewares._classMiddlewares.push(item)
+        }
       }
     } else {
-      if (typeof target === 'function' && !contextOrPropertyKey) {
-        // Legacy class decorator
-        const proto = target.prototype
-        if (
-          !proto[MIDDLEWARE_REGISTRY] ||
-          Array.isArray(proto[MIDDLEWARE_REGISTRY])
-        ) {
-          proto[MIDDLEWARE_REGISTRY] = {
-            _classMiddlewares: proto[MIDDLEWARE_REGISTRY] || [],
-          }
-        } else if (!proto[MIDDLEWARE_REGISTRY]._classMiddlewares) {
-          proto[MIDDLEWARE_REGISTRY]._classMiddlewares = []
+      // Method-level decorator
+      const fn = isStandard
+        ? target
+        : descriptor
+          ? descriptor.value
+          : target[contextOrPropertyKey]
+      const methodLifecycle = MetadataEngine.init<any>(
+        fn,
+        LIFECYCLE_METADATA_PROP,
+        {}
+      )
+      methodLifecycle.guards = methodLifecycle.guards || []
+      methodLifecycle.interceptors = methodLifecycle.interceptors || []
+      methodLifecycle.filters = methodLifecycle.filters || []
+
+      const methodMiddlewares = MetadataEngine.init<any[]>(
+        fn,
+        METHOD_MIDDLEWARES,
+        []
+      )
+
+      for (const item of items) {
+        const type = classifyItem(item)
+        if (type === 'guard') {
+          methodLifecycle.guards.push(item)
+        } else if (type === 'interceptor') {
+          methodLifecycle.interceptors.push(item)
+        } else if (type === 'filter') {
+          methodLifecycle.filters.push(item)
+        } else {
+          methodMiddlewares.push(item)
         }
-        proto[MIDDLEWARE_REGISTRY]._classMiddlewares.push(...middlewares)
-      } else {
-        // Legacy method decorator
-        const proto = target
-        const name = contextOrPropertyKey
-        if (!proto[MIDDLEWARE_REGISTRY]) proto[MIDDLEWARE_REGISTRY] = {}
-        if (!proto[MIDDLEWARE_REGISTRY][name])
-          proto[MIDDLEWARE_REGISTRY][name] = []
-        proto[MIDDLEWARE_REGISTRY][name].push(...middlewares)
       }
     }
   }
+}
+
+/**
+ * @deprecated Use `@Use(...guards)` instead.
+ */
+export function UseGuards(...guards: any[]): any {
+  return Use(...guards)
+}
+
+/**
+ * @deprecated Use `@Use(...interceptors)` instead.
+ */
+export function UseInterceptors(...interceptors: any[]): any {
+  return Use(...interceptors)
+}
+
+/**
+ * @deprecated Use `@Use(...filters)` instead.
+ */
+export function UseFilters(...filters: any[]): any {
+  return Use(...filters)
 }
 
 /**
@@ -110,9 +173,17 @@ export function Idempotent(
   ) {
     const isStandard =
       typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
-    const fn = isStandard ? target : descriptor.value
+    const fn = isStandard
+      ? target
+      : descriptor
+        ? descriptor.value
+        : target[contextOrPropertyKey]
 
-    fn[METHOD_MIDDLEWARES] = fn[METHOD_MIDDLEWARES] || []
+    const methodMiddlewares = MetadataEngine.init<any[]>(
+      fn,
+      METHOD_MIDDLEWARES,
+      []
+    )
 
     // Defer import to avoid circular dependencies
     const middlewareProxy = async (req: any, res: any, next: any) => {
@@ -122,144 +193,6 @@ export function Idempotent(
       return handler(req, res, next)
     }
 
-    fn[METHOD_MIDDLEWARES].push(middlewareProxy)
-  }
-}
-
-export function UseGuards(...guards: any[]): any {
-  return function (
-    target: any,
-    contextOrPropertyKey?: string | symbol | any,
-    _descriptor?: PropertyDescriptor | any
-  ) {
-    if (
-      typeof contextOrPropertyKey === 'object' &&
-      contextOrPropertyKey !== null
-    ) {
-      const context = contextOrPropertyKey
-      if (context.kind === 'class') {
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classGuards =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classGuards || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classGuards.push(...guards)
-      } else if (context.kind === 'method') {
-        ;(target as any)[LIFECYCLE_METADATA_PROP] =
-          (target as any)[LIFECYCLE_METADATA_PROP] || {}
-        ;(target as any)[LIFECYCLE_METADATA_PROP].guards =
-          (target as any)[LIFECYCLE_METADATA_PROP].guards || []
-        ;(target as any)[LIFECYCLE_METADATA_PROP].guards.push(...guards)
-      }
-    } else {
-      if (typeof target === 'function' && !contextOrPropertyKey) {
-        // Legacy class decorator
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classGuards =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classGuards || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classGuards.push(...guards)
-      } else {
-        // Legacy method decorator
-        const fn = target[contextOrPropertyKey]
-        fn[LIFECYCLE_METADATA_PROP] = fn[LIFECYCLE_METADATA_PROP] || {}
-        fn[LIFECYCLE_METADATA_PROP].guards =
-          fn[LIFECYCLE_METADATA_PROP].guards || []
-        fn[LIFECYCLE_METADATA_PROP].guards.push(...guards)
-      }
-    }
-  }
-}
-
-export function UseInterceptors(...interceptors: any[]): any {
-  return function (
-    target: any,
-    contextOrPropertyKey?: string | symbol | any,
-    _descriptor?: PropertyDescriptor | any
-  ) {
-    if (
-      typeof contextOrPropertyKey === 'object' &&
-      contextOrPropertyKey !== null
-    ) {
-      const context = contextOrPropertyKey
-      if (context.kind === 'class') {
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors.push(
-          ...interceptors
-        )
-      } else if (context.kind === 'method') {
-        ;(target as any)[LIFECYCLE_METADATA_PROP] =
-          (target as any)[LIFECYCLE_METADATA_PROP] || {}
-        ;(target as any)[LIFECYCLE_METADATA_PROP].interceptors =
-          (target as any)[LIFECYCLE_METADATA_PROP].interceptors || []
-        ;(target as any)[LIFECYCLE_METADATA_PROP].interceptors.push(
-          ...interceptors
-        )
-      }
-    } else {
-      if (typeof target === 'function' && !contextOrPropertyKey) {
-        // Legacy class decorator
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classInterceptors.push(
-          ...interceptors
-        )
-      } else {
-        // Legacy method decorator
-        const fn = target[contextOrPropertyKey]
-        fn[LIFECYCLE_METADATA_PROP] = fn[LIFECYCLE_METADATA_PROP] || {}
-        fn[LIFECYCLE_METADATA_PROP].interceptors =
-          fn[LIFECYCLE_METADATA_PROP].interceptors || []
-        fn[LIFECYCLE_METADATA_PROP].interceptors.push(...interceptors)
-      }
-    }
-  }
-}
-
-export function UseFilters(...filters: any[]): any {
-  return function (
-    target: any,
-    contextOrPropertyKey?: string | symbol | any,
-    _descriptor?: PropertyDescriptor | any
-  ) {
-    if (
-      typeof contextOrPropertyKey === 'object' &&
-      contextOrPropertyKey !== null
-    ) {
-      const context = contextOrPropertyKey
-      if (context.kind === 'class') {
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters.push(...filters)
-      } else if (context.kind === 'method') {
-        ;(target as any)[LIFECYCLE_METADATA_PROP] =
-          (target as any)[LIFECYCLE_METADATA_PROP] || {}
-        ;(target as any)[LIFECYCLE_METADATA_PROP].filters =
-          (target as any)[LIFECYCLE_METADATA_PROP].filters || []
-        ;(target as any)[LIFECYCLE_METADATA_PROP].filters.push(...filters)
-      }
-    } else {
-      if (typeof target === 'function' && !contextOrPropertyKey) {
-        // Legacy class decorator
-        target.prototype[LIFECYCLE_METADATA_PROP] =
-          target.prototype[LIFECYCLE_METADATA_PROP] || {}
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters =
-          target.prototype[LIFECYCLE_METADATA_PROP]._classFilters || []
-        target.prototype[LIFECYCLE_METADATA_PROP]._classFilters.push(...filters)
-      } else {
-        // Legacy method decorator
-        const fn = target[contextOrPropertyKey]
-        fn[LIFECYCLE_METADATA_PROP] = fn[LIFECYCLE_METADATA_PROP] || {}
-        fn[LIFECYCLE_METADATA_PROP].filters =
-          fn[LIFECYCLE_METADATA_PROP].filters || []
-        fn[LIFECYCLE_METADATA_PROP].filters.push(...filters)
-      }
-    }
+    methodMiddlewares.push(middlewareProxy)
   }
 }

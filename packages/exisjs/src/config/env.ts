@@ -2,6 +2,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import * as dotenv from 'dotenv'
 import { expand as dotenvExpand } from 'dotenv-expand'
+import { logger } from '../logger'
 
 export type Env = Record<string, string | undefined>
 export type LoadedEnvFiles = {
@@ -64,9 +65,9 @@ export function processEnv(
       }
       envFile.env = result.parsed || {}
     } catch (err) {
-      console.error(
-        `Failed to load env from ${path.join(dir || '', envFile.path)}`,
-        err
+      logger.error(
+        { err, file: path.join(dir || '', envFile.path) },
+        'Failed to load env'
       )
     }
   }
@@ -130,7 +131,7 @@ export function loadEnv(
       })
     } catch (err: any) {
       if (err.code !== 'ENOENT') {
-        console.error(`Failed to load env from ${envFile}`, err)
+        logger.error({ err, file: envFile }, 'Failed to load env')
       }
     }
   }

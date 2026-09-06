@@ -1,6 +1,7 @@
 import type { ExisConfig } from '../types'
 import path from 'node:path'
 import fs from 'node:fs'
+import { logger } from '../logger'
 
 // ─── defineConfig ─────────────────────────────────────────────────────────────
 
@@ -67,8 +68,8 @@ export function mergeConfig(
   for (const key of Object.keys(override) as (keyof ExisConfig)[]) {
     const val = override[key]
     if (val === null) {
-      console.warn(
-        `\x1b[33m[Exis Warning]\x1b[0m Config override for '${key}' is null. Treating as false (disabled).`
+      logger.warn(
+        `Config override for '${key}' is null. Treating as false (disabled).`
       )
       ;(result as Record<string, unknown>)[key] = false
     } else if (val === false) {
@@ -156,8 +157,8 @@ export async function loadConfig(
         }
 
         if (typeof userConfig !== 'object' || userConfig === null) {
-          console.warn(
-            '\x1b[33m[Exis Warning]\x1b[0m Invalid config file — expected an object. Using defaults.'
+          logger.warn(
+            'Invalid config file — expected an object. Using defaults.'
           )
           return defaultConfig
         }
@@ -187,7 +188,10 @@ export async function loadConfig(
             // fallback failed, continue to standard error logging
           }
         }
-        console.warn(`[Exis] Failed to load config from ${candidate}:`, err)
+        logger.warn(
+          { err, candidate },
+          `Failed to load config from ${candidate}`
+        )
       }
     }
   }

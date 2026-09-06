@@ -13,11 +13,13 @@ import {
   PARAM_METADATA_PROP,
   SERVER_CONFIG,
   BOUNDARY_CONFIG,
+  MODULE_METADATA,
 } from './constants'
 import type {
   ControllerOptions,
   ServerConfig,
   BoundaryConfig,
+  ClassModuleOptions,
 } from './constants'
 import { MetadataEngine } from './core/metadata'
 
@@ -134,7 +136,9 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
 
 export const INJECTABLE_REGISTRY = new Set<any>()
 
-export function Injectable(options?: { scope?: 'singleton' | 'request' }): any {
+export function Injectable(options?: {
+  scope?: 'singleton' | 'request' | 'transient'
+}): any {
   return function (target: any, _context?: ClassDecoratorContext) {
     INJECTABLE_REGISTRY.add(target)
     if (options?.scope) {
@@ -162,5 +166,27 @@ export function Server(options?: ServerConfig): any {
 export function Boundary(options?: BoundaryConfig): any {
   return function (target: any, _context?: ClassDecoratorContext) {
     MetadataEngine.set(target.prototype, BOUNDARY_CONFIG, options || {})
+  }
+}
+
+/**
+ * Marks a class as an OOP Module, configuring its imported modules, controllers, providers, and exports.
+ *
+ * Example:
+ * ```ts
+ * @Module({
+ *   imports: [DatabaseModule],
+ *   controllers: [UserController],
+ *   providers: [UserService],
+ * })
+ * export class UserModule {}
+ * ```
+ */
+export function Module(options: ClassModuleOptions = {}): any {
+  return function (target: any, _context?: ClassDecoratorContext) {
+    MetadataEngine.set(target, MODULE_METADATA, options)
+    if (target.prototype) {
+      MetadataEngine.set(target.prototype, MODULE_METADATA, options)
+    }
   }
 }

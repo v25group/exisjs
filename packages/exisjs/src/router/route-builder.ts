@@ -7,6 +7,7 @@ import type {
   RouteSchema,
 } from '../types'
 import type { App } from '../server/app'
+import { logger } from '../logger'
 
 /**
  * The execution context passed to every route handler.
@@ -115,8 +116,8 @@ export const route = {
     config: RouteConfig<B, Q, P, TContext>
   ): RouteDefinition<B, Q, P, TContext> => {
     if ('body' in config && config.body) {
-      console.warn(
-        `\x1b[33m[ExisJS] Warning: GET route '${path}' defines a body schema, but GET requests cannot have bodies.\x1b[0m`
+      logger.warn(
+        `GET route '${path}' defines a body schema, but GET requests cannot have bodies.`
       )
     }
     return { method: 'get', path, ...config } as any

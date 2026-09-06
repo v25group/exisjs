@@ -51,16 +51,25 @@ app.provide(AuthService, AuthService)
 
 ---
 
-## Scopes (`singleton` vs `request`)
+## Scopes (`singleton`, `request`, `transient`)
 
 By default, all providers in ExisJS are **Singletons**. They are instantiated once and cached for the lifetime of the application.
 
-If you need a new instance of a dependency for *every single incoming HTTP request*, you can change the scope to `request`.
+ExisJS supports three provider scopes in the `@Injectable()` decorator and `app.provide()`:
+
+- **`singleton` (Default)**: Instantiated once and cached for the lifetime of the application.
+- **`request`**: A new instance is created exclusively for each incoming HTTP request, and garbage collected afterward.
+- **`transient`**: A new instance is created every single time the dependency is injected or resolved.
 
 ```typescript
 app.provide('TraceLogger', { 
   useClass: RequestScopedLogger, 
   scope: 'request' 
+})
+
+app.provide('OperationContext', {
+  useClass: OperationContext,
+  scope: 'transient'
 })
 ```
 
@@ -78,7 +87,7 @@ The true superpower of ExisJS is the `inject()` hook.
 Powered by Node.js `AsyncLocalStorage`, `inject()` can be called from **anywhere** within a request lifecycle (Controllers, Middlewares, nested utility functions) without needing to explicitly pass the `app` or `req` objects down the call chain!
 
 ```typescript filename="src/http/users/route.ts"
-import { route } from 'exisjs/router'
+import { route, controller } from 'exisjs/router'
 import { inject } from 'exisjs/di'
 import { Database } from '../db' // The class definition
 
@@ -100,24 +109,39 @@ export default controller({
 > [!NOTE]
 > `inject()` relies on the active execution context. If you call `inject()` outside of an active HTTP request or application lifecycle hook (e.g., in a background `setInterval` without context), it will throw an error.
 
-### 2. Using `inject()` in Classes (OOP)
+### 2. Constructor Injection in Classes (OOP)
 
-Unlike other frameworks like NestJS, ExisJS does **not** rely on slow, metadata-heavy Constructor Injection. 
-
-Instead, you use the exact same `inject()` function directly inside your Controller methods! This completely eliminates the need for `@Inject()` decorators or massive constructor boilerplate.
+ExisJS supports full OOP constructor parameter injection. You can inject services directly via type annotation or specify tokens with `@Inject()`, and designate optional dependencies with `@Optional()`:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get } from 'exisjs/decorators'
-import { inject } from 'exisjs/di'
-import { Database } from '../db'
+import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
+import { UserService } from './service'
 
+@Controller('/users')
+export default class UserController {
+  constructor(
+    private userService: UserService,
+    @Inject('DATABASE_URL') private dbUrl: string,
+    @Optional() @Inject('ANALYTICS') private analytics?: any
+  ) {}
+
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    return this.userService.findById(id)
+  }
+}
+```
+
+You can also use property-level `inject()` inside your Controller methods:
+
+```typescript
 @Controller('/users')
 export default class UserController {
   @Get('/')
   async getUsers() {
-    // Inject dependencies perfectly cleanly right where you need them!
     const db = inject(Database)
     return db.query('SELECT * FROM users')
   }
 }
 ```
+

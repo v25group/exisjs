@@ -54,7 +54,7 @@ export default controller({
     },
   }),
 
-  implicit: route.get('/:id/implicit', {
+  implicit: route.post('/:id/implicit', {
     params: UserParamsSchema,
     body: tex.object({ role: tex.string() }),
     async handle({ params, body }) {

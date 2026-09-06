@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import type { ErrorHandler, Handler } from '../types'
+import { logger } from '../logger'
 
 // ─── HttpError ─────────────────────────────────────────────────────────────────
 
@@ -361,11 +362,8 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     // unknown error — don't leak internals in production
     if (req.log) {
       req.log.error({ err }, 'unhandled server error')
-    }
-    if (isDev) {
-      console.error('\n\x1b[31m[Exis Unhandled Error]\x1b[0m', err, '\n')
-    } else if (!req.log) {
-      console.error('[Exis Error]', err)
+    } else {
+      logger.error({ err }, 'unhandled server error')
     }
 
     if (isDev && req.headers.accept?.includes('text/html')) {

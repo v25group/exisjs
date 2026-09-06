@@ -7,8 +7,6 @@ export interface RateLimitOptions {
   message?: string // Error message sent to user when max is exceeded
   statusCode?: number // HTTP status code returned when max is exceeded
   keyGenerator?: (req: Request) => string // Function used to generate keys
-  redis?: any // Optional ioredis client
-  prefix?: string // Redis key prefix
 }
 
 export function rateLimit(options: RateLimitOptions = {}): Handler {
@@ -17,7 +15,6 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
   const message =
     options.message || 'Too many requests, please try again later.'
   const statusCode = options.statusCode || 429
-  const prefix = options.prefix || 'rl:'
   const keyGenerator =
     options.keyGenerator ||
     ((req: Request) => {
@@ -61,17 +58,7 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
 
       let currentHits = 0
 
-      if (options.redis) {
-        const redisKey = `${prefix}${key}`
-        const multi = options.redis.multi()
-        multi.incr(redisKey)
-        multi.pexpire(redisKey, windowMs)
-        const results = await multi.exec()
-        if (!results || results.length === 0) {
-          throw new Error('Redis multi failed')
-        }
-        currentHits = results[0][1] as number
-      } else if (nativeLimiter) {
+      if (nativeLimiter) {
         currentHits = nativeLimiter.hit(key)
       } else {
         let record = fallbackHits.get(key)
@@ -95,7 +82,7 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
 
       next()
     } catch {
-      // In case of error (e.g. redis failure), bypass rate limiting rather than failing request
+      // In case of unexpected error, bypass rate limiting rather than failing request
       next()
     }
   }

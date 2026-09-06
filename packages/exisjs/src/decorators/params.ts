@@ -7,11 +7,88 @@ import {
 } from './constants'
 import { MetadataEngine } from './core/metadata'
 
-function createParamDecorator(
+export interface CustomParamExecutionContext {
+  req: any
+  res: any
+  next: any
+  app: any
+  state: Record<string, any>
+  switchToHttp: () => {
+    getRequest: () => any
+    getResponse: () => any
+    getNext: () => any
+  }
+}
+
+export type CustomParamFactory<TData = any, TResult = any> = (
+  data: TData,
+  ctx: CustomParamExecutionContext
+) => TResult
+
+/**
+ * Creates a custom route parameter decorator.
+ *
+ * Example:
+ * ```ts
+ * export const CurrentUser = createParamDecorator(
+ *   (data: string | undefined, ctx) => {
+ *     const req = ctx.req
+ *     return data ? req.user?.[data] : req.user
+ *   }
+ * )
+ *
+ * // Usage in controller:
+ * @Get('/profile')
+ * getProfile(@CurrentUser() user: any, @CurrentUser('id') id: string) {}
+ * ```
+ */
+export function createParamDecorator<TData = any>(
+  factory: CustomParamFactory<TData>
+): (data?: TData, ...pipes: any[]) => ParameterDecorator
+export function createParamDecorator(
   type: string,
   nameOrPipe?: string | any,
   ...pipes: any[]
-) {
+): ParameterDecorator
+export function createParamDecorator(
+  typeOrFactory: string | CustomParamFactory<any>,
+  nameOrPipe?: string | any,
+  ...pipes: any[]
+): any {
+  if (typeof typeOrFactory === 'function') {
+    const factory = typeOrFactory
+    return function (dataOrPipe?: any, ...customPipes: any[]) {
+      return function (
+        target: any,
+        propertyKey: string | symbol,
+        parameterIndex: number
+      ) {
+        const isPipe =
+          typeof dataOrPipe === 'function' ||
+          (typeof dataOrPipe === 'object' &&
+            dataOrPipe !== null &&
+            (typeof dataOrPipe.transform === 'function' ||
+              typeof dataOrPipe.parse === 'function'))
+        const data = isPipe ? undefined : dataOrPipe
+        const allPipes = isPipe ? [dataOrPipe, ...customPipes] : customPipes
+
+        const fn = target[propertyKey]
+        const paramMeta = MetadataEngine.init<any[]>(
+          fn,
+          PARAM_METADATA_PROP,
+          []
+        )
+        paramMeta[parameterIndex] = {
+          type: 'customParam',
+          name: data,
+          customFactory: factory,
+          pipes: allPipes,
+        }
+      }
+    }
+  }
+
+  const type = typeOrFactory
   return function (
     target: any,
     propertyKey: string | symbol,
@@ -29,13 +106,15 @@ function createParamDecorator(
   }
 }
 
+import { logger } from '../logger'
+
 export const Param = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('param', nameOrPipe, ...pipes)
 
 export const Body = (nameOrPipe?: string | any, ...pipes: any[]) => {
   if (nameOrPipe === undefined && pipes.length === 0) {
-    console.warn(
-      `\x1b[33m[ExisJS] Warning: @Body() decorator used without a validation schema or pipe. It is highly recommended to validate incoming payloads.\x1b[0m`
+    logger.warn(
+      `@Body() decorator used without a validation schema or pipe. It is highly recommended to validate incoming payloads.`
     )
   }
   return createParamDecorator('body', nameOrPipe, ...pipes)
@@ -71,6 +150,18 @@ export const Res = (options?: { passthrough?: boolean }): any => {
   }
 }
 
+/**
+ * Injects a query parameter from the URL query string.
+ *
+ * Example:
+ * ```ts
+ * @Get('/search')
+ * search(@QueryParam('q') q: string) { return { q }; }
+ * ```
+ */
+export const QueryParam = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('query', nameOrPipe, ...pipes)
+
 export function Query(
   pathOrName?: string | any,
   schemaOrPipe?: RouteSchema<any, any, any, any> | any,
@@ -86,27 +177,11 @@ export function Query(
       (contextOrPropertyKey && contextOrPropertyKey.kind === 'parameter')
 
     if (isParam) {
-      const isPipe =
-        typeof pathOrName === 'function' ||
-        (typeof pathOrName === 'object' && pathOrName !== null)
-      const name = isPipe ? undefined : pathOrName
-      const pipesArray: any[] = isPipe ? [pathOrName] : []
-      if (
-        schemaOrPipe &&
-        (typeof schemaOrPipe === 'function' || typeof schemaOrPipe === 'object')
-      ) {
-        pipesArray.push(schemaOrPipe)
-      }
-      pipesArray.push(...pipes)
-
-      const parameterIndex = descriptorOrIndex
-      const fn = target[contextOrPropertyKey]
-      const paramMeta = MetadataEngine.init<any[]>(fn, PARAM_METADATA_PROP, [])
-      paramMeta[parameterIndex] = {
-        type: 'query',
-        name,
-        pipes: pipesArray,
-      }
+      return (QueryParam(pathOrName, schemaOrPipe, ...pipes) as any)(
+        target,
+        contextOrPropertyKey,
+        descriptorOrIndex
+      )
     } else {
       const path = pathOrName || ''
       if (

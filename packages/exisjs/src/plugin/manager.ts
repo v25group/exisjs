@@ -68,9 +68,68 @@ export class PluginManager {
   }
 
   public async register<TOptions = Record<string, unknown>>(
-    pluginOrInstance: ExisPlugin<TOptions> | ExisPluginInstance,
+    pluginOrInstance: ExisPlugin<TOptions> | ExisPluginInstance | any,
     legacyOptions?: TOptions
   ): Promise<App> {
+    const MODULE_METADATA = Symbol.for('exisjs:module_metadata')
+    if (
+      typeof pluginOrInstance === 'function' &&
+      (pluginOrInstance[MODULE_METADATA] ||
+        (pluginOrInstance.prototype &&
+          pluginOrInstance.prototype[MODULE_METADATA]))
+    ) {
+      const moduleClass = pluginOrInstance
+      const options =
+        moduleClass[MODULE_METADATA] ||
+        moduleClass.prototype[MODULE_METADATA] ||
+        {}
+      const moduleName = moduleClass.name || 'AnonymousModule'
+
+      if (this.registeredPlugins.has(moduleName)) {
+        return this.app
+      }
+
+      // 1. Process imported modules or plugins
+      if (Array.isArray(options.imports)) {
+        for (const imp of options.imports) {
+          await this.register(imp)
+        }
+      }
+
+      // 2. Register Providers
+      if (Array.isArray(options.providers)) {
+        for (const provider of options.providers) {
+          if (Array.isArray(provider)) {
+            const [token, def] = provider
+            this.app.provide(token, def)
+          } else if (typeof provider === 'function') {
+            this.app.provide(provider, { useClass: provider })
+          } else if (
+            provider &&
+            typeof provider === 'object' &&
+            'provide' in provider
+          ) {
+            this.app.provide(provider.provide, provider)
+          }
+        }
+      }
+
+      // 3. Register Controllers
+      if (
+        Array.isArray(options.controllers) &&
+        options.controllers.length > 0
+      ) {
+        this.app.registerControllers(options.controllers)
+      }
+
+      this.registeredPlugins.set(moduleName, {
+        name: moduleName,
+        register: () => undefined,
+      } as any)
+
+      return this.app
+    }
+
     let plugin: ExisPlugin<TOptions>
     let options: TOptions | undefined
 

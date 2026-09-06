@@ -182,7 +182,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
   }
 
   public async register<TOptions = Record<string, unknown>>(
-    pluginOrInstance: ExisPlugin<TOptions> | ExisPluginInstance,
+    pluginOrInstance: ExisPlugin<TOptions> | ExisPluginInstance | any,
     legacyOptions?: TOptions
   ): Promise<this> {
     await this.pluginManager.register(pluginOrInstance, legacyOptions)
@@ -493,9 +493,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
           // For async plugins in config, they should be loaded before app starts.
           // App.register is async, so we'll push the promise and warn if it's not awaited
           this.register(plugin).catch((err) =>
-            console.error(
-              `[Exis] Failed to register plugin ${plugin.name} from config:`,
-              err
+            this.log.error(
+              { err, plugin: plugin.name },
+              `Failed to register plugin ${plugin.name} from config`
             )
           )
         }

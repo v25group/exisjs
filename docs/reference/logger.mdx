@@ -1,0 +1,100 @@
+---
+title: "Logger"
+description: "API Reference for the ExisJS structured logger (exisjs/logger)."
+---
+
+# Logger (`exisjs/logger`)
+
+ExisJS includes a built-in, high-performance structured logger powered by Pino. It provides colored, pretty-printed logs in development and fast, structured JSON in production.
+
+All logger APIs are imported directly from the dedicated subpath `exisjs/logger`.
+
+```typescript
+import { logger, configureLogger, setLogger } from 'exisjs/logger'
+```
+
+---
+
+## 1. Global Logger Singleton (`logger`)
+
+The `logger` singleton can be imported and called anywhere in your application:
+
+```typescript
+import { logger } from 'exisjs/logger'
+
+logger.info('Server boot sequence initiated')
+logger.warn({ origin: req.headers.origin }, 'Untrusted origin detected')
+logger.error({ err }, 'Failed to persist record to database')
+logger.debug({ payload }, 'Parsing incoming request payload')
+```
+
+### Methods
+- `logger.info([obj], msg, ...args)`
+- `logger.warn([obj], msg, ...args)`
+- `logger.error([obj], msg, ...args)`
+- `logger.debug([obj], msg, ...args)`
+- `logger.trace([obj], msg, ...args)`
+- `logger.fatal([obj], msg, ...args)`
+- `logger.child(bindings)`: Creates a child logger with bound metadata (e.g. `{ requestId: '123' }`).
+
+---
+
+## 2. Configuration (`configureLogger`)
+
+Use `configureLogger()` to adjust log levels, toggle pretty printing, and customize sensitive field redactions across the entire application:
+
+```typescript filename="src/http/server.ts"
+import { configureLogger } from 'exisjs/logger'
+
+configureLogger({
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  pretty: process.env.NODE_ENV !== 'production',
+  redact: ['*.password', '*.token', '*.secret', 'req.headers.cookie'],
+})
+```
+
+### Options
+- `level` (`'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent'`): Minimum level to output (default: `'info'`).
+- `pretty` (`boolean`): Whether to format log lines with bracketed timestamp and colorized labels (`[HH:MM:ss] LEVEL: message`). Default is `true` in development and `false` in production.
+- `redact` (`string[]`): Property paths to censor automatically from log payloads.
+- `replaceRedact` (`boolean`): When `true`, replaces default redact paths instead of merging with them.
+
+---
+
+## 3. Custom Logger Instance (`setLogger`)
+
+If you want to plug in your own custom Pino instance or transport (e.g., streaming logs directly to Loki, Datadog, or Elasticsearch), pass it to `setLogger()`:
+
+```typescript filename="src/http/server.ts"
+import { setLogger } from 'exisjs/logger'
+import pino from 'pino'
+
+const customPino = pino({
+  level: 'info',
+  transport: {
+    target: 'pino-loki',
+    options: { host: 'http://localhost:3100' }
+  }
+})
+
+setLogger(customPino)
+```
+
+---
+
+## 4. Request-Scoped Logger (`req.log`)
+
+Every incoming HTTP request in ExisJS automatically receives a child logger bound to `req.log`. It automatically includes request context such as `req.requestId`:
+
+```typescript filename="src/http/users/route.ts"
+import { route, controller } from 'exisjs/router'
+
+export default controller({
+  profile: route.get('/profile', {
+    async handle({ req }) {
+      req.log.info('Fetching user profile')
+      return { ok: true }
+    }
+  })
+})
+```
