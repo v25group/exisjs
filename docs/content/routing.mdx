@@ -19,7 +19,7 @@ For a folder to become an accessible API endpoint, it must contain a `route.ts` 
 
 In addition to `route.ts`, the ExisJS router utilizes two other special gatekeeper files:
 - **`server.ts`**: Placed at the root of your `http` directory, it is the entry point that boots your application, registers global plugins, and connects to databases.
-- **`gateway.ts`**: Can be placed in any folder. It acts as a gatekeeper, automatically applying middleware, CORS, headers, and dependencies to *all* routes within its directory and subdirectories.
+- **`boundary.ts`**: Can be placed in any folder. It acts as a gatekeeper and request pipeline, automatically configuring middleware, CORS, headers, and dependencies for *all* routes within its directory and subdirectories.
 
 ### Routing Conventions
 
@@ -38,9 +38,9 @@ The `server.ts` file acts as the root configuration for your application. It pro
 import { exis } from 'exisjs'
 
 export default exis({
-  async onStart(app) {
-    // Boot your database here!
-  }
+  providers: [
+    ['LoggerService', { useValue: console }]
+  ]
 })
 ```
 
@@ -59,27 +59,27 @@ export default class RootServer {
 }
 ```
 
-### Folder Gateways (`gateway.ts`)
+### Folder Boundaries (`boundary.ts`)
 
-Gateways apply configurations to all routes in their directory and subdirectories.
+Boundaries apply configurations, security policies, and request pipelines to all routes in their directory and subdirectories.
 
 #### Functional Paradigm
-```typescript filename="src/http/admin/gateway.ts"
-import { defineGateway } from 'exisjs/router'
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
 
-export default defineGateway({
+export const config = defineBoundary({
   headers: { 'X-Admin-Area': 'true' }
 })
 ```
 
 #### Class-Based (OOP) Paradigm
-```typescript filename="src/http/admin/gateway.ts"
-import { Gateway } from 'exisjs/decorators'
+```typescript filename="src/http/admin/boundary.ts"
+import { Boundary } from 'exisjs/decorators'
 
-@Gateway({
+@Boundary({
   headers: { 'X-Admin-Area': 'true' }
 })
-export default class AdminGateway {}
+export default class AdminBoundary {}
 ```
 
 ### Route Definitions (`route.ts`)
@@ -264,12 +264,17 @@ export default controller({
   }),
   getSingle: route.get('/:id', {
     handle({ params }) {
+      // params.id is automatically inferred as string with full autocomplete!
       const { id } = params
-      return { message: \`Fetching user \${id}\` }
+      return { message: `Fetching user ${id}` }
     }
   })
 })
 ```
+
+<Info title="Automatic Route Parameter Type Inference">
+In ExisJS v0.7+, paths with named parameters like `route.get('/users/:userId/posts/:postId', ...)` automatically parse the path string literal to infer `params: { userId: string; postId: string }` on the `handle` context. No manual casting or boilerplate interfaces required.
+</Info>
 
   
 #### Class-Based (OOP) Paradigm

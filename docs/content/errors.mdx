@@ -247,8 +247,8 @@ You can use the `metrics` middleware to track request durations and counts.
 
 ### Functional Paradigm
 
-```typescript filename="src/http/gateway.ts"
-import { defineGateway } from 'exisjs/router'
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
 import { metrics } from 'exisjs/observability'
 
 const myPrometheusAdapter = {
@@ -261,15 +261,15 @@ const myPrometheusAdapter = {
   }
 }
 
-export default defineGateway({
+export const config = defineBoundary({
   middleware: [metrics(myPrometheusAdapter)]
 })
 ```
 
 ### Class-Based (OOP) Paradigm
 
-```typescript filename="src/http/gateway.ts"
-import { Gateway } from 'exisjs/decorators'
+```typescript filename="src/http/boundary.ts"
+import { Boundary } from 'exisjs/decorators'
 import { metrics } from 'exisjs/observability'
 
 const myPrometheusAdapter = {
@@ -280,10 +280,10 @@ const myPrometheusAdapter = {
   }
 }
 
-@Gateway({
+@Boundary({
   middleware: [metrics(myPrometheusAdapter)]
 })
-export default class RootGateway {}
+export default class RootBoundary {}
 ```
 
 *Note: ExisJS normalizes dynamic paths (e.g., turning `/users/123` into `/users/:id`) to prevent metrics cardinality issues.*
@@ -294,8 +294,8 @@ ExisJS seamlessly integrates with OpenTelemetry (OTel) via the `tracing` middlew
 
 ### Functional Paradigm
 
-```typescript filename="src/http/gateway.ts"
-import { defineGateway } from 'exisjs/router'
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
 import { tracing } from 'exisjs/observability'
 
 const myOtelAdapter = {
@@ -312,15 +312,15 @@ const myOtelAdapter = {
   }
 }
 
-export default defineGateway({
+export const config = defineBoundary({
   middleware: [tracing(myOtelAdapter)]
 })
 ```
 
 ### Class-Based (OOP) Paradigm
 
-```typescript filename="src/http/gateway.ts"
-import { Gateway } from 'exisjs/decorators'
+```typescript filename="src/http/boundary.ts"
+import { Boundary } from 'exisjs/decorators'
 import { tracing } from 'exisjs/observability'
 
 const myOtelAdapter = {
@@ -335,10 +335,10 @@ const myOtelAdapter = {
   }
 }
 
-@Gateway({
+@Boundary({
   middleware: [tracing(myOtelAdapter)]
 })
-export default class RootGateway {}
+export default class RootBoundary {}
 ```
 
 By providing these standard interfaces natively, your application metrics and traces are bound to the ExisJS router lifecycle.
