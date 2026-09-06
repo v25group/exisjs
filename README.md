@@ -121,9 +121,7 @@ We maintain practical reference applications directly in our repository to demon
 
 - [**01-my-app**](./examples/01-my-app): A minimal starter demonstrating file-system routing.
 - [**02-bookstore**](./examples/02-bookstore): A structured API showcasing nested routes, error boundaries, and dependency injection.
-- [**03-chat**](./examples/03-chat): Real-time communication using built-in WebSockets.
-- [**04-ai-chat**](./examples/04-ai-chat): Streaming responses and external integrations.
-- [**05-all-features**](./examples/05-all-features): A comprehensive application demonstrating cron jobs, background queues, database adapters, and more.
+- [**03-all-features**](./examples/03-all-features): A comprehensive application demonstrating functional and OOP patterns, validation, and middleware.
 
 ---
 
