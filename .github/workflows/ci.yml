@@ -20,6 +20,9 @@ jobs:
         with:
           node-version: 24.x
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install Dependencies
         run: npm install
 
