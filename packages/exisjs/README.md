@@ -36,13 +36,19 @@ Exis JS gives you the raw performance of a minimal micro-framework and the end-t
 
 ## Getting Started
 
-To create a new Exis JS project, we highly recommend using our official CLI tool instead of installing this package manually:
+To create a new Exis JS project, we recommend using our official CLI tool:
 
 ```bash
-npx @exisjs/create@latest my-backend
+npm create exisjs@latest my-backend
 ```
 
-This will automatically scaffold a completely configured Exis JS project, install all dependencies, and set up a hot-reloading development server for you.
+Or install ExisJS directly into an existing application:
+
+```bash
+npm install exisjs
+```
+
+This will automatically scaffold a configured Exis JS project, install all dependencies, and set up a hot-reloading development server for you.
 
 ## Documentation
 

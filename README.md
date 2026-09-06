@@ -35,9 +35,15 @@ If you appreciate the straightforward nature of traditional frameworks but requi
 Start a fully-configured, production-ready backend project:
 
 ```bash
-npm create @exisjs@latest my-backend
+npm create exisjs@latest my-backend
 cd my-backend
 npm run dev
+```
+
+Or install ExisJS directly into an existing project:
+
+```bash
+npm install exisjs
 ```
 
 ### Dual-Paradigm Routing
@@ -127,7 +133,7 @@ The ExisJS framework is organized as a monorepo containing carefully scoped pack
 
 1. 📦 **`exisjs`** - The primary backend framework handling HTTP routing, WebSockets, background tasks, and Swagger.
 2. 📦 **`@exisjs/fetch`** - The integrated HTTP client to connect your frontend to your API with absolute type safety.
-3. 📦 **`@exisjs/create`** - The CLI tool to scaffold structured ExisJS projects.
+3. 📦 **`create-exisjs`** - The CLI tool to scaffold structured ExisJS projects (`npm create exisjs@latest`).
 4. 📦 **`@exisjs/rs`** - The native Rust engine powering routing and validation under the hood.
 
 ---
