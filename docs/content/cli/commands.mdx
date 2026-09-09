@@ -85,13 +85,14 @@ $ npx exisjs g <type> <name> [options]
 
 | Option | Description |
 | :--- | :--- |
+| `-n, --named` | Names generated files using the feature prefix (e.g. `<name>.route.ts`, `<name>.schema.ts`, `<name>.service.ts`). |
 | `--oop` | Generates using Class-Based (OOP) decorators instead of Functional syntax. |
 
 **Supported Schematics**
 
 | Schematic | Alias | Description | Output Path |
 | :--- | :--- | :--- | :--- |
-| `resource` | | Complete domain slice (`schema.ts`, `service.ts`, `boundary.ts`, `route.ts`) | `src/http/<name>/` |
+| `resource` | | Complete domain slice (`schema.ts`, `service.ts`, `route.ts` or feature-prefixed named files) | `src/http/<name>/` |
 | `route` | `r`, `c`, `controller` | HTTP route file | `src/http/<name>/route.ts` |
 | `service` | `s` | Injectable service / business logic | `src/http/<name>/service.ts` |
 | `schema` | `sc` | Validation schemas powered by `tex` | `src/http/<name>/schema.ts` |
@@ -104,7 +105,7 @@ $ npx exisjs g <type> <name> [options]
 
 ### `exisjs routes`
 
-Analyzes and prints the application routing table to the terminal.
+Analyzes and prints the application routing table to the terminal in an interactive, formatted grid with method badges and dynamic parameter highlighting.
 
 ```bash
 $ npx exisjs routes [options]
@@ -114,7 +115,17 @@ $ npx exisjs routes [options]
 
 | Option | Description |
 | :--- | :--- |
-| `-e, --entry <file>` | Custom entry file path to bootstrap the app from. |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the app from (default: `src/http/server.ts`). |
+| `-m, --method <method>` | Filter endpoints by HTTP method (e.g. `GET`, `POST`, `PUT`, `DELETE`). |
+| `-f, --filter <keyword>` | Filter endpoints matching path, method, or source file keyword. |
+| `--json` | Output the parsed routes and middleware metadata directly as structured JSON. |
+
+**Features**
+- **Method Badges**: Visually styled badges (`GET`, `POST`, `PUT`, `PATCH`, `DEL`, `ALL`).
+- **Parameter Highlighting**: Dynamically distinguishes path parameters (`:id`, `*slug`).
+- **Middleware Counting**: Displays total attached middleware / boundary steps.
+- **Source Resolution**: Displays relative file source path (e.g. `src/http/users/user.route.ts`).
+- **Summary Metrics**: Displays total endpoint counts and method breakdown.
 
 ---
 
@@ -155,6 +166,12 @@ $ npx exisjs repl [options]
 $ npx exisjs console [options]
 ```
 
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --entry <file>` | Custom entry file path to bootstrap the REPL context. |
+
 ---
 
 ### `exisjs exports`
@@ -174,3 +191,19 @@ Displays runtime environment, Node.js version, platform, architecture, and ExisJ
 ```bash
 $ npx exisjs info
 ```
+
+---
+
+### `exisjs doctor`
+
+Performs an end-to-end diagnostic audit of the local project environment, verifying Node.js version compatibility, native Rust hardware acceleration (`@exisjs/rs`), `tsconfig.json` strictness, entry-point resolution, route naming patterns, and file-system route counts.
+
+```bash
+$ npx exisjs doctor
+```
+
+**Diagnostic Checks**
+- **Runtime**: Validates Node.js engine compatibility (v18+ recommended for N-API and worker thread pools).
+- **Native Engine**: Verifies `@exisjs/rs` compiled native binaries are active for hardware-accelerated radix tree traversal, off-heap caching, and native JSON serialization.
+- **Project Configuration**: Checks `package.json` root and `tsconfig.json` strict mode.
+- **Routes & Pipeline**: Confirms application entry point (`src/http/server.ts`), discovers active route slices, and flags non-standard or orphan file naming conventions.

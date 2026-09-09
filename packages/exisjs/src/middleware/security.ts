@@ -239,11 +239,26 @@ export function timeout(ms: number | TimeoutOptions): Handler {
 // ─── HTTP Parameter Pollution (HPP) ───────────────────────────────────────────
 
 export function hpp(): Handler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     // If a query parameter is an array (multiple values), take only the last one
-    for (const [key, val] of Object.entries(req.query)) {
-      if (Array.isArray(val)) {
-        req.query[key] = val[val.length - 1]
+    if (req.query && typeof req.query === 'object') {
+      for (const [key, val] of Object.entries(req.query)) {
+        if (Array.isArray(val)) {
+          req.query[key] = val[val.length - 1]
+        }
+      }
+    }
+
+    // Automatically synchronize body if incoming request has body but hasn't been parsed
+    if (
+      req.body === undefined &&
+      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      typeof (req as any).json === 'function'
+    ) {
+      try {
+        await (req as any).json()
+      } catch {
+        /* let subsequent validation catch invalid JSON */
       }
     }
 
@@ -279,12 +294,34 @@ function sanitizeMongo(obj: unknown): unknown {
 }
 
 export function mongoSanitize(): Handler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (
+      req.body === undefined &&
+      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      typeof (req as any).json === 'function'
+    ) {
+      try {
+        await (req as any).json()
+      } catch {
+        /* ignore */
+      }
+    }
+
     if (req.body) req.body = sanitizeMongo(req.body)
-    if (Object.keys(req.query).length > 0)
+    if (
+      req.query &&
+      typeof req.query === 'object' &&
+      Object.keys(req.query).length > 0
+    ) {
       req.query = sanitizeMongo(req.query) as Record<string, string>
-    if (Object.keys(req.params).length > 0)
+    }
+    if (
+      req.params &&
+      typeof req.params === 'object' &&
+      Object.keys(req.params).length > 0
+    ) {
       req.params = sanitizeMongo(req.params) as Record<string, string>
+    }
     next()
   }
 }
@@ -298,13 +335,35 @@ export interface DbSanitizeOptions {
 export function dbSanitize(
   options: DbSanitizeOptions = { mongo: true }
 ): Handler {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
     if (options.mongo) {
+      if (
+        req.body === undefined &&
+        ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+        typeof (req as any).json === 'function'
+      ) {
+        try {
+          await (req as any).json()
+        } catch {
+          /* ignore */
+        }
+      }
+
       if (req.body) req.body = sanitizeMongo(req.body)
-      if (Object.keys(req.query).length > 0)
+      if (
+        req.query &&
+        typeof req.query === 'object' &&
+        Object.keys(req.query).length > 0
+      ) {
         req.query = sanitizeMongo(req.query) as Record<string, string>
-      if (Object.keys(req.params).length > 0)
+      }
+      if (
+        req.params &&
+        typeof req.params === 'object' &&
+        Object.keys(req.params).length > 0
+      ) {
         req.params = sanitizeMongo(req.params) as Record<string, string>
+      }
     }
 
     next()

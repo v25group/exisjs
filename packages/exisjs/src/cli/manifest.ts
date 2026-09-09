@@ -40,7 +40,10 @@ export async function generateManifest(
 
   const routes = await scanDirectory(apiDir, '/')
   const validRoutes = routes.filter(
-    (r) => r.filePath.endsWith('route.ts') || r.filePath.endsWith('route.js')
+    (r) =>
+      r.filePath.endsWith('route.ts') ||
+      r.filePath.endsWith('route.js') ||
+      /\.route\.[jt]s$/.test(r.filePath)
   )
 
   let importLines = ''

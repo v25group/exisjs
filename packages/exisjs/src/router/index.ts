@@ -24,3 +24,7 @@ export {
 
 // File Uploads
 export type { ExisFile } from '../types'
+
+// Real-Time / Server-Sent Events (SSE)
+export { SSEStream, formatSSEEvent } from '../server/sse'
+export type { SSEMessage, SSEOptions } from '../server/sse'

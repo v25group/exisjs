@@ -4,16 +4,26 @@ import { pathToFileURL } from 'node:url'
 import { App } from '../server/app'
 import { loadConfig } from '../config/config'
 
+interface RoutesCommandOptions {
+  entry?: string
+  json?: boolean
+  method?: string
+  filter?: string
+}
+
 export async function routesCommand(
   cwd: string = process.cwd(),
-  entry?: string
+  options: string | RoutesCommandOptions = {}
 ) {
   process.env.EXIS_CLI_MODE = '1'
   await loadConfig(cwd)
 
+  const opts: RoutesCommandOptions =
+    typeof options === 'string' ? { entry: options } : options
+
   let appPath: string | null = null
-  if (entry) {
-    const abs = path.resolve(cwd, entry)
+  if (opts.entry) {
+    const abs = path.resolve(cwd, opts.entry)
     appPath = fs.existsSync(abs) ? abs : null
   } else {
     const srcTs = path.join(cwd, 'src/http/server.ts')
@@ -38,11 +48,8 @@ export async function routesCommand(
     // Dynamic import the user's app
     let mod
     try {
-      // If we are using tsx, dynamic import will parse the TS file natively
       mod = await import(pathToFileURL(appPath).href)
     } catch (e: unknown) {
-      // Fallback to tsx node api if not running within a tsx context
-      // Note: We expect the CLI to run with tsx when doing this
       console.error(
         '\x1b[31m[Exis CLI Error]\x1b[0m Failed to import app:',
         e instanceof Error ? e.message : e
@@ -82,74 +89,162 @@ export async function routesCommand(
 
     if (!app) {
       console.error(
-        '\x1b[31m[Exis CLI Error]\x1b[0m Your entry file must export an instance of Exis App. Exported keys: ',
-        Object.keys(mod)
+        '\x1b[31m[Exis CLI Error]\x1b[0m Your entry file must export an instance of Exis App.'
       )
-      console.log('mod.app:', mod.app)
-      console.log('mod.default:', mod.default)
       process.exit(1)
     }
 
-    // Boot the app if it hasn't been booted yet to register file-system routes
+    // Boot the app to register file-system routes
     try {
       await app.create()
+      if ((app as any).routeScanner?.loadAllRoutes) {
+        await (app as any).routeScanner.loadAllRoutes()
+      }
     } catch {
       /* ignore if already created */
     }
 
-    const routes = app.getRoutes()
+    let routes = app.getRoutes()
 
-    console.log('\n\x1b[36mExis Routing Table\x1b[0m\n')
-
-    if (routes.length === 0) {
-      console.log('No routes registered.')
-      process.exit(0)
+    // Filter by method if specified
+    if (opts.method) {
+      const targetMethod = opts.method.toUpperCase()
+      routes = routes.filter((r) => r.method.toUpperCase() === targetMethod)
     }
 
-    // Format table
-    const maxMethodLen = Math.max(...routes.map((r) => r.method.length))
-    const maxPathLen = Math.max(...routes.map((r) => r.path.length))
-
-    for (const route of routes) {
-      let methodColor = '\x1b[37m' // white
-      switch (route.method) {
-        case 'GET':
-          methodColor = '\x1b[32m'
-          break // green
-        case 'POST':
-          methodColor = '\x1b[34m'
-          break // blue
-        case 'PUT':
-          methodColor = '\x1b[33m'
-          break // yellow
-        case 'DELETE':
-          methodColor = '\x1b[31m'
-          break // red
-        case 'PATCH':
-          methodColor = '\x1b[35m'
-          break // magenta
-        case 'OPTIONS':
-        case 'HEAD':
-        case 'CONNECT':
-        case 'TRACE':
-        case 'QUERY':
-        case 'ALL':
-          methodColor = '\x1b[90m'
-          break // gray
-      }
-
-      const methodStr = route.method.padEnd(maxMethodLen)
-      const pathStr = route.path.padEnd(maxPathLen)
-      const mwCount = route.handlers.length - 1
-      const mwStr =
-        mwCount > 0 ? `\x1b[90m(+${mwCount} middlewares)\x1b[0m` : ''
-
-      console.log(
-        `  ${methodColor}${methodStr}\x1b[0m  \x1b[37m${pathStr}\x1b[0m  ${mwStr}`
+    // Filter by keyword if specified
+    if (opts.filter) {
+      const kw = opts.filter.toLowerCase()
+      routes = routes.filter(
+        (r) =>
+          r.path.toLowerCase().includes(kw) ||
+          r.method.toLowerCase().includes(kw) ||
+          (r.sourceFile && r.sourceFile.toLowerCase().includes(kw))
       )
     }
 
-    console.log(`\n\x1b[32mTotal routes: ${routes.length}\x1b[0m\n`)
+    // JSON Output
+    if (opts.json) {
+      const jsonOutput = routes.map((r) => ({
+        method: r.method,
+        path: r.path,
+        middlewares: Math.max(0, r.handlers.length - 1),
+        sourceFile: r.sourceFile
+          ? path.relative(cwd, r.sourceFile).replace(/\\/g, '/')
+          : null,
+      }))
+      console.log(JSON.stringify(jsonOutput, null, 2))
+      process.exit(0)
+    }
+
+    // Terminal Visual Output
+    const reset = '\x1b[0m'
+    const bold = '\x1b[1m'
+    const dim = '\x1b[2m'
+    const primary = '\x1b[38;2;160;70;255m'
+    const cyan = '\x1b[36m'
+    const yellow = '\x1b[33m'
+    const gray = '\x1b[90m'
+
+    const methodBadges: Record<string, string> = {
+      GET: '\x1b[1;30;42m GET \x1b[0m',
+      POST: '\x1b[1;37;44m POST \x1b[0m',
+      PUT: '\x1b[1;30;43m PUT \x1b[0m',
+      PATCH: '\x1b[1;37;45m PATCH \x1b[0m',
+      DELETE: '\x1b[1;37;41m DEL \x1b[0m',
+      OPTIONS: '\x1b[1;37;100m OPT \x1b[0m',
+      HEAD: '\x1b[1;37;100m HEAD \x1b[0m',
+      ALL: '\x1b[1;37;46m ALL \x1b[0m',
+    }
+
+    const formatPath = (routePath: string) => {
+      // Highlight dynamic parameters like :id or *slug with yellow/cyan
+      return routePath.replace(
+        /(:[a-zA-Z0-9_]+|\*[a-zA-Z0-9_]+)/g,
+        `${yellow}$1${reset}`
+      )
+    }
+
+    console.log(`\n${primary}${bold}⚡ ExisJS Routing Table${reset}\n`)
+
+    if (routes.length === 0) {
+      console.log(`  ${dim}No routes matching criteria.${reset}\n`)
+      process.exit(0)
+    }
+
+    // Compute column widths
+    const renderedPaths = routes.map((r) => r.path)
+    const maxPathLen = Math.max(20, ...renderedPaths.map((p) => p.length))
+    const maxSourceLen = Math.max(
+      15,
+      ...routes.map((r) => {
+        if (!r.sourceFile) return 6
+        const rel = path.relative(cwd, r.sourceFile).replace(/\\/g, '/')
+        return rel.length
+      })
+    )
+
+    // Table Header
+    console.log(
+      `  ${dim}┌───────┬─${'─'.repeat(maxPathLen)}─┬────────────┬─${'─'.repeat(maxSourceLen)}─┐${reset}`
+    )
+    console.log(
+      `  ${dim}│${reset} ${bold}METHOD${reset} ${dim}│${reset} ${bold}${'PATH'.padEnd(maxPathLen)}${reset} ${dim}│${reset} ${bold}MIDDLEWARES${reset}  ${dim}│${reset} ${bold}${'SOURCE'.padEnd(maxSourceLen)}${reset} ${dim}│${reset}`
+    )
+    console.log(
+      `  ${dim}├───────┼─${'─'.repeat(maxPathLen)}─┼────────────┼─${'─'.repeat(maxSourceLen)}─┤${reset}`
+    )
+
+    const methodCounts: Record<string, number> = {}
+
+    for (const route of routes) {
+      const method = route.method.toUpperCase()
+      methodCounts[method] = (methodCounts[method] || 0) + 1
+
+      const badge =
+        methodBadges[method] || `\x1b[1;37;100m ${method.slice(0, 5)} \x1b[0m`
+      const rawMethodLen = method === 'DELETE' ? 3 : method.length
+      const methodPadding = ' '.repeat(Math.max(0, 5 - rawMethodLen))
+
+      const highlightedPath = formatPath(route.path)
+      const pathPadding = ' '.repeat(
+        Math.max(0, maxPathLen - route.path.length)
+      )
+
+      const mwCount = Math.max(0, route.handlers.length - 1)
+      const mwStr =
+        mwCount > 0
+          ? `${cyan}+${mwCount} step${mwCount > 1 ? 's' : ''}${reset}`
+          : `${dim}none${reset}`
+      const mwPadding = ' '.repeat(
+        Math.max(0, 10 - (mwCount > 0 ? (mwCount > 9 ? 8 : 7) : 4))
+      )
+
+      let relSource = '-'
+      if (route.sourceFile) {
+        relSource = path.relative(cwd, route.sourceFile).replace(/\\/g, '/')
+      }
+      const sourcePadding = ' '.repeat(
+        Math.max(0, maxSourceLen - relSource.length)
+      )
+
+      console.log(
+        `  ${dim}│${reset} ${badge}${methodPadding} ${dim}│${reset} ${highlightedPath}${pathPadding} ${dim}│${reset} ${mwStr}${mwPadding} ${dim}│${reset} ${dim}${relSource}${reset}${sourcePadding} ${dim}│${reset}`
+      )
+    }
+
+    console.log(
+      `  ${dim}└───────┴─${'─'.repeat(maxPathLen)}─┴────────────┴─${'─'.repeat(maxSourceLen)}─┘${reset}`
+    )
+
+    // Summary Card
+    const breakdown = Object.entries(methodCounts)
+      .map(([m, c]) => `${bold}${c}${reset} ${dim}${m}${reset}`)
+      .join(` ${gray}·${reset} `)
+
+    console.log(
+      `\n  ${primary}●${reset} Total Endpoints: ${bold}${routes.length}${reset} (${breakdown})\n`
+    )
     process.exit(0)
   } catch (err) {
     console.error(

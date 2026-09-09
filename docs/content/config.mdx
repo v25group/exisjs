@@ -140,7 +140,14 @@ Here is a full breakdown of the configuration schema:
 
 ### Global Middleware
 
-- `cors` _(object | boolean)_: Global CORS policy configuration (`origin`, `methods`, `credentials`, etc.).
+- `cors` _(object | boolean)_: Global CORS policy configuration. Supports:
+  - Exact string origins (e.g. `'https://example.com'` or `'*'`).
+  - Regular expressions (e.g. `/localhost:\d+/`).
+  - Arrays mixing strings and regexes (`['https://app.example.com', /https:\/\/.*\.domain\.com/']`).
+  - Dynamic callbacks: `(origin, cb) => ...` or async functions: `async (origin) => boolean` for multi-tenant setups.
+- `transformResponse` _(boolean | function)_: Automatically wraps all successful handler responses into a standardized envelope:
+  - When `true`: `{ success: true, data: ..., timestamp: ... }` (matching `HttpError`'s `{ success: false, error: ... }`).
+  - When a function: `(data, req, res) => ({ ... })` to provide your own custom envelope.
 - `helmet` _(object | boolean)_: Automatically secures your app with standard HTTP headers. (Enabled by default).
 - `compression` _(object | boolean)_: Enables Gzip/Brotli compression for all HTTP responses.
 - `logger` _(object | boolean)_: Configures the internal Pino-based logger (`level`, `pretty`).

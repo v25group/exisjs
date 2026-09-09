@@ -109,6 +109,44 @@ describe('cors()', () => {
     )
   })
 
+  it('supports callback-based dynamic origin (origin, callback)', () => {
+    const handler = cors({
+      origin: (origin: string, callback: any) => {
+        callback(null, origin === 'http://localhost:3000')
+      },
+    })
+    const req = createMockRequest({
+      headers: { origin: 'http://localhost:3000' },
+    })
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    handler(req, res, next)
+
+    expect(getResponseHeader(res, 'access-control-allow-origin')).toBe(
+      'http://localhost:3000'
+    )
+  })
+
+  it('supports async promise-based dynamic origin', async () => {
+    const handler = cors({
+      origin: async (origin: string) => origin.includes('tenant'),
+    })
+    const req = createMockRequest({
+      headers: { origin: 'https://tenant1.company.com' },
+    })
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    handler(req, res, next)
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(getResponseHeader(res, 'access-control-allow-origin')).toBe(
+      'https://tenant1.company.com'
+    )
+  })
+
   it('sets credentials header when enabled', () => {
     const handler = cors({ credentials: true })
     const req = createMockRequest()
@@ -498,5 +536,56 @@ describe('validate() fallback', () => {
     await handler(req, res, next)
     expect(next).toHaveBeenCalled()
     expect(next.mock.calls[0].arguments[0]).toBeInstanceOf(Error)
+  })
+})
+
+describe('compression & pre-compressed static assets', () => {
+  it('compresses payloads using native Brotli and Gzip', async () => {
+    const { compression } = await import('../src/middleware/compression')
+    const rs = require('@exisjs/rs')
+
+    const data = Buffer.from('hello world repeated '.repeat(100))
+    const brCompressed = rs.brotliCompress(data)
+    expect(brCompressed.length).toBeLessThan(data.length)
+
+    const gzCompressed = rs.gzipCompress(data)
+    expect(gzCompressed.length).toBeLessThan(data.length)
+
+    const middleware = compression()
+    const req = createMockRequest({
+      headers: { 'accept-encoding': 'br, gzip' },
+    })
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    middleware(req, res, next)
+    expect(next).toHaveBeenCalled()
+  })
+
+  it('serves pre-compressed .br and .gz files when available', async () => {
+    const tmp = createTempDir('exis-static-br-')
+    writeTempFile(tmp, 'app.js', 'console.log("uncompressed")')
+    writeTempFile(tmp, 'app.js.br', 'brotli-mock-data')
+
+    const handler = serveStatic(tmp)
+    const req = createMockRequest({
+      method: 'GET',
+      url: '/app.js',
+      headers: { 'accept-encoding': 'br, gzip' },
+    })
+    const res = createMockResponse()
+
+    await new Promise<void>((resolve) => {
+      res.sendStream = ex.fn(() => {
+        expect(getResponseHeader(res, 'content-encoding')).toBe('br')
+        expect(getResponseHeader(res, 'content-type')).toBe(
+          'application/javascript'
+        )
+        resolve()
+      })
+      handler(req, res, createMockNext())
+    })
+
+    cleanupTempDir(tmp)
   })
 })

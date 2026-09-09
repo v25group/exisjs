@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [

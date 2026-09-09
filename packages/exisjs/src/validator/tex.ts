@@ -403,6 +403,7 @@ export class TexEngine<T = any> {
       for (const [key, val] of Object.entries(this.rawSchema)) {
         if (
           data[key] !== undefined &&
+          data[key] !== null &&
           val instanceof TexType &&
           val.sanitizers.length > 0
         ) {

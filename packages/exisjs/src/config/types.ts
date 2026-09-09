@@ -3,13 +3,15 @@ import type { SslConfig } from '../types'
 
 // ─── Config Types ─────────────────────────────────────────────────────────────
 
+export type CorsOriginCallback = (err: Error | null, allow?: boolean) => void
+
+export type CorsOriginFn = (
+  origin: string,
+  callback?: CorsOriginCallback
+) => boolean | Promise<boolean> | void
+
 export interface CorsConfig {
-  origin?:
-    | boolean
-    | string
-    | RegExp
-    | (string | RegExp)[]
-    | ((origin: string) => boolean)
+  origin?: boolean | string | RegExp | (string | RegExp)[] | CorsOriginFn
   methods?: string[]
   allowedHeaders?: string[]
   exposedHeaders?: string[]
@@ -97,6 +99,7 @@ export interface ExisConfig {
   }
   debugRouting?: boolean // Enables detailed logging of the resolved route file and applied boundaries for every incoming request
   asyncContext?: boolean // Enables AsyncLocalStorage for global getContext() (adds ~10% overhead). Default false.
+  transformResponse?: boolean | ((data: any, req: any, res: any) => any) // Optional global envelope format (e.g. { success: true, data, timestamp })
   /**
    * Defines the HTTP server backend.
    * 'node' uses the native Node.js HTTP module.

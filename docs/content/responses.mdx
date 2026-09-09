@@ -269,3 +269,109 @@ ExisJS features native, automatic ETag generation.
 If the client sends an `If-None-Match` header matching the ETag of the current response, ExisJS will immediately abort serialization and send a `304 Not Modified` header with an empty body, saving bandwidth and CPU cycles.
 
 *Note: ETag generation is disabled by default, but can be enabled globally in your `exis()` config, or manually per-route via `res.etagEnabled = true`.*
+
+---
+
+## 7. Server-Sent Events (SSE) & AI Streaming
+
+ExisJS provides a first-class `res.sse()` method for real-time live events and AI chat completions (OpenAI, Anthropic, Ollama, LangChain).
+
+When called, `res.sse()` automatically configures and flushes the required HTTP headers:
+- `Content-Type: text/event-stream; charset=utf-8`
+- `Cache-Control: no-cache, no-transform`
+- `Connection: keep-alive`
+- `X-Accel-Buffering: no` (disables NGINX proxy buffering)
+
+You can import `SSEStream`, `formatSSEEvent`, `SSEMessage`, and `SSEOptions` from `exisjs/router`.
+
+### Basic SSE Stream
+
+#### Functional Paradigm
+
+```typescript filename="src/http/events/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  liveEvents: route.get('/', {
+    handle(req, res) {
+      // Initialize the stream (heartbeat ping every 15s by default)
+      const sse = res.sse()
+
+      sse.send({ event: 'connected', data: { timestamp: Date.now() } })
+
+      const interval = setInterval(() => {
+        sse.send({ event: 'price-update', data: { symbol: 'BTC', price: 95000 } })
+      }, 1000)
+
+      // Automatically clean up intervals when the client disconnects or closes the tab
+      sse.onClose(() => {
+        clearInterval(interval)
+      })
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/events/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller()
+export default class EventsController {
+  @Get('/events')
+  streamEvents(@Res() res: Response) {
+    const sse = res.sse()
+
+    sse.send({ event: 'connected', data: { status: 'ok' } })
+
+    sse.onClose(() => {
+      console.log('Client disconnected from SSE stream')
+    })
+  }
+}
+```
+
+### AI / LLM Streaming with `sse.pipeFrom()`
+
+You can directly stream chunks from any `AsyncIterable` (such as the OpenAI SDK or custom generators) using `sse.pipeFrom()`:
+
+```typescript filename="src/http/ai/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  chat: route.post('/', {
+    handle(req, res) {
+      res.sse(async (sse) => {
+        // Stream directly from an async generator or AI SDK
+        async function* generateTokens() {
+          yield 'Hello'
+          yield ' from'
+          yield ' ExisJS'
+          yield ' AI streaming!'
+        }
+
+        await sse.pipeFrom(generateTokens(), (token) => ({
+          event: 'delta',
+          data: { text: token }
+        }))
+
+        sse.close()
+      })
+    }
+  })
+})
+```
+
+### SSE Options & Methods
+
+- `res.sse(options?)`: Options include:
+  - `heartbeat`: Heartbeat interval in milliseconds (default: `15000`). Pass `false` to disable.
+  - `heartbeatComment`: Custom comment string for keep-alive pings (default: `": ping\n\n"`).
+  - `headers`: Additional custom HTTP headers.
+- `sse.send(message)`: Sends an event. Accepts string, number, object (auto JSON-stringified), or `{ event, data, id, retry }`.
+- `sse.comment(text)`: Sends a raw SSE comment line (e.g. `: ping\n\n`) without triggering client-side event listeners.
+- `sse.onClose(callback)`: Registers a callback fired when the client disconnects.
+- `sse.close()`: Gracefully terminates the stream and closes the HTTP response.
+

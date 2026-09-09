@@ -57,9 +57,18 @@ program
   .command('routes')
   .description('Print the application routing table')
   .option('-e, --entry <file>', 'Custom entry file path')
+  .option(
+    '-m, --method <method>',
+    'Filter endpoints by HTTP method (e.g. GET, POST)'
+  )
+  .option(
+    '-f, --filter <keyword>',
+    'Filter endpoints by path, method, or source'
+  )
+  .option('--json', 'Output routes as JSON')
   .action(async (options) => {
     const { routesCommand } = await import('./routes')
-    await routesCommand(process.cwd(), options.entry)
+    await routesCommand(process.cwd(), options)
   })
 
 // ─── init ─────────────────────────────────────────────────────────────────────
@@ -129,6 +138,18 @@ program
     console.log()
   })
 
+// ─── doctor ───────────────────────────────────────────────────────────────────
+
+program
+  .command('doctor')
+  .description(
+    'Diagnose project health, native Rust acceleration, routes, and config'
+  )
+  .action(async () => {
+    const { doctorCommand } = await import('./commands/doctor')
+    await doctorCommand()
+  })
+
 // ─── Default: show banner on bare `exis` ──────────────────────────────────────
 
 if (process.argv.length === 2) {
@@ -141,7 +162,13 @@ if (process.argv.length === 2) {
   console.log(
     `    ${c.cyan}exis start${c.reset}            Start production server`
   )
+  console.log(
+    `    ${c.cyan}exis routes${c.reset}           Inspect application routing table`
+  )
   console.log(`    ${c.cyan}exis test${c.reset}             Run test suite`)
+  console.log(
+    `    ${c.cyan}exis doctor${c.reset}           Run project health and environment diagnostics`
+  )
   console.log(
     `    ${c.cyan}exis info${c.reset}             Show environment info`
   )
@@ -172,6 +199,10 @@ program
   .option(
     '--oop',
     'Generate using Class-Based (OOP) paradigm instead of Functional'
+  )
+  .option(
+    '-n, --named',
+    'Prefix filenames with the feature name (e.g. user.route.ts, user.schema.ts)'
   )
   .action(async (type, name, options) => {
     const {

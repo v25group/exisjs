@@ -239,4 +239,54 @@ describe('Boundary & Enhanced Pipeline', () => {
       await fs.rm(testDir, { recursive: true, force: true })
     }
   })
+
+  it('supports feature-prefixed named route and boundary files (e.g. products.route.js and products.boundary.js)', async () => {
+    const testDir = await fs.mkdtemp(
+      path.join(os.tmpdir(), 'exis-named-route-test-')
+    )
+    try {
+      const httpDir = path.join(testDir, 'src', 'http')
+      const prodDir = path.join(httpDir, 'products')
+      await fs.mkdir(prodDir, { recursive: true })
+
+      const routerPath = path
+        .join(__dirname, '../src/router/index')
+        .replace(/\\/g, '/')
+
+      // Named boundary: products.boundary.js
+      await fs.writeFile(
+        path.join(prodDir, 'products.boundary.js'),
+        `
+        const { defineBoundary } = require('${routerPath}')
+        exports.config = defineBoundary({
+          headers: { 'X-Named-Boundary': 'products' }
+        })
+        `
+      )
+
+      // Named route: products.route.js
+      await fs.writeFile(
+        path.join(prodDir, 'products.route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          list: route.get('/', {
+            handle: () => ({ products: ['item1', 'item2'] })
+          })
+        })
+        `
+      )
+
+      const testApp = new App({ env: 'production', server: 'node' })
+      testApp.apiDir = httpDir
+      await (testApp as any).routeScanner.autoMountRoutes(testDir)
+
+      const res = await createTestApp(testApp).get('/products')
+      expect(res.status).toBe(200)
+      expect(res.body).toEqual({ products: ['item1', 'item2'] })
+      expect(res.headers['x-named-boundary']).toBe('products')
+    } finally {
+      await fs.rm(testDir, { recursive: true, force: true })
+    }
+  })
 })

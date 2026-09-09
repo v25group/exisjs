@@ -129,15 +129,31 @@ describe('CLI Commands', () => {
       expect(content).toContain('defineBoundary')
     })
 
-    it('generates a full resource slice (schema, service, boundary, route)', async () => {
+    it('generates a full resource slice (schema, service, route)', async () => {
       const { generateResource } = await import('../src/cli/commands/generate')
       await generateResource('articles', tmpDir)
 
       const dir = path.join(tmpDir, 'src', 'http', 'articles')
       expect(fs.existsSync(path.join(dir, 'schema.ts'))).toBe(true)
       expect(fs.existsSync(path.join(dir, 'service.ts'))).toBe(true)
-      expect(fs.existsSync(path.join(dir, 'boundary.ts'))).toBe(true)
       expect(fs.existsSync(path.join(dir, 'route.ts'))).toBe(true)
+    })
+
+    it('generates a named resource slice with --named (e.g. user.route.ts, user.schema.ts)', async () => {
+      const { generateResource } = await import('../src/cli/commands/generate')
+      await generateResource('products', tmpDir, { named: true })
+
+      const dir = path.join(tmpDir, 'src', 'http', 'products')
+      expect(fs.existsSync(path.join(dir, 'products.schema.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'products.service.ts'))).toBe(true)
+      expect(fs.existsSync(path.join(dir, 'products.route.ts'))).toBe(true)
+
+      const routeContent = fs.readFileSync(
+        path.join(dir, 'products.route.ts'),
+        'utf8'
+      )
+      expect(routeContent).toContain('./products.service')
+      expect(routeContent).toContain('./products.schema')
     })
   })
 
@@ -268,6 +284,45 @@ describe('CLI Commands', () => {
         await devCommand({ _disableWatch: true })
       } catch (err: unknown) {
         if ((err as Error).message !== 'ProcessExited: 1') throw err
+      }
+    })
+  })
+
+  describe('routesCommand', () => {
+    it('fails if entry file does not exist', async () => {
+      const { routesCommand } = await import('../src/cli/routes')
+      try {
+        await routesCommand(tmpDir, { entry: 'non-existent.ts' })
+      } catch (err: unknown) {
+        expect((err as Error).message).toBe('ProcessExited: 1')
+      }
+    })
+  })
+
+  describe('doctorCommand', () => {
+    it('runs diagnostics report without crashing', async () => {
+      const { doctorCommand } = await import('../src/cli/commands/doctor')
+      writeTempFile(
+        tmpDir,
+        'package.json',
+        JSON.stringify({ name: 'test-app' })
+      )
+      writeTempFile(
+        tmpDir,
+        'tsconfig.json',
+        JSON.stringify({ compilerOptions: { strict: true } })
+      )
+      writeTempFile(tmpDir, 'src/http/server.ts', 'export default {}')
+
+      try {
+        await doctorCommand(tmpDir)
+      } catch (err: unknown) {
+        if (
+          (err as Error).message !== 'ProcessExited: 0' &&
+          (err as Error).message !== 'ProcessExited: 1'
+        ) {
+          throw err
+        }
       }
     })
   })

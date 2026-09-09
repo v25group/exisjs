@@ -15,44 +15,55 @@ export interface AliasMapping {
  */
 export function parseAliases(cwd: string): AliasMapping[] {
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
-  if (!fs.existsSync(tsconfigPath)) return []
+  const defaultSrcDir = path.join(cwd, 'src')
 
   let tsconfig: any
-  try {
-    // Strip comments from tsconfig (JSON with comments)
-    const raw = fs.readFileSync(tsconfigPath, 'utf-8')
-    const tokenizer = /"([^"\\]|\\.)*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g
-    const stripped = raw.replace(tokenizer, (match, stringContent, comment) => {
-      if (comment) return ''
-      return match
-    })
-    tsconfig = JSON.parse(stripped)
-  } catch {
-    return []
+  if (fs.existsSync(tsconfigPath)) {
+    try {
+      // Strip comments from tsconfig (JSON with comments)
+      const raw = fs.readFileSync(tsconfigPath, 'utf-8')
+      const tokenizer = /"([^"\\]|\\.)*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g
+      const stripped = raw.replace(
+        tokenizer,
+        (match, stringContent, comment) => {
+          if (comment) return ''
+          return match
+        }
+      )
+      tsconfig = JSON.parse(stripped)
+    } catch {
+      /* ignore */
+    }
   }
 
   const paths = tsconfig?.compilerOptions?.paths
-  if (!paths || typeof paths !== 'object') return []
-
   const baseUrl = tsconfig?.compilerOptions?.baseUrl || '.'
   const baseDir = path.resolve(cwd, baseUrl)
 
   const aliases: AliasMapping[] = []
 
-  for (const [aliasPattern, targets] of Object.entries(paths)) {
-    // We only handle wildcard patterns like "@/*" -> ["./src/*"]
-    if (!aliasPattern.endsWith('/*')) continue
-    const targetArray = targets as string[]
-    if (!targetArray?.length) continue
+  if (paths && typeof paths === 'object') {
+    for (const [aliasPattern, targets] of Object.entries(paths)) {
+      // We only handle wildcard patterns like "@/*" -> ["./src/*"]
+      if (!aliasPattern.endsWith('/*')) continue
+      const targetArray = targets as string[]
+      if (!targetArray?.length) continue
 
-    const firstTarget = targetArray[0]
-    if (!firstTarget.endsWith('/*')) continue
+      const firstTarget = targetArray[0]
+      if (!firstTarget.endsWith('/*')) continue
 
-    const prefix = aliasPattern.slice(0, -1) // "@/*" -> "@/"
-    const targetRelative = firstTarget.slice(0, -1) // "./src/*" -> "./src/"
-    const targetDir = path.resolve(baseDir, targetRelative)
+      const prefix = aliasPattern.slice(0, -1) // "@/*" -> "@/"
+      const targetRelative = firstTarget.slice(0, -1) // "./src/*" -> "./src/"
+      const targetDir = path.resolve(baseDir, targetRelative)
 
-    aliases.push({ prefix, targetDir })
+      aliases.push({ prefix, targetDir })
+    }
+  }
+
+  // Automatic first-party default: '@/' -> '<cwd>/src/' if not explicitly overridden
+  const hasAtAlias = aliases.some((a) => a.prefix === '@/')
+  if (!hasAtAlias && fs.existsSync(defaultSrcDir)) {
+    aliases.push({ prefix: '@/', targetDir: defaultSrcDir })
   }
 
   return aliases

@@ -15,11 +15,11 @@ ExisJS natively supports both a **Functional Paradigm** and a **Class-Based OOP 
 
 ExisJS uses **folder-based file-system routing** instead of programmatic route declaration in a single entry file.
 
-For a folder to become an accessible API endpoint, it must contain a `route.ts` file that exports a route definition. 
+For a folder to become an accessible API endpoint, it must contain a `route.ts` or `<feature>.route.ts` (e.g. `user.route.ts`) file that exports a route definition. 
 
 In addition to `route.ts`, the ExisJS router utilizes two other special gatekeeper files:
 - **`server.ts`**: Placed at the root of your `http` directory, it is the entry point that boots your application, registers global plugins, and connects to databases.
-- **`boundary.ts`**: Can be placed in any folder. It acts as a gatekeeper and request pipeline, automatically configuring middleware, CORS, headers, and dependencies for *all* routes within its directory and subdirectories.
+- **`boundary.ts`** (or `*.boundary.ts`): Can be placed in any folder. It acts as a gatekeeper and request pipeline, automatically configuring middleware, CORS, headers, and dependencies for *all* routes within its directory and subdirectories.
 
 ### Routing Conventions
 

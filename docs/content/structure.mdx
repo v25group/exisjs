@@ -60,12 +60,18 @@ my-backend/
 A file's name declares its role. Functional vs. class-based (OOP) only changes
 _syntax_, never _responsibility_.
 
-| File          | Role                                                                                                 | Never contains                   |
-| ------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------- |
-| `route.ts`    | Binds a URL + method to a handler.                                                                   | Business logic, validation logic |
-| `schema.ts`   | `tex` validation schemas, imported by `route.ts`. Mandatory for every `route.ts` that accepts input. | Handlers, routing                |
-| `service.ts`  | Business logic and data access. DI-injectable.                                                       | Routing, response shaping        |
-| `boundary.ts` | Folder-scoped config + request pipeline for everything in this folder and below.                     | —                                |
+ExisJS supports two naming conventions seamlessly:
+1. **Standard Flat Names** (default): `route.ts`, `schema.ts`, `service.ts`, `boundary.ts`.
+2. **Feature-Prefixed Named Files**: `<name>.route.ts`, `<name>.schema.ts`, `<name>.service.ts`, `<name>.boundary.ts` (e.g., `user.route.ts`, `user.schema.ts`, `user.service.ts`).
+
+Both styles are automatically detected by the route scanner, CLI manifest generator, and development watcher with 100% parity.
+
+| File Pattern | Role | Never contains |
+| :--- | :--- | :--- |
+| `route.ts` / `*.route.ts` | Binds a URL + method to a handler. | Business logic, validation logic |
+| `schema.ts` / `*.schema.ts` | `tex` validation schemas, imported by route files. Mandatory for every route accepting input. | Handlers, routing |
+| `service.ts` / `*.service.ts` | Business logic and data access. DI-injectable. | Routing, response shaping |
+| `boundary.ts` / `*.boundary.ts` | Folder-scoped config + request pipeline for everything in this folder and below. | — |
 
 ---
 

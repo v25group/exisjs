@@ -1,6 +1,7 @@
 export * from './router/types'
 export * from './config/types'
 export * from './plugin/types'
+export * from './server/sse'
 
 // ─── Shared Server Types ────────────────────────────────────────────────────────
 

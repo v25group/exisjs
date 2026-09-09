@@ -7,6 +7,13 @@ import {
   maskString as rsMaskString,
 } from '@exisjs/rs'
 
+const safeString =
+  (fn: (s: string) => string) =>
+  (val: any): any => {
+    if (val === null || val === undefined) return val
+    return typeof val === 'string' ? fn(val) : val
+  }
+
 /**
  * ExisJS Sanitization Engine
  *
@@ -43,31 +50,34 @@ export const sanitize = {
 
   // ─── Javascript Utilities ────────────────────────────────────────────────
 
-  trim: (val: string): string => val.trim(),
+  trim: safeString((val) => val.trim()),
 
-  toLowerCase: (val: string): string => val.toLowerCase(),
+  toLowerCase: safeString((val) => val.toLowerCase()),
 
-  toUpperCase: (val: string): string => val.toUpperCase(),
+  toUpperCase: safeString((val) => val.toUpperCase()),
 
-  collapseWhitespace: (val: string): string => val.replace(/\s+/g, ' '),
+  collapseWhitespace: safeString((val) => val.replace(/\s+/g, ' ')),
 
-  normalizeUnicode: (val: string): string => val.normalize('NFC'),
+  normalizeUnicode: safeString((val) => val.normalize('NFC')),
 
-  slugify: (val: string): string =>
+  slugify: safeString((val) =>
     val
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, ''),
+      .replace(/(^-|-$)/g, '')
+  ),
 
   truncate:
     (length: number) =>
-    (val: string): string =>
-      val.length > length ? val.substring(0, length) : val,
+    (val: any): any => {
+      if (val === null || val === undefined || typeof val !== 'string')
+        return val
+      return val.length > length ? val.substring(0, length) : val
+    },
 
-  removeNonAlphanumeric: (val: string): string =>
-    val.replace(/[^a-zA-Z0-9]/g, ''),
+  removeNonAlphanumeric: safeString((val) => val.replace(/[^a-zA-Z0-9]/g, '')),
 
-  normalizeLineEndings: (val: string): string => val.replace(/\r\n/g, '\n'),
+  normalizeLineEndings: safeString((val) => val.replace(/\r\n/g, '\n')),
 
   // ─── Object/Array Sanitizers ───────────────────────────────────────────
 

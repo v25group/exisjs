@@ -5,6 +5,7 @@ import { error, c } from '../utils'
 import { getFormattedTime } from '../../utils/time'
 import { generateManifest, generateExisEnv } from '../manifest.js'
 import { resolvePathAliases } from '../resolve-aliases.js'
+import { loadEnv } from '../../config/env.js'
 
 interface BuildOptions {
   outDir?: string
@@ -24,6 +25,9 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   })
 
   const cwd = process.cwd()
+
+  // Load .env files so process.env is populated during build-time route validation
+  loadEnv(cwd)
   const outDir = options.outDir ?? '.exis/server'
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
 

@@ -22,10 +22,8 @@ import {
   commonAuthGuardTemplate,
   dbConnectionTemplate,
   exampleJobTemplate,
-  userDtoTemplate,
-  userEntityTemplate,
+  userSchemaTemplate,
   userServiceTemplate,
-  userBoundaryTemplate,
   rootBoundaryTemplate,
   userRouteTemplate,
   userTestTemplate,
@@ -289,27 +287,21 @@ function writeTemplates(
   write(dir, `${baseDir}/route.${ext}`, rootRouteTemplate(paradigm))
   write(dir, `${baseDir}/health/route.${ext}`, healthRouteTemplate(paradigm))
 
-  // Users Feature Module
+  // Users Feature Module (flat convention: route, schema, service)
   write(
     dir,
     `${baseDir}/users/route.${ext}`,
     userRouteTemplate(paradigm, useTypeScript)
   )
-  write(dir, `${baseDir}/users/boundary.${ext}`, userBoundaryTemplate(paradigm))
   write(
     dir,
-    `${baseDir}/users/user.service.${ext}`,
+    `${baseDir}/users/schema.${ext}`,
+    userSchemaTemplate(useTypeScript)
+  )
+  write(
+    dir,
+    `${baseDir}/users/service.${ext}`,
     userServiceTemplate(paradigm, useTypeScript)
-  )
-  write(
-    dir,
-    `${baseDir}/users/dto/create-user.dto.${ext}`,
-    userDtoTemplate(useTypeScript)
-  )
-  write(
-    dir,
-    `${baseDir}/users/entities/user.entity.${ext}`,
-    userEntityTemplate(useTypeScript)
   )
   write(dir, `tests/users.e2e-spec.${ext}`, userTestTemplate(useTypeScript))
 

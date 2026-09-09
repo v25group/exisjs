@@ -33,3 +33,22 @@ export function signJwt(
 ): string
 export function verifyJwt(token: string, secrets: string[]): any
 export function generateEtag(content: Buffer): string
+export function fastJsonStringify(data: any): string
+export function fastJsonStringifyBuffer(data: any): Buffer
+export function gzipCompress(
+  data: Buffer,
+  level?: number | undefined | null
+): Buffer
+export function deflateCompress(
+  data: Buffer,
+  level?: number | undefined | null
+): Buffer
+export function brotliCompress(
+  data: Buffer,
+  quality?: number | undefined | null,
+  lgwin?: number | undefined | null
+): Buffer
+export function compressBest(
+  data: Buffer,
+  acceptEncoding: string
+): Buffer | null

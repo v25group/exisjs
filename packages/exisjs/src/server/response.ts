@@ -3,16 +3,34 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { CookieOptions, Request as IRequest } from '../types'
 import { logger } from '../logger/index'
+import { SSEStream, type SSEOptions } from './sse'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const contentDisposition = require('content-disposition')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mime = require('mime-types')
 
-import { generateEtag } from '@exisjs/rs'
+import { generateEtag, fastJsonStringifyBuffer } from '@exisjs/rs'
 
 function generateETag(content: Buffer): string {
   return generateEtag(content)
+}
+
+function nativeStringify(data: unknown): Buffer | string {
+  if (data === null || data === undefined) {
+    return 'null'
+  }
+  // If native rust serialization is available, use it
+  if (typeof fastJsonStringifyBuffer === 'function') {
+    // Validate object can be serialized without throwing V8 check failure on circularity
+    const str = JSON.stringify(data)
+    if (str.length > 512) {
+      // For larger payloads, Rust serde serialization into Buffer gives zero V8 GC overhead
+      return fastJsonStringifyBuffer(data)
+    }
+    return str
+  }
+  return JSON.stringify(data)
 }
 
 export class ExisResponse<TResponse = any> {
@@ -249,10 +267,10 @@ export class ExisResponse<TResponse = any> {
   json(data: unknown extends TResponse ? any : TResponse): void {
     if (this.raw.headersSent) return
 
-    let str: string
+    let payload: Buffer | string
     try {
       const useSerializer = this._serializer && this.statusCode < 400
-      str = useSerializer ? this._serializer!(data) : JSON.stringify(data)
+      payload = useSerializer ? this._serializer!(data) : nativeStringify(data)
     } catch (err) {
       if (this.req && this.req.log) {
         this.req.log.error({ err }, '[ExisJS] Serialization error')
@@ -270,7 +288,9 @@ export class ExisResponse<TResponse = any> {
     }
 
     if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
-      const buf = Buffer.from(str, 'utf8')
+      const buf = Buffer.isBuffer(payload)
+        ? payload
+        : Buffer.from(payload, 'utf8')
       this.raw.setHeader('ETag', generateETag(buf))
     }
 
@@ -284,7 +304,7 @@ export class ExisResponse<TResponse = any> {
       return
     }
 
-    this.end(str)
+    this.end(payload)
   }
 
   /**
@@ -332,6 +352,104 @@ export class ExisResponse<TResponse = any> {
       this.setHeader('Content-Type', 'application/octet-stream')
     }
     readable.pipe(this.raw as unknown as NodeJS.WritableStream)
+  }
+
+  /**
+   * Initialize a Server-Sent Events (SSE) stream for real-time and AI streaming.
+   *
+   * Automatically sets standard SSE headers:
+   * - `Content-Type: text/event-stream; charset=utf-8`
+   * - `Cache-Control: no-cache, no-transform`
+   * - `Connection: keep-alive`
+   * - `X-Accel-Buffering: no` (disables Nginx proxy buffering)
+   *
+   * @param options Optional configuration (heartbeat interval, custom headers)
+   * @param handler Optional callback function receiving the active `SSEStream`
+   * @returns Active `SSEStream` instance
+   *
+   * @example
+   * // Using callback handler:
+   * res.sse(async (sse) => {
+   *   sse.send({ event: 'message', data: 'hello' })
+   *   await sse.pipeFrom(openaiStream)
+   *   sse.close()
+   * })
+   *
+   * // Or assigning to variable:
+   * const sse = res.sse()
+   * sse.send({ event: 'connected', data: { time: Date.now() } })
+   */
+  sse(
+    optionsOrHandler?: SSEOptions | ((sse: SSEStream) => void | Promise<void>),
+    maybeHandler?: (sse: SSEStream) => void | Promise<void>
+  ): SSEStream {
+    let options: SSEOptions = {}
+    let handler: ((sse: SSEStream) => void | Promise<void>) | undefined
+
+    if (typeof optionsOrHandler === 'function') {
+      handler = optionsOrHandler
+    } else if (
+      typeof optionsOrHandler === 'object' &&
+      optionsOrHandler !== null
+    ) {
+      options = optionsOrHandler
+      if (typeof maybeHandler === 'function') {
+        handler = maybeHandler
+      }
+    }
+
+    if (!this.raw.headersSent) {
+      this.statusCode = 200
+      this.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+      this.setHeader('Cache-Control', 'no-cache, no-transform')
+      this.setHeader('Connection', 'keep-alive')
+      this.setHeader('X-Accel-Buffering', 'no')
+
+      if (options.headers) {
+        for (const [key, value] of Object.entries(options.headers)) {
+          this.setHeader(key, value)
+        }
+      }
+
+      // Flush headers immediately
+      if (typeof this.raw.flushHeaders === 'function') {
+        this.raw.flushHeaders()
+      }
+    }
+
+    const stream = new SSEStream(this.raw, options, this.req?.raw)
+
+    if (handler) {
+      try {
+        const res = handler(stream)
+        if (res instanceof Promise) {
+          res.catch((err) => {
+            if (this.req && this.req.log) {
+              this.req.log.error(
+                { err },
+                '[ExisJS] Error in SSE stream handler'
+              )
+            } else {
+              logger.error({ err }, '[ExisJS] Error in SSE stream handler')
+            }
+            if (!stream.isClosed) {
+              stream.close()
+            }
+          })
+        }
+      } catch (err) {
+        if (this.req && this.req.log) {
+          this.req.log.error({ err }, '[ExisJS] Error in SSE stream handler')
+        } else {
+          logger.error({ err }, '[ExisJS] Error in SSE stream handler')
+        }
+        if (!stream.isClosed) {
+          stream.close()
+        }
+      }
+    }
+
+    return stream
   }
 
   /**

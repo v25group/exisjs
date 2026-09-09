@@ -132,11 +132,42 @@ export class TestRequest {
     }
 
     if (this._expectedBody !== undefined) {
-      // Very basic deep equality check for testing
-      const expectedStr = JSON.stringify(this._expectedBody)
-      const actualStr = JSON.stringify(res.body)
-      if (expectedStr !== actualStr) {
-        throw new Error(`Expected body ${expectedStr}, got ${actualStr}`)
+      if (
+        typeof this._expectedBody === 'object' &&
+        this._expectedBody !== null &&
+        typeof res.body === 'object' &&
+        res.body !== null
+      ) {
+        // Semantic object comparison that is key-order independent
+        const isDeepEqual = (a: any, b: any): boolean => {
+          if (a === b) return true
+          if (
+            typeof a !== 'object' ||
+            a === null ||
+            typeof b !== 'object' ||
+            b === null
+          )
+            return false
+          const keysA = Object.keys(a)
+          const keysB = Object.keys(b)
+          if (keysA.length !== keysB.length) return false
+          for (const key of keysA) {
+            if (!keysB.includes(key) || !isDeepEqual(a[key], b[key]))
+              return false
+          }
+          return true
+        }
+        if (!isDeepEqual(this._expectedBody, res.body)) {
+          throw new Error(
+            `Expected body ${JSON.stringify(this._expectedBody)}, got ${JSON.stringify(res.body)}`
+          )
+        }
+      } else {
+        const expectedStr = JSON.stringify(this._expectedBody)
+        const actualStr = JSON.stringify(res.body)
+        if (expectedStr !== actualStr) {
+          throw new Error(`Expected body ${expectedStr}, got ${actualStr}`)
+        }
       }
     }
   }

@@ -65,4 +65,52 @@ test('Sanitization Engine Tests', async (t) => {
       })
     }, /Potential SQL Injection/)
   })
+
+  await t.test(
+    'Safe String Utilities handle null and undefined gracefully',
+    () => {
+      assert.strictEqual(sanitize.trim(null as any), null)
+      assert.strictEqual(sanitize.trim(undefined as any), undefined)
+      assert.strictEqual(sanitize.trim(123 as any), 123)
+      assert.strictEqual(sanitize.trim('  hello  '), 'hello')
+
+      assert.strictEqual(sanitize.toLowerCase(null as any), null)
+      assert.strictEqual(sanitize.toLowerCase(undefined as any), undefined)
+      assert.strictEqual(sanitize.toLowerCase('HELLO'), 'hello')
+
+      assert.strictEqual(sanitize.toUpperCase(null as any), null)
+      assert.strictEqual(sanitize.collapseWhitespace(null as any), null)
+      assert.strictEqual(sanitize.normalizeUnicode(null as any), null)
+      assert.strictEqual(sanitize.slugify(null as any), null)
+      assert.strictEqual(sanitize.truncate(5)(null as any), null)
+      assert.strictEqual(sanitize.removeNonAlphanumeric(null as any), null)
+      assert.strictEqual(sanitize.normalizeLineEndings(null as any), null)
+    }
+  )
+
+  await t.test(
+    'Pre-validation sanitizers skip null values on nullable fields',
+    () => {
+      const Schema = tex.object({
+        name: tex.string().nullable().sanitize(sanitize.trim),
+        bio: tex.string().optional().sanitize(sanitize.toLowerCase),
+      })
+
+      const resultNull = Schema.parse({
+        name: null,
+        bio: undefined,
+      })
+
+      assert.strictEqual(resultNull.name, null)
+      assert.strictEqual(resultNull.bio, undefined)
+
+      const resultVal = Schema.parse({
+        name: '  Alice  ',
+        bio: 'SOMETHING',
+      })
+
+      assert.strictEqual(resultVal.name, 'Alice')
+      assert.strictEqual(resultVal.bio, 'something')
+    }
+  )
 })

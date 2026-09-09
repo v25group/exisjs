@@ -11,9 +11,13 @@ export function defineConfig(config: ExisConfig): ExisConfig {
 
 // ─── Default Config ───────────────────────────────────────────────────────────
 
-export type ResolvedConfig = Omit<Required<ExisConfig>, 'ssl' | 'queue'> & {
+export type ResolvedConfig = Omit<
+  Required<ExisConfig>,
+  'ssl' | 'queue' | 'transformResponse'
+> & {
   ssl?: ExisConfig['ssl']
   queue?: ExisConfig['queue']
+  transformResponse?: ExisConfig['transformResponse']
 }
 
 export const defaultConfig: ResolvedConfig = {
@@ -55,6 +59,7 @@ export const defaultConfig: ResolvedConfig = {
   cluster: { workers: 1 },
   debugRouting: false,
   asyncContext: false,
+  transformResponse: false,
 }
 
 // ─── Deep merge ───────────────────────────────────────────────────────────────

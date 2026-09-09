@@ -9,6 +9,7 @@ import type {
   Response,
 } from '../types'
 import { RadixTree } from './radix'
+import { SSEStream } from '../server/sse'
 let fastJsonStringify: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -554,7 +555,12 @@ export function runHandlers(
     if (result instanceof Promise) {
       result.then(
         (data: unknown) => {
-          if (data !== undefined && data !== res && !res.headersSent) {
+          if (
+            data !== undefined &&
+            data !== res &&
+            !(data instanceof SSEStream) &&
+            !res.headersSent
+          ) {
             res.json(data)
           }
         },
@@ -562,7 +568,12 @@ export function runHandlers(
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
-    } else if (result !== undefined && result !== res && !res.headersSent) {
+    } else if (
+      result !== undefined &&
+      result !== res &&
+      !(result instanceof SSEStream) &&
+      !res.headersSent
+    ) {
       res.json(result)
     }
   }

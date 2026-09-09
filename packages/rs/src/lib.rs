@@ -74,8 +74,22 @@ impl TexValidator {
             
             let mut val = obj.get(key).cloned();
 
-            if val.is_none() || val.as_ref().unwrap().is_null() {
+            if val.is_none() {
                 if let Some(ref def) = field.default_val {
+                    val = Some(Value::String(def.clone()));
+                } else if !field.is_optional {
+                    return Err(Error::new(
+                        Status::InvalidArg,
+                        format!("Missing required field: {}", field_path),
+                    ));
+                } else {
+                    continue;
+                }
+            } else if val.as_ref().unwrap().is_null() {
+                if field.is_nullable {
+                    result.insert(key.clone(), Value::Null);
+                    continue;
+                } else if let Some(ref def) = field.default_val {
                     val = Some(Value::String(def.clone()));
                 } else if !field.is_optional {
                     return Err(Error::new(

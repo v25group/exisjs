@@ -30,12 +30,12 @@ export class TexType<IsOpt extends boolean = false> {
     return this
   }
 
-  nullable(): this & { readonly __isNullable: true } {
+  nullable(): Omit<this, '__isNullable'> & { readonly __isNullable: true } {
     this._raw += ' | nullable'
     return this as any
   }
 
-  optional(): this & { readonly __isOptional: true } {
+  optional(): Omit<this, '__isOptional'> & { readonly __isOptional: true } {
     this._raw += ' | optional'
     return this as any
   }

@@ -61,18 +61,33 @@ export function compression(): Handler {
       // Remove Content-Length since compressed size will differ
       res.raw.removeHeader('Content-Length')
 
-      // Compress synchronously for small-to-medium payloads to avoid extra async overhead
+      // Compress using hardware-accelerated Rust engine (@exisjs/rs) if available, with graceful zlib fallback
       let compressed: Buffer
       try {
         if (selectedEncoding === 'br') {
-          compressed = zlib.brotliCompressSync(buf)
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const rs = require('@exisjs/rs')
+          compressed =
+            typeof rs.brotliCompress === 'function'
+              ? rs.brotliCompress(buf)
+              : zlib.brotliCompressSync(buf)
         } else if (selectedEncoding === 'gzip') {
-          compressed = zlib.gzipSync(buf)
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const rs = require('@exisjs/rs')
+          compressed =
+            typeof rs.gzipCompress === 'function'
+              ? rs.gzipCompress(buf)
+              : zlib.gzipSync(buf)
         } else {
-          compressed = zlib.deflateSync(buf)
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const rs = require('@exisjs/rs')
+          compressed =
+            typeof rs.deflateCompress === 'function'
+              ? rs.deflateCompress(buf)
+              : zlib.deflateSync(buf)
         }
       } catch {
-        // If compression fails, send uncompressed
+        // If native or zlib compression fails, send uncompressed
         originalEnd(data)
         return
       }

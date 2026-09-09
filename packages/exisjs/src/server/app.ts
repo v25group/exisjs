@@ -17,6 +17,7 @@ import { createLogger, resolveLoggerConfig } from '../utils/logger'
 import { getLoggerInstance, isLoggerConfigured } from '../logger'
 import { Container } from '../di/container'
 import type { ProviderToken, ProviderDefinition } from '../di/container'
+import { intercept } from '../middleware/interceptor'
 
 import type {
   Handler,
@@ -484,6 +485,27 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
     if (corsOpt !== false) {
       this.globalMiddleware.push(cors(corsOpt === true ? {} : corsOpt))
+    }
+
+    if (this.options.transformResponse) {
+      const transformer =
+        typeof this.options.transformResponse === 'function'
+          ? this.options.transformResponse
+          : (data: any, _req: any, res: any) => {
+              // If already wrapped or is an error response, return as is
+              if (
+                data &&
+                typeof data === 'object' &&
+                ('success' in data || 'error' in data)
+              ) {
+                return data
+              }
+              const isSuccess = (res.statusCode || 200) < 400
+              return isSuccess
+                ? { success: true, data, timestamp: new Date().toISOString() }
+                : data
+            }
+      this.globalMiddleware.push(intercept(transformer))
     }
 
     if (this.options.plugins) {

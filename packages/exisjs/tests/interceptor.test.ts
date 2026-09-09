@@ -58,4 +58,14 @@ describe('Response Interceptor', () => {
     const res = await app.inject({ url: '/' })
     expect(res.body).toEqual({ intercepted: { test: 123 } })
   })
+
+  it('should support global transformResponse: true envelope formatting', async () => {
+    const app = new App({ transformResponse: true })
+    app.get('/user', () => ({ id: 1, name: 'Alice' }))
+
+    const res = await app.inject({ url: '/user' })
+    expect(res.body.success).toBe(true)
+    expect(res.body.data).toEqual({ id: 1, name: 'Alice' })
+    expect(typeof res.body.timestamp).toBe('string')
+  })
 })

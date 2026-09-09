@@ -16,6 +16,19 @@ pub fn strip_prototype(mut data: serde_json::Value) -> Result<serde_json::Value>
     Ok(data)
 }
 
+#[napi]
+pub fn fast_json_stringify(data: serde_json::Value) -> Result<String> {
+    serde_json::to_string(&data)
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Serialization failed: {}", e)))
+}
+
+#[napi]
+pub fn fast_json_stringify_buffer(data: serde_json::Value) -> Result<Buffer> {
+    let bytes = serde_json::to_vec(&data)
+        .map_err(|e| Error::new(Status::InvalidArg, format!("Serialization failed: {}", e)))?;
+    Ok(Buffer::from(bytes))
+}
+
 fn strip_prototype_impl(val: &mut serde_json::Value) {
     match val {
         serde_json::Value::Object(map) => {

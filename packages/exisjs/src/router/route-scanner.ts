@@ -182,14 +182,21 @@ export class RouteScanner {
       const routes = await this.scanDirectory(appDir)
 
       for (const { filePath, routePath } of routes) {
-        if (
+        const isBoundaryFile =
           filePath.endsWith('boundary.ts') ||
-          filePath.endsWith('boundary.js')
-        ) {
+          filePath.endsWith('boundary.js') ||
+          /\.boundary\.[jt]s$/.test(filePath)
+
+        if (isBoundaryFile) {
           this.hasBoundaries = true
         }
 
-        if (filePath.endsWith('route.ts') || filePath.endsWith('route.js')) {
+        const isRouteFile =
+          filePath.endsWith('route.ts') ||
+          filePath.endsWith('route.js') ||
+          /\.route\.[jt]s$/.test(filePath)
+
+        if (isRouteFile) {
           const normalized = path.resolve(filePath)
           this.routeMap.set(normalized, routePath)
 
@@ -378,6 +385,16 @@ export class RouteScanner {
           targetBoundary = boundaryPathTs
         else if (await fs.stat(boundaryPathJs).catch(() => null))
           targetBoundary = boundaryPathJs
+        else {
+          // Check for named boundaries like user.boundary.ts
+          const dirFiles = await fs.readdir(dir).catch(() => [])
+          const namedBoundary = dirFiles.find((f: string) =>
+            /\.boundary\.[jt]s$/.test(f)
+          )
+          if (namedBoundary) {
+            targetBoundary = path.join(dir, namedBoundary)
+          }
+        }
 
         if (targetBoundary) {
           activeBoundaries.push(targetBoundary)

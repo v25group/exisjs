@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.2',
+      exisjs: '^0.7.3',
     },
   }
 
@@ -463,29 +463,23 @@ export default {
 `
 }
 
-export function userDtoTemplate(useTypeScript: boolean): string {
+export function userSchemaTemplate(useTypeScript: boolean): string {
   const importSchema = useTypeScript
     ? "import type { ResolveSchema } from 'exisjs/validator'\n"
     : ''
   return `${importSchema}import { tex } from 'exisjs/validator'
 
 export const createUserSchema = tex.object({
-  name: tex.string(),
-  email: tex.string().email(),
-  password: tex.string().min(8),
+  name: tex.string({ min: 1 }),
+  email: tex.email(),
+  password: tex.string({ min: 8 }),
+})
+
+export const userParamsSchema = tex.object({
+  id: tex.string(),
 })
 
 ${useTypeScript ? 'export type CreateUserDto = ResolveSchema<typeof createUserSchema>' : ''}
-`
-}
-
-export function userEntityTemplate(useTypeScript: boolean): string {
-  const typeDef = useTypeScript
-    ? 'export interface User {\n  id: number;\n  name: string;\n  email: string;\n  createdAt: Date;\n}\n\n'
-    : ''
-  return `${typeDef}// Example Database Entity Model
-// In a real app, you would use ExisJS Database ORM here.
-export const usersTableName = 'users';
 `
 }
 
@@ -495,17 +489,16 @@ export function userServiceTemplate(
 ): string {
   const isOop = paradigm === 'oop'
   const tsType = useTypeScript ? ': CreateUserDto' : ''
+  const returnType = useTypeScript ? ': User' : ''
 
   if (isOop) {
     return `import { Injectable } from 'exisjs/decorators'
-${useTypeScript ? "import type { CreateUserDto } from './dto/create-user.dto'\nimport type { User } from './entities/user.entity'" : ''}
-
-@Injectable()
+${useTypeScript ? "import type { CreateUserDto } from './schema'\n\nexport interface User {\n  id: number\n  name: string\n  email: string\n  createdAt: Date\n}\n" : ''}
+@Injectable({ scope: 'singleton' })
 export class UserService {
-  // In a real app, inject the Database service here.
   private users${useTypeScript ? ': User[]' : ''} = []
 
-  async create(userDto${tsType}) {
+  async create(userDto${tsType})${returnType} {
     const newUser = { 
       id: Date.now(), 
       createdAt: new Date(),
@@ -517,29 +510,34 @@ export class UserService {
 
   async findAll() {
     return this.users
+  }
+
+  async findById(id: string) {
+    return this.users.find((u) => String(u.id) === id) || null
   }
 }
 `
   }
 
-  return `${useTypeScript ? "import type { CreateUserDto } from './dto/create-user.dto'\nimport type { User } from './entities/user.entity'\n" : ''}
-// Functional Service Example
-export class UserService {
-  private users${useTypeScript ? ': User[]' : ''} = []
+  return `${useTypeScript ? "import type { CreateUserDto } from './schema'\n\nexport interface User {\n  id: number\n  name: string\n  email: string\n  createdAt: Date\n}\n" : ''}// In-memory user store
+const users${useTypeScript ? ': User[]' : ''} = []
 
-  async create(userDto${tsType}) {
-    const newUser = { 
-      id: Date.now(), 
-      createdAt: new Date(),
-      ...userDto 
-    }
-    this.users.push(newUser)
-    return newUser
+export async function createUser(userDto${tsType})${returnType} {
+  const newUser = { 
+    id: Date.now(), 
+    createdAt: new Date(),
+    ...userDto 
   }
+  users.push(newUser)
+  return newUser
+}
 
-  async findAll() {
-    return this.users
-  }
+export async function getUsers() {
+  return users
+}
+
+export async function getUserById(id: string) {
+  return users.find((u) => String(u.id) === id) || null
 }
 `
 }
@@ -587,55 +585,32 @@ export default async function (ctx: BoundaryContext, next: Next) {
 `
 }
 
-export function userBoundaryTemplate(paradigm: string): string {
-  if (paradigm === 'oop') {
-    return `import { Boundary } from 'exisjs/decorators'
-import { UserService } from './user.service'
-
-// The Boundary scopes config + DI providers to all routes in this folder.
-@Boundary({
-  providers: [
-    ['UserService', { useClass: UserService }]
-  ]
-})
-export default class UsersBoundary {}
-`
-  }
-
-  return `import { defineBoundary } from 'exisjs/router'
-import { UserService } from './user.service'
-
-export const config = defineBoundary({
-  providers: [
-    ['UserService', { useClass: UserService }]
-  ]
-})
-`
-}
-
 export function userRouteTemplate(
   paradigm: string,
   useTypeScript: boolean
 ): string {
-  const tsType = useTypeScript ? ': any' : ''
+  const tsType = useTypeScript ? ': CreateUserDto' : ''
 
   if (paradigm === 'oop') {
-    return `import { Controller, Get, Post, Body, Inject } from 'exisjs/decorators'
-import { UserService } from './user.service'
-import { createUserSchema } from './dto/create-user.dto'
-
+    return `import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
+import { UserService } from './service'
+import { createUserSchema, userParamsSchema } from './schema'
+${useTypeScript ? "import type { CreateUserDto } from './schema'\n" : ''}
 @Controller()
 export default class UsersController {
-  constructor(
-    @Inject('UserService') private userService: UserService
-  ) {}
+  constructor(private readonly userService: UserService) {}
 
   @Get('/')
   async getUsers() {
     return this.userService.findAll()
   }
 
-  @Post('/', { body: createUserSchema })
+  @Get('/:id', userParamsSchema)
+  async getUserById(@Param('id') id: string) {
+    return this.userService.findById(id)
+  }
+
+  @Post('/', createUserSchema)
   async createUser(@Body() body${tsType}) {
     return this.userService.create(body)
   }
@@ -644,23 +619,27 @@ export default class UsersController {
   }
 
   return `import { controller, route } from 'exisjs/router'
-import { UserService } from './user.service'
-import { createUserSchema } from './dto/create-user.dto'
+import * as userService from './service'
+import { createUserSchema, userParamsSchema } from './schema'
 
 export default controller({
   getUsers: route.get('/', {
-    async handle(req) {
-      // In functional mode, we inject dependencies from the request context
-      const userService = req.inject('UserService')
-      return userService.findAll()
+    async handle() {
+      return userService.getUsers()
+    }
+  }),
+
+  getUserById: route.get('/:id', {
+    params: userParamsSchema,
+    async handle({ params }) {
+      return userService.getUserById(params.id)
     }
   }),
 
   createUser: route.post('/', {
     body: createUserSchema,
-    async handle(req) {
-      const userService = req.inject('UserService')
-      return userService.create(req.body)
+    async handle({ body }) {
+      return userService.createUser(body)
     }
   })
 })
@@ -668,20 +647,16 @@ export default controller({
 }
 
 export function userTestTemplate(_useTypeScript: boolean): string {
-  return `import { test, expect } from 'vitest'
-import { createTestApp } from 'exisjs/testing'
+  return `import { test, expect, createTestApp } from 'exisjs/testing'
 import config from '../exis.config'
 
 test('Users API', async () => {
-  const app = await createTestApp(config)
+  const app = createTestApp(config)
 
-  const res = await app.request('/users', {
-    method: 'GET'
-  })
+  const res = await app.get('/users')
 
   expect(res.status).toBe(200)
-  const body = await res.json()
-  expect(Array.isArray(body)).toBe(true)
+  expect(Array.isArray(res.body)).toBe(true)
 })
 `
 }

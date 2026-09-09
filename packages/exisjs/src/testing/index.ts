@@ -1,6 +1,6 @@
 export * from './mocks'
 export type { TestResponse, TestApp } from './client'
-export { TestRequest } from './client'
+export { TestRequest, createTestApp } from './client'
 
 import * as _nodeTest from 'node:test'
 import _assert from 'node:assert'

@@ -16,18 +16,23 @@ The following security middlewares are available from `exisjs/middleware` and ca
 - `helmet(options?)`: Sets 14+ secure HTTP headers (Strict-Transport-Security, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, and CSP).
 - `csrf(options)`: Enforces the Signed Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE) from CSRF attacks.
 - `hpp()`: Protects against HTTP Parameter Pollution attacks by ensuring array query parameters/form fields are safely handled.
+- `mongoSanitize()`: Strips MongoDB operator keys (keys starting with `$` or containing `.`) from `req.body`, `req.query`, and `req.params`.
 - `dbSanitize(options?)`: Protects against NoSQL query operator injection (`$where` and other malicious keys) before reaching database layers.
 - `timeout(ms)`: Automatically terminates requests that exceed the specified timeout limit, returning a 503 response.
 
+> [!TIP]
+> Security middlewares like `hpp()`, `mongoSanitize()`, and `dbSanitize()` automatically synchronize with the request body parser. If registered globally before route handlers, they safely await the body and sanitize it deterministically without runtime crashes.
+
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
-import { helmet, csrf, timeout, hpp } from 'exisjs/middleware'
+import { helmet, csrf, timeout, hpp, mongoSanitize } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
     app.use(helmet())
     app.use(timeout(10000))
     app.use(hpp())
+    app.use(mongoSanitize())
   }
 })
 ```

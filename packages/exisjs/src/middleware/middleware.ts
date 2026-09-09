@@ -27,73 +27,117 @@ export function cors(config: CorsConfig = {}): Handler {
     const reqOrigin = req.get('origin')
 
     // 1. Resolve Origin
-    let allowOrigin = ''
-    if (origin === '*') {
-      allowOrigin = '*'
-    } else if (typeof origin === 'string') {
-      allowOrigin = origin
-    } else if (reqOrigin) {
-      if (Array.isArray(origin)) {
-        allowOrigin = origin.some((o) =>
-          o instanceof RegExp ? o.test(reqOrigin) : o === reqOrigin
-        )
-          ? reqOrigin
-          : ''
-      } else if (origin instanceof RegExp) {
-        allowOrigin = origin.test(reqOrigin) ? reqOrigin : ''
-      } else if (typeof origin === 'function') {
-        allowOrigin = origin(reqOrigin) ? reqOrigin : ''
-      }
-    }
-
-    if (allowOrigin) {
-      res.set('Access-Control-Allow-Origin', allowOrigin)
-    }
-
-    // 2. Credentials
-    if (credentials) {
-      res.set('Access-Control-Allow-Credentials', 'true')
-    }
-
-    // 3. Exposed Headers
-    if (exposedHeaders && exposedHeaders.length > 0) {
-      res.set('Access-Control-Expose-Headers', exposedHeaders.join(', '))
-    }
-
-    // 4. Preflight (OPTIONS)
-    if (req.method === 'OPTIONS') {
-      res.set('Access-Control-Allow-Methods', methods.join(', '))
-
-      const reqHeaders = req.get('access-control-request-headers')
-      if (reqHeaders) {
-        res.set('Access-Control-Allow-Headers', reqHeaders)
-      } else if (allowedHeaders && allowedHeaders.length > 0) {
-        res.set('Access-Control-Allow-Headers', allowedHeaders.join(', '))
+    const applyOriginAndProceed = (allowOrigin: string) => {
+      if (allowOrigin) {
+        res.set('Access-Control-Allow-Origin', allowOrigin)
       }
 
-      if (maxAge) {
-        res.set('Access-Control-Max-Age', String(maxAge))
+      // 2. Credentials
+      if (credentials) {
+        res.set('Access-Control-Allow-Credentials', 'true')
       }
 
-      if (!allowOrigin && reqOrigin) {
-        if (req.log && typeof req.log.warn === 'function') {
-          req.log.warn(
-            { origin: reqOrigin },
-            `[CORS] Rejected preflight request from origin '${reqOrigin}' (not in allowed origins)`
-          )
+      // 3. Exposed Headers
+      if (exposedHeaders && exposedHeaders.length > 0) {
+        res.set('Access-Control-Expose-Headers', exposedHeaders.join(', '))
+      }
+
+      // 4. Preflight (OPTIONS)
+      if (req.method === 'OPTIONS') {
+        res.set('Access-Control-Allow-Methods', methods.join(', '))
+
+        const reqHeaders = req.get('access-control-request-headers')
+        if (reqHeaders) {
+          res.set('Access-Control-Allow-Headers', reqHeaders)
+        } else if (allowedHeaders && allowedHeaders.length > 0) {
+          res.set('Access-Control-Allow-Headers', allowedHeaders.join(', '))
         }
-      }
 
-      if (config.preflightContinue) {
-        next()
+        if (maxAge) {
+          res.set('Access-Control-Max-Age', String(maxAge))
+        }
+
+        if (!allowOrigin && reqOrigin) {
+          if (req.log && typeof req.log.warn === 'function') {
+            req.log.warn(
+              { origin: reqOrigin },
+              `[CORS] Rejected preflight request from origin '${reqOrigin}' (not in allowed origins)`
+            )
+          }
+        }
+
+        if (config.preflightContinue) {
+          next()
+          return
+        }
+
+        res.status(204).send('')
         return
       }
 
-      res.status(204).send('')
+      next()
+    }
+
+    if (origin === '*' || !origin) {
+      applyOriginAndProceed(origin === '*' ? '*' : '')
       return
     }
 
-    next()
+    if (typeof origin === 'string') {
+      applyOriginAndProceed(origin)
+      return
+    }
+
+    if (!reqOrigin) {
+      applyOriginAndProceed('')
+      return
+    }
+
+    if (Array.isArray(origin)) {
+      const matched = origin.some((o) =>
+        o instanceof RegExp ? o.test(reqOrigin) : o === reqOrigin
+      )
+      applyOriginAndProceed(matched ? reqOrigin : '')
+      return
+    }
+
+    if (origin instanceof RegExp) {
+      applyOriginAndProceed(origin.test(reqOrigin) ? reqOrigin : '')
+      return
+    }
+
+    if (typeof origin === 'function') {
+      // Check if function accepts a callback (origin, callback)
+      if (origin.length >= 2) {
+        try {
+          origin(reqOrigin, (err, allow) => {
+            if (err) return next(err)
+            applyOriginAndProceed(allow ? reqOrigin : '')
+          })
+        } catch (err) {
+          next(err as Error)
+        }
+        return
+      }
+
+      try {
+        const result = origin(reqOrigin)
+        if (result && typeof (result as any).then === 'function') {
+          ;(result as Promise<boolean>)
+            .then((allow) => applyOriginAndProceed(allow ? reqOrigin : ''))
+            .catch(next)
+          return
+        }
+        applyOriginAndProceed(result ? reqOrigin : '')
+        return
+      } catch (err) {
+        next(err as Error)
+        return
+      }
+    }
+
+    applyOriginAndProceed('')
+    return
   }
 }
 
@@ -218,7 +262,12 @@ export * from './pipe'
 
 export function serveStatic(
   root: string,
-  options: { maxAge?: number } = {}
+  options: {
+    maxAge?: number
+    etag?: boolean
+    brotli?: boolean
+    gzip?: boolean
+  } = {}
 ): Handler {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('node:fs')
@@ -259,8 +308,30 @@ export function serveStatic(
         return next()
       }
 
+      const acceptEncoding = (req.headers['accept-encoding'] as string) || ''
+
+      // Check for pre-compressed Brotli or Gzip static file if supported
+      let targetPath = filePath
+      let contentEncoding: string | null = null
+
+      if (
+        options.brotli !== false &&
+        acceptEncoding.includes('br') &&
+        fs.existsSync(filePath + '.br')
+      ) {
+        targetPath = filePath + '.br'
+        contentEncoding = 'br'
+      } else if (
+        options.gzip !== false &&
+        acceptEncoding.includes('gzip') &&
+        fs.existsSync(filePath + '.gz')
+      ) {
+        targetPath = filePath + '.gz'
+        contentEncoding = 'gzip'
+      }
+
       fs.stat(
-        filePath,
+        targetPath,
         (err: NodeJS.ErrnoException | null, stat: import('node:fs').Stats) => {
           if (err || !stat.isFile()) {
             return next()
@@ -272,8 +343,24 @@ export function serveStatic(
           res.set('Content-Type', mime)
           res.set('Content-Length', String(stat.size))
 
+          if (contentEncoding) {
+            res.set('Content-Encoding', contentEncoding)
+            res.set('Vary', 'Accept-Encoding')
+          }
+
           if (options.maxAge !== undefined) {
             res.set('Cache-Control', `public, max-age=${options.maxAge}`)
+          }
+
+          if (options.etag !== false) {
+            // Strong ETag based on mtime and size
+            const etag = `"${stat.size.toString(16)}-${stat.mtime.getTime().toString(16)}"`
+            res.set('ETag', etag)
+
+            if (req.headers['if-none-match'] === etag) {
+              res.status(304).send('')
+              return
+            }
           }
 
           if (req.method === 'HEAD') {
@@ -281,7 +368,7 @@ export function serveStatic(
             return
           }
 
-          const sendStream = fs.createReadStream(filePath)
+          const sendStream = fs.createReadStream(targetPath)
           const abortHandler = () => sendStream.destroy()
           req.raw.on('aborted', abortHandler)
           req.raw.on('close', abortHandler)

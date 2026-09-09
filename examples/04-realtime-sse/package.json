@@ -1,0 +1,21 @@
+{
+  "name": "04-realtime-sse",
+  "version": "0.7.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "test": "exisjs test",
+    "doctor": "exisjs doctor",
+    "routes": "exisjs routes"
+  },
+  "dependencies": {
+    "exisjs": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^5.9.3"
+  }
+}

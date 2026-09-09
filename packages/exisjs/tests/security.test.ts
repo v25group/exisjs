@@ -2,7 +2,12 @@ import { App } from '../src/server/app'
 import { createTestApp } from '../src/testing/client'
 import { describe, expect, it } from '../src/testing'
 import { rateLimit } from '../src/middleware/rate-limit'
-import { csrf, helmet } from '../src/middleware/security'
+import {
+  csrf,
+  helmet,
+  mongoSanitize,
+  dbSanitize,
+} from '../src/middleware/security'
 import type { Request, Response, NextFunction } from '../src/types'
 
 describe('Security Middlewares', () => {
@@ -201,6 +206,47 @@ describe('Security Middlewares', () => {
       expect(csp1).not.toContain('{nonce}')
       // Ensure nonce is uniquely generated per request
       expect(csp1).not.toBe(csp2)
+    })
+  })
+
+  describe('NoSQL Injection Protection (mongoSanitize)', () => {
+    it('does not crash when req.params or req.query are undefined or empty', () => {
+      const middleware = mongoSanitize()
+      const req: any = {
+        body: {
+          username: 'admin',
+          $where: 'malicious code',
+          nested: { $gt: 1, safe: 'yes' },
+        },
+        // params and query intentionally undefined
+      }
+      const res: any = {}
+      let nextCalled = false
+
+      middleware(req, res, () => {
+        nextCalled = true
+      })
+
+      expect(nextCalled).toBe(true)
+      expect(req.body).toEqual({ username: 'admin', nested: { safe: 'yes' } })
+    })
+
+    it('works safely with dbSanitize on undefined params and query', () => {
+      const middleware = dbSanitize({ mongo: true })
+      const req: any = {
+        body: { username: 'john', $gt: '' },
+        params: undefined,
+        query: undefined,
+      }
+      const res: any = {}
+      let nextCalled = false
+
+      middleware(req, res, () => {
+        nextCalled = true
+      })
+
+      expect(nextCalled).toBe(true)
+      expect(req.body).toEqual({ username: 'john' })
     })
   })
 })
