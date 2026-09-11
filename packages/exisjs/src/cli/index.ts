@@ -193,7 +193,7 @@ program
   .description('Generate new features')
   .argument(
     '<type>',
-    'Type to generate (resource|route|controller|service|schema|boundary|plugin|middleware|test)'
+    'Type to generate (resource|crud|route|controller|service|schema|model|boundary|plugin|middleware|test)'
   )
   .argument('[name]', 'Name of the feature')
   .option(
@@ -206,7 +206,8 @@ program
   )
   .action(async (type, name, options) => {
     const {
-      generateResource,
+      generateCrud,
+      generateModel,
       generateController,
       generateService,
       generateSchema,
@@ -221,7 +222,11 @@ program
 
     switch (type) {
       case 'resource':
-        await generateResource(name, cwd, options)
+      case 'crud':
+        await generateCrud(name, cwd, options)
+        break
+      case 'model':
+        await generateModel(name, cwd, options)
         break
       case 'route':
       case 'controller':
@@ -255,7 +260,7 @@ program
         break
       default:
         console.error(
-          'Unknown type. Supported: resource, route, controller, service, schema, boundary, plugin, middleware, test'
+          'Unknown type. Supported: resource, crud, route, controller, service, schema, model, boundary, plugin, middleware, test'
         )
     }
   })

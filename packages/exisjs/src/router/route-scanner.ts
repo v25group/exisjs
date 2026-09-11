@@ -942,6 +942,23 @@ export class RouteScanner {
         }
 
         try {
+          // Dynamic Route Timeout Override
+          const routeTimeoutVal =
+            rc.timeoutMs !== undefined ? rc.timeoutMs : rc.timeout
+          if (
+            routeTimeoutVal !== undefined &&
+            typeof req.setTimeout === 'function'
+          ) {
+            const ms =
+              typeof routeTimeoutVal === 'number'
+                ? routeTimeoutVal
+                : routeTimeoutVal?.ms
+            if (typeof ms === 'number') {
+              if (ms <= 0) req.clearTimeout?.()
+              else req.setTimeout(ms)
+            }
+          }
+
           // 0. Enforce Route Permissions (Role Authorization)
           if (rc.permissions && rc.permissions.length > 0) {
             if (!req.user) {
@@ -999,6 +1016,9 @@ export class RouteScanner {
             query: req.query,
             params: req.params,
             headers: req.headers,
+            file: (req as any).file,
+            files: (req as any).files,
+            fields: req.body,
             req,
             res,
             app: this.app,
@@ -1071,6 +1091,15 @@ export class RouteScanner {
       }
       if (rc.host) {
         schema.host = rc.host
+      }
+      if (rc.timeoutMs !== undefined) {
+        schema.timeoutMs = rc.timeoutMs
+      }
+      if (rc.timeout !== undefined) {
+        schema.timeout = rc.timeout
+      }
+      if (rc.upload !== undefined) {
+        schema.upload = rc.upload
       }
       const combinedFilters = [
         ...(config.filters

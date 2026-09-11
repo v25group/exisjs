@@ -78,9 +78,11 @@ export default controller({
 
 ### Options (`RouteConfig`)
 
-- `body`: A validation schema for the request body (e.g., using `v` or Zod).
-- `query`: A validation schema for the query string.
+- `body`: A validation schema for the request body (e.g., using `tex` or Zod).
+- `query`: A validation schema for the query string (e.g., `tex.pagination()`).
 - `params`: A validation schema for the URL path parameters.
+- `upload` (`string | RouteUploadOptions`): Declarative multipart upload configuration (e.g. `{ field: 'photo', maxBytes: 10 * 1024 * 1024, mimeTypes: [...] }`). Automatically mounts `fileUpload` middleware and populates `req.file` / `req.files`.
+- `timeout` (`number`): Per-route timeout override in milliseconds (e.g. `120000`). Overrides global timeout for this endpoint.
 - `response`: A validation schema to serialize/validate the outgoing response.
 - `middleware` (`Handler[]`): An array of middleware specific to this route.
 - `cors` (`boolean | CorsConfig`): Route-specific CORS overrides.

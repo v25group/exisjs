@@ -9,4 +9,10 @@ export type ResolveSchema<T> =
       ? TexResolveSchema<T>
       : never
 
-export { tex } from './tex'
+export {
+  tex,
+  paginate,
+  getPaginationSkip,
+  type PaginationMeta,
+  type PaginatedResult,
+} from './tex'

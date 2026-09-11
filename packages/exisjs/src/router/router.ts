@@ -10,6 +10,8 @@ import type {
 } from '../types'
 import { RadixTree } from './radix'
 import { SSEStream } from '../server/sse'
+import { fileUpload, parseSizeToBytes } from '../middleware/upload'
+import { routeTimeout } from '../middleware/security'
 let fastJsonStringify: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -79,10 +81,12 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     if (schema?.body) {
       const bodyValidator: any = schema.body
       actualHandlers.unshift(async (req, res, next) => {
+        let body: any
         try {
-          let body
           const contentType = req.header('content-type') || ''
-          if (
+          if (req.body !== undefined) {
+            body = req.body
+          } else if (
             contentType.includes('application/x-www-form-urlencoded') ||
             contentType.includes('multipart/form-data')
           ) {
@@ -115,7 +119,11 @@ export class Router<TRoutes extends Record<string, any> = {}> {
             req.body = await pipe.transform(body, { type: 'body', data: body })
           }
           next()
-        } catch (err) {
+        } catch (err: any) {
+          if (err && typeof err === 'object') {
+            err.httpPart = 'body'
+            err.received = body
+          }
           next(err as Error)
         }
       })
@@ -155,7 +163,11 @@ export class Router<TRoutes extends Record<string, any> = {}> {
             })) as any
           }
           next()
-        } catch (err) {
+        } catch (err: any) {
+          if (err && typeof err === 'object') {
+            err.httpPart = 'query'
+            err.received = req.query
+          }
           next(err as Error)
         }
       })
@@ -197,10 +209,63 @@ export class Router<TRoutes extends Record<string, any> = {}> {
             })) as any
           }
           next()
-        } catch (err) {
+        } catch (err: any) {
+          if (err && typeof err === 'object') {
+            err.httpPart = 'params'
+            err.received = req.params
+          }
           next(err as Error)
         }
       })
+    }
+
+    if (schema?.upload) {
+      const uploadOpts: any =
+        typeof schema.upload === 'string'
+          ? { field: schema.upload }
+          : { ...schema.upload }
+      const parsedSize =
+        parseSizeToBytes(uploadOpts.maxSize) || uploadOpts.maxBytes
+      if (parsedSize && (!uploadOpts.limits || !uploadOpts.limits.fileSize)) {
+        uploadOpts.limits = {
+          ...(uploadOpts.limits || {}),
+          fileSize: parsedSize,
+        }
+      }
+      if (
+        uploadOpts.destination &&
+        !uploadOpts.dest &&
+        uploadOpts.destination !== 'memory' &&
+        uploadOpts.destination !== 'stream'
+      ) {
+        uploadOpts.dest = uploadOpts.destination
+      }
+      if (
+        uploadOpts.destination === 'memory' ||
+        uploadOpts.storage === 'memory'
+      ) {
+        delete uploadOpts.dest
+      }
+      if (uploadOpts.mimeTypes && !uploadOpts.allowedMimeTypes) {
+        uploadOpts.allowedMimeTypes = uploadOpts.mimeTypes
+      }
+      const uploadHandler = uploadOpts.field
+        ? fileUpload.single(uploadOpts.field, uploadOpts)
+        : uploadOpts.fields
+          ? fileUpload.fields(uploadOpts.fields, uploadOpts)
+          : fileUpload(uploadOpts)
+      actualHandlers.unshift(uploadHandler)
+    }
+
+    const routeTimeoutSetting =
+      schema?.timeoutMs !== undefined
+        ? schema.timeoutMs
+        : schema?.timeout !== undefined
+          ? schema.timeout
+          : undefined
+
+    if (routeTimeoutSetting !== undefined) {
+      actualHandlers.unshift(routeTimeout(routeTimeoutSetting))
     }
 
     const routeInfo: Route = {

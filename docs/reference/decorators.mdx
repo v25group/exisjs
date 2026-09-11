@@ -68,6 +68,8 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Param(nameOrPipe?)`: Injects a URL path parameter (e.g., `id` from `/:id`).
 - `@Headers(nameOrPipe?)`: Injects an HTTP header by name.
 - `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)`: Injects a URL query parameter (e.g., `?search=term`).
+- `@UploadedFile()`: Injects the uploaded file (`req.file`) into the method argument.
+- `@UploadedFiles()`: Injects the uploaded files array or dictionary (`req.files`) into the method argument.
 - `@HostParam(nameOrPipe?)`: Injects a subdomain parameter.
 - `@Req()`: Injects the raw ExisJS Request object.
 - `@Res(options?)`: Injects the raw ExisJS Response object (`{ passthrough: true }`).
@@ -80,6 +82,8 @@ Parameter decorators automatically extract data from the incoming request and in
 ## 3. Middleware & Pipeline Decorators
 
 - `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
+- `@Upload(fieldName, options?)` / `@UseUpload(...)`: Configures multipart file upload handling for a method, populating `@UploadedFile()` or `@UploadedFiles()`.
+- `@Timeout(ms: number | TimeoutOptions)`: Overrides the request timeout for this method (e.g. `@Timeout(120000)`). Passing `0` disables timeouts for long-running streaming or exports.
 - `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
 
 ---

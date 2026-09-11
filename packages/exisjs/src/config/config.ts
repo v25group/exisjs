@@ -47,7 +47,7 @@ export const defaultConfig: ResolvedConfig = {
   logger: false,
   helmet: { enabled: true },
   trustProxy: false,
-  bodyLimit: 1 * 1024 * 1024,
+  bodyLimit: 10 * 1024 * 1024,
   env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'development',
   compression: false,
   keepAlive: false,

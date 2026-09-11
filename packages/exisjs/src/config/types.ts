@@ -85,7 +85,7 @@ export interface ExisConfig {
   healthcheck?: HealthCheckConfig | boolean
   helmet?: HelmetConfig | boolean
   trustProxy?: boolean | number
-  bodyLimit?: number // bytes, default 1mb
+  bodyLimit?: number // bytes, default 10mb
   env?: 'development' | 'production' | 'test'
   compression?: boolean
   keepAlive?: KeepAliveConfig | boolean

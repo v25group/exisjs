@@ -61,6 +61,7 @@ export default controller({
 - `HttpError.forbidden(msg?)` (403)
 - `HttpError.notFound(resource?)` (404)
 - `HttpError.conflict(msg)` (409)
+- `HttpError.payloadTooLarge(msg?)` (413)
 - `HttpError.unprocessable(msg, details?)` (422)
 - `HttpError.tooManyRequests(msg?)` (429)
 - `HttpError.internal(msg?)` (500)
@@ -83,7 +84,7 @@ If you catch an `HttpError` or intercept it, you have access to the following pr
 If you prefer class instantiation (common in NestJS workflows), you can directly instantiate the error classes or their `Exception` aliases.
 
 ```typescript filename="src/services/auth.ts"
-import { UnauthorizedError, ConflictException } from 'exisjs/error'
+import { UnauthorizedError, ConflictException, PayloadTooLargeError } from 'exisjs/error'
 
 export function verifyToken(token: string) {
   if (!isValid(token)) {
@@ -104,6 +105,7 @@ export function createUser(email: string) {
 - `ForbiddenError` / `ForbiddenException`
 - `NotFoundError` / `NotFoundException`
 - `ConflictError` / `ConflictException`
+- `PayloadTooLargeError` / `PayloadTooLargeException`
 - `UnprocessableError` / `UnprocessableException`
 - `RateLimitError` / `RateLimitException`
 - `InternalError` / `InternalException`

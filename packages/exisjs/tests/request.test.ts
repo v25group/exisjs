@@ -7,6 +7,7 @@ import { createMockLogger, createMockResponse } from './helpers'
 import qs from 'node:querystring'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 import { requestId } from '../src/middleware/middleware'
+import { HttpError, PayloadTooLargeError } from '../src/error/errors'
 
 function buildRawRequest(options: {
   method?: string
@@ -487,5 +488,71 @@ describe('URL Path Normalization', () => {
 
     expect(req.path).toBe('/api/v1/search')
     expect(req.query).toEqual({ query: '//test//' })
+  })
+})
+
+describe('Body Limit Enforcement', () => {
+  it('defaults bodyLimit to 10MB (10485760 bytes)', () => {
+    const raw = buildRawRequest({ method: 'GET' })
+    const res = createMockResponse()
+    const req = new ExisRequest(raw, res)
+    expect((req as any).bodyLimit).toBe(10 * 1024 * 1024)
+  })
+
+  it('rejects with HTTP 413 Payload Too Large when Content-Length exceeds limit', async () => {
+    const raw = buildRawRequest({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': '2000',
+      },
+    })
+    const res = createMockResponse()
+    // Set custom bodyLimit of 1000 bytes
+    const req = new ExisRequest(raw, res, false, 1000)
+
+    let caughtError: any = null
+    try {
+      await req.text()
+    } catch (err) {
+      caughtError = err
+    }
+
+    expect(caughtError).toBeDefined()
+    expect(caughtError instanceof HttpError).toBe(true)
+    expect(caughtError.statusCode).toBe(413)
+    expect(caughtError.message).toContain('exis.config.ts')
+    expect(caughtError.message).toContain('exceeds limit of 1000 bytes')
+  })
+
+  it('rejects with HTTP 413 when streamed chunk size exceeds bodyLimit', async () => {
+    const socket = new Socket()
+    const readable = new Readable({
+      read() {
+        this.push(Buffer.from('This chunk is longer than 10 bytes'))
+        this.push(null)
+      },
+    })
+    Object.assign(readable, {
+      method: 'POST',
+      url: '/',
+      headers: { 'content-type': 'text/plain' },
+      socket,
+    })
+
+    const res = createMockResponse()
+    const req = new ExisRequest(readable as any, res, false, 10)
+
+    let caughtError: any = null
+    try {
+      await req.text()
+    } catch (err) {
+      caughtError = err
+    }
+
+    expect(caughtError).toBeDefined()
+    expect(caughtError instanceof HttpError).toBe(true)
+    expect(caughtError.statusCode).toBe(413)
+    expect(caughtError.message).toContain('exis.config.ts')
   })
 })

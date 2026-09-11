@@ -1,0 +1,152 @@
+---
+title: "Database"
+description: "API Reference for ExisJS Database Lifecycle & Transactions (exisjs/database)."
+---
+
+# Database (`exisjs/database`)
+
+ExisJS provides a unified, database-agnostic lifecycle and transaction layer. It enables automatic connection management, multi-database health checks, graceful zero-downtime teardowns, and ORM-agnostic transaction runners.
+
+---
+
+## 1. Lifecycle Management
+
+### `registerDatabase(app, options)`
+
+Registers a database connection into the application lifecycle. Automatically calls `connect()` during server boot and `disconnect()` during graceful shutdown (`SIGTERM`, `SIGINT`, or `app.close()`).
+
+#### Options (`DatabaseRegistrationOptions`)
+- `name` (`string`): Unique identifier for the database connection (e.g. `'postgres'`, `'mongodb'`).
+- `connect` (`() => Promise<void>`): Async callback to establish connection and connection pools.
+- `disconnect` (`() => Promise<void>`): Async callback to close connections gracefully.
+- `healthCheck` (`() => Promise<boolean>`): Optional health check callback returning `true` when healthy.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { registerDatabase } from 'exisjs/database'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
+
+export default exis({
+  async onStart(app) {
+    registerDatabase(app, {
+      name: 'prisma-postgres',
+      connect: async () => {
+        await prisma.$connect()
+      },
+      disconnect: async () => {
+        await prisma.$disconnect()
+      },
+      healthCheck: async () => {
+        await prisma.$queryRaw`SELECT 1`
+        return true
+      },
+    })
+  }
+})
+```
+
+---
+
+### `DatabaseManager`
+
+Singleton registry managing all registered database adapters.
+
+- `DatabaseManager.register(options)`: Registers a database adapter.
+- `DatabaseManager.connectAll()`: Connects all registered databases concurrently.
+- `DatabaseManager.disconnectAll()`: Gracefully disconnects all databases concurrently.
+- `DatabaseManager.checkHealth()`: Runs health checks across all registered databases and returns `{ healthy: boolean, databases: Record<string, boolean> }`.
+- `DatabaseManager.clear()`: Clears all registered database adapters (useful for test tear-downs).
+
+```typescript filename="src/http/health/route.ts"
+import { controller, route } from 'exisjs/router'
+import { DatabaseManager } from 'exisjs/database'
+
+export default controller({
+  check: route.get('/health', async () => {
+    const health = await DatabaseManager.checkHealth()
+    return {
+      status: health.healthy ? 'ok' : 'degraded',
+      databases: health.databases,
+    }
+  })
+})
+```
+
+---
+
+## 2. Universal Transaction Runner
+
+### `withTransaction(client, callback)`
+
+A duck-typed transaction runner that coordinates database transaction lifecycles, commits, rollbacks, and session cleanups. Compatible with **Mongoose**, **Prisma**, and **Drizzle**.
+
+```typescript filename="src/services/transfer.ts"
+import { withTransaction } from 'exisjs/database'
+import mongoose from 'mongoose'
+import { Account } from '@/models/Account'
+
+export async function transferFunds(fromId: string, toId: string, amount: number) {
+  return withTransaction(mongoose, async (session) => {
+    // Session is automatically attached to MongoDB queries
+    const sender = await Account.findByIdAndUpdate(
+      fromId,
+      { $inc: { balance: -amount } },
+      { session, returnDocument: 'after' }
+    )
+
+    if (!sender || sender.balance < 0) {
+      // Throwing an error automatically aborts the transaction and rolls back
+      throw new Error('Insufficient funds')
+    }
+
+    const receiver = await Account.findByIdAndUpdate(
+      toId,
+      { $inc: { balance: amount } },
+      { session, returnDocument: 'after' }
+    )
+
+    return { sender, receiver }
+  })
+}
+```
+
+Works identically with Prisma:
+```typescript
+import { withTransaction } from 'exisjs/database'
+import { prisma } from '@/lib/prisma'
+
+const result = await withTransaction(prisma, async (tx) => {
+  return tx.user.create({ data: { name: 'Alice' } })
+})
+```
+
+---
+
+## 3. Mongoose 8/9 Interop & Pooling
+
+### `modernUpdateOptions(options?)`
+
+Maps deprecated Mongoose options (such as `{ new: true }`) to standard modern options (`{ returnDocument: 'after' }`), eliminating console warnings when upgrading to Mongoose 8 and 9.
+
+```typescript
+import { modernUpdateOptions } from 'exisjs/database'
+
+// Passes { returnDocument: 'after' } warning-free
+User.findByIdAndUpdate(id, { $set: updateData }, modernUpdateOptions())
+```
+
+### `mongoPoolOptions(customOptions?)`
+
+Returns pre-configured, production-hardened MongoDB connection pool settings:
+
+```typescript
+import { mongoPoolOptions } from 'exisjs/database'
+import mongoose from 'mongoose'
+
+await mongoose.connect(process.env.MONGODB_URI!, mongoPoolOptions({
+  maxPoolSize: 100,
+  minPoolSize: 10,
+}))
+```

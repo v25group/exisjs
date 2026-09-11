@@ -92,10 +92,11 @@ $ npx exisjs g <type> <name> [options]
 
 | Schematic | Alias | Description | Output Path |
 | :--- | :--- | :--- | :--- |
-| `resource` | | Complete domain slice (`schema.ts`, `service.ts`, `route.ts` or feature-prefixed named files) | `src/http/<name>/` |
+| `crud` | `resource` | Full 4-file CRUD slice (`schema.ts`, `service.ts`, `route.ts`, and `model.ts` entity), 100% database-agnostic | `src/http/<name>/` & `src/models/` |
+| `model` | | Standalone database-agnostic TypeScript entity and input types | `src/models/<Name>.ts` |
 | `route` | `r`, `c`, `controller` | HTTP route file | `src/http/<name>/route.ts` |
-| `service` | `s` | Injectable service / business logic | `src/http/<name>/service.ts` |
-| `schema` | `sc` | Validation schemas powered by `tex` | `src/http/<name>/schema.ts` |
+| `service` | `s` | Injectable service / business logic with pagination helpers | `src/http/<name>/service.ts` |
+| `schema` | `sc` | Validation schemas powered by `tex` (includes pagination) | `src/http/<name>/schema.ts` |
 | `boundary` | `b` | Folder-scoped configuration and request pipeline | `src/http/<name>/boundary.ts` |
 | `plugin` | `p` | Distributable plugin module | `src/plugins/<name>.ts` |
 | `middleware` | `m` | Standalone middleware handler | `src/middleware/<name>.ts` |

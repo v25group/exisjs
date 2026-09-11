@@ -199,7 +199,13 @@ export function requestLogger(
     // Use _onFinish to capture response timing without deoptimizing V8 hidden classes
     res._onFinish.push(() => {
       const responseTime = Date.now() - start
-      const logData = { statusCode: res.statusCode, responseTime }
+      const logData: Record<string, any> = {
+        statusCode: res.statusCode,
+        responseTime,
+      }
+      if ((req as any)._validationError) {
+        logData.validation = (req as any)._validationError
+      }
       // Use child if already created, otherwise use parent with inline context
       const logger = _childLog || parentLog
 
@@ -257,6 +263,8 @@ export { backpressureMiddleware as backpressure } from './backpressure'
 export { ipFilterMiddleware as ipFilter } from './ip-filter'
 export { intercept } from './interceptor'
 export { catchError } from './exception-filter'
+export { fileUpload, fromExpress } from './upload'
+export type { FileUploadOptions, FileUploadLimits } from './upload'
 export * from './guard'
 export * from './pipe'
 
@@ -432,3 +440,14 @@ export function conditionalGet(): Handler {
 }
 
 export * from './idempotency'
+export * from './upload'
+export * from './security'
+export * from './rate-limit'
+export * from './ip-filter'
+export * from './compression'
+export * from './backpressure'
+export * from './dedupe'
+export * from './guard'
+export * from './pipe'
+export * from './interceptor'
+export * from './exception-filter'

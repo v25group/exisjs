@@ -21,15 +21,48 @@ The `tex` object provides factory functions for every common primitive and data 
 
 ### Objects & Arrays
 
-- `tex.object({ ... })`: Validates an object against a strict shape.
-- `tex.array(schema)`: Validates an array of items matching the given schema.
+- `tex.object({ ... })`: Validates an object against a strict shape. Supports arbitrarily nested sub-documents (`tex.object({ nested: tex.object(...) })`).
+- `tex.array(schema, options?)`: Validates an array of items matching the given schema.
+  - **Schema Types**: Accepts primitive types (`tex.string()`), nested `tex.object(...)`, or shorthand plain objects (`tex.array({ ... })`).
+  - **TypeScript Inference**: TypeScript automatically infers the element object shape for both `tex.object(...)` and plain objects without falling back to `never`.
+  - **Single-Object Coercion**: Automatically coerces single objects (e.g. `{ item: { ... } }` from HTML forms) into single-item arrays `[ { ... } ]` rather than throwing `"Must be an array"`.
+  - **Stringified JSON**: Automatically parses and deserializes stringified JSON arrays (e.g. from `multipart/form-data`).
+  - **Options**: Supports `{ min, max, dedupe, optional, nullable, nullish }`.
 
 ```typescript
 const UserProfile = tex.object({
   id: tex.string(),
-  tags: tex.array(tex.string()),
-  role: tex.enum(['admin', 'user'])
+  profile: tex.object({
+    bio: tex.string().nullish(), // allows undefined, null, or ""
+    skills: tex.array(tex.string()),
+  }),
+  // Can use plain object shorthand directly inside tex.array
+  items: tex.array({
+    id: tex.string(),
+    quantity: tex.number({ min: 1 }),
+  }),
+  role: tex.enum(['admin', 'user']),
 })
+```
+
+### Pagination Primitive (`tex.pagination`)
+
+- `tex.pagination(options?)`: Pre-compiled query schema validating `page` (default 1), `limit` (with coercion and clamping), `sort`, and `order` (`asc` | `desc`).
+
+```typescript
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+const paginationSchema = tex.pagination({
+  defaultLimit: 20,
+  maxLimit: 100,
+})
+
+// Database offset calculation helper
+const { skip, limit, page } = getPaginationSkip({ page: 2, limit: 20 })
+// skip = 20, limit = 20, page = 2
+
+// Standardized envelope builder
+const paginatedResponse = paginate(items, 150, { page: 2, limit: 20 })
 ```
 
 ---
@@ -78,8 +111,13 @@ export default controller({
 
 All validators accept an options object that allows you to configure validation constraints and behaviors.
 
-- `optional`: Marks the field as optional (allows `undefined`).
+- `optional` / `.optional()`: Marks the field as optional (allows `undefined`).
+- `nullable` / `.nullable()`: Marks the field as nullable (allows `null`).
+- `nullish` / `.nullish()`: Marks the field as nullish (allows both `null` and `undefined`).
 - `coerce`: Instructs the Rust engine to automatically convert types when possible before validating. For example, converting `"123"` into a number, or `3000` into a string.
+
+> [!NOTE]
+> **Empty String Interop**: If an incoming string is empty (`""`), and the field is configured as `optional`, `nullable`, or `nullish`, ExisJS automatically converts it to `undefined` or `null` before running type checks. This cleanly handles form submissions and query strings without requiring ad-hoc pre-processors.
 
 ```typescript
 // Type Conversion Examples using { coerce: true }

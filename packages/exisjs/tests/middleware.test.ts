@@ -576,16 +576,18 @@ describe('compression & pre-compressed static assets', () => {
     const res = createMockResponse()
 
     await new Promise<void>((resolve) => {
-      res.sendStream = ex.fn(() => {
+      res.sendStream = ex.fn((stream: any) => {
         expect(getResponseHeader(res, 'content-encoding')).toBe('br')
         expect(getResponseHeader(res, 'content-type')).toBe(
           'application/javascript'
         )
+        stream?.destroy?.()
         resolve()
       })
       handler(req, res, createMockNext())
     })
 
+    await new Promise((r) => setTimeout(r, 20))
     cleanupTempDir(tmp)
   })
 })

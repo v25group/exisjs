@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -40,6 +40,10 @@
     "./decorators": {
       "types": "./dist/decorators/index.d.ts",
       "default": "./dist/decorators/index.js"
+    },
+    "./database": {
+      "types": "./dist/database/index.d.ts",
+      "default": "./dist/database/index.js"
     },
     "./middleware": {
       "types": "./dist/middleware/middleware.d.ts",

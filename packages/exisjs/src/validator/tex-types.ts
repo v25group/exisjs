@@ -39,6 +39,14 @@ export class TexType<IsOpt extends boolean = false> {
     this._raw += ' | optional'
     return this as any
   }
+
+  nullish(): Omit<this, '__isOptional' | '__isNullable'> & {
+    readonly __isOptional: true
+    readonly __isNullable: true
+  } {
+    this._raw += ' | nullish'
+    return this as any
+  }
 }
 
 export interface TexString<
@@ -128,7 +136,9 @@ export type ResolveTexType<T> = T extends { __kind: 'TexString' }
                       ? { filename: string; mimeType: string; buffer: Buffer }
                       : T extends { _type: infer U }
                         ? U // Handles nested TexEngine
-                        : never
+                        : T extends Record<string, any>
+                          ? ResolveSchema<T>
+                          : never
 
 export type IsOptional<T> = T extends { __isOptional: infer IsOpt }
   ? IsOpt extends true

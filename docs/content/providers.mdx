@@ -177,3 +177,92 @@ export class OperationContext {
 > [!WARNING]
 > **Request Scope Constraints**: A provider marked as `scope: 'request'` **must** be resolved within the lifecycle of an active HTTP request. If you try to `inject()` or resolve a request-scoped provider during application startup, inside a background queue worker, or from a cron job, the container will throw a runtime error.
 
+---
+
+## Database Providers & Lifecycle Interop (`exisjs/database`)
+
+ExisJS provides first-party lifecycle management and transaction coordination for databases (PostgreSQL, SQLite, MySQL, MongoDB, Prisma, Drizzle, Mongoose).
+
+### 1. Registering Database Lifecycle (`registerDatabase`)
+
+Registering your database with `registerDatabase` ensures connections are automatically connected on boot and safely closed with zero leaked sockets when the server receives `SIGTERM` / `SIGINT`:
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { registerDatabase } from 'exisjs/database'
+import mongoose from 'mongoose'
+
+export default exis({
+  async onStart(app) {
+    // Automatically handles startup and graceful shutdown
+    registerDatabase(app, {
+      name: 'mongodb',
+      connect: async () => {
+        await mongoose.connect(process.env.MONGODB_URI!)
+      },
+      disconnect: async () => {
+        await mongoose.disconnect()
+      },
+      healthCheck: async () => {
+        return mongoose.connection.readyState === 1
+      },
+    })
+  }
+})
+```
+
+### 2. Universal Transaction Runner (`withTransaction`)
+
+`withTransaction` provides a duck-typed transaction runner that automatically coordinates transaction lifecycles, commits, aborts, and session cleanups across different ORMs:
+
+```typescript filename="src/http/orders/service.ts"
+import { withTransaction } from 'exisjs/database'
+import mongoose from 'mongoose'
+import { Order } from '@/models/Order'
+import { Inventory } from '@/models/Inventory'
+
+export async function placeOrder(customerId: string, items: { sku: string; qty: number }[]) {
+  return withTransaction(mongoose, async (session) => {
+    // Automatically attaches session to queries and commits/aborts on error
+    const order = await Order.create([{ customerId, items }], { session })
+    
+    for (const item of items) {
+      const updated = await Inventory.findOneAndUpdate(
+        { sku: item.sku, stock: { $gte: item.qty } },
+        { $inc: { stock: -item.qty } },
+        { session, returnDocument: 'after' }
+      )
+      if (!updated) {
+        throw new Error(`Insufficient stock for SKU: ${item.sku}`)
+      }
+    }
+
+    return order[0]
+  })
+}
+```
+
+Works identically with Prisma (`prisma.$transaction`) and Drizzle (`db.transaction`).
+
+### 3. Modern Mongoose 8/9 Interop & Connection Pooling
+
+ExisJS exports helpers to prevent deprecation warnings in modern Mongoose:
+
+```typescript filename="src/models/user.ts"
+import { modernUpdateOptions, mongoPoolOptions } from 'exisjs/database'
+import mongoose from 'mongoose'
+
+// Cloud-hardened pool options (maxPoolSize, serverSelectionTimeoutMS, etc.)
+export const poolConfig = mongoPoolOptions({ maxPoolSize: 50 })
+
+// Automatically maps legacy { new: true } to { returnDocument: 'after' }
+export async function updateUsername(id: string, name: string) {
+  return User.findByIdAndUpdate(
+    id,
+    { $set: { name } },
+    modernUpdateOptions({ returnDocument: 'after' })
+  )
+}
+```
+
+

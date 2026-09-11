@@ -62,8 +62,67 @@ app.use(helmet())
 ### `csrf(options)`
 Implements the Signed Double Submit Cookie pattern for Cross-Site Request Forgery (CSRF) protection.
 
-### `timeout(ms)`
-Automatically times out requests that exceed the specified milliseconds, returning a 503 response.
+### `timeout(options?)`
+Automatically times out requests that exceed the specified duration, returning a `503 Service Unavailable` response (or custom status code).
+
+- **Default**: `60000` (60 seconds)
+- **Options**:
+  - `ms` (`number`): Timeout duration in milliseconds.
+  - `statusCode` (`number`): Status code to respond with (default: `503`).
+  - `message` (`string`): Error message returned to the client.
+  - `exclude` (`(string | RegExp)[]`): Array of route paths or regex patterns to exempt from timeout checks.
+
+```typescript
+import { timeout } from 'exisjs/middleware'
+
+app.use(timeout({
+  ms: 60000,
+  exclude: ['/webhooks/*', '/ai/stream'],
+}))
+```
+
+Handlers can dynamically alter the active timeout using `req.setTimeout(ms)` or `req.clearTimeout()`.
+
+### `fileUpload(options?)`
+First-party multipart form data parsing and file upload middleware.
+
+- **Methods**:
+  - `fileUpload.single(fieldName, options?)`: Parses a single file into `req.file`.
+  - `fileUpload.array(fieldName, maxCount?, options?)`: Parses multiple files with the same field into `req.files` (`UploadedFile[]`).
+  - `fileUpload.fields([{ name, maxCount }])`: Parses multiple distinct fields into `req.files` (`Record<string, UploadedFile[]>`).
+  - `fileUpload.any(options?)`: Accepts any uploaded files.
+  - `fileUpload.none(options?)`: Accepts only text fields; rejects file uploads.
+- **Options**:
+  - `dest` (`string`): Directory path to save uploaded files to disk automatically.
+  - `maxBytes` (`number`): Maximum file size in bytes (shorthand for `limits.fileSize`).
+  - `mimeTypes` (`string[]`): Array of permitted MIME types (e.g. `['image/png', 'image/jpeg']`).
+  - `limits` (`{ fileSize?: number; files?: number }`): Detailed size and count limits.
+
+```typescript
+import { fileUpload } from 'exisjs/middleware'
+
+app.post('/avatar', fileUpload.single('avatar', {
+  maxBytes: 5 * 1024 * 1024,
+  mimeTypes: ['image/*'],
+}), (req, res) => {
+  const file = req.file // UploadedFile { filename, originalname, mimetype, size, buffer }
+  res.json({ success: true, filename: file.filename })
+})
+```
+
+### `fromExpress(middleware)`
+Seamlessly adapts standard Express/Connect middleware (such as `multer`) to run within the ExisJS pipeline.
+
+```typescript
+import { fromExpress } from 'exisjs/middleware'
+import multer from 'multer'
+
+const upload = multer({ dest: './uploads' })
+
+app.post('/upload', fromExpress(upload.single('file')), (req, res) => {
+  res.json({ file: (req.raw as any).file })
+})
+```
 
 ### `hpp()`
 HTTP Parameter Pollution protection.
@@ -88,6 +147,29 @@ app.use(rateLimit({
   windowMs: 60000,
   max: 100
 }))
+```
+
+### `timeout(options?)`
+Terminates long-running requests that exceed the specified threshold, responding with `503 Service Unavailable` (or custom status). Defaults to 60,000ms.
+
+```typescript
+import { timeout } from 'exisjs/middleware'
+
+app.use(timeout({
+  ms: 60000,
+  statusCode: 504,
+  message: 'Gateway Timeout',
+  exclude: ['/webhooks/*', '/ai/stream'],
+}))
+```
+
+### `routeTimeout(msOrOptions)`
+Applies an endpoint-specific timeout. If a global timeout is already active, dynamically overrides the timer for this route. If no global timeout exists, initializes an isolated timeout timer. Passing `0` disables timeouts for streaming/exports.
+
+```typescript
+import { routeTimeout } from 'exisjs/middleware'
+
+app.post('/heavy-task', routeTimeout(120000), (req, res) => { ... })
 ```
 
 ### `idempotent(options?)`

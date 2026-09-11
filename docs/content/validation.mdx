@@ -38,11 +38,17 @@ ExisJS supports a comprehensive set of strict validation primitives:
 - `tex.boolean()` - Strict boolean validation.
 - `tex.number({ coerce: true })` - Automatically coerces incoming string representations into native JavaScript numbers.
 - `tex.boolean({ coerce: true })` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
-- `tex.array(schema)` - Validates an array of items.
+- `tex.array(schema)` - Validates an array of items. Accepts primitive types, `tex.object(...)`, or shorthand plain objects `{ ... }`.
 - `tex.object({ ... })` - Validates structured JSON objects.
 - `tex.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
 
-All primitives accept an options object where you can pass `{ optional: true }` to allow `undefined`.
+All primitives accept modifier options or chained helper methods:
+- `.optional()` / `{ optional: true }` - Allows `undefined`.
+- `.nullable()` / `{ nullable: true }` - Allows `null`.
+- `.nullish()` / `{ nullish: true }` - Allows both `null` and `undefined`.
+
+> [!TIP]
+> **Automatic Empty String `""` Normalization**: When forms or query parameters pass empty strings `""` for fields marked as `.optional()`, `.nullable()`, or `.nullish()`, ExisJS automatically converts them to `undefined` or `null` before running type validation. This prevents false positive type errors on numeric, UUID, or enum fields!
 
 ### Data Sanitization (Trimming & Formatting)
 
@@ -217,16 +223,95 @@ export default class BooksController {
 ```
 
 
-## Error Handling
+### Nested Sub-Documents & Array Schemas
 
-If a request fails validation (e.g., missing a required body field), the validation engine will instantly catch it and return a standardized `400 Bad Request` JSON response to the client.
+ExisJS natively validates arbitrarily deep sub-documents and nested arrays off-heap with Rust acceleration:
 
-```json filename="Response"
+```typescript filename="src/http/users/schema.ts"
+import { tex } from 'exisjs/validator'
+
+export const RegisterUserSchema = tex.object({
+  username: tex.string({ min: 3 }),
+  profile: tex.object({
+    bio: tex.string().nullish(), // allows undefined, null, or ""
+    avatarUrl: tex.string({ optional: true }),
+    socials: tex.object({
+      twitter: tex.string({ optional: true }),
+      github: tex.string({ optional: true }),
+    }),
+    tags: tex.array(tex.string({ min: 2 })),
+  }),
+  // You can use tex.object(...) OR a plain object schema shorthand!
+  items: tex.array({
+    sku: tex.string(),
+    quantity: tex.number({ min: 1 }),
+  }),
+})
+```
+
+#### First-Class Form & Multipart Support
+- **Single-Object Coercion**: When HTML forms or mobile clients submit a single item instead of an array (e.g. `{ items: { sku: "ABC", quantity: 1 } }`), the Rust engine automatically coerces it into a single-element array `[ { sku: "ABC", quantity: 1 } ]` rather than throwing `"Must be an array"`.
+- **Stringified JSON Support**: When submitting `multipart/form-data`, stringified JSON arrays (e.g. `items: "[{\"sku\":\"ABC\",\"quantity\":2}]"`) or stringified objects are automatically deserialized and validated.
+- **Type Inference**: TypeScript automatically infers the shape of array elements for both `tex.array(tex.object(...))` and `tex.array({ ... })`, ensuring full autocomplete without falling back to `never`.
+
+---
+
+## Pagination Schemas (`tex.pagination`)
+
+ExisJS provides a dedicated schema primitive for query pagination. It automatically coerces incoming string query parameters (`?page=2&limit=25&sort=name&order=asc`) into typed numbers and strings while enforcing sensible bounds:
+
+```typescript filename="src/http/items/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+const ItemQuerySchema = tex.pagination({
+  defaultLimit: 20, // Default items per page if omitted
+  maxLimit: 100,    // Hard cap to prevent memory exhaustion
+})
+
+export default controller({
+  list: route.get('/', {
+    query: ItemQuerySchema,
+    async handle({ query }) {
+      const { skip, limit, page } = getPaginationSkip(query)
+      const items = await fetchItems({ skip, limit, sort: query.sort, order: query.order })
+      const total = await countItems()
+      
+      return paginate(items, total, { page, limit })
+    }
+  })
+})
+```
+
+---
+
+## Error Handling & Developer Diagnostics
+
+If a request fails validation, ExisJS intercepts the rejection and returns a standardized `400 Bad Request` containing a machine-readable `errors: Record<string, string>` dictionary for frontend form field mapping:
+
+```json filename="HTTP 400 Bad Request Response"
 {
   "statusCode": 400,
   "error": "Bad Request",
-  "message": "Validation Error: body.username is required"
+  "message": "Validation Error: username: Field must be at least 4 characters, profile.tags: Expected array of strings",
+  "errors": {
+    "username": "Field must be at least 4 characters",
+    "profile.tags": "Expected array of strings"
+  }
 }
 ```
 
-Because this is built right into the framework, you don't have to manually catch errors or construct complex schema error formatters. It just works exactly as you expect!
+### Dev Mode Terminal Diagnostics
+
+When validation fails in development mode, ExisJS prints an immediate tabular diagnostic to your terminal displaying the failing HTTP part, exact field path, received value, and expected schema constraint:
+
+```text
+[VALIDATION FAILED] POST /visits (part: body)
+┌─────────────┬───────────────────────────┬──────────────────┐
+│ Field       │ Received                  │ Expected         │
+├─────────────┼───────────────────────────┼──────────────────┤
+│ phone       │ "123"                     │ min: 7, max: 20  │
+│ idProofs    │ "[object Object]"         │ Array of IDProof │
+└─────────────┴───────────────────────────┴──────────────────┘
+```
+

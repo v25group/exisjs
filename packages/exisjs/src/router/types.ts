@@ -18,7 +18,11 @@ export interface ExisFile {
   filename: string
   mimetype: string
   data: Buffer
+  /** Alias for data for Multer / standard Node compatibility */
+  buffer?: Buffer
   size: number
+  /** Disk destination path if saved to disk */
+  path?: string
 
   /**
    * Helper method to securely save the file to disk.
@@ -81,6 +85,23 @@ export type RouteValidator<T> =
   | { parse: (val: unknown) => T; transform?: unknown }
   | { parse?: unknown; transform: (val: unknown, meta?: any) => Promise<T> | T }
 
+export interface RouteUploadOptions {
+  field?: string
+  fields?: { name: string; maxCount?: number }[]
+  maxCount?: number
+  dest?: string
+  destination?: 'memory' | 'disk' | 'stream' | string
+  storage?: 'disk' | 'memory'
+  allowedMimeTypes?: string[]
+  mimeTypes?: string[]
+  maxBytes?: number
+  maxSize?: number | string
+  limits?: {
+    fileSize?: number
+    files?: number
+  }
+}
+
 export interface RouteSchema<
   TBody = unknown,
   TQuery = unknown,
@@ -92,6 +113,9 @@ export interface RouteSchema<
   body?: RouteValidator<TBody>
   query?: RouteValidator<TQuery>
   params?: RouteValidator<TParams>
+  upload?: RouteUploadOptions | string
+  timeout?: number | { ms: number; statusCode?: number; message?: string }
+  timeoutMs?: number
   host?: string | string[]
   filters?: any | any[]
   metadata?: Record<string, any>

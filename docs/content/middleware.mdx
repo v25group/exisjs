@@ -213,3 +213,141 @@ const config: ExisConfig = {
 
 export default config
 ```
+
+---
+
+## 9. Request Timeout (`timeout`)
+
+The `timeout()` middleware terminates runaway requests and returns `503 Service Unavailable` (or a custom status code).
+
+ExisJS defaults to **60 seconds (60000ms)** to provide generous headroom for slow network connections and third-party cloud operations (Cloudinary, AWS S3, OpenAI, Stripe).
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { timeout } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
+    app.use(timeout({
+      ms: 60000,
+      statusCode: 504,
+      message: 'Gateway Timeout connecting to upstream cloud service',
+      // Bypass webhooks or long-lived streaming endpoints
+      exclude: ['/webhooks/*', '/ai/stream'],
+    }))
+  }
+})
+```
+
+Handlers can also dynamically adjust timeouts using `req.setTimeout(ms)` and `req.clearTimeout()`.
+
+### Route-Level Timeout Overrides
+
+Long-running routes (file uploads, PDF exports, AI inferences, data migrations) can declare custom timeouts directly in the route definition, overriding any global application timeout:
+
+```typescript filename="src/http/ai/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  heavyTask: route.post('/heavy-task', {
+    timeoutMs: 120000, // 2 minutes for this endpoint only
+    async handle({ body }) {
+      return await generateLargeReport(body)
+    }
+  }),
+
+  exportStream: route.get('/export', {
+    timeoutMs: 0, // 0 disables timeout completely for infinite SSE / streaming
+    async handle({ res }) {
+      return streamDataToClient(res)
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+Use the `@Timeout(ms)` decorator on any controller method:
+
+```typescript filename="src/http/ai/controller.ts"
+import { Controller, Post, Timeout } from 'exisjs/decorators'
+
+@Controller('/ai')
+export default class AiController {
+  @Post('/inference')
+  @Timeout(120000)
+  async runInference() {
+    return await computeModel()
+  }
+}
+```
+
+---
+
+### Declarative Route Uploads
+
+You can configure file uploads directly within functional route declarations:
+
+```typescript filename="src/http/media/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  upload: route.post('/photo', {
+    upload: {
+      field: 'file',
+      maxSize: '10MB',
+      allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+      destination: 'memory', // 'memory' | 'disk' | 'stream'
+    },
+    async handle({ file, fields, req }) {
+      // file.buffer, file.mimetype, file.filename are immediately accessible
+      return { success: true, filename: file.filename }
+    }
+  })
+})
+```
+
+### Class-Based (OOP) Upload Decorators
+
+Use `@UseUpload` or `@Upload` to configure file parsing on controller actions:
+
+```typescript filename="src/http/media/controller.ts"
+import { Controller, Post, UseUpload, UploadedFile, Body } from 'exisjs/decorators'
+
+@Controller('/media')
+export default class MediaController {
+  @Post('/photo')
+  @UseUpload({
+    field: 'file',
+    maxSize: '10MB',
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    destination: 'memory',
+  })
+  async uploadPhoto(@UploadedFile() file: any, @Body() fields: any) {
+    return { filename: file.filename, size: file.size }
+  }
+}
+```
+
+### Express / Connect Multer Bridge (`fromExpress`)
+
+Seamlessly run existing Express/Connect middleware such as **Multer** directly in ExisJS without manual Promise wrapping:
+
+```typescript filename="src/http/legacy/route.ts"
+import { controller, route } from 'exisjs/router'
+import { fromExpress } from 'exisjs/middleware'
+import multer from 'multer'
+
+const upload = multer({ storage: multer.memoryStorage() })
+
+export default controller({
+  upload: route.post('/', 
+    fromExpress(upload.single('file')),
+    ({ req }) => {
+      const file = (req.raw as any).file || req.file
+      return { success: true, originalname: file?.originalname }
+    }
+  )
+})
+```
+

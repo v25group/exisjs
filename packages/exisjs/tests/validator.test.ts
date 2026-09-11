@@ -216,5 +216,73 @@ describe('Tex Native Validation Engine', () => {
         /Must be a string/
       )
     })
+
+    describe('Nested Object Array Validation', () => {
+      const idProofSchema = tex.object({
+        type: tex.enum([
+          'aadhar',
+          'license',
+          'pan',
+          'voter_id',
+          'other',
+        ] as const),
+        url: tex.string(),
+      })
+
+      const visitSchema = tex.object({
+        visitorName: tex.string(),
+        idProofs: tex.array(idProofSchema, { optional: true }),
+      })
+
+      it('validates an array of objects correctly', () => {
+        const payload = {
+          visitorName: 'John Doe',
+          idProofs: [
+            { type: 'aadhar', url: 'data:image/jpeg;base64,12345' },
+            { type: 'pan', url: 'https://example.com/pan.jpg' },
+          ],
+        }
+        const res = visitSchema.parse(payload)
+        expect(res.visitorName).toBe('John Doe')
+        expect(Array.isArray(res.idProofs)).toBe(true)
+        expect(res.idProofs?.length).toBe(2)
+        expect(res.idProofs?.[0].type).toBe('aadhar')
+      })
+
+      it('allows omitting optional nested object array', () => {
+        const res = visitSchema.parse({ visitorName: 'Alice' })
+        expect(res.visitorName).toBe('Alice')
+        expect(res.idProofs).toBeUndefined()
+      })
+
+      it('allows empty array for nested object array', () => {
+        const res = visitSchema.parse({ visitorName: 'Bob', idProofs: [] })
+        expect(res.visitorName).toBe('Bob')
+        expect(res.idProofs).toEqual([])
+      })
+
+      it('auto-parses stringified JSON arrays (e.g. multipart/form-data)', () => {
+        const payload = {
+          visitorName: 'Charlie',
+          idProofs: JSON.stringify([
+            { type: 'license', url: 'https://example.com/license.jpg' },
+          ]),
+        }
+        const res = visitSchema.parse(payload)
+        expect(res.visitorName).toBe('Charlie')
+        expect(Array.isArray(res.idProofs)).toBe(true)
+        expect(res.idProofs?.[0].type).toBe('license')
+      })
+
+      it('throws precise validation error on invalid nested object property', () => {
+        const payload = {
+          visitorName: 'David',
+          idProofs: [
+            { type: 'invalid_type', url: 'https://example.com/doc.jpg' },
+          ],
+        }
+        expect(() => visitSchema.parse(payload)).toThrow(/idProofs\[0\]\.type/)
+      })
+    })
   })
 })

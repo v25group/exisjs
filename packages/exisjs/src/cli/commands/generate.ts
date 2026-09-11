@@ -49,6 +49,32 @@ export async function generateController(
   )
 }
 
+export async function generateModel(
+  name: string,
+  cwd = process.cwd(),
+  options: { named?: boolean } = {}
+) {
+  const targetDir = path.join(cwd, 'src', 'models')
+  await ensureDir(targetDir)
+  const capitalizedName = toPascalCase(name)
+  const filename = options.named ? `${name}.model.ts` : `${capitalizedName}.ts`
+
+  const code = `export interface ${capitalizedName} {
+  id: string
+  name: string
+  description?: string
+  createdAt?: Date
+  updatedAt?: Date
+}
+
+export type Create${capitalizedName}Input = Omit<${capitalizedName}, 'id' | 'createdAt' | 'updatedAt'>
+export type Update${capitalizedName}Input = Partial<Create${capitalizedName}Input>
+`
+
+  await fs.writeFile(path.join(targetDir, filename), code)
+  success(`Generated database-agnostic model in src/models/${filename}`)
+}
+
 export async function generateService(
   name: string,
   cwd = process.cwd(),
@@ -58,10 +84,75 @@ export async function generateService(
   await ensureDir(targetDir)
   const capitalizedName = toPascalCase(name)
   const filename = options.named ? `${name}.service.ts` : 'service.ts'
+  const schemaFile = options.named ? `./${name}.schema` : './schema'
 
   const code = options.oop
-    ? `import { Injectable } from 'exisjs/decorators'\n\n@Injectable({ scope: 'singleton' })\nexport class ${capitalizedName}Service {\n  async list() {\n    return []\n  }\n}\n`
-    : `export async function get${capitalizedName}s() {\n  return []\n}\n`
+    ? `import { Injectable } from 'exisjs/decorators'
+import { paginate, getPaginationSkip } from 'exisjs'
+import type { Create${capitalizedName}Dto, Update${capitalizedName}Dto } from '${schemaFile}'
+
+@Injectable({ scope: 'singleton' })
+export class ${capitalizedName}Service {
+  async list(query: { page?: number; limit?: number } = {}) {
+    const { skip, limit, page } = getPaginationSkip(query)
+    // Add your database query logic here (PostgreSQL, MySQL, SQLite, MongoDB, etc.)
+    const items: any[] = []
+    const total = 0
+    return paginate(items, total, { page, limit })
+  }
+
+  async getById(id: string) {
+    // Fetch record by id from your database
+    return { id, name: '${capitalizedName} #' + id }
+  }
+
+  async create(data: Create${capitalizedName}Dto) {
+    // Insert record into your database
+    return { id: String(Date.now()), ...data }
+  }
+
+  async update(id: string, data: Update${capitalizedName}Dto) {
+    // Update record in your database
+    return { id, ...data }
+  }
+
+  async delete(id: string) {
+    // Delete record from your database
+    return true
+  }
+}
+`
+    : `import { paginate, getPaginationSkip } from 'exisjs'
+import type { Create${capitalizedName}Dto, Update${capitalizedName}Dto } from '${schemaFile}'
+
+export async function get${capitalizedName}s(query: { page?: number; limit?: number } = {}) {
+  const { skip, limit, page } = getPaginationSkip(query)
+  // Add your database query logic here (PostgreSQL, MySQL, SQLite, MongoDB, etc.)
+  const items: any[] = []
+  const total = 0
+  return paginate(items, total, { page, limit })
+}
+
+export async function get${capitalizedName}ById(id: string) {
+  // Fetch record by id from your database
+  return { id, name: '${capitalizedName} #' + id }
+}
+
+export async function create${capitalizedName}(data: Create${capitalizedName}Dto) {
+  // Insert record into your database
+  return { id: String(Date.now()), ...data }
+}
+
+export async function update${capitalizedName}(id: string, data: Update${capitalizedName}Dto) {
+  // Update record in your database
+  return { id, ...data }
+}
+
+export async function delete${capitalizedName}(id: string) {
+  // Delete record from your database
+  return true
+}
+`
 
   await fs.writeFile(path.join(targetDir, filename), code)
   success(
@@ -79,7 +170,32 @@ export async function generateSchema(
   const capitalizedName = toPascalCase(name)
   const filename = options.named ? `${name}.schema.ts` : 'schema.ts'
 
-  const code = `import { tex } from 'exisjs/validator'\nimport type { ResolveSchema } from 'exisjs/validator'\n\nexport const ${capitalizedName}ParamsSchema = tex.object({\n  id: tex.string(),\n})\n\nexport const Create${capitalizedName}Schema = tex.object({\n  name: tex.string({ min: 1 }),\n})\n\nexport type Create${capitalizedName}Dto = ResolveSchema<typeof Create${capitalizedName}Schema>\n`
+  const code = `import { tex } from 'exisjs/validator'
+import type { ResolveSchema } from 'exisjs/validator'
+
+export const ${capitalizedName}ParamsSchema = tex.object({
+  id: tex.string(),
+})
+
+export const ${capitalizedName}PaginationSchema = tex.pagination({
+  defaultLimit: 20,
+  maxLimit: 100,
+})
+
+export const Create${capitalizedName}Schema = tex.object({
+  name: tex.string({ min: 1 }),
+  description: tex.string({ optional: true }),
+})
+
+export const Update${capitalizedName}Schema = tex.object({
+  name: tex.string({ min: 1, optional: true }),
+  description: tex.string({ optional: true }),
+})
+
+export type ${capitalizedName}ParamsDto = ResolveSchema<typeof ${capitalizedName}ParamsSchema>
+export type Create${capitalizedName}Dto = ResolveSchema<typeof Create${capitalizedName}Schema>
+export type Update${capitalizedName}Dto = ResolveSchema<typeof Update${capitalizedName}Schema>
+`
 
   await fs.writeFile(path.join(targetDir, filename), code)
   success(`Generated validation schema in src/http/${name}/${filename}`)
@@ -92,17 +208,16 @@ export async function generateBoundary(
 ) {
   const targetDir = path.join(cwd, 'src', 'http', name)
   await ensureDir(targetDir)
-  const capitalizedName = toPascalCase(name)
   const filename = options.named ? `${name}.boundary.ts` : 'boundary.ts'
+  const filePath = path.join(targetDir, filename)
 
+  const capitalizedName = toPascalCase(name)
   const code = options.oop
-    ? `import { Boundary } from 'exisjs/decorators'\nimport type { Request, Response, Next, BoundaryContext } from 'exisjs/router'\n\n@Boundary({\n  cors: { origin: ['*'], credentials: true },\n  headers: { 'X-Powered-By': 'ExisJS' },\n})\nexport default class ${capitalizedName}Boundary {\n  // Named chain step auto-detected by (req, res, next) signature\n  // auth(req: Request, res: Response, next: Next) {\n  //   next()\n  // }\n\n  // Wrapper around all routes and child boundaries\n  async handle(ctx: BoundaryContext, next: Next) {\n    return next()\n  }\n}\n`
-    : `import { defineBoundary } from 'exisjs/router'\nimport type { Request, Response, Next, BoundaryContext } from 'exisjs/router'\n\nexport const config = defineBoundary({\n  cors: { origin: ['*'], credentials: true },\n  headers: { 'X-Powered-By': 'ExisJS' },\n  // exclude: [{ path: '/health', method: 'GET' }],\n})\n\n// Named chain step: auto-detected by (req, res, next) signature\n// export function auth(req: Request, res: Response, next: Next) {\n//   next()\n// }\n\n// Pipeline wrapper: auto-detected as default export with (ctx, next) signature\nexport default async function (ctx: BoundaryContext, next: Next) {\n  return next()\n}\n`
+    ? `import { Boundary } from 'exisjs/decorators'\n\n@Boundary()\nexport default class ${capitalizedName}Boundary {}\n`
+    : `import { defineBoundary } from 'exisjs/router'\n\nexport default defineBoundary({\n  // middlewares: [],\n})\n`
 
-  await fs.writeFile(path.join(targetDir, filename), code)
-  success(
-    `Generated ${options.oop ? 'OOP' : 'Functional'} boundary in src/http/${name}/${filename}`
-  )
+  await fs.writeFile(filePath, code)
+  success(`Generated boundary in src/http/${name}/${filename}`)
 }
 
 export async function generateResource(
@@ -119,23 +234,126 @@ export async function generateResource(
   const routeFilename = options.named ? `${name}.route.ts` : 'route.ts'
   const schemaFilename = options.named ? `${name}.schema.ts` : 'schema.ts'
   const serviceFilename = options.named ? `${name}.service.ts` : 'service.ts'
+  const modelFilename = `${capitalizedName}.ts`
 
-  // 1. Generate schema
+  // 1. Generate model
+  await generateModel(name, cwd, options)
+
+  // 2. Generate schema
   await generateSchema(name, cwd, options)
 
-  // 2. Generate service
+  // 3. Generate service
   await generateService(name, cwd, options)
 
-  // 3. Generate route
+  // 4. Generate full CRUD route
   const routeCode = options.oop
-    ? `import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'\nimport { ${capitalizedName}Service } from '${serviceFile}'\nimport { Create${capitalizedName}Schema, ${capitalizedName}ParamsSchema } from '${schemaFile}'\nimport type { Create${capitalizedName}Dto } from '${schemaFile}'\n\n@Controller('/${name}')\nexport default class ${capitalizedName}Controller {\n  constructor(private readonly service: ${capitalizedName}Service) {}\n\n  @Get('/')\n  async list() {\n    const data = await this.service.list()\n    return { success: true, data }\n  }\n\n  @Get('/:id', ${capitalizedName}ParamsSchema)\n  async getById(@Param('id') id: string) {\n    return { success: true, id }\n  }\n\n  @Post('/', Create${capitalizedName}Schema)\n  async create(@Body() body: Create${capitalizedName}Dto) {\n    return { success: true, data: body }\n  }\n}\n`
-    : `import { controller, route } from 'exisjs/router'\nimport * as service from '${serviceFile}'\nimport { Create${capitalizedName}Schema, ${capitalizedName}ParamsSchema } from '${schemaFile}'\n\nexport default controller({\n  list: route.get('/', {\n    handle: async () => {\n      const data = await service.get${capitalizedName}s()\n      return { success: true, data }\n    }\n  }),\n\n  getById: route.get('/:id', {\n    params: ${capitalizedName}ParamsSchema,\n    handle: async ({ params }) => {\n      return { success: true, id: params.id }\n    }\n  }),\n\n  create: route.post('/', {\n    body: Create${capitalizedName}Schema,\n    handle: async ({ body }) => {\n      return { success: true, data: body }\n    }\n  })\n})\n`
+    ? `import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from 'exisjs/decorators'
+import { ${capitalizedName}Service } from '${serviceFile}'
+import {
+  Create${capitalizedName}Schema,
+  Update${capitalizedName}Schema,
+  ${capitalizedName}ParamsSchema,
+  ${capitalizedName}PaginationSchema,
+} from '${schemaFile}'
+import type { Create${capitalizedName}Dto, Update${capitalizedName}Dto } from '${schemaFile}'
+
+@Controller('/${name}')
+export default class ${capitalizedName}Controller {
+  constructor(private readonly service: ${capitalizedName}Service) {}
+
+  @Get('/', { query: ${capitalizedName}PaginationSchema })
+  async list(@Query() query: any) {
+    const result = await this.service.list(query)
+    return { success: true, ...result }
+  }
+
+  @Get('/:id', { params: ${capitalizedName}ParamsSchema })
+  async getById(@Param('id') id: string) {
+    const item = await this.service.getById(id)
+    if (!item) return { success: false, error: 'Not found' }
+    return { success: true, data: item }
+  }
+
+  @Post('/', { body: Create${capitalizedName}Schema })
+  async create(@Body() body: Create${capitalizedName}Dto) {
+    const item = await this.service.create(body)
+    return { success: true, data: item }
+  }
+
+  @Patch('/:id', { params: ${capitalizedName}ParamsSchema, body: Update${capitalizedName}Schema })
+  async update(@Param('id') id: string, @Body() body: Update${capitalizedName}Dto) {
+    const item = await this.service.update(id, body)
+    return { success: true, data: item }
+  }
+
+  @Delete('/:id', { params: ${capitalizedName}ParamsSchema })
+  async delete(@Param('id') id: string) {
+    await this.service.delete(id)
+    return { success: true, message: 'Deleted successfully' }
+  }
+}
+`
+    : `import { controller, route } from 'exisjs/router'
+import * as service from '${serviceFile}'
+import {
+  Create${capitalizedName}Schema,
+  Update${capitalizedName}Schema,
+  ${capitalizedName}ParamsSchema,
+  ${capitalizedName}PaginationSchema,
+} from '${schemaFile}'
+
+export default controller({
+  list: route.get('/', {
+    query: ${capitalizedName}PaginationSchema,
+    handle: async ({ query }) => {
+      const result = await service.get${capitalizedName}s(query)
+      return { success: true, ...result }
+    },
+  }),
+
+  getById: route.get('/:id', {
+    params: ${capitalizedName}ParamsSchema,
+    handle: async ({ params }) => {
+      const item = await service.get${capitalizedName}ById(params.id)
+      if (!item) return { success: false, error: 'Not found' }
+      return { success: true, data: item }
+    },
+  }),
+
+  create: route.post('/', {
+    body: Create${capitalizedName}Schema,
+    handle: async ({ body }) => {
+      const item = await service.create${capitalizedName}(body)
+      return { success: true, data: item }
+    },
+  }),
+
+  update: route.patch('/:id', {
+    params: ${capitalizedName}ParamsSchema,
+    body: Update${capitalizedName}Schema,
+    handle: async ({ params, body }) => {
+      const item = await service.update${capitalizedName}(params.id, body)
+      return { success: true, data: item }
+    },
+  }),
+
+  remove: route.delete('/:id', {
+    params: ${capitalizedName}ParamsSchema,
+    handle: async ({ params }) => {
+      await service.delete${capitalizedName}(params.id)
+      return { success: true, message: 'Deleted successfully' }
+    },
+  }),
+})
+`
 
   await fs.writeFile(path.join(targetDir, routeFilename), routeCode)
   success(
-    `Generated ${options.oop ? 'OOP' : 'Functional'} resource slice in src/http/${name}/ (${routeFilename}, ${schemaFilename}, ${serviceFilename})`
+    `Generated full 4-file CRUD slice in src/http/${name}/ and src/models/${modelFilename} (${routeFilename}, ${schemaFilename}, ${serviceFilename}, ${modelFilename})`
   )
 }
+
+export const generateCrud = generateResource
 
 export async function generatePlugin(name: string) {
   const targetDir = path.join(process.cwd(), 'src', 'plugins')

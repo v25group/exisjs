@@ -63,6 +63,16 @@ impl TexValidator {
             
             let mut val = obj.get(key).cloned();
 
+            if let Some(Value::String(ref s)) = val {
+                if s.trim().is_empty() && (field.is_optional || field.is_nullable) {
+                    if field.is_nullable {
+                        val = Some(Value::Null);
+                    } else {
+                        val = None;
+                    }
+                }
+            }
+
             if val.is_none() || val.as_ref().unwrap().is_null() {
                 if val.as_ref().map_or(false, |v| v.is_null()) && field.is_nullable {
                     result.insert(key.clone(), Value::Null);
@@ -232,6 +242,25 @@ impl TexValidator {
                 }
             }
             TexType::Array(inner_field) => {
+                if result_val.is_string() {
+                    let s = result_val.as_str().unwrap().trim();
+                    if s.starts_with('[') && s.ends_with(']') {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            if parsed.is_array() {
+                                result_val = parsed;
+                            }
+                        }
+                    } else if s.starts_with('{') && s.ends_with('}') {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            if parsed.is_object() {
+                                result_val = Value::Array(vec![parsed]);
+                            }
+                        }
+                    }
+                } else if result_val.is_object() {
+                    result_val = Value::Array(vec![result_val]);
+                }
+
                 let arr = result_val.as_array().ok_or_else(|| {
                     Error::new(Status::InvalidArg, format!("Field '{}' must be an array", path))
                 })?;
@@ -253,10 +282,26 @@ impl TexValidator {
                     let validated_item = self.validate_field(item, inner_field, &item_path)?;
                     new_arr.push(validated_item);
                 }
+
+                if field.dedupe {
+                    let mut seen = std::collections::HashSet::new();
+                    new_arr.retain(|item| seen.insert(item.to_string()));
+                }
                 
                 result_val = Value::Array(new_arr);
             }
             TexType::Object(schema_map) => {
+                if result_val.is_string() {
+                    let s = result_val.as_str().unwrap().trim();
+                    if s.starts_with('{') && s.ends_with('}') {
+                        if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                            if parsed.is_object() {
+                                result_val = parsed;
+                            }
+                        }
+                    }
+                }
+
                 let obj = result_val.as_object().ok_or_else(|| {
                     Error::new(Status::InvalidArg, format!("Field '{}' must be an object", path))
                 })?;

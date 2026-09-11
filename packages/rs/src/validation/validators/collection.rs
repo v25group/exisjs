@@ -21,7 +21,27 @@ pub fn validate_array(
     field: &TexField,
     path: &str
 ) -> Result<Value> {
-    let arr = val.as_array().ok_or_else(|| {
+    let mut parsed_val = val.clone();
+    if parsed_val.is_string() {
+        let s = parsed_val.as_str().unwrap().trim();
+        if s.starts_with('[') && s.ends_with(']') {
+            if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                if parsed.is_array() {
+                    parsed_val = parsed;
+                }
+            }
+        } else if s.starts_with('{') && s.ends_with('}') {
+            if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                if parsed.is_object() {
+                    parsed_val = Value::Array(vec![parsed]);
+                }
+            }
+        }
+    } else if parsed_val.is_object() {
+        parsed_val = Value::Array(vec![parsed_val]);
+    }
+
+    let arr = parsed_val.as_array().ok_or_else(|| {
         Error::new(Status::InvalidArg, format!("Field '{}' must be an array", path))
     })?;
     
@@ -52,10 +72,22 @@ pub fn validate_object(
     schema_map: &HashMap<String, TexField>, 
     path: &str
 ) -> Result<Value> {
-    let obj = val.as_object().ok_or_else(|| {
+    let mut parsed_val = val.clone();
+    if parsed_val.is_string() {
+        let s = parsed_val.as_str().unwrap().trim();
+        if s.starts_with('{') && s.ends_with('}') {
+            if let Ok(parsed) = serde_json::from_str::<Value>(s) {
+                if parsed.is_object() {
+                    parsed_val = parsed;
+                }
+            }
+        }
+    }
+    let obj = parsed_val.as_object().ok_or_else(|| {
         Error::new(Status::InvalidArg, format!("Field '{}' must be an object", path))
     })?;
     
     let validated_obj = validator.validate_object(obj, schema_map, false, path)?; // Nested strict mode not fully propagated yet
     Ok(Value::Object(validated_obj))
 }
+

@@ -10,6 +10,8 @@ export interface MockRequestOptions {
   method?: string
   url?: string
   headers?: Record<string, string | string[]>
+  query?: Record<string, string>
+  body?: unknown
   socket?: Partial<Socket>
 }
 
@@ -19,6 +21,8 @@ export function createMockRequest(options: MockRequestOptions = {}): Request {
     url = '/',
     headers = {},
     socket: socketOpts = {},
+    body,
+    query,
   } = options
 
   const socket = new Socket()
@@ -41,6 +45,13 @@ export function createMockRequest(options: MockRequestOptions = {}): Request {
 
   const res = new ExisResponse(new ServerResponse(raw))
   const req = new ExisRequest(raw, res)
+
+  if (body !== undefined) {
+    req.body = body
+  }
+  if (query !== undefined) {
+    req.query = query
+  }
 
   // Attach a silent logger by default for tests
   req.log = createMockLogger()
@@ -150,11 +161,11 @@ export function createMockNext() {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function getResponseBody(res: MockResponse): unknown {
+export function getResponseBody<T = any>(res: MockResponse): T {
   try {
     return JSON.parse(res._body)
   } catch {
-    return res._body
+    return res._body as unknown as T
   }
 }
 

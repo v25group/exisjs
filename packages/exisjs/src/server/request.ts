@@ -22,6 +22,15 @@ export class ExisRequest<
   public params!: TParams
   public body!: TBody
   public files: import('../types').ExisFile[] = []
+  private _file?: import('../types').ExisFile
+
+  get file(): import('../types').ExisFile | undefined {
+    return this._file || this.files?.[0]
+  }
+
+  set file(val: import('../types').ExisFile | undefined) {
+    this._file = val
+  }
 
   public rawBody?: string
   public user!: import('../types').ExisUser & Record<string, any>
@@ -46,7 +55,7 @@ export class ExisRequest<
     public raw: IncomingMessage,
     public res: ExisResponse,
     private trustProxy: boolean | number = false,
-    private bodyLimit = 1048576 // 1MB
+    private bodyLimit = 10485760 // 10MB
   ) {
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
@@ -56,7 +65,7 @@ export class ExisRequest<
     raw: IncomingMessage,
     res: ExisResponse,
     trustProxy: boolean | number = false,
-    bodyLimit = 1048576 // 1MB
+    bodyLimit = 10485760 // 10MB
   ): this {
     this.raw = raw
     this.res = res
@@ -542,6 +551,24 @@ export class ExisRequest<
     return this.body as unknown as T
   }
 
+  setTimeout(ms: number): this {
+    if (typeof (this as any)._timeoutSetter === 'function') {
+      ;(this as any)._timeoutSetter(ms)
+    } else if (typeof (this.raw as any).setTimeout === 'function') {
+      ;(this.raw as any).setTimeout(ms)
+    }
+    return this
+  }
+
+  clearTimeout(): this {
+    if (typeof (this as any)._timeoutClearer === 'function') {
+      ;(this as any)._timeoutClearer()
+    } else if (typeof (this.raw as any).clearTimeout === 'function') {
+      ;(this.raw as any).clearTimeout()
+    }
+    return this
+  }
+
   private async _parseBody(): Promise<void> {
     const contentType = this.get('content-type') ?? ''
     if (
@@ -582,7 +609,9 @@ export class ExisRequest<
         const contentLength = parseInt(contentLengthStr, 10)
         if (!isNaN(contentLength) && contentLength > this.bodyLimit) {
           done(
-            new Error(`Request body exceeds limit of ${this.bodyLimit} bytes`)
+            HttpError.payloadTooLarge(
+              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+            )
           )
           return
         }
@@ -597,7 +626,9 @@ export class ExisRequest<
         if (size > this.bodyLimit) {
           this.raw.destroy?.()
           done(
-            new Error(`Request body exceeds limit of ${this.bodyLimit} bytes`)
+            HttpError.payloadTooLarge(
+              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+            )
           )
           return
         }

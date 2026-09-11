@@ -5,6 +5,7 @@ import type {
   HookError,
   HookResponse,
   RouteSchema,
+  ExisFile,
 } from '../types'
 import type { App } from '../server/app'
 import { logger } from '../logger'
@@ -15,7 +16,7 @@ import { logger } from '../logger'
  *
  * @example
  * async handle(ctx) {
- *   const { body, query, req, res, app } = ctx
+ *   const { body, query, req, res, app, file, fields } = ctx
  *   return { message: 'Hello World' }
  * }
  */
@@ -34,6 +35,9 @@ export type SuperContext<
   app: App
   state: Record<string, any>
   resolve: <T>(token: import('../di/container').ProviderToken<T>) => T
+  file?: ExisFile
+  files?: ExisFile[] | Record<string, ExisFile[]>
+  fields?: Record<string, any>
   [key: string]: any
 } & TContext
 
@@ -75,6 +79,8 @@ export interface BaseRouteConfig<TContext = Record<string, any>> {
     | Handler<any, any, any, any, TContext>
   filters?: any | any[]
   host?: string | string[]
+  timeoutMs?: number
+  timeout?: number | { ms: number; statusCode?: number; message?: string }
 }
 
 export type RouteConfig<

@@ -132,7 +132,62 @@ export default class UsersController {
 
 ---
 
-## 3. Setting Headers & Status
+## 3. Standardized Pagination Envelopes (`paginate`)
+
+To eliminate pagination inconsistency across different endpoints, ExisJS exports standard `paginate()` and `getPaginationSkip()` utilities directly from `exisjs/validator` (as well as `exisjs/response`).
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+export default controller({
+  listProducts: route.get('/', {
+    query: tex.pagination({ defaultLimit: 15, maxLimit: 50 }),
+    async handle({ query }) {
+      // 1. Automatically extracts { skip, limit, page } with fallback defaults
+      const { skip, limit, page } = getPaginationSkip(query)
+
+      // 2. Fetch items and count total from your database
+      const [items, total] = await Promise.all([
+        db.product.findMany({ skip, take: limit, orderBy: { createdAt: 'desc' } }),
+        db.product.count(),
+      ])
+
+      // 3. Return standardized pagination envelope
+      return paginate(items, total, { page, limit })
+    }
+  })
+})
+```
+
+### The Standardized Pagination Envelope
+
+Calling `paginate(items, total, { page, limit })` produces a uniform envelope:
+
+```json
+{
+  "data": [
+    { "id": 1, "name": "Mechanical Keyboard" },
+    { "id": 2, "name": "Ergonomic Mouse" }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 15,
+    "total": 42,
+    "totalPages": 3,
+    "hasNext": true,
+    "hasPrev": false,
+    "hasNextPage": true,
+    "hasPrevPage": false
+  }
+}
+```
+
+Both `hasNext`/`hasPrev` and `hasNextPage`/`hasPrevPage` are provided out-of-the-box, ensuring full compatibility with both cursor-style and page-number frontend UI components.
+
+---
+
+## 4. Setting Headers & Status
 
 The `ExisResponse` object implements a chainable API for HTTP headers and status codes.
 

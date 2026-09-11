@@ -53,6 +53,13 @@ export class HttpError extends Error {
     return new HttpError(message, 422, 'UNPROCESSABLE_ENTITY', details)
   }
 
+  static payloadTooLarge(
+    message = 'Payload too large',
+    details?: unknown
+  ): HttpError {
+    return new HttpError(message, 413, 'PAYLOAD_TOO_LARGE', details)
+  }
+
   static tooManyRequests(message = 'Too many requests'): HttpError {
     return new HttpError(message, 429, 'RATE_LIMITED')
   }
@@ -123,6 +130,13 @@ export class UnprocessableError extends HttpError {
   }
 }
 
+export class PayloadTooLargeError extends HttpError {
+  constructor(message = 'Payload Too Large', details?: unknown) {
+    super(message, 413, 'PAYLOAD_TOO_LARGE', details)
+    this.name = 'PayloadTooLargeError'
+  }
+}
+
 export class RateLimitError extends HttpError {
   constructor(message = 'Too many requests') {
     super(message, 429, 'RATE_LIMITED')
@@ -158,6 +172,7 @@ export const UnauthorizedException = UnauthorizedError
 export const ForbiddenException = ForbiddenError
 export const NotFoundException = NotFoundError
 export const ConflictException = ConflictError
+export const PayloadTooLargeException = PayloadTooLargeError
 export const UnprocessableException = UnprocessableError
 export const RateLimitException = RateLimitError
 export const InternalException = InternalError
@@ -271,6 +286,39 @@ function renderErrorHtml(err: Error, req: import('../types').Request): string {
   `.trim()
 }
 
+export function renderValidationTable(
+  rows: { field: string; received: string; expected: string }[]
+): string {
+  if (!rows || rows.length === 0) return ''
+
+  const headers = { field: 'Field', received: 'Received', expected: 'Expected' }
+  const all = [headers, ...rows]
+
+  const fieldWidth = Math.max(11, ...all.map((r) => String(r.field).length))
+  const receivedWidth = Math.max(
+    25,
+    ...all.map((r) => String(r.received).length)
+  )
+  const expectedWidth = Math.max(
+    16,
+    ...all.map((r) => String(r.expected).length)
+  )
+
+  const pad = (s: string, w: number) =>
+    s + ' '.repeat(Math.max(0, w - s.length))
+
+  const top = `┌─${'─'.repeat(fieldWidth)}─┬─${'─'.repeat(receivedWidth)}─┬─${'─'.repeat(expectedWidth)}─┐`
+  const headerRow = `│ ${pad(headers.field, fieldWidth)} │ ${pad(headers.received, receivedWidth)} │ ${pad(headers.expected, expectedWidth)} │`
+  const sep = `├─${'─'.repeat(fieldWidth)}─┼─${'─'.repeat(receivedWidth)}─┼─${'─'.repeat(expectedWidth)}─┤`
+  const dataRows = rows.map(
+    (r) =>
+      `│ ${pad(String(r.field), fieldWidth)} │ ${pad(String(r.received), receivedWidth)} │ ${pad(String(r.expected), expectedWidth)} │`
+  )
+  const bot = `└─${'─'.repeat(fieldWidth)}─┴─${'─'.repeat(receivedWidth)}─┴─${'─'.repeat(expectedWidth)}─┘`
+
+  return [top, headerRow, sep, ...dataRows, bot].join('\n')
+}
+
 export function createErrorHandler(isDev = false): ErrorHandler {
   return (err, req, res, _next) => {
     if (res.headersSent) return
@@ -292,22 +340,36 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     if (
       err.name === 'ZodError' ||
       err.name === 'ValidationError' ||
-      err.name === 'ValidatorError'
+      err.name === 'ValidatorError' ||
+      (err &&
+        typeof err === 'object' &&
+        ('errors' in err || 'issues' in err || 'inner' in err))
     ) {
       let message = err.message
+      const errorsMap: Record<string, string> = {}
 
-      // Normalize ZodError
+      // Normalize ZodError / Standard schema issues
       if (
-        err.name === 'ZodError' &&
-        'errors' in err &&
-        Array.isArray((err as any).errors)
+        err.name === 'ZodError' ||
+        ('issues' in err && Array.isArray((err as any).issues)) ||
+        ('errors' in err &&
+          Array.isArray((err as any).errors) &&
+          err.name !== 'ValidatorError')
       ) {
-        const zodErrors = (err as any).errors
-        message =
-          'Validation Error: ' +
-          zodErrors
-            .map((e: any) => `${e.path.join('.')}: ${e.message}`)
-            .join(', ')
+        const issues = (err as any).issues || (err as any).errors || []
+        for (const issue of issues) {
+          const field = Array.isArray(issue.path)
+            ? issue.path.join('.')
+            : String(issue.path || issue.field || 'general')
+          errorsMap[field || 'general'] = issue.message
+        }
+        if (Object.keys(errorsMap).length > 0) {
+          message =
+            'Validation Error: ' +
+            Object.entries(errorsMap)
+              .map(([path, msg]) => `${path}: ${msg}`)
+              .join(', ')
+        }
       }
       // Normalize Yup ValidationError
       else if (
@@ -316,10 +378,14 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         Array.isArray((err as any).inner) &&
         (err as any).inner.length > 0
       ) {
-        const yupErrors = (err as any).inner
+        for (const e of (err as any).inner) {
+          errorsMap[e.path || 'general'] = e.message
+        }
         message =
           'Validation Error: ' +
-          yupErrors.map((e: any) => `${e.path}: ${e.message}`).join(', ')
+          Object.entries(errorsMap)
+            .map(([path, msg]) => `${path}: ${msg}`)
+            .join(', ')
       }
       // Normalize Tex ValidatorError
       else if (
@@ -327,22 +393,119 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         'errors' in err &&
         Array.isArray((err as any).errors)
       ) {
-        const texErrors = (err as any).errors
-        res.status(400).json({
-          statusCode: 400,
-          error: 'Bad Request',
-          message: 'Validation Error',
-          errors: texErrors.reduce((acc: any, e: any) => {
-            acc[e.path] = e.message
-            return acc
-          }, {}),
-        })
-        return
+        for (const e of (err as any).errors) {
+          errorsMap[e.path || 'general'] = e.message
+        }
+        message = 'Validation Error'
+      } else if (
+        (err as any).errors &&
+        typeof (err as any).errors === 'object' &&
+        !Array.isArray((err as any).errors)
+      ) {
+        Object.assign(errorsMap, (err as any).errors)
       }
+
+      // Terminal diagnostic logging
+      const part = (err as any).httpPart
+        ? ` (part: ${(err as any).httpPart})`
+        : ''
+      const diagnosticLines = Object.entries(errorsMap).map(
+        ([f, msg]) => `  ✖ ${f}: ${msg}`
+      )
+
+      const receivedSource =
+        (err as any).received !== undefined
+          ? (err as any).received
+          : (err as any).httpPart === 'query'
+            ? req.query
+            : (err as any).httpPart === 'params'
+              ? req.params
+              : (err as any).httpPart === 'headers'
+                ? req.headers
+                : req.body
+
+      const tableRows: {
+        field: string
+        received: string
+        expected: string
+      }[] = []
+
+      for (const [field, expectedMsg] of Object.entries(errorsMap)) {
+        let rawReceived: any
+        if (receivedSource && typeof receivedSource === 'object') {
+          if (field in receivedSource) {
+            rawReceived = receivedSource[field]
+          } else {
+            try {
+              const parts = field.replace(/\[(\w+)\]/g, '.$1').split('.')
+              let curr = receivedSource
+              for (const p of parts) {
+                if (curr === undefined || curr === null) break
+                curr = curr[p]
+              }
+              rawReceived = curr
+            } catch {
+              rawReceived = undefined
+            }
+          }
+        }
+
+        let formattedReceived: string
+        if (rawReceived === undefined) {
+          formattedReceived = 'undefined'
+        } else if (rawReceived === null) {
+          formattedReceived = 'null'
+        } else if (typeof rawReceived === 'string') {
+          formattedReceived = JSON.stringify(rawReceived)
+        } else if (
+          typeof rawReceived === 'number' ||
+          typeof rawReceived === 'boolean'
+        ) {
+          formattedReceived = String(rawReceived)
+        } else if (typeof rawReceived === 'object') {
+          try {
+            formattedReceived = JSON.stringify(rawReceived)
+          } catch {
+            formattedReceived = '[object Object]'
+          }
+        } else {
+          formattedReceived = String(rawReceived)
+        }
+
+        tableRows.push({
+          field,
+          received: formattedReceived,
+          expected: expectedMsg,
+        })
+      }
+
+      const table = renderValidationTable(tableRows)
+      const diagnosticMsg = `[Validation Failed] ${req.method} ${req.url || req.path || ''}${part}\n${diagnosticLines.join('\n')}\n${table}`
+
+      if (req.log && typeof req.log.warn === 'function') {
+        req.log.warn(
+          {
+            validationErrors: errorsMap,
+            validationTable: tableRows,
+            httpPart: (err as any).httpPart,
+          },
+          diagnosticMsg
+        )
+      } else if (process.env.NODE_ENV !== 'test') {
+        console.warn(`\x1b[33m${diagnosticMsg}\x1b[0m`)
+      }
+
+      // Attach diagnostic info to request for downstream middlewares/loggers
+      ;(req as any)._validationError = {
+        errors: errorsMap,
+        httpPart: (err as any).httpPart,
+      }
+
       res.status(400).json({
         statusCode: 400,
         error: 'Bad Request',
-        message,
+        message: message || 'Validation Error',
+        errors: errorsMap,
       })
       return
     }

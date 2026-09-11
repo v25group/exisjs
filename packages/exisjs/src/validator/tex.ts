@@ -17,6 +17,8 @@ import {
 
 export interface TexBaseOptions {
   optional?: boolean
+  nullable?: boolean
+  nullish?: boolean
 }
 
 export interface TexStringOptions extends TexBaseOptions {
@@ -38,6 +40,7 @@ export interface TexNumberOptions extends TexBaseOptions {
   min?: number
   max?: number
   coerce?: boolean
+  default?: number
 }
 
 export interface TexBooleanOptions extends TexBaseOptions {
@@ -101,6 +104,7 @@ export class TexBuilder {
     if (opts?.coerce) base += ' | coerce'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
+    if (opts?.default !== undefined) base += ` | default:${opts.default}`
     return new TexType(base) as unknown as TexNumber<
       O['optional'] extends true ? true : false
     >
@@ -184,16 +188,35 @@ export class TexBuilder {
     schema: T,
     opts?: O
   ): TexArray<T, O['optional'] extends true ? true : false> {
-    const itemSchema = schema instanceof TexType ? schema._raw : schema
-    let base = `array<${itemSchema as string}>`
+    let resolvedItem = schema as any
+    if (
+      typeof schema === 'object' &&
+      schema !== null &&
+      !(schema instanceof TexType) &&
+      !(schema instanceof TexEngine)
+    ) {
+      resolvedItem = this.object(schema as any)
+    }
+
+    const itemSchema =
+      resolvedItem instanceof TexEngine
+        ? `object<${JSON.stringify(resolvedItem.getCompiledSchema())}>`
+        : resolvedItem instanceof TexType
+          ? resolvedItem._raw
+          : (resolvedItem as string)
+    let base = `array<${itemSchema}>`
     if (opts?.optional) base += '?'
+    if (opts?.nullable) base += ' | nullable'
+    if (opts?.nullish) base += ' | nullish'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
     if (opts?.dedupe) base += ' | dedupe'
-    return new TexType(base) as unknown as TexArray<
+    const res = new TexType(base) as unknown as TexArray<
       T,
       O['optional'] extends true ? true : false
     >
+    ;(res as any)._item = resolvedItem
+    return res
   }
 
   enum<T extends string, O extends TexEnumOptions = TexEnumOptions>(
@@ -302,6 +325,23 @@ export class TexBuilder {
     }
     return new TexEngine(compiledSchema, schema, opts?.strict)
   }
+
+  pagination(options?: { defaultLimit?: number; maxLimit?: number }) {
+    const defaultLimit = options?.defaultLimit ?? 10
+    const maxLimit = options?.maxLimit ?? 100
+    return this.object({
+      page: this.number({ optional: true, coerce: true, min: 1, default: 1 }),
+      limit: this.number({
+        optional: true,
+        coerce: true,
+        min: 1,
+        max: maxLimit,
+        default: defaultLimit,
+      }),
+      sort: this.string({ optional: true, trim: true }),
+      order: this.enum(['asc', 'desc'], { optional: true }),
+    })
+  }
 }
 
 export class ValidatorError extends Error {
@@ -401,14 +441,45 @@ export class TexEngine<T = any> {
     // 1. Run pre-validation sanitizers on the raw payload (if it's an object)
     if (data && typeof data === 'object') {
       for (const [key, val] of Object.entries(this.rawSchema)) {
-        if (
-          data[key] !== undefined &&
-          data[key] !== null &&
-          val instanceof TexType &&
-          val.sanitizers.length > 0
-        ) {
-          for (const s of val.sanitizers) {
-            data[key] = s(data[key])
+        if (typeof data[key] === 'string' && data[key].trim() === '') {
+          const raw = val instanceof TexType ? val._raw : String(val)
+          if (
+            raw.includes('optional') ||
+            raw.includes('nullable') ||
+            raw.includes('nullish') ||
+            raw.includes('?') ||
+            (val as any)?._isOptional
+          ) {
+            if (
+              raw.includes('nullable') &&
+              !raw.includes('optional') &&
+              !raw.includes('nullish')
+            ) {
+              data[key] = null
+            } else {
+              delete data[key]
+            }
+          }
+        }
+        if (data[key] !== undefined && data[key] !== null) {
+          if (val instanceof TexType && val.sanitizers.length > 0) {
+            for (const s of val.sanitizers) {
+              data[key] = s(data[key])
+            }
+          }
+
+          const itemSchema = (val as any)?._item
+          if (itemSchema && Array.isArray(data[key])) {
+            if (
+              itemSchema instanceof TexType &&
+              itemSchema.sanitizers.length > 0
+            ) {
+              for (let i = 0; i < data[key].length; i++) {
+                for (const s of itemSchema.sanitizers) {
+                  data[key][i] = s(data[key][i])
+                }
+              }
+            }
           }
         }
       }
@@ -448,18 +519,35 @@ export class TexEngine<T = any> {
     const errors: { path: string; message: string }[] = []
     if (parsedData && typeof parsedData === 'object') {
       for (const [key, val] of Object.entries(this.rawSchema)) {
-        if (
-          parsedData[key] !== undefined &&
-          val instanceof TexType &&
-          val.refinements.length > 0
-        ) {
-          for (const r of val.refinements) {
-            if (!r.async && !r.fn(parsedData[key])) {
-              const msg =
-                typeof r.message === 'function'
-                  ? r.message(parsedData[key])
-                  : r.message || 'Invalid value'
-              errors.push({ path: key, message: msg })
+        if (parsedData[key] !== undefined) {
+          if (val instanceof TexType && val.refinements.length > 0) {
+            for (const r of val.refinements) {
+              if (!r.async && !r.fn(parsedData[key])) {
+                const msg =
+                  typeof r.message === 'function'
+                    ? r.message(parsedData[key])
+                    : r.message || 'Invalid value'
+                errors.push({ path: key, message: msg })
+              }
+            }
+          }
+          const itemSchema = (val as any)?._item
+          if (itemSchema && Array.isArray(parsedData[key])) {
+            if (
+              itemSchema instanceof TexType &&
+              itemSchema.refinements.length > 0
+            ) {
+              for (let i = 0; i < parsedData[key].length; i++) {
+                for (const r of itemSchema.refinements) {
+                  if (!r.async && !r.fn(parsedData[key][i])) {
+                    const msg =
+                      typeof r.message === 'function'
+                        ? r.message(parsedData[key][i])
+                        : r.message || 'Invalid value'
+                    errors.push({ path: `${key}[${i}]`, message: msg })
+                  }
+                }
+              }
             }
           }
         }
@@ -564,3 +652,61 @@ export class TexEngine<T = any> {
 }
 
 export const tex = new TexBuilder()
+
+export interface PaginationMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+  hasNextPage: boolean
+  hasPrevPage: boolean
+  hasNext: boolean
+  hasPrev: boolean
+}
+
+export interface PaginatedResult<T> {
+  data: T[]
+  pagination: PaginationMeta
+}
+
+export function paginate<T>(
+  data: T[],
+  total: number,
+  options: { page?: number; limit?: number } = {}
+): PaginatedResult<T> {
+  const page = Math.max(1, Number(options.page) || 1)
+  const limit = Math.max(1, Number(options.limit) || 20)
+  const totalPages = Math.ceil(total / limit)
+  const hasNext = page < totalPages
+  const hasPrev = page > 1
+
+  return {
+    data,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: hasNext,
+      hasPrevPage: hasPrev,
+      hasNext,
+      hasPrev,
+    },
+  }
+}
+
+export function getPaginationSkip(
+  query: { page?: number; limit?: number } = {}
+): {
+  skip: number
+  limit: number
+  page: number
+} {
+  const page = Math.max(1, Number(query.page) || 1)
+  const limit = Math.max(1, Number(query.limit) || 20)
+  return {
+    skip: (page - 1) * limit,
+    limit,
+    page,
+  }
+}

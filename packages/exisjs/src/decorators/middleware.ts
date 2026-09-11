@@ -196,3 +196,44 @@ export function Idempotent(
     methodMiddlewares.push(middlewareProxy)
   }
 }
+
+/**
+ * Route-Level Timeout Decorator.
+ * Configures an explicit timeout override for a long-running endpoint.
+ *
+ * Example:
+ *     @Post('/heavy-task')
+ *     @Timeout(120000)
+ *     heavyTask() {}
+ */
+export function Timeout(
+  msOrOptions: number | import('../middleware/security').TimeoutOptions
+): any {
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard =
+      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
+    const fn = isStandard
+      ? target
+      : descriptor
+        ? descriptor.value
+        : target[contextOrPropertyKey]
+
+    const methodMiddlewares = MetadataEngine.init<any[]>(
+      fn,
+      METHOD_MIDDLEWARES,
+      []
+    )
+
+    const middlewareProxy = async (req: any, res: any, next: any) => {
+      const { routeTimeout } = await import('../middleware/security')
+      const handler = routeTimeout(msOrOptions)
+      return handler(req, res, next)
+    }
+
+    methodMiddlewares.unshift(middlewareProxy)
+  }
+}

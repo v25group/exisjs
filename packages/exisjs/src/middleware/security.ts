@@ -206,33 +206,121 @@ export function csrf(options: CsrfOptions): Handler {
 // ─── Request Timeout ──────────────────────────────────────────────────────────
 
 export interface TimeoutOptions {
-  ms: number
+  ms?: number
   message?: string
+  statusCode?: number
+  exclude?: (string | RegExp)[] | ((req: Request) => boolean)
 }
 
 /**
  * Times out the request if the response hasn't been sent within the specified ms.
+ * Defaults to 60,000ms (60 seconds) to accommodate cloud storage, AI/LLM streaming,
+ * and heavy asset uploads.
  */
-export function timeout(ms: number | TimeoutOptions): Handler {
-  const options = typeof ms === 'number' ? { ms } : ms
+export function timeout(msOrOptions?: number | TimeoutOptions): Handler {
+  const options: TimeoutOptions =
+    typeof msOrOptions === 'number'
+      ? { ms: msOrOptions }
+      : { ms: 60000, ...msOrOptions }
+
+  const defaultMs = options.ms ?? 60000
+  const statusCode = options.statusCode ?? 503
+  const message = options.message || 'Request timeout'
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const timer = setTimeout(() => {
-      if (!res.headersSent) {
-        res.status(503).json({
-          success: false,
-          error: {
-            code: 'TIMEOUT',
-            message: options.message || 'Request timeout',
-          },
-        })
+    // Check exclusions
+    if (options.exclude) {
+      if (typeof options.exclude === 'function' && options.exclude(req)) {
+        return next()
       }
-    }, options.ms)
+      if (Array.isArray(options.exclude)) {
+        const path = req.path || req.url || '/'
+        const isExcluded = options.exclude.some((pattern) =>
+          typeof pattern === 'string'
+            ? path.startsWith(pattern)
+            : pattern.test(path)
+        )
+        if (isExcluded) return next()
+      }
+    }
 
-    res.raw.on('finish', () => clearTimeout(timer))
-    res.raw.on('close', () => clearTimeout(timer))
+    let timer: NodeJS.Timeout | null = null
+
+    const setTimer = (currentMs: number) => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (!res.headersSent) {
+          res.status(statusCode).json({
+            success: false,
+            error: {
+              code: 'TIMEOUT',
+              message,
+            },
+          })
+        }
+      }, currentMs)
+      if (typeof timer.unref === 'function') {
+        timer.unref()
+      }
+    }
+
+    // Attach dynamic timeout adjustment to req
+    const setTimeoutFn = (newMs: number) => {
+      if (newMs <= 0) {
+        if (timer) clearTimeout(timer)
+        timer = null
+      } else {
+        setTimer(newMs)
+      }
+      return req
+    }
+    const clearTimeoutFn = () => {
+      if (timer) clearTimeout(timer)
+      timer = null
+      return req
+    }
+
+    ;(req as any).setTimeout = setTimeoutFn
+    ;(req as any).clearTimeout = clearTimeoutFn
+    ;(req as any)._timeoutSetter = setTimeoutFn
+    ;(req as any)._timeoutClearer = clearTimeoutFn
+
+    setTimer(defaultMs)
+
+    res.raw.on('finish', () => {
+      if (timer) clearTimeout(timer)
+    })
+    res.raw.on('close', () => {
+      if (timer) clearTimeout(timer)
+    })
 
     next()
+  }
+}
+
+/**
+ * Route-level timeout override middleware.
+ * If a global timeout is already active on req, seamlessly updates the timer to the route's custom duration.
+ * If no global timeout is installed, mounts an isolated timeout lifecycle for this endpoint.
+ */
+export function routeTimeout(msOrOptions: number | TimeoutOptions): Handler {
+  const options: TimeoutOptions =
+    typeof msOrOptions === 'number'
+      ? { ms: msOrOptions }
+      : { ms: 60000, ...msOrOptions }
+  const ms = options.ms ?? 60000
+
+  return (req: any, res: any, next: any) => {
+    if (typeof req._timeoutSetter === 'function') {
+      if (ms <= 0) {
+        req.clearTimeout?.()
+      } else {
+        req.setTimeout(ms)
+      }
+      next()
+    } else {
+      timeout(options)(req, res, next)
+    }
   }
 }
 

@@ -452,6 +452,123 @@ export default class SearchController {
 
   
 
+## Declarative Route Options (Uploads, Timeouts & Validation)
+
+ExisJS allows configuring input validation schemas, multipart file uploads, and per-route timeouts directly inside the route definition without manual middleware plumbing.
+
+### Declarative File Uploads
+
+Specify `upload` in your route definition to automatically handle `multipart/form-data`. Uploaded files are parsed and attached to `req.file` or `req.files`, while non-file form fields are populated in `req.body`.
+
+#### Functional Paradigm
+```typescript filename="src/http/avatar/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
+
+export default controller({
+  uploadAvatar: route.post('/', {
+    upload: {
+      field: 'avatar',
+      maxBytes: 5 * 1024 * 1024, // 5MB limit
+      mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+    },
+    body: tex.object({
+      caption: tex.string({ optional: true }),
+    }),
+    handle({ req }) {
+      const file = req.file! // UploadedFile { filename, buffer, size, mimetype }
+      const caption = req.body?.caption
+      
+      return {
+        success: true,
+        filename: file.filename,
+        size: file.size,
+        caption,
+      }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/avatar/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { Upload, UploadedFile } from 'exisjs/decorators'
+import type { UploadedFile as UploadedFileType } from 'exisjs/middleware'
+
+@Controller('/avatar')
+export default class AvatarController {
+  @Post('/')
+  @Upload('avatar', {
+    maxBytes: 5 * 1024 * 1024,
+    mimeTypes: ['image/png', 'image/jpeg', 'image/webp'],
+  })
+  upload(
+    @UploadedFile() file: UploadedFileType,
+    @Body('caption') caption?: string
+  ) {
+    return {
+      success: true,
+      filename: file.filename,
+      size: file.size,
+      caption,
+    }
+  }
+}
+```
+
+### Route-Level Timeout Overrides
+
+While ExisJS provides a generous 60-second default global timeout, long-running batch jobs, PDF generation, or third-party AI integrations can override the timeout at the individual route level:
+
+#### Functional Paradigm
+```typescript filename="src/http/reports/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  generateAnnualReport: route.post('/annual', {
+    timeout: 120000, // 2 minutes specifically for this route
+    async handle() {
+      // Intensive document rendering or AI workflow
+      const reportUrl = await buildReport()
+      return { success: true, reportUrl }
+    }
+  })
+})
+```
+
+### Query Pagination Schemas
+
+ExisJS provides the `tex.pagination()` primitive for declarative pagination, sorting, and ordering query parameters. String query parameters are automatically coerced into numbers:
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+const ProductQuerySchema = tex.pagination({
+  defaultLimit: 20,
+  maxLimit: 100,
+})
+
+export default controller({
+  list: route.get('/', {
+    query: ProductQuerySchema,
+    async handle({ query }) {
+      // query.page and query.limit are guaranteed positive numbers
+      const { skip, limit, page } = getPaginationSkip(query)
+      
+      // Fetch data using your preferred database query
+      const [items, total] = await Promise.all([
+        db.products.findMany({ skip, take: limit }),
+        db.products.count()
+      ])
+      
+      return paginate(items, total, { page, limit })
+    }
+  })
+})
+```
+
 ## Dependency Injection in Functional Controllers
 
 ExisJS natively supports **Request-Scoped Dependency Injection** directly inside functional routes. You don't need to use classes to get the benefits of DI!

@@ -19,7 +19,7 @@ describe('defaultConfig', () => {
   it('has all required fields', () => {
     expect(defaultConfig.port).toBe(4000)
     expect(defaultConfig.host).toBe('0.0.0.0')
-    expect(defaultConfig.bodyLimit).toBe(1 * 1024 * 1024)
+    expect(defaultConfig.bodyLimit).toBe(10 * 1024 * 1024)
     expect(defaultConfig.trustProxy).toBe(false)
     expect(defaultConfig.cors).toBeDefined()
     expect(defaultConfig.logger).toBeDefined()

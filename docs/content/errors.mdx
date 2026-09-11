@@ -74,7 +74,9 @@ The `HttpError` class provides static factory methods for standard HTTP status c
 - `HttpError.forbidden('Message')` - 403
 - `HttpError.notFound('Resource')` - 404
 - `HttpError.conflict('Message')` - 409
+- `HttpError.payloadTooLarge('Message')` - 413
 - `HttpError.unprocessable('Message', details)` - 422
+- `HttpError.rateLimit('Message')` - 429
 - `HttpError.internal('Message')` - 500
 
 ### Direct Error Classes & Exceptions
@@ -82,15 +84,17 @@ The `HttpError` class provides static factory methods for standard HTTP status c
 If you prefer a class-based approach, ExisJS exports every standard error as its own class. We also provide `Exception` aliases for every error class. You can import and throw them directly:
 
 ```typescript filename="example.ts"
-import { NotFoundException, UnauthorizedException, BadRequestError } from 'exisjs/error'
+import { 
+  NotFoundException, 
+  UnauthorizedException, 
+  BadRequestError, 
+  PayloadTooLargeError 
+} from 'exisjs/error'
 
-export const deleteBook = (req, res) => {
-  const book = db.findBook(req.params.id)
-  
-  if (!book) throw new NotFoundException('Book not found')
-  if (book.ownerId !== req.user.id) throw new UnauthorizedException('Unauthorized')
-    
-  // ...
+export const uploadMedia = (req, res) => {
+  if (req.headers['content-length'] > 10 * 1024 * 1024) {
+    throw new PayloadTooLargeError('File exceeds 10MB limit')
+  }
 }
 ```
 
@@ -106,6 +110,36 @@ When an `HttpError` is thrown, the client will automatically receive a structure
     "message": "User not found"
   }
 }
+```
+
+### Validation Error Responses & Diagnostic Visibility
+
+When schema validation fails (via `tex`, Zod, or Yup), ExisJS produces a typed `400 Bad Request` featuring a clean `errors: Record<string, string>` map for seamless frontend form field binding:
+
+```json filename="HTTP 400 Bad Request Response"
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": "Validation Error: email: Invalid email format, age: Field must be >= 18",
+  "errors": {
+    "email": "Invalid email format",
+    "age": "Field must be >= 18"
+  }
+}
+```
+
+#### Development Terminal Diagnostics
+
+In development mode, ExisJS automatically outputs formatted tabular diagnostics to the terminal displaying the exact HTTP part, field, received value, and expected requirement:
+
+```text
+[VALIDATION FAILED] POST /auth/register (part: body)
+┌─────────────┬───────────────────────────┬──────────────────┐
+│ Field       │ Received                  │ Expected         │
+├─────────────┼───────────────────────────┼──────────────────┤
+│ email       │ "alice"                   │ Valid email      │
+│ age         │ "16"                      │ min: 18          │
+└─────────────┴───────────────────────────┴──────────────────┘
 ```
 
 If you throw an unhandled exception (like a database connection failure or a `TypeError`), ExisJS catches it and securely returns a `500 Internal Server Error`, hiding the stack trace from the client in production mode while logging the full trace to your internal logger.

@@ -5,7 +5,12 @@ export type {
   SuperContext,
 } from './route-builder'
 export { validate } from '../middleware/middleware'
-export { createErrorHandler, HttpError, asyncHandler } from '../error/errors'
+export {
+  createErrorHandler,
+  HttpError,
+  PayloadTooLargeError,
+  asyncHandler,
+} from '../error/errors'
 export type { Request, Response, NextFunction, InferHandler } from '../types'
 export { defineBoundary } from './boundary'
 export type {
@@ -23,6 +28,8 @@ export {
 } from '../server/context'
 
 // File Uploads
+export { fileUpload, fromExpress } from '../middleware/upload'
+export type { FileUploadOptions, FileUploadLimits } from '../middleware/upload'
 export type { ExisFile } from '../types'
 
 // Real-Time / Server-Sent Events (SSE)

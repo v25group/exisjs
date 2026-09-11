@@ -91,112 +91,201 @@ export default class ProcessController {
 
 ---
 
-## 3. File Uploads & Form Data
+## 3. File Uploads & Multipart Form Data
 
-Handling `multipart/form-data` in Node.js can be difficult. ExisJS provides a stream parser out-of-the-box.
+Handling `multipart/form-data` in Node.js can be difficult. ExisJS provides multiple robust, high-performance approaches:
 
-Calling `req.formData()` returns both the standard text fields and the uploaded files. ExisJS also attaches a `.saveToDisk()` helper to every uploaded file, which automatically handles writing the buffer and generating collision-free filenames.
+### A. Declarative Route Uploads (Recommended)
 
-#### Functional Paradigm
+You can declare file upload requirements directly inside your route schema. ExisJS automatically executes the multipart parser, validates MIME types, enforces byte caps, and populates `req.file` or `req.files` along with non-file fields in `req.body`:
+
+```typescript filename="src/http/upload/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
+
+export default controller({
+  uploadPhoto: route.post('/', {
+    upload: {
+      field: 'photo',
+      maxBytes: 10 * 1024 * 1024, // 10MB limit
+      mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    },
+    body: tex.object({
+      title: tex.string({ min: 1 }),
+    }),
+    handle({ req }) {
+      const file = req.file! // Typed UploadedFile
+      console.log(`Uploaded ${file.originalname} (${file.size} bytes)`)
+
+      return {
+        success: true,
+        filename: file.filename,
+        mimetype: file.mimetype,
+        title: req.body.title,
+      }
+    }
+  })
+})
+```
+
+### B. First-Party `fileUpload` Middleware
+
+ExisJS exports a dedicated `fileUpload` middleware from `exisjs/middleware` supporting single, multiple, and multi-field uploads:
+
+```typescript filename="src/http/documents/route.ts"
+import { controller, route } from 'exisjs/router'
+import { fileUpload } from 'exisjs/middleware'
+
+export default controller({
+  // Single file upload
+  single: route.post('/single', 
+    fileUpload.single('document', {
+      maxBytes: 15 * 1024 * 1024, // 15MB
+      dest: './uploads/docs',
+    }),
+    ({ req }) => {
+      return { file: req.file }
+    }
+  ),
+
+  // Multiple files with the same field name
+  gallery: route.post('/gallery',
+    fileUpload.array('photos', 5, {
+      mimeTypes: ['image/*'],
+    }),
+    ({ req }) => {
+      const files = req.files // UploadedFile[]
+      return { count: files?.length }
+    }
+  ),
+
+  // Multiple distinct fields
+  profile: route.post('/profile',
+    fileUpload.fields([
+      { name: 'avatar', maxCount: 1 },
+      { name: 'cover', maxCount: 1 },
+    ]),
+    ({ req }) => {
+      // req.files is a dictionary Record<string, UploadedFile[]>
+      return { files: req.files }
+    }
+  ),
+})
+```
+
+### C. Integrating Express/Connect Middleware (e.g. Multer)
+
+If your enterprise project relies on existing Express middleware like **Multer** (for custom storage engines, S3 direct-to-cloud streams, or specialized filters), ExisJS provides the `fromExpress()` bridge:
+
+```typescript filename="src/http/legacy/route.ts"
+import { controller, route } from 'exisjs/router'
+import { fromExpress } from 'exisjs/middleware'
+import multer from 'multer'
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+})
+
+export default controller({
+  upload: route.post('/', 
+    fromExpress(upload.single('file')),
+    ({ req }) => {
+      // Access multer's req.file or req.body seamlessly
+      const file = (req.raw as any).file || req.file
+      return { success: true, originalname: file?.originalname }
+    }
+  )
+})
+```
+
+### D. Manual `req.formData()` & Streaming Uploads
+
+For manual control over incoming multipart streams without route middleware:
 
 ```typescript filename="src/http/upload/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
   uploadAvatar: route.post('/avatar', {
-    async handle(req, res) {
-      // 1. Parse the multipart form data
+    async handle({ req }) {
+      // Parse on-demand
       const { fields, files } = await req.formData()
-      
-      // 2. Access the file (e.g., from an input named "profile_pic")
       const uploadedFile = files['profile_pic']
       
       if (uploadedFile) {
-        // 3. Save it to disk safely. Returns the absolute saved path.
+        // Save to disk safely with automated collision-free naming
         const savedPath = await uploadedFile.saveToDisk('./uploads/avatars')
         return { success: true, path: savedPath }
       }
       
-      return { success: false, error: "No file uploaded" }
+      return { success: false, error: 'No file uploaded' }
     }
   })
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+---
 
-```typescript filename="src/http/upload/route.ts"
-import { Controller, Post, UploadedFile } from 'exisjs/decorators'
+## 4. Body Size Limits & HTTP 413
 
-@Controller()
-export default class UploadController {
-  @Post('/avatar')
-  async uploadAvatar(@UploadedFile('profile_pic') profilePic: any) {
-    if (profilePic) {
-      // Save it to disk safely. Returns the absolute saved path.
-      const savedPath = await profilePic.saveToDisk('./uploads/avatars')
-      return { success: true, path: savedPath }
-    }
-    
-    return { success: false, error: "No file uploaded" }
-  }
+ExisJS comes pre-configured with a generous **10MB default body limit** (`10485760` bytes) across JSON, form-data, and raw payloads, preventing premature drops during photo or document uploads.
+
+If a client sends a payload exceeding the configured threshold, ExisJS halts parsing immediately and responds with `413 Payload Too Large`:
+
+```json
+{
+  "statusCode": 413,
+  "error": "Payload Too Large",
+  "message": "Request payload exceeded size limit of 10485760 bytes. Increase server.bodyLimit in exis.config.ts to allow larger payloads."
 }
 ```
 
-#### Streaming (`streamUpload`)
+To configure custom limits globally across your app, update `exis.config.ts`:
 
-If you are dealing with large files and don't want to buffer *anything* in memory, ExisJS provides a direct streaming helper. It pipes the multipart chunks directly to the disk in real-time.
-
-#### Functional Paradigm
-
-```typescript
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  uploadCover: route.post('/cover', {
-    async handle(req, res) {
-      // 1. Using the method on the request object
-      // const { fields, files } = await req.streamUpload('./uploads/covers')
-
-      // 2. Or using the exported helper from exisjs/storage
-      const { streamUpload } = await import('exisjs/storage')
-      const { fields, files } = await streamUpload(req, { dest: './uploads/covers' })
-      
-      return { 
-        success: true, 
-        uploadedFiles: files.map(f => f.filename),
-        customFields: fields 
-      }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript
-import { Controller, Post, Req } from 'exisjs/decorators'
-import { streamUpload } from 'exisjs/storage'
-
-@Controller()
-export default class UploadController {
-  @Post('/cover')
-  async uploadCover(@Req() req: any) {
-    // Both req.streamUpload() and the exported helper from exisjs/storage work.
-    const { fields, files } = await streamUpload(req, { dest: './uploads/covers' })
-    
-    return { 
-      success: true, 
-      uploadedFiles: files.map(f => f.filename),
-      customFields: fields 
-    }
+```typescript filename="exis.config.ts"
+export default {
+  server: {
+    // Set custom maximum payload limit in bytes (e.g. 50MB)
+    bodyLimit: 50 * 1024 * 1024,
   }
 }
 ```
 
 ---
 
-## 4. HTTP Headers & Content Negotiation
+## 5. Dynamic Request Timeouts
+
+ExisJS ships with a **60-second default request timeout** in its `timeout()` middleware, offering ample headroom for slow network clients and third-party cloud operations (Cloudinary, AWS S3, OpenAI, Stripe).
+
+### Dynamic In-Handler Control
+
+Handlers can dynamically extend or cancel the active timeout on the fly using `req.setTimeout()` and `req.clearTimeout()`:
+
+```typescript filename="src/http/ai/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  generateVideo: route.post('/', {
+    async handle({ req }) {
+      // 1. Extend timeout for heavy AI pass generation (e.g. 3 minutes)
+      req.setTimeout(180000)
+
+      try {
+        const result = await longRunningAiTask()
+        return { success: true, result }
+      } finally {
+        // 2. Clear timeout once work completes
+        req.clearTimeout()
+      }
+    }
+  })
+})
+```
+
+---
+
+## 6. HTTP Headers & Content Negotiation
 
 ```typescript
 // Get a specific header (case-insensitive)
