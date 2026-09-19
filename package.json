@@ -62,7 +62,7 @@
     "express": "^5.2.1",
     "fastify": "^5.12.1",
     "find-my-way": "^9.9.0",
-    "hono": "^4.13.5",
+    "hono": "^4.13.8",
     "husky": "^9.1.7",
     "lint-staged": "^17.4.1",
     "mitata": "^1.0.34",
