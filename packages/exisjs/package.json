@@ -132,7 +132,7 @@
   "devDependencies": {
     "@types/autocannon": "^7.12.7",
     "@types/better-sqlite3": "^9.6.0",
-    "@types/bun": "^1.4.0",
+    "@types/bun": "^1.4.2",
     "@types/mocha": "^10.0.10",
     "find-my-way": "^9.9.0",
     "mitata": "^1.0.34"
