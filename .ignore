@@ -1,0 +1,14 @@
+# Ignore these files in search tools like grep, rg, ast-grep, fzf, etc.
+# These files should *not* be indexed in search tools.
+
+dist
+node_modules
+packages/*/dist
+packages/rs/target
+.exis
+coverage
+.errors
+examples/**/out
+packages/**/*.tgz
+*.tsbuildinfo
+.git

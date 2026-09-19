@@ -22,6 +22,22 @@ describe('Tex Native Validation Engine', () => {
     expect(() => schema.parse({})).toThrow(/Expected value, received undefined/)
   })
 
+  it('returns mock values when validating process.env with __EXIS_SKIP_ENV_CHECK enabled', () => {
+    const schema = tex.object({
+      DATABASE_URL: tex.string(),
+      PORT: tex.number({ optional: true }),
+    })
+
+    process.env.__EXIS_SKIP_ENV_CHECK = 'true'
+    delete process.env.DATABASE_URL
+    try {
+      const result = schema.parse(process.env)
+      expect(result.DATABASE_URL).toBe('mock_DATABASE_URL')
+    } finally {
+      delete process.env.__EXIS_SKIP_ENV_CHECK
+    }
+  })
+
   it('rejects completely invalid payloads', () => {
     const schema = tex.object({
       name: tex.string(),
@@ -283,6 +299,111 @@ describe('Tex Native Validation Engine', () => {
         }
         expect(() => visitSchema.parse(payload)).toThrow(/idProofs\[0\]\.type/)
       })
+    })
+
+    describe('Array Coercion (Query / Form parameters)', () => {
+      it('coerces single string into single item array', () => {
+        const schema = tex.object({
+          tags: tex.array(tex.string(), { coerce: true }),
+        })
+        const res = schema.parse({ tags: 'javascript' })
+        expect(res.tags).toEqual(['javascript'])
+      })
+
+      it('coerces comma-separated string into string array', () => {
+        const schema = tex.object({
+          categories: tex.array(tex.string(), { coerce: true }),
+        })
+        const res = schema.parse({ categories: 'electronics, gadgets, audio' })
+        expect(res.categories).toEqual(['electronics', 'gadgets', 'audio'])
+      })
+
+      it('coerces comma-separated string into number array', () => {
+        const schema = tex.object({
+          ids: tex.array(tex.number(), { coerce: true }),
+        })
+        const res = schema.parse({ ids: '10, 20, 30' })
+        expect(res.ids).toEqual([10, 20, 30])
+      })
+
+      it('coerces array of string numbers into number array', () => {
+        const schema = tex.object({
+          scores: tex.array(tex.number(), { coerce: true }),
+        })
+        const res = schema.parse({ scores: ['100', '95', '80'] })
+        expect(res.scores).toEqual([100, 95, 80])
+      })
+    })
+  })
+
+  describe('Date Validation & Coercion', () => {
+    it('coerces ISO date string to native Date instance', () => {
+      const schema = tex.object({
+        createdAt: tex.date({ coerce: true }),
+      })
+
+      const iso = '2026-09-19T10:00:00.000Z'
+      const result = schema.parse({ createdAt: iso })
+
+      expect(result.createdAt instanceof Date).toBe(true)
+      expect(result.createdAt.toISOString()).toBe(iso)
+    })
+
+    it('coerces numeric timestamp to Date instance', () => {
+      const schema = tex.object({
+        timestamp: tex.date({ coerce: true }),
+      })
+
+      const now = 1726740000000
+      const result = schema.parse({ timestamp: now })
+
+      expect(result.timestamp instanceof Date).toBe(true)
+      expect(result.timestamp.getTime()).toBe(now)
+    })
+
+    it('rejects invalid date string', () => {
+      const schema = tex.object({
+        eventDate: tex.date({ coerce: true }),
+      })
+
+      expect(() => schema.parse({ eventDate: 'not-a-date' })).toThrow(
+        /Must be a valid date/
+      )
+    })
+
+    it('enforces minDate and maxDate bounds', () => {
+      const schema = tex.object({
+        flightDate: tex.date({
+          coerce: true,
+          minDate: '2026-01-01',
+          maxDate: '2026-12-31',
+        }),
+      })
+
+      // Valid within range
+      const valid = schema.parse({ flightDate: '2026-06-15' })
+      expect(valid.flightDate instanceof Date).toBe(true)
+
+      // Before minDate
+      expect(() => schema.parse({ flightDate: '2025-12-31' })).toThrow(
+        /Date must be after 2026-01-01/
+      )
+
+      // After maxDate
+      expect(() => schema.parse({ flightDate: '2027-01-01' })).toThrow(
+        /Date must be before 2026-12-31/
+      )
+    })
+
+    it('handles nullable and optional dates cleanly', () => {
+      const schema = tex.object({
+        publishedAt: tex.date({ coerce: true, nullable: true }),
+        archivedAt: tex.date({ coerce: true, optional: true }),
+      })
+
+      const resNull = schema.parse({ publishedAt: null })
+      expect(resNull.publishedAt).toBeNull()
+      expect(resNull.archivedAt).toBeUndefined()
     })
   })
 })

@@ -60,6 +60,26 @@ describe('Security Middlewares', () => {
       await client.get('/').set('x-forwarded-for', '10.0.0.2').expect(200) // Different IP, should not be rate limited
       await client.get('/').set('x-forwarded-for', '10.0.0.2').expect(429) // Second request from same IP, should block
     })
+
+    it('attaches standard IETF and legacy rate limit headers including Retry-After', async () => {
+      const app = new App()
+      app.use(rateLimit({ windowMs: 5000, max: 1 }))
+      app.get('/', (req, res) => res.send('OK'))
+
+      const client = createTestApp(app)
+
+      const res1 = await client.get('/').expect(200)
+      expect(res1.headers['ratelimit-limit']).toBe('1')
+      expect(res1.headers['ratelimit-remaining']).toBe('0')
+      expect(res1.headers['ratelimit-reset']).toBe('5')
+      expect(res1.headers['x-ratelimit-limit']).toBe('1')
+      expect(res1.headers['x-ratelimit-remaining']).toBe('0')
+      expect(res1.headers['x-ratelimit-reset']).toBeDefined()
+
+      const res2 = await client.get('/').expect(429)
+      expect(res2.headers['retry-after']).toBe('5')
+      expect(res2.headers['ratelimit-remaining']).toBe('0')
+    })
   })
 
   describe('CSRF Protection', () => {

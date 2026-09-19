@@ -143,6 +143,7 @@ export class NodeEngine implements HttpEngine {
       this.redirectServer.close()
     }
     if (this.server) {
+      this.closeIdleConnections()
       await new Promise<void>((resolve, reject) => {
         this.server.close((err: any) => {
           if (err && err.code !== 'ERR_SERVER_NOT_RUNNING') reject(err)

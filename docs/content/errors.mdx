@@ -159,9 +159,45 @@ To keep your codebase clean and consistent, use this decision tree when deciding
 
 ## Extended Error Handling
 
-ExisJS provides mechanisms for granular error handling.
+ExisJS provides mechanisms for granular and centralized error handling.
 
-### 1. Exception Filters (`catchError`)
+### 1. Framework-Level Exception Handler (`src/http/error.ts`)
+
+Instead of writing manual `try/catch` blocks in every route or calling `app.onError` inside `server.ts`, ExisJS natively discovers and auto-mounts `src/http/error.ts` (or `error.js`).
+
+Export an `onError(err, req, res)` function to centrally format, log, and respond to all unhandled exceptions and validation errors:
+
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from 'exisjs'
+
+/**
+ * Global Exception Handler for ExisJS
+ * Auto-mounted at startup to intercept all unhandled exceptions.
+ */
+export function onError(err: any, req: Request, res: Response) {
+  const status = err.statusCode || err.status || 500
+
+  // Centralized structured error response
+  res.status(status).json({
+    success: false,
+    error: {
+      code: err.code || 'INTERNAL_ERROR',
+      message: err.message || 'Internal Server Error',
+      path: req.path,
+    },
+  })
+}
+```
+
+> [!TIP]
+> You can also scaffold this file instantly via the CLI:
+> ```bash
+> exis generate error
+> # or shorthand:
+> exis g error
+> ```
+
+### 2. Exception Filters (`catchError`)
 
 ExisJS allows you to create **Exception Filters** to globally intercept specific types of errors. 
 

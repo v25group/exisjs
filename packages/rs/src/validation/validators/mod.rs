@@ -13,6 +13,9 @@ pub fn validate_field(
     field: &TexField, 
     path: &str
 ) -> Result<Value> {
+    if val.is_null() && field.is_nullable {
+        return Ok(Value::Null);
+    }
     match &field.field_type {
         TexType::String => primitive::validate_string(val, field, path),
         TexType::Number => primitive::validate_number(val, field, path),

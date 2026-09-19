@@ -37,7 +37,7 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
   const child = spawn(process.execPath, [startServerPath], {
     cwd,
     env: process.env,
-    stdio: 'inherit',
+    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
     shell: false,
   })
 
@@ -48,7 +48,7 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
 
   let isShuttingDown = false
 
-  child.on('exit', (code, signal) => {
+  const handleExit = (code: number | null, signal: string | null) => {
     if (isShuttingDown) {
       process.exit(0)
     }
@@ -59,9 +59,12 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     } else {
       process.exit(0)
     }
-  })
+  }
 
-  process.on('SIGINT', () => {
+  child.on('close', (code, signal) => handleExit(code, signal))
+  child.on('exit', (code, signal) => handleExit(code, signal))
+
+  const shutdown = () => {
     if (isShuttingDown) return
     isShuttingDown = true
 
@@ -72,13 +75,24 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     )
 
     try {
+      if (child.connected) {
+        child.send({ type: 'exis:shutdown' })
+      }
+    } catch {
+      /* ignore */
+    }
+
+    try {
       if (process.platform !== 'win32') {
         child.kill('SIGTERM')
       }
     } catch {
       /* ignore */
     }
-  })
+  }
+
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
 }
 
 function resolveDistEntry(cwd: string, custom?: string): string | null {

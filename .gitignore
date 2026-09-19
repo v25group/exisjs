@@ -36,7 +36,12 @@ test/traces
 **/.idea
 **/.#*
 .nvmrc
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
+!.vscode/launch.json
+
 
 # examples
 examples/**/out/*
@@ -50,5 +55,18 @@ examples/**/out/*
 # Rust / NAPI
 packages/rs/target/
 packages/rs/*.node
+packages/rs/.*.node*
 packages/rs/test.js
 packages/rs/test2.js
+.napi-rs*
+*.tmp
+*.tmp.*
+*.swp
+.*.tmp
+.*.tmp.*
+.*.swp
+packages/rs/.*.tmp*
+packages/rs/*.tmp*
+packages/rs/.*.swp*
+packages/rs/*.swp*
+

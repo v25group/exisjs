@@ -23,6 +23,7 @@ my-backend/
 ├── src/
 │   ├── http/
 │   │   ├── server.ts         # Application entry point
+│   │   ├── error.ts          # Centralized framework exception handler (onError)
 │   │   ├── route.ts          # Root routes (e.g. GET /api)
 │   │   ├── boundary.ts       # Root boundary (config + request pipeline)
 │   │   ├── users/
@@ -72,6 +73,7 @@ Both styles are automatically detected by the route scanner, CLI manifest genera
 | `schema.ts` / `*.schema.ts` | `tex` validation schemas, imported by route files. Mandatory for every route accepting input. | Handlers, routing |
 | `service.ts` / `*.service.ts` | Business logic and data access. DI-injectable. | Routing, response shaping |
 | `boundary.ts` / `*.boundary.ts` | Folder-scoped config + request pipeline for everything in this folder and below. | — |
+| `error.ts` / `*.error.ts` | Centralized exception and validation error handler (`onError`). Auto-mounted by the framework. | Business logic, routes |
 
 ---
 
@@ -172,14 +174,16 @@ A `boundary.ts` applies to every route in its folder and all subfolders. It has
 two independent halves:
 
 1. **Config** — pure data, via `defineBoundary()` (functional) or `@Boundary()`
-   (OOP argument). CORS, headers, DI providers, excluded paths.
-2. **Pipeline** — real code, auto-detected by function signature. No imports,
+   (OOP argument). CORS, headers, DI providers, excluded paths, and lifecycle hooks.
+2. **Pipeline & Hooks** — real code, auto-detected by function signature. No imports,
    no manual registration required.
 
-| Signature                                                                    | Detected as  | Runs                                                 |
-| ---------------------------------------------------------------------------- | ------------ | ---------------------------------------------------- |
-| `(req, res, next)`                                                           | A chain step | In file/declaration order, before the route          |
-| `(ctx, next)` — default export (functional) or a method named `handle` (OOP) | The wrapper  | Around all chain steps and the nested route/boundary |
+| Signature | Detected as | Runs |
+| :--- | :--- | :--- |
+| `(req, res, next)` | Chain Step | In file/declaration order, before the route handler |
+| `beforeHandle(req, res)` | Boundary Guard Hook | Immediately before route execution. Short-circuits on `false` or when headers sent |
+| `afterHandle(req, res, data)` | Response Hook | Immediately after route execution. Receives returned data to transform or audit |
+| `(ctx, next)` — default export (functional) or `handle(ctx, next)` (OOP) | Pipeline Wrapper | Around all chain steps and the nested route/boundary |
 
 ### Functional
 
@@ -190,11 +194,25 @@ import type { Request, Response, Next, BoundaryContext } from "exisjs/router";
 export const config = defineBoundary({
   cors: { origin: ["https://myapp.com"], credentials: true },
   headers: { "X-Powered-By": "ExisJS" },
-  exclude: [{ path: "/health", method: "GET" }],
+  exclude: [{ path: "/admin/health", method: "GET" }],
+
+  // Pre-handler hook (returns false to block with 403, or sends response)
+  beforeHandle(req, res) {
+    if (req.headers["x-role"] !== "admin") {
+      res.status(403).json({ error: "Admin role required" });
+      return false;
+    }
+  },
+
+  // Post-handler hook (transforms returned payload or performs async audit)
+  afterHandle(req, res, data) {
+    res.setHeader("X-Audited-By", "AdminBoundary");
+    return { ...data, auditedAt: Date.now() };
+  },
 });
 
-export function auth(req: Request, res: Response, next: Next) {
-  if (!req.headers["x-api-key"]) throw new UnauthorizedError("Missing API key");
+export function logStep(req: Request, res: Response, next: Next) {
+  console.log(`[Admin] ${req.method} ${req.path}`);
   next();
 }
 
@@ -216,20 +234,81 @@ import type { Request, Response, Next, BoundaryContext } from "exisjs/router";
 @Boundary({
   cors: { origin: ["https://myapp.com"], credentials: true },
   headers: { "X-Powered-By": "ExisJS" },
+  exclude: ["/admin/health"],
 })
 export default class AdminBoundary {
-  auth(req: Request, res: Response, next: Next) {
-    if (!req.headers["x-api-key"])
-      throw new UnauthorizedError("Missing API key");
+  // Pre-handler hook
+  beforeHandle(req: Request, res: Response) {
+    if (req.headers["x-role"] !== "admin") {
+      res.status(403).json({ error: "Admin role required" });
+      return false;
+    }
+  }
+
+  // Post-handler hook
+  afterHandle(req: Request, res: Response, data: any) {
+    return { ...data, auditedAt: Date.now() };
+  }
+
+  // Chain step
+  logStep(req: Request, res: Response, next: Next) {
+    console.log(`[Admin] ${req.method} ${req.path}`);
     next();
   }
 
+  // Wrapper
   async handle(ctx: BoundaryContext, next: Next) {
     try {
       return { success: true, data: await next() };
     } catch (err) {
       return { success: false, error: { message: (err as Error).message } };
     }
+  }
+}
+```
+
+---
+
+## `src/http/error.ts` (Framework-Level Exception Handler)
+
+ExisJS natively discovers and mounts `src/http/error.ts` (or `error.js`) at boot. It exports an `onError(err, req, res)` handler, giving developers a single, standard place to intercept, log, and format all unhandled or validation errors without writing custom `app.onError` boilerplate inside `server.ts`.
+
+### Functional
+
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from "exisjs";
+
+export function onError(err: any, req: Request, res: Response) {
+  const status = err.statusCode || err.status || 500;
+
+  // Format consistent error response across the entire API
+  res.status(status).json({
+    success: false,
+    error: {
+      message: err.message || "Internal Server Error",
+      code: err.code || "INTERNAL_SERVER_ERROR",
+      path: req.path,
+    },
+  });
+}
+```
+
+### Class-Based (OOP)
+
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from "exisjs";
+
+export default class GlobalErrorHandler {
+  onError(err: any, req: Request, res: Response) {
+    const status = err.statusCode || err.status || 500;
+    res.status(status).json({
+      success: false,
+      error: {
+        message: err.message || "Internal Server Error",
+        code: err.code || "INTERNAL_ERROR",
+        path: req.path,
+      },
+    });
   }
 }
 ```

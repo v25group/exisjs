@@ -41,7 +41,7 @@ export default exis({
 
 ## 2. In-Memory Rate Limiting
 
-The core `rateLimit` middleware provides high-performance in-memory and off-heap native rate limiting:
+The core `rateLimit` middleware provides high-performance in-memory and off-heap native rate limiting with standard HTTP response headers:
 
 ```typescript filename="src/http/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
@@ -51,11 +51,24 @@ export const config = defineBoundary({})
 
 // Apply rate limiting chain step across the boundary
 export const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
-  message: 'Too many requests from this IP, please try again after a minute'
+  windowMs: 60 * 1000, // 1 minute window
+  max: 100,            // 100 requests per window
+  message: 'Too many requests from this IP, please try again after a minute',
+  keyGenerator: (req) => req.ip // Uses normalized IPv4/IPv6 client IP
 })
 ```
+
+### Standard Rate Limit Headers
+
+`rateLimit` automatically emits standard IETF draft and legacy rate-limiting headers on every response:
+
+| Header | Description | Example |
+| :--- | :--- | :--- |
+| `RateLimit-Limit` | Maximum request quota for the configured window. | `100` |
+| `RateLimit-Remaining` | Remaining requests permitted within the current window. | `42` |
+| `RateLimit-Reset` | Time remaining in seconds until the window quota resets. | `18` |
+| `Retry-After` | Included on `429 Too Many Requests` (RFC 6585) indicating seconds to wait. | `18` |
+| `X-RateLimit-*` | Legacy header equivalents for backwards compatibility. | `X-RateLimit-Reset: 18` |
 
 > [!NOTE]
 > The core `rateLimit` middleware runs using an in-memory native off-heap store. For distributed, multi-instance rate limiting backed by Redis, use `@exisjs/cache`.

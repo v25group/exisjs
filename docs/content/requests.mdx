@@ -303,19 +303,52 @@ const language = req.acceptsLanguages('en', 'es', 'fr')
 
 ---
 
-## 5. Network Information
+## 7. Network Information & IPv6 Normalization
 
-ExisJS handles trust-proxies. If you are behind Cloudflare, Nginx, or an AWS Load Balancer, simply set `trustProxy: true` in your `exis()` config, and these properties will automatically resolve the true client IP from `X-Forwarded-For`.
+ExisJS handles trust-proxies and dual-stack IP networks automatically. If you are behind Cloudflare, Nginx, or an AWS Load Balancer, simply set `trustProxy: true` in your `exis()` config, and these properties will automatically resolve the true client IP from `X-Forwarded-For`.
 
-- **`req.ip`**: The client's IP address.
-- **`req.ips`**: An array of IPs if multiple proxies were traversed.
+- **`req.ip`**: The client's IP address. Automatically normalizes IPv6-mapped IPv4 dual-stack addresses (e.g., `::ffff:192.168.1.50` $\to$ `192.168.1.50`) and converts IPv6 loopback `::1` $\to$ `127.0.0.1` for consistent rate limiting and geo-IP lookups.
+- **`req.ips`**: An array of IPs if multiple proxies were traversed, each normalized cleanly.
 - **`req.hostname`**: The resolved hostname (from `Host` or `X-Forwarded-Host`).
 - **`req.protocol`**: Returns `'http'` or `'https'`.
 - **`req.secure`**: A boolean (true if `req.protocol === 'https'`).
 
 ---
 
-## 6. Context & Metadata
+## 8. Request Cancellation & Abort Signals (`req.signal`)
+
+ExisJS provides a first-class standard Web API `req.signal: AbortSignal` tied directly to the underlying HTTP connection lifecycle. 
+
+When a client closes their browser tab, cancels a download, or aborts an HTTP request, `req.signal` immediately triggers an `abort` event. You can pass `req.signal` directly to ORMs, database drivers, and HTTP clients to cancel expensive in-flight operations and eliminate wasted server resources.
+
+#### Example: Passing to Database Queries & Upstream Fetches
+
+```typescript filename="src/http/reports/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  heavyReport: route.get('/', {
+    async handle({ req }) {
+      // 1. Pass req.signal to fetch() — if the client leaves, fetch aborts immediately
+      const upstream = await fetch('https://api.external.com/data', {
+        signal: req.signal
+      })
+      const payload = await upstream.json()
+
+      // 2. Pass req.signal to your database queries (Prisma, Drizzle, pg, etc.)
+      const results = await db.query(sql`SELECT * FROM heavy_analytics`, {
+        signal: req.signal
+      })
+
+      return { payload, results }
+    }
+  })
+})
+```
+
+---
+
+## 9. Context & Metadata
 
 As your request moves through ExisJS Middlewares, various properties are attached to `req` for your convenience:
 

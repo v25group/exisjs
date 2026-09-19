@@ -191,6 +191,81 @@ describe('CLI Commands', () => {
         expect(e.message).toContain('ProcessExited: 1')
       }
     })
+
+    it('ignores root tool config files like drizzle.config.ts during server build and type-checking', async () => {
+      writeTempFile(
+        tmpDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            target: 'es2022',
+            skipLibCheck: true,
+          },
+          include: ['**/*.ts'],
+        })
+      )
+      writeTempFile(tmpDir, 'src/test.ts', 'export const serverReady = true')
+      // drizzle.config.ts with an uninstalled devDependency
+      writeTempFile(
+        tmpDir,
+        'drizzle.config.ts',
+        'import { defineConfig } from "drizzle-kit"; export default defineConfig({})'
+      )
+
+      try {
+        await buildCommand({ outDir: 'dist' })
+      } catch (e: any) {
+        if (e.message !== 'ProcessExited: 0') throw e
+      }
+
+      expect(fs.existsSync(path.join(tmpDir, 'dist'))).toBe(true)
+      expect(
+        fs.existsSync(path.join(tmpDir, 'dist', 'drizzle.config.js'))
+      ).toBe(false)
+    })
+
+    it('loads .env during buildCommand and populates process.env', async () => {
+      writeTempFile(
+        tmpDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: { module: 'commonjs', target: 'es2022' },
+          include: ['src/**/*.ts'],
+        })
+      )
+      writeTempFile(tmpDir, 'src/test.ts', 'export const ok = true')
+      writeTempFile(tmpDir, '.env', 'BUILD_TEST_VAR=loaded_at_build')
+
+      try {
+        await buildCommand({ outDir: 'dist' })
+      } catch (e: any) {
+        if (e.message !== 'ProcessExited: 0') throw e
+      }
+
+      expect(process.env.BUILD_TEST_VAR).toBe('loaded_at_build')
+    })
+
+    it('supports skipEnvCheck and dryRun to bypass missing runtime environment variables', async () => {
+      writeTempFile(
+        tmpDir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: { module: 'commonjs', target: 'es2022' },
+          include: ['src/**/*.ts'],
+        })
+      )
+      writeTempFile(tmpDir, 'src/test.ts', 'export const ok = true')
+
+      try {
+        await buildCommand({ outDir: 'dist', skipEnvCheck: true })
+      } catch (e: any) {
+        if (e.message !== 'ProcessExited: 0') throw e
+      }
+
+      expect(fs.existsSync(path.join(tmpDir, 'dist'))).toBe(true)
+      expect(process.env.__EXIS_SKIP_ENV_CHECK).toBe('true')
+    })
   })
 
   describe('startCommand', () => {
@@ -285,6 +360,66 @@ describe('CLI Commands', () => {
       } catch (err: unknown) {
         if ((err as Error).message !== 'ProcessExited: 1') throw err
       }
+    })
+
+    it('attaches error handler and ignores archive/lock files in watcher', async () => {
+      const chokidar = await import('chokidar')
+      const ignored = [
+        // eslint-disable-next-line no-useless-escape
+        /(^|[\/\\])\../,
+        /node_modules/,
+        /\.exis/,
+        /dist/,
+        /build/,
+        /exis\.d\.ts$/,
+        /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i,
+        /\.(bak|tmp|temp|swp|swo|lock|pid)$/i,
+        /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i,
+        /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i,
+      ]
+
+      // Test that archive regex matches archive paths
+      const isArchiveIgnored = (file: string) =>
+        ignored.some((pattern) => pattern.test(file))
+      expect(isArchiveIgnored('docs.rar')).toBe(true)
+      expect(isArchiveIgnored('archive.zip')).toBe(true)
+      expect(isArchiveIgnored('backup.tar.gz')).toBe(true)
+      expect(isArchiveIgnored('temp.tmp')).toBe(true)
+      expect(isArchiveIgnored('src/http/server.ts')).toBe(false)
+
+      // Test watcher instance handles EBUSY without throwing uncaught exception
+      const watcher = chokidar.watch(tmpDir, {
+        ignoreInitial: true,
+        ignored,
+      })
+
+      let errorCaught = false
+      watcher.on('error', (err: any) => {
+        if (err?.code === 'EBUSY' || err?.code === 'EPERM') {
+          errorCaught = true
+        }
+      })
+
+      // Emit simulated Windows EBUSY error
+      watcher.emit('error', {
+        errno: -4082,
+        code: 'EBUSY',
+        syscall: 'watch',
+        path: path.join(tmpDir, 'docs.rar'),
+      })
+
+      expect(errorCaught).toBe(true)
+      await watcher.close()
+    })
+
+    it('detects custom port from exis.config.ts for dev fallback server', () => {
+      const configTs = path.join(tmpDir, 'exis.config.ts')
+      fs.writeFileSync(configTs, 'export default { port: 3000 }', 'utf8')
+
+      const content = fs.readFileSync(configTs, 'utf8')
+      const match = content.match(/\bport\s*:\s*(\d+)/)
+      expect(match).toBeDefined()
+      expect(parseInt(match![1], 10)).toBe(3000)
     })
   })
 

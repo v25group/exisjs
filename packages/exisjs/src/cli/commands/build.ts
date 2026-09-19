@@ -7,13 +7,24 @@ import { generateManifest, generateExisEnv } from '../manifest.js'
 import { resolvePathAliases } from '../resolve-aliases.js'
 import { loadEnv } from '../../config/env.js'
 
-interface BuildOptions {
+export interface BuildOptions {
   outDir?: string
   clean?: boolean
+  skipEnvCheck?: boolean
+  dryRun?: boolean
+  mode?: string
 }
 
 export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   process.env.__EXIS_BUILD = 'true'
+  if (
+    options.skipEnvCheck ||
+    options.dryRun ||
+    process.env.EXIS_SKIP_ENV_CHECK === 'true'
+  ) {
+    process.env.EXIS_SKIP_ENV_CHECK = 'true'
+    process.env.__EXIS_SKIP_ENV_CHECK = 'true'
+  }
 
   process.on('SIGINT', () => {
     const time = getFormattedTime()
@@ -27,7 +38,8 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   const cwd = process.cwd()
 
   // Load .env files so process.env is populated during build-time route validation
-  loadEnv(cwd)
+  const mode = options.mode || process.env.NODE_ENV || 'production'
+  loadEnv(cwd, mode, true)
   const outDir = options.outDir ?? '.exis/server'
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
 
@@ -98,9 +110,44 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     path.dirname(tsconfigPathForTs)
   )
 
-  const entryPoints = parsedConfig.fileNames.filter(
+  const isServerSourceFile = (filePath: string): boolean => {
+    const rel = path.relative(cwd, filePath).replace(/\\/g, '/')
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false
+
+    // Ignore test files, scripts, docs
+    if (
+      rel.startsWith('tests/') ||
+      rel.startsWith('test/') ||
+      rel.startsWith('__tests__/') ||
+      rel.startsWith('scripts/') ||
+      rel.startsWith('docs/') ||
+      /\.(test|spec)\.[jt]sx?$/.test(rel)
+    ) {
+      return false
+    }
+
+    // Exclude root tool config files (e.g. drizzle.config.ts, vite.config.ts, tailwind.config.ts)
+    // Only exis.config.* belongs to the ExisJS server configuration
+    if (!rel.includes('/')) {
+      const base = path.basename(rel)
+      return (
+        base === 'exis.config.ts' ||
+        base === 'exis.config.js' ||
+        base === 'exis.config.mjs'
+      )
+    }
+
+    // Server code is strictly in src/ or http/
+    return rel.startsWith('src/') || rel.startsWith('http/')
+  }
+
+  const allNonDeclFiles = parsedConfig.fileNames.filter(
     (f: string) => !f.endsWith('.d.ts')
   )
+
+  const serverEntryPoints = allNonDeclFiles.filter(isServerSourceFile)
+  const entryPoints =
+    serverEntryPoints.length > 0 ? serverEntryPoints : allNonDeclFiles
 
   let format = 'cjs'
   try {
@@ -117,14 +164,25 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // broken imports, and syntax errors BEFORE esbuild runs.
   if (process.env.NODE_ENV !== 'test') {
     process.stdout.write(`${c.dim}type-checking...${c.reset}`)
-    const program = ts.createProgram(parsedConfig.fileNames, {
+    const filesToCheck =
+      serverEntryPoints.length > 0 ? serverEntryPoints : parsedConfig.fileNames
+
+    const program = ts.createProgram(filesToCheck, {
       ...parsedConfig.options,
+      skipLibCheck: true,
       noEmit: true,
     })
-    const diagnostics = [
+    const allDiagnostics = [
       ...parsedConfig.errors,
       ...ts.getPreEmitDiagnostics(program),
     ]
+
+    // Only fail the build for errors that actually affect the server environment
+    const diagnostics = allDiagnostics.filter((diag: any) => {
+      if (!diag.file) return true // Global configuration error
+      return isServerSourceFile(diag.file.fileName)
+    })
+
     if (diagnostics.length > 0) {
       process.stdout.write('\n')
       const formatted = ts.formatDiagnosticsWithColorAndContext(diagnostics, {
@@ -192,33 +250,56 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // errors (e.g. missing cache keyGenerator, invalid middleware options) NOW,
   // at build time, rather than letting them crash the production server on first
   // request or startup.
-  process.stdout.write(`${c.dim}validating routes...${c.reset}`)
-  try {
-    const manifestPath = path.join(cwd, '.exis', 'routes-manifest.js')
-    if (fs.existsSync(manifestPath)) {
-      try {
-        const { registerPathAliasLoader } =
-          await import('../resolve-aliases.js')
-        registerPathAliasLoader(cwd)
-      } catch {
-        // ignore
-      }
-      const dynamicImport = new Function(
-        'specifier',
-        'return import(specifier)'
-      )
-      await dynamicImport(pathToFileURL(manifestPath).href)
-      process.stdout.write(
-        `\r${c.green}✓${c.reset} ${c.dim}all routes validated.${c.reset}\n`
-      )
-    }
-  } catch (err: any) {
-    console.error('')
-    error(`BUILD_VALIDATION_FAILED: ${err.message}`)
-    console.error(
-      `\n${c.yellow}  Fix the error above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+  if (
+    options.skipEnvCheck ||
+    options.dryRun ||
+    process.env.EXIS_SKIP_ENV_CHECK === 'true'
+  ) {
+    process.stdout.write(
+      `${c.yellow}↷${c.reset} ${c.dim}route validation skipped (--skip-env-check).${c.reset}\n`
     )
-    process.exit(1)
+  } else {
+    process.stdout.write(`${c.dim}validating routes...${c.reset}`)
+    try {
+      const manifestPath = path.join(cwd, '.exis', 'routes-manifest.js')
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const { registerPathAliasLoader } =
+            await import('../resolve-aliases.js')
+          registerPathAliasLoader(cwd)
+        } catch {
+          // ignore
+        }
+        const dynamicImport = new Function(
+          'specifier',
+          'return import(specifier)'
+        )
+        await dynamicImport(pathToFileURL(manifestPath).href)
+        process.stdout.write(
+          `\r${c.green}✓${c.reset} ${c.dim}all routes validated.${c.reset}\n`
+        )
+      }
+    } catch (err: any) {
+      const isEnvError =
+        err.message?.includes('Validation Error') ||
+        err.message?.includes('Expected value, received undefined') ||
+        err.message?.includes('env') ||
+        err.code === 'VALIDATION_ERROR'
+
+      console.error('')
+      error(`BUILD_VALIDATION_FAILED: ${err.message}`)
+      if (isEnvError) {
+        console.error(
+          `\n${c.yellow}  Tip: If this environment variable is injected at runtime, run:${c.reset}` +
+            `\n${c.primary}  exis build --skip-env-check${c.reset}\n`
+        )
+      } else {
+        console.error(
+          `\n${c.yellow}  Fix the error above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+        )
+      }
+      process.exit(1)
+    }
   }
 
   const ms = Date.now() - start

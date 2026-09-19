@@ -210,10 +210,12 @@ res.status(404)
 
 ## 3. Cookies
 
-ExisJS provides native helper methods for setting and clearing cookies safely.
+ExisJS provides native helper methods for setting and clearing cookies safely, supporting modern web standards including CHIPS (Partitioned Cookies) and Priority hints.
+
+### Setting Cookies
 
 ```typescript
-// Set a secure, HTTP-only cookie
+// Set a secure, HTTP-only session cookie
 res.cookie('session_id', '123456', {
   maxAge: 86400, // 1 day in seconds
   httpOnly: true,
@@ -221,15 +223,49 @@ res.cookie('session_id', '123456', {
   sameSite: 'Strict'
 })
 
-// Clear a cookie
+// Cross-site embedded iframe cookie with CHIPS (Partitioned)
+res.cookie('widget_pref', 'dark_mode', {
+  sameSite: 'None', // Automatically forces `secure: true` per modern browser specs
+  partitioned: true, // Cookies Having Independent Partitioned State (CHIPS)
+  priority: 'high',  // Hints browser cookie retention under storage pressure ('low' | 'medium' | 'high')
+  path: '/'
+})
+```
+
+#### Cookie Options Reference
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `maxAge` | `number` | `undefined` | Lifetime of the cookie in seconds (sets both `Max-Age` and computed `Expires`). |
+| `expires` | `Date` | `undefined` | Absolute expiration date for the cookie. |
+| `httpOnly` | `boolean` | `false` | Mitigates XSS by preventing client-side JavaScript access. |
+| `secure` | `boolean` | `false` | Requires HTTPS. *Automatically set to `true` if `sameSite: 'None'` is provided.* |
+| `sameSite` | `'Strict' \| 'Lax' \| 'None' \| boolean` | `undefined` | Controls cross-site request cookie inclusion. |
+| `partitioned` | `boolean` | `false` | Enables CHIPS for third-party contexts across top-level site partitions. |
+| `priority` | `'low' \| 'medium' \| 'high'` | `undefined` | RFC 6265bis storage priority hint when client cookie capacity is exhausted. |
+| `path` | `string` | `'/'` | Path where the cookie is valid. |
+| `domain` | `string` | `undefined` | Domain scope for the cookie. |
+
+### Clearing Cookies
+
+When clearing cookies, browsers require the matching `path` and `domain` used when the cookie was originally set:
+
+```typescript
+// Clear default root cookie
 res.clearCookie('session_id')
+
+// Clear scoped cookie matching original domain & path
+res.clearCookie('tenant_token', {
+  path: '/api',
+  domain: '.example.com'
+})
 ```
 
 ---
 
 ## 4. File Downloads & Streaming
 
-ExisJS makes streaming files simple, bypassing V8 memory bottlenecks by piping native Node streams directly to the socket.
+ExisJS makes streaming files simple, bypassing V8 memory bottlenecks by piping native Node streams directly to the socket with automated resource cleanup.
 
 ### `res.download()`
 Automatically reads a file from disk, sets the `Content-Disposition` header to force a download in the browser, and infers the correct MIME type based on the file extension.
@@ -263,7 +299,9 @@ export default class ReportController {
 ```
 
 ### `res.sendStream()`
-If you are fetching data from an external source (like AWS S3) or generating data on the fly, you can pipe any `ReadableStream` directly to the client.
+Pipe any Node.js `Readable` stream directly to the client with built-in leak prevention:
+- **Client Disconnect Cleanup**: If the client aborts or closes the connection prematurely, the source stream is immediately destroyed (`stream.destroy()`), releasing underlying file handles or external sockets.
+- **Unhandled Error Catching**: Errors emitted during stream consumption are trapped gracefully, preventing unhandled stream crashes.
 
 #### Functional Paradigm
 

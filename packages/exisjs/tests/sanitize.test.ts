@@ -85,32 +85,103 @@ test('Sanitization Engine Tests', async (t) => {
       assert.strictEqual(sanitize.truncate(5)(null as any), null)
       assert.strictEqual(sanitize.removeNonAlphanumeric(null as any), null)
       assert.strictEqual(sanitize.normalizeLineEndings(null as any), null)
+      assert.strictEqual(sanitize.escapeHtml(null as any), null)
+      assert.strictEqual(sanitize.stripHtml(null as any), null)
+      assert.strictEqual(sanitize.preventSql(null as any), null)
+      assert.strictEqual(sanitize.preventTraversal(null as any), null)
+      assert.strictEqual(sanitize.maskEmail(null as any), null)
+      assert.strictEqual(sanitize.maskString(null as any), null)
     }
   )
 
   await t.test(
     'Pre-validation sanitizers skip null values on nullable fields',
     () => {
+      // Unsafe sanitizer that explicitly calls .trim() without guarding null
+      const unsafeTrim = (val: any) => val.trim()
+
       const Schema = tex.object({
-        name: tex.string().nullable().sanitize(sanitize.trim),
-        bio: tex.string().optional().sanitize(sanitize.toLowerCase),
+        name: tex.string().nullable().sanitize(unsafeTrim),
+        notes: tex.string({ nullable: true, trim: true }).sanitize(unsafeTrim),
+        address: tex.string({ nullable: true }),
+        email: tex.email({ nullable: true, trim: true }).sanitize(unsafeTrim),
+        tags: tex
+          .array(
+            tex.string({ nullable: true, trim: true }).sanitize(unsafeTrim)
+          )
+          .nullable(),
       })
 
+      // 1. All nullable fields null from database or client
       const resultNull = Schema.parse({
         name: null,
-        bio: undefined,
+        notes: null,
+        address: null,
+        email: null,
+        tags: [null, '  alpha  ', null],
       })
 
       assert.strictEqual(resultNull.name, null)
-      assert.strictEqual(resultNull.bio, undefined)
+      assert.strictEqual(resultNull.notes, null)
+      assert.strictEqual(resultNull.address, null)
+      assert.strictEqual(resultNull.email, null)
+      assert.deepStrictEqual(resultNull.tags, [null, 'alpha', null])
 
+      // 2. Normal non-null strings get sanitized and validated
       const resultVal = Schema.parse({
         name: '  Alice  ',
-        bio: 'SOMETHING',
+        notes: '  Important note  ',
+        address: '123 Main St',
+        email: '  test@example.com  ',
+        tags: ['  beta  '],
       })
 
       assert.strictEqual(resultVal.name, 'Alice')
-      assert.strictEqual(resultVal.bio, 'something')
+      assert.strictEqual(resultVal.notes, 'Important note')
+      assert.strictEqual(resultVal.address, '123 Main St')
+      assert.strictEqual(resultVal.email, 'test@example.com')
+      assert.deepStrictEqual(resultVal.tags, ['beta'])
+
+      // 3. Empty string on nullable field converts to null and skips trim sanitizer
+      const resultEmpty = Schema.parse({
+        name: '   ',
+        notes: '',
+        address: '   ',
+        email: null,
+        tags: null,
+      })
+
+      assert.strictEqual(resultEmpty.name, null)
+      assert.strictEqual(resultEmpty.notes, null)
+      assert.strictEqual(resultEmpty.address, null)
+      assert.strictEqual(resultEmpty.tags, null)
+    }
+  )
+
+  await t.test(
+    'Post-validation refinements skip null values on nullable fields',
+    async () => {
+      // Refinement that blindly accesses string length / trim
+      const Schema = tex.object({
+        description: tex
+          .string()
+          .nullable()
+          .refine((val) => val.trim().length > 3)
+          .refineAsync(async (val) => val.trim().length < 50),
+      })
+
+      // Should not throw TypeError: Cannot read properties of null (reading 'trim')
+      const syncResult = Schema.parse({ description: null })
+      assert.strictEqual(syncResult.description, null)
+
+      const asyncResult = await Schema.parseAsync({ description: null })
+      assert.strictEqual(asyncResult.description, null)
+
+      // Valid string passes refinements
+      const validResult = await Schema.parseAsync({
+        description: '  Valid description  ',
+      })
+      assert.strictEqual(validResult.description, '  Valid description  ')
     }
   )
 })

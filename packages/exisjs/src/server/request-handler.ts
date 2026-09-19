@@ -42,6 +42,7 @@ export class RequestHandler {
   }
 
   private _releaseReq(req: ExisRequest): void {
+    req.cleanup()
     if (this._reqPool.length < RequestHandler.MAX_POOL_SIZE) {
       this._reqPool.push(req)
     }
@@ -278,11 +279,20 @@ export class RequestHandler {
     res: ExisResponse
   ) {
     for (const hook of this.app.hooks.error) {
-      await hook(
+      const hookResult = await hook(
         err,
         req as unknown as import('../types').Request,
         res as unknown as import('../types').Response
       )
+      if (res.headersSent) return
+      if (hookResult !== undefined) {
+        if (typeof hookResult === 'object' && hookResult !== null) {
+          ;(res as any).json(hookResult)
+        } else {
+          ;(res as any).send(String(hookResult))
+        }
+        return
+      }
     }
 
     const handlers = this.app.getErrorHandlers()

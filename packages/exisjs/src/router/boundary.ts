@@ -87,7 +87,30 @@ export interface BoundaryConfig {
    * Cascading metadata (e.g., OpenAPI tags, roles) applied to all routes in this directory.
    */
   metadata?: Record<string, any>
+
+  /**
+   * Hook executed immediately before any route handler in this boundary.
+   * Can short-circuit execution by returning `false` or sending a response directly.
+   */
+  beforeHandle?: BoundaryBeforeHandleHook | BoundaryBeforeHandleHook[]
+
+  /**
+   * Hook executed immediately after a route handler in this boundary successfully returns.
+   * Receives `(req, res, data)` and can transform the outgoing payload or perform audit logging.
+   */
+  afterHandle?: BoundaryAfterHandleHook | BoundaryAfterHandleHook[]
 }
+
+export type BoundaryBeforeHandleHook = (
+  req: import('../types').Request<any, any, any>,
+  res: import('../types').Response
+) => void | boolean | Promise<void | boolean>
+
+export type BoundaryAfterHandleHook<T = any> = (
+  req: import('../types').Request<any, any, any>,
+  res: import('../types').Response,
+  data?: T
+) => void | any | Promise<void | any>
 
 /**
  * Defines a boundary that acts as folder-scoped config + request pipeline for

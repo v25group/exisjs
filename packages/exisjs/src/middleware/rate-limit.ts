@@ -70,13 +70,24 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
         currentHits = record.count
       }
 
+      const resetSeconds = Math.ceil(windowMs / 1000)
+      const resetEpochSeconds = Math.ceil((now + windowMs) / 1000)
+
+      // Legacy Headers
       res.set('X-RateLimit-Limit', max.toString())
       res.set(
         'X-RateLimit-Remaining',
         Math.max(0, max - currentHits).toString()
       )
+      res.set('X-RateLimit-Reset', resetEpochSeconds.toString())
+
+      // IETF Draft Standard Headers
+      res.set('RateLimit-Limit', max.toString())
+      res.set('RateLimit-Remaining', Math.max(0, max - currentHits).toString())
+      res.set('RateLimit-Reset', resetSeconds.toString())
 
       if (currentHits > max) {
+        res.set('Retry-After', resetSeconds.toString())
         return next(new HttpError(message, statusCode, 'RATE_LIMIT_EXCEEDED'))
       }
 

@@ -180,10 +180,17 @@ export async function generateExisEnv(cwd: string): Promise<void> {
 
   if (!isTsProject) return
 
-  const hasNodeTypes = await fs
-    .access(path.join(cwd, 'node_modules', '@types', 'node'))
-    .then(() => true)
-    .catch(() => false)
+  let hasNodeTypes: boolean
+  try {
+    const req = typeof require !== 'undefined' ? require : eval('require')
+    req.resolve('@types/node/package.json', { paths: [cwd, __dirname] })
+    hasNodeTypes = true
+  } catch {
+    hasNodeTypes = await fs
+      .access(path.join(cwd, 'node_modules', '@types', 'node'))
+      .then(() => true)
+      .catch(() => false)
+  }
 
   let envContent = `/// <reference types="exisjs" />
 

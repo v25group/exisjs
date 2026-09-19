@@ -38,6 +38,8 @@ export class ExisRequest<
   public session?: Record<string, any> | any
   public requestId?: string
   public tenantId?: string
+  public signal!: AbortSignal
+  private _abortController!: AbortController
 
   public _diCache = new Map<any, any>()
 
@@ -51,6 +53,24 @@ export class ExisRequest<
   private _protocol?: string
   private _hostname?: string
 
+  private _onClose = () => {
+    if (!this.res.raw.writableEnded && !this.res.headersSent) {
+      if (!this._abortController.signal.aborted) {
+        this._abortController.abort()
+      }
+    }
+  }
+
+  private _attachSignal() {
+    this._abortController = new AbortController()
+    this.signal = this._abortController.signal
+    this.raw.once('close', this._onClose)
+  }
+
+  public cleanup(): void {
+    this.raw.removeListener('close', this._onClose)
+  }
+
   constructor(
     public raw: IncomingMessage,
     public res: ExisResponse,
@@ -59,6 +79,7 @@ export class ExisRequest<
   ) {
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
+    this._attachSignal()
   }
 
   public init(
@@ -67,10 +88,12 @@ export class ExisRequest<
     trustProxy: boolean | number = false,
     bodyLimit = 10485760 // 10MB
   ): this {
+    this.cleanup()
     this.raw = raw
     this.res = res
     this.trustProxy = trustProxy
     this.bodyLimit = bodyLimit
+    this._attachSignal()
 
     this.params = undefined as any
     this.body = undefined as any
@@ -187,6 +210,16 @@ export class ExisRequest<
     return this._ip!
   }
 
+  private _normalizeIp(ip: string): string {
+    if (ip.startsWith('::ffff:')) {
+      return ip.substring(7)
+    }
+    if (ip === '::1') {
+      return '127.0.0.1'
+    }
+    return ip
+  }
+
   private _resolveIps() {
     const xForwardedFor = this.raw.headers['x-forwarded-for']
     let ips: string[] = []
@@ -194,10 +227,11 @@ export class ExisRequest<
       const raw = Array.isArray(xForwardedFor)
         ? xForwardedFor.join(',')
         : xForwardedFor
-      ips = raw.split(',').map((ip) => ip.trim())
+      ips = raw.split(',').map((ip) => this._normalizeIp(ip.trim()))
     }
 
-    const remoteAddress = this.raw.socket?.remoteAddress ?? '127.0.0.1'
+    const rawRemote = this.raw.socket?.remoteAddress ?? '127.0.0.1'
+    const remoteAddress = this._normalizeIp(rawRemote)
 
     if (this.trustProxy) {
       let trustedIps = ips
@@ -466,6 +500,33 @@ export class ExisRequest<
             limits: { fileSize: this.bodyLimit },
           })
 
+          const cleanup = () => {
+            this.raw.removeListener('close', onRawClose)
+            this.raw.removeListener('aborted', onRawClose)
+          }
+
+          const onRawClose = () => {
+            const isComplete = Boolean(
+              (this.raw as any).complete || (this.raw as any).readableEnded
+            )
+            if (!isComplete) {
+              try {
+                ;(bb as any).destroy?.()
+              } catch {
+                /* noop */
+              }
+              cleanup()
+              reject(
+                HttpError.badRequest(
+                  'Client disconnected prematurely during multipart upload'
+                )
+              )
+            }
+          }
+
+          this.raw.once('close', onRawClose)
+          this.raw.once('aborted', onRawClose)
+
           bb.on('field', (name: string, val: string) => {
             fields[name] = val
           })
@@ -516,6 +577,7 @@ export class ExisRequest<
           )
 
           bb.on('finish', () => {
+            cleanup()
             this.body = fields as unknown as TBody
             resolve({
               fields,
@@ -523,7 +585,10 @@ export class ExisRequest<
             })
           })
 
-          bb.on('error', reject)
+          bb.on('error', (err: any) => {
+            cleanup()
+            reject(err)
+          })
 
           this.raw.pipe(bb)
         } catch (err: any) {
@@ -591,14 +656,51 @@ export class ExisRequest<
     return new Promise((resolve, reject) => {
       let settled = false
 
+      const chunks: Buffer[] = []
+      let size = 0
+
+      const onData = (chunk: Buffer) => {
+        if (settled) return
+        size += chunk.length
+        if (size > this.bodyLimit) {
+          this.raw.destroy?.()
+          done(
+            HttpError.payloadTooLarge(
+              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+            )
+          )
+          return
+        }
+        chunks.push(chunk)
+      }
+
+      const onError = (err: any) => done(err)
+      const onAborted = () => done(new Error('Request aborted by client'))
+      const onClose = () => {
+        const isComplete = Boolean(
+          (this.raw as any).complete || (this.raw as any).readableEnded
+        )
+        if (!settled && !isComplete)
+          done(new Error('Request closed prematurely'))
+      }
+      const onEnd = () => {
+        if (settled) return
+        this.rawBody = Buffer.concat(chunks).toString('utf8')
+        done()
+      }
+
+      const cleanup = () => {
+        this.raw.removeListener('data', onData)
+        this.raw.removeListener('error', onError)
+        this.raw.removeListener('aborted', onAborted)
+        this.raw.removeListener('close', onClose)
+        this.raw.removeListener('end', onEnd)
+      }
+
       const done = (err?: Error) => {
         if (settled) return
         settled = true
-        this.raw.removeAllListeners('data')
-        this.raw.removeAllListeners('end')
-        this.raw.removeAllListeners('error')
-        this.raw.removeAllListeners('aborted')
-        this.raw.removeAllListeners('close')
+        cleanup()
 
         if (err) reject(err)
         else resolve()
@@ -617,36 +719,11 @@ export class ExisRequest<
         }
       }
 
-      const chunks: Buffer[] = []
-      let size = 0
-
-      this.raw.on('data', (chunk: Buffer) => {
-        if (settled) return
-        size += chunk.length
-        if (size > this.bodyLimit) {
-          this.raw.destroy?.()
-          done(
-            HttpError.payloadTooLarge(
-              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
-            )
-          )
-          return
-        }
-        chunks.push(chunk)
-      })
-
-      this.raw.on('error', done)
-      this.raw.on('aborted', () => done(new Error('Request aborted by client')))
-      this.raw.on('close', () => {
-        if (!settled && !(this.raw as any).complete)
-          done(new Error('Request closed prematurely'))
-      })
-
-      this.raw.on('end', () => {
-        if (settled) return
-        this.rawBody = Buffer.concat(chunks).toString('utf8')
-        done()
-      })
+      this.raw.on('data', onData)
+      this.raw.on('error', onError)
+      this.raw.on('aborted', onAborted)
+      this.raw.on('close', onClose)
+      this.raw.on('end', onEnd)
     })
   }
 

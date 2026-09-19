@@ -38,9 +38,11 @@ export interface CookieOptions {
   expires?: Date
   httpOnly?: boolean
   secure?: boolean
-  sameSite?: 'Strict' | 'Lax' | 'None'
+  sameSite?: 'Strict' | 'Lax' | 'None' | 'strict' | 'lax' | 'none' | boolean
   path?: string
   domain?: string
+  partitioned?: boolean
+  priority?: 'low' | 'medium' | 'high'
 }
 
 export type NextFunction = (err?: Error) => void

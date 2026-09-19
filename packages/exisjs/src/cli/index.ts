@@ -35,6 +35,18 @@ program
   .description('Compile TypeScript to production JavaScript')
   .option('-o, --out-dir <dir>', 'Output directory (default: dist)')
   .option('--no-clean', 'Skip cleaning the output directory')
+  .option(
+    '--skip-env-check',
+    'Skip build-time route and environment validation'
+  )
+  .option(
+    '--dry-run',
+    'Compile and bundle without failing on missing environment variables'
+  )
+  .option(
+    '-m, --mode <mode>',
+    'Environment mode to load (e.g. production, staging, development)'
+  )
   .action(async (options) => {
     await buildCommand(options)
   })
@@ -212,15 +224,21 @@ program
       generateService,
       generateSchema,
       generateBoundary,
+      generateErrorHandler,
       generatePlugin,
       generateMiddleware,
       generateTest,
     } = await import('./commands/generate')
 
-    if (!name) return console.error('Name is required')
+    if (!name && type !== 'error' && type !== 'err')
+      return console.error('Name is required')
     const cwd = process.cwd()
 
     switch (type) {
+      case 'error':
+      case 'err':
+        await generateErrorHandler(cwd)
+        break
       case 'resource':
       case 'crud':
         await generateCrud(name, cwd, options)
@@ -260,7 +278,7 @@ program
         break
       default:
         console.error(
-          'Unknown type. Supported: resource, crud, route, controller, service, schema, model, boundary, plugin, middleware, test'
+          'Unknown type. Supported: resource, crud, route, controller, service, schema, model, boundary, error, plugin, middleware, test'
         )
     }
   })

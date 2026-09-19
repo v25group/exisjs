@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.4',
+      exisjs: '^0.7.5',
     },
   }
 
@@ -85,8 +85,8 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
           [alias]: [aliasPath],
         },
       },
-      include: ['**/*.ts'],
-      exclude: ['node_modules', '.exis'],
+      include: useSrc ? ['src/**/*.ts', 'exis.config.ts'] : ['**/*.ts'],
+      exclude: ['node_modules', '.exis', 'dist'],
     },
     null,
     2

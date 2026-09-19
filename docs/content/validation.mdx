@@ -32,13 +32,15 @@ const safeData = userSchema.parse(rawInput)
 
 ExisJS supports a comprehensive set of strict validation primitives:
 
-- `tex.string()` - String validation (supports options like `{ min: 5, max: 10 }`).
+- `tex.string()` - String validation (supports options like `{ min: 5, max: 10, pattern: /regex/ }`).
 - `tex.email()` - Validates standard email formatting.
-- `tex.number()` - Strict number validation (fails if passed a string).
+- `tex.number()` - Strict number validation (fails if passed a string unless `coerce: true`).
+- `tex.number({ coerce: true, min: 0, max: 100 })` - Automatically coerces incoming string representations (e.g., query params) into native numbers.
 - `tex.boolean()` - Strict boolean validation.
-- `tex.number({ coerce: true })` - Automatically coerces incoming string representations into native JavaScript numbers.
 - `tex.boolean({ coerce: true })` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
-- `tex.array(schema)` - Validates an array of items. Accepts primitive types, `tex.object(...)`, or shorthand plain objects `{ ... }`.
+- `tex.date()` - Strict Date instance validation.
+- `tex.date({ coerce: true, minDate: new Date('2020-01-01'), maxDate: new Date() })` - Automatically parses ISO 8601 strings, UNIX timestamps, or date strings into native JavaScript `Date` objects with optional boundary checks.
+- `tex.array(schema, { coerce: true, min: 1, max: 10 })` - Validates an array of items. When `{ coerce: true }` is enabled, automatically converts single items or comma-separated query strings (`"apple,banana"`) into typed arrays. Accepts primitive types, `tex.object(...)`, or shorthand plain objects `{ ... }`.
 - `tex.object({ ... })` - Validates structured JSON objects.
 - `tex.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
 
@@ -253,6 +255,40 @@ export const RegisterUserSchema = tex.object({
 - **Single-Object Coercion**: When HTML forms or mobile clients submit a single item instead of an array (e.g. `{ items: { sku: "ABC", quantity: 1 } }`), the Rust engine automatically coerces it into a single-element array `[ { sku: "ABC", quantity: 1 } ]` rather than throwing `"Must be an array"`.
 - **Stringified JSON Support**: When submitting `multipart/form-data`, stringified JSON arrays (e.g. `items: "[{\"sku\":\"ABC\",\"quantity\":2}]"`) or stringified objects are automatically deserialized and validated.
 - **Type Inference**: TypeScript automatically infers the shape of array elements for both `tex.array(tex.object(...))` and `tex.array({ ... })`, ensuring full autocomplete without falling back to `never`.
+
+### Query String Array & Date Coercion
+
+Query strings in HTTP cannot natively represent arrays or date instances. ExisJS solves this elegantly through `{ coerce: true }`:
+
+```typescript filename="src/http/events/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
+
+const FilterSchema = tex.object({
+  // Coerces ISO 8601 strings (?from=2026-09-01T00:00:00Z) into Date instances
+  from: tex.date({ coerce: true, optional: true }),
+  to: tex.date({ coerce: true, optional: true }),
+  
+  // Coerces both comma-separated strings (?tags=tech,ai) AND repeated params (?tags=tech&tags=ai)
+  // or single values (?tags=tech -> ['tech']) into a typed array of strings
+  tags: tex.array(tex.string(), { coerce: true, optional: true }),
+
+  // Numbers within comma-separated arrays (?ids=1,2,3 -> [1, 2, 3]) are also coerced
+  ids: tex.array(tex.number({ coerce: true }), { coerce: true, optional: true })
+})
+
+export default controller({
+  listEvents: route.get('/events', {
+    query: FilterSchema,
+    handle({ query, res }) {
+      // query.from is Date | undefined
+      // query.tags is string[] | undefined
+      // query.ids is number[] | undefined
+      res.json({ filter: query })
+    }
+  })
+})
+```
 
 ---
 

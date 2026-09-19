@@ -55,6 +55,14 @@ export class ExisResponse<TResponse = any> {
     return this.raw.headersSent
   }
 
+  get isWritable(): boolean {
+    return (
+      !this.raw.destroyed &&
+      !(this.raw as any).writableEnded &&
+      !this.raw.headersSent
+    )
+  }
+
   get statusCode(): number {
     return this.raw.statusCode
   }
@@ -64,23 +72,27 @@ export class ExisResponse<TResponse = any> {
   }
 
   getHeader(name: string) {
+    if (this.raw.destroyed) return undefined
     return this.raw.getHeader(name)
   }
 
   getHeaders() {
+    if (this.raw.destroyed) return {}
     return this.raw.getHeaders()
   }
 
   setHeader(name: string, value: string | number | readonly string[]) {
+    if (this.raw.destroyed || this.raw.headersSent) return
     this.raw.setHeader(name, value)
   }
 
   hasHeader(name: string): boolean {
+    if (this.raw.destroyed) return false
     return this.raw.hasHeader(name)
   }
 
   end(data?: unknown) {
-    if ((this.raw as any).writableEnded) return
+    if (this.raw.destroyed || (this.raw as any).writableEnded) return
     if (this._onFinish.length > 0) {
       this.raw.end(data, () => {
         // eslint-disable-next-line @typescript-eslint/prefer-for-of
@@ -101,6 +113,7 @@ export class ExisResponse<TResponse = any> {
    * @public
    */
   status(code: number): this {
+    if (this.raw.destroyed || this.raw.headersSent) return this
     this.raw.statusCode = code
     return this
   }
@@ -212,7 +225,7 @@ export class ExisResponse<TResponse = any> {
    * @public
    */
   send(body: string | Buffer | object): void {
-    if (this.raw.headersSent) return
+    if (!this.isWritable) return
 
     if (typeof body === 'object' && body !== null && !Buffer.isBuffer(body)) {
       this.json(body as any)
@@ -265,7 +278,7 @@ export class ExisResponse<TResponse = any> {
    * @public
    */
   json(data: unknown extends TResponse ? any : TResponse): void {
-    if (this.raw.headersSent) return
+    if (!this.isWritable) return
 
     let payload: Buffer | string
     try {
@@ -318,7 +331,7 @@ export class ExisResponse<TResponse = any> {
    * @public
    */
   html(content: string): void {
-    if (this.headersSent) return
+    if (!this.isWritable) return
     if (!this.hasHeader('Content-Type')) {
       this.setHeader('Content-Type', 'text/html; charset=utf-8')
     }
@@ -340,17 +353,57 @@ export class ExisResponse<TResponse = any> {
    * @public
    */
   redirect(url: string, code = 302): void {
-    if (this.headersSent) return
+    if (!this.isWritable) return
     this.statusCode = code
     this.setHeader('Location', url)
     this.end()
   }
 
   sendStream(readable: NodeJS.ReadableStream): void {
-    if (this.headersSent) return
+    if (!this.isWritable) {
+      if (typeof (readable as any).destroy === 'function') {
+        ;(readable as any).destroy()
+      }
+      return
+    }
+
     if (!this.hasHeader('Content-Type')) {
       this.setHeader('Content-Type', 'application/octet-stream')
     }
+
+    const cleanup = () => {
+      if (typeof (readable as any).destroy === 'function') {
+        ;(readable as any).destroy()
+      }
+    }
+
+    // Auto-destroy stream if client aborts or response closes early
+    this.raw.once('close', cleanup)
+
+    // Handle stream error to prevent process crash
+    if (typeof (readable as any).on === 'function') {
+      ;(readable as any).once('error', (err: any) => {
+        this.raw.removeListener('close', cleanup)
+        if (this.req && this.req.log) {
+          this.req.log.error({ err }, '[ExisJS] Error in sendStream')
+        } else {
+          logger.error({ err }, '[ExisJS] Error in sendStream')
+        }
+        if (this.isWritable) {
+          this.statusCode = 500
+          this.end('{"error":"Stream transmission failed"}')
+        } else {
+          cleanup()
+        }
+      })
+    }
+
+    if (typeof (readable as any).once === 'function') {
+      ;(readable as any).once('end', () => {
+        this.raw.removeListener('close', cleanup)
+      })
+    }
+
     readable.pipe(this.raw as unknown as NodeJS.WritableStream)
   }
 
@@ -604,7 +657,30 @@ export class ExisResponse<TResponse = any> {
     if (options.domain) parts.push(`Domain=${options.domain}`)
     if (options.httpOnly) parts.push('HttpOnly')
     if (options.secure) parts.push('Secure')
-    if (options.sameSite) parts.push(`SameSite=${options.sameSite}`)
+
+    if (options.sameSite !== undefined && options.sameSite !== false) {
+      if (options.sameSite === true) {
+        parts.push('SameSite=Strict')
+      } else {
+        const str = String(options.sameSite).toLowerCase()
+        if (str === 'strict') parts.push('SameSite=Strict')
+        else if (str === 'lax') parts.push('SameSite=Lax')
+        else if (str === 'none') {
+          parts.push('SameSite=None')
+          if (!options.secure && !parts.includes('Secure')) {
+            parts.push('Secure')
+          }
+        }
+      }
+    }
+
+    if (options.partitioned) parts.push('Partitioned')
+    if (options.priority) {
+      const p = options.priority.toLowerCase()
+      if (p === 'low') parts.push('Priority=Low')
+      else if (p === 'medium') parts.push('Priority=Medium')
+      else if (p === 'high') parts.push('Priority=High')
+    }
 
     this.append('Set-Cookie', parts.join('; '))
     if (process.env.NODE_ENV === 'development') {
@@ -618,10 +694,17 @@ export class ExisResponse<TResponse = any> {
    * Clear cookie `name`.
    *
    * @param {string} name
+   * @param {CookieOptions} [options]
    * @return {this}
    * @public
    */
-  clearCookie(name: string): this {
-    return this.cookie(name, '', { expires: new Date(0), httpOnly: true })
+  clearCookie(name: string, options: CookieOptions = {}): this {
+    const { maxAge: _, expires: __, ...rest } = options
+    return this.cookie(name, '', {
+      httpOnly: true,
+      ...rest,
+      expires: new Date(0),
+      maxAge: 0,
+    })
   }
 }

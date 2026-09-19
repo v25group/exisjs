@@ -88,7 +88,18 @@ export class RouteScanner {
       }
     }
 
+    const searchDirs = isProd
+      ? [
+          path.join(root, '.exis', 'server', 'src', 'http'),
+          path.join(root, 'dist', 'src', 'http'),
+          path.join(root, 'src', 'http'),
+        ]
+      : [path.join(root, 'src', 'http')]
+
     if (Array.isArray(manifest)) {
+      for (const dir of searchDirs) {
+        await this.mountErrorHandler(dir)
+      }
       for (const entry of manifest) {
         const { routePath, module: routeMod, filePath } = entry
         const normalizedPath = path.resolve(root, filePath)
@@ -138,14 +149,6 @@ export class RouteScanner {
       return
     }
 
-    const searchDirs = isProd
-      ? [
-          path.join(root, '.exis', 'server', 'src', 'http'),
-          path.join(root, 'dist', 'src', 'http'),
-          path.join(root, 'src', 'http'),
-        ]
-      : [path.join(root, 'src', 'http')]
-
     const appDirs: string[] = []
     for (const dir of searchDirs) {
       try {
@@ -179,6 +182,7 @@ export class RouteScanner {
     ;(this as any)._allApiDirs = appDirs
 
     for (const appDir of appDirs) {
+      await this.mountErrorHandler(appDir)
       const routes = await this.scanDirectory(appDir)
 
       for (const { filePath, routePath } of routes) {
@@ -476,6 +480,8 @@ export class RouteScanner {
               if (
                 exportKey !== 'default' &&
                 exportKey !== 'config' &&
+                exportKey !== 'beforeHandle' &&
+                exportKey !== 'afterHandle' &&
                 typeof exportVal === 'function' &&
                 exportVal.length >= 3 // (req, res, next)
               ) {
@@ -485,6 +491,20 @@ export class RouteScanner {
                     : (exportVal as any)(req, res, next)
                 allMiddlewares.push(namedMiddleware)
               }
+            }
+            if (
+              typeof boundaryMod.beforeHandle === 'function' &&
+              !boundaryConfig?.beforeHandle
+            ) {
+              if (!boundaryConfig) boundaryConfig = {}
+              boundaryConfig.beforeHandle = boundaryMod.beforeHandle
+            }
+            if (
+              typeof boundaryMod.afterHandle === 'function' &&
+              !boundaryConfig?.afterHandle
+            ) {
+              if (!boundaryConfig) boundaryConfig = {}
+              boundaryConfig.afterHandle = boundaryMod.afterHandle
             }
           }
 
@@ -512,7 +532,12 @@ export class RouteScanner {
             }
             // Also inspect method middlewares on class boundary
             for (const prop of Object.getOwnPropertyNames(proto)) {
-              if (prop !== 'constructor' && prop !== 'handle') {
+              if (
+                prop !== 'constructor' &&
+                prop !== 'handle' &&
+                prop !== 'beforeHandle' &&
+                prop !== 'afterHandle'
+              ) {
                 const methodVal = proto[prop]
                 if (typeof methodVal === 'function' && methodVal.length >= 3) {
                   const boundaryInstance = new boundaryDefault()
@@ -523,6 +548,24 @@ export class RouteScanner {
                   allMiddlewares.push(namedMiddleware)
                 }
               }
+            }
+            if (
+              typeof proto.beforeHandle === 'function' &&
+              !boundaryConfig?.beforeHandle
+            ) {
+              const boundaryInstance = new boundaryDefault()
+              if (!boundaryConfig) boundaryConfig = {}
+              boundaryConfig.beforeHandle =
+                proto.beforeHandle.bind(boundaryInstance)
+            }
+            if (
+              typeof proto.afterHandle === 'function' &&
+              !boundaryConfig?.afterHandle
+            ) {
+              const boundaryInstance = new boundaryDefault()
+              if (!boundaryConfig) boundaryConfig = {}
+              boundaryConfig.afterHandle =
+                proto.afterHandle.bind(boundaryInstance)
             }
           }
 
@@ -646,6 +689,104 @@ export class RouteScanner {
                 }
               })
               allInterceptors.push(...wrapped)
+            }
+            if (boundaryConfig.beforeHandle || boundaryConfig.afterHandle) {
+              const beforeHooks = (
+                Array.isArray(boundaryConfig.beforeHandle)
+                  ? boundaryConfig.beforeHandle
+                  : boundaryConfig.beforeHandle
+                    ? [boundaryConfig.beforeHandle]
+                    : []
+              ) as ((req: any, res: any) => any)[]
+
+              const afterHooks = (
+                Array.isArray(boundaryConfig.afterHandle)
+                  ? boundaryConfig.afterHandle
+                  : boundaryConfig.afterHandle
+                    ? [boundaryConfig.afterHandle]
+                    : []
+              ) as ((req: any, res: any, data: any) => any)[]
+
+              const hookMiddleware = async (req: any, res: any, next: any) => {
+                if (isExcluded(req.path, req.method)) return next()
+
+                for (const hook of beforeHooks) {
+                  try {
+                    const result = await hook(req, res)
+                    if (result === false) {
+                      if (!res.headersSent) {
+                        res.status(403).json({
+                          success: false,
+                          error: {
+                            code: 'FORBIDDEN',
+                            message: 'Forbidden by boundary guard',
+                          },
+                        })
+                      }
+                      return
+                    }
+                    if (res.headersSent) return
+                  } catch (err) {
+                    return next(err)
+                  }
+                }
+
+                if (afterHooks.length === 0) {
+                  return next()
+                }
+
+                const originalJson = res.json.bind(res)
+                const originalSend = res.send.bind(res)
+                let handled = false
+
+                res.json = function (body: any) {
+                  if (handled) return originalJson(body)
+                  handled = true
+
+                  const runAfterHooks = async () => {
+                    let currentData = body
+                    for (const afterHook of afterHooks) {
+                      const transformed = await afterHook(req, res, currentData)
+                      if (transformed !== undefined) {
+                        currentData = transformed
+                      }
+                      if (res.headersSent) return
+                    }
+                    originalJson(currentData)
+                  }
+
+                  runAfterHooks().catch((err) => {
+                    next(err)
+                  })
+                  return this
+                }
+
+                res.send = function (body: any) {
+                  if (handled) return originalSend(body)
+                  handled = true
+
+                  const runAfterHooks = async () => {
+                    let currentData = body
+                    for (const afterHook of afterHooks) {
+                      const transformed = await afterHook(req, res, currentData)
+                      if (transformed !== undefined) {
+                        currentData = transformed
+                      }
+                      if (res.headersSent) return
+                    }
+                    originalSend(currentData)
+                  }
+
+                  runAfterHooks().catch((err) => {
+                    next(err)
+                  })
+                  return this
+                }
+
+                next()
+              }
+
+              allMiddlewares.push(hookMiddleware)
             }
             if (boundaryConfig.timeout !== undefined) {
               const baseTimeout = boundaryConfig.timeout
@@ -1164,6 +1305,82 @@ export class RouteScanner {
       }
     }
     return this
+  }
+
+  private async mountErrorHandler(dir: string): Promise<void> {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+
+    const candidateFiles = [
+      path.join(dir, 'error.ts'),
+      path.join(dir, 'error.js'),
+      path.join(dir, 'error.mjs'),
+      path.join(dir, 'error.cjs'),
+    ]
+
+    let errorFile: string | null = null
+    for (const file of candidateFiles) {
+      try {
+        const stat = await fs.stat(file)
+        if (stat.isFile()) {
+          errorFile = file
+          break
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!errorFile) return
+
+    try {
+      const url =
+        process.env.VITEST || process.env.NODE_ENV === 'test'
+          ? pathToFileURL(errorFile).href
+          : pathToFileURL(errorFile).href + '?t=' + Date.now()
+
+      let mod: any
+      if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+        mod = await import(url)
+      } else {
+        const dynamicImport = new Function(
+          'specifier',
+          'return import(specifier)'
+        )
+        mod = await dynamicImport(url)
+      }
+
+      const unwrapped =
+        mod && mod.default && mod.default.default
+          ? mod.default.default
+          : mod && mod.default
+            ? mod.default
+            : mod
+
+      const handler =
+        mod.onError ||
+        (unwrapped && unwrapped.onError) ||
+        (typeof unwrapped === 'function' ? unwrapped : null) ||
+        mod.errorHandler ||
+        mod.handleError
+
+      if (typeof handler === 'function') {
+        if (handler.length === 4) {
+          this.app.use(handler)
+        } else {
+          this.app.onError(handler)
+        }
+        this.app.log.info(
+          { file: errorFile },
+          'Mounted global error handler from error.ts'
+        )
+      }
+    } catch (err) {
+      this.app.log.error(
+        { err, file: errorFile },
+        `Failed to load error handler file: ${errorFile}`
+      )
+    }
   }
 
   private async scanDirectory(

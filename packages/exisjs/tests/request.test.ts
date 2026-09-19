@@ -556,3 +556,110 @@ describe('Body Limit Enforcement', () => {
     expect(caughtError.message).toContain('exis.config.ts')
   })
 })
+
+// ─── req.signal (AbortSignal) ──────────────────────────────────────────────────
+
+describe('req.signal (AbortSignal integration)', () => {
+  it('exposes an active AbortSignal on req.signal', () => {
+    const raw = buildRawRequest({})
+    const req = createRequest(raw)
+    expect(req.signal).toBeDefined()
+    expect(req.signal.aborted).toBe(false)
+  })
+
+  it('aborts req.signal when client disconnects before response ends', () => {
+    const raw = buildRawRequest({})
+    const req = createRequest(raw)
+
+    expect(req.signal.aborted).toBe(false)
+
+    // Simulate client abrupt connection termination
+    raw.emit('close')
+
+    expect(req.signal.aborted).toBe(true)
+  })
+
+  it('does not abort req.signal if response already ended cleanly', () => {
+    const raw = buildRawRequest({})
+    const res = createMockResponse()
+    Object.defineProperty(res.raw, 'writableEnded', {
+      value: true,
+      configurable: true,
+      writable: true,
+    })
+
+    const req = new ExisRequest(raw, res)
+    raw.emit('close')
+
+    expect(req.signal.aborted).toBe(false)
+  })
+
+  it('preserves req.signal and aborts correctly after request body is parsed', async () => {
+    const raw = buildRawRequest({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': '17',
+      },
+    })
+    const req = createRequest(raw)
+
+    // Simulate incoming data stream
+    process.nextTick(() => {
+      raw.emit('data', Buffer.from('{"hello":"world"}'))
+      raw.emit('end')
+    })
+
+    const data = await req.json()
+    expect(data).toEqual({ hello: 'world' })
+    expect(req.signal.aborted).toBe(false)
+
+    // Verify req.signal still receives client disconnect after body parsing
+    raw.emit('close')
+    expect(req.signal.aborted).toBe(true)
+  })
+
+  it('aborts req.formData cleanly when client disconnects prematurely', async () => {
+    const raw = buildRawRequest({
+      method: 'POST',
+      headers: {
+        'content-type':
+          'multipart/form-data; boundary=---------------------------974767299852498929531610575',
+      },
+    })
+    const req = createRequest(raw)
+
+    const formDataPromise = req.formData()
+
+    // Simulate premature client socket close
+    raw.emit('close')
+
+    await expect(formDataPromise).rejects.toThrow(
+      'Client disconnected prematurely during multipart upload'
+    )
+  })
+})
+
+// ─── IPv6 Mapped IPv4 Normalization ──────────────────────────────────────────
+
+describe('req.ip IPv6 Normalization', () => {
+  it('normalizes ::ffff:x.x.x.x to x.x.x.x', () => {
+    const raw = buildRawRequest({ remoteAddress: '::ffff:192.168.1.50' })
+    const req = createRequest(raw)
+    expect(req.ip).toBe('192.168.1.50')
+  })
+
+  it('normalizes ::1 to 127.0.0.1', () => {
+    const raw = buildRawRequest({ remoteAddress: '::1' })
+    const req = createRequest(raw)
+    expect(req.ip).toBe('127.0.0.1')
+  })
+
+  it('normalizes x-forwarded-for with IPv6 mapped addresses when proxy is trusted', () => {
+    const raw = buildRawRequest({
+      headers: { 'x-forwarded-for': '::ffff:203.0.113.195, 127.0.0.1' },
+    })
+    const req = createRequest(raw, true)
+    expect(req.ip).toBe('203.0.113.195')
+  })
+})

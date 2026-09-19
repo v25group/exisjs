@@ -108,6 +108,10 @@ impl TexValidator {
     fn validate_field(&self, val: &Value, field: &TexField, path: &str) -> Result<Value> {
         let mut result_val = val.clone();
 
+        if result_val.is_null() && field.is_nullable {
+            return Ok(Value::Null);
+        }
+
         match &field.field_type {
             TexType::String => {
                 if field.coerce && result_val.is_number() {

@@ -659,6 +659,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
     return this
   }
 
+  async autoMountRoutes(root?: string): Promise<this> {
+    await this.routeScanner.autoMountRoutes(root ?? process.cwd())
+    return this
+  }
+
   // ─── Listen ───────────────────────────────────────────────────────────────────
 
   listen(

@@ -219,3 +219,29 @@ If you are building a multi-tenant B2B application, do not boot multiple ExisJS 
 1. **Row-Level Tenancy (Recommended)**: Run a single `App` connected to a single database. Use request context or middleware to inject the `tenantId` and scope all queries via Prisma/SQL.
 2. **Factory-Based Clients**: If you need true database-per-tenant isolation, do not use the zero-config singleton exports (like `import { db } from 'exisjs/prisma'`). Instead, manually construct the client factories inside a tenant-resolution middleware and attach them to the request context (`req.tenantDb`).
 3. **Containerized Deployments**: Run separate Node.js processes (Docker containers) for each tenant, passing tenant-specific `DATABASE_URL`s to each container.
+
+---
+
+## 9. Graceful Shutdown & Zero-Downtime Deployments
+
+When deploying in Kubernetes, Docker Swarm, AWS ECS, or PM2, containers receive `SIGTERM` signals when being replaced. ExisJS handles graceful shutdown out of the box:
+
+1. **Stops Accepting New Connections**: Immediately closes the server listener so load balancers stop routing new traffic to the terminating instance.
+2. **Closes Idle Keep-Alive Connections**: Closes lingering idle HTTP keep-alive sockets instantly via `server.closeIdleConnections()`, preventing the process from hanging.
+3. **Drains In-Flight Requests**: Grants in-flight requests time to finish before terminating.
+4. **Lifecycle Teardown**: Automatically invokes your application's `onStop(app)` hook so you can cleanly disconnect databases, Redis pools, or message brokers.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { db } from './db'
+
+export default exis({
+  async onStart(app) {
+    await db.connect()
+  },
+  async onStop(app) {
+    // Cleanly close database pools when SIGTERM or SIGINT is received
+    await db.disconnect()
+  }
+})
+```

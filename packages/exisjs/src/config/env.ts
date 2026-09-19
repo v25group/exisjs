@@ -19,6 +19,9 @@ let _previousLoadedEnvFiles: LoadedEnvFiles = []
 
 function replaceProcessEnv(sourceEnv: Env) {
   Object.keys(process.env).forEach((key) => {
+    if (key.startsWith('__EXIS_') || key.startsWith('EXIS_')) {
+      return
+    }
     if (sourceEnv[key] === undefined || sourceEnv[key] === '') {
       delete process.env[key]
     }
@@ -35,6 +38,10 @@ export function processEnv(
   dir?: string,
   forceReload = false
 ) {
+  if (forceReload) {
+    delete process.env.__EXIS_PROCESSED_ENV
+  }
+
   if (!initialEnv) {
     initialEnv = Object.assign({}, process.env)
   }
@@ -111,6 +118,8 @@ export function loadEnv(
     currentMode !== 'test' && `.env.local`,
     `.env.${currentMode}`,
     '.env',
+    currentMode === 'production' && '.env.development.local',
+    currentMode === 'production' && '.env.development',
   ].filter(Boolean) as string[]
   for (const envFile of dotenvFiles) {
     const dotEnvPath = path.join(dir, envFile)

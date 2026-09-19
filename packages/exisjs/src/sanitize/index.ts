@@ -24,29 +24,29 @@ const safeString =
 export const sanitize = {
   // ─── Native Rust Sanitizers ──────────────────────────────────────────────
 
-  escapeHtml: (val: string): string => rsEscapeHtml(val),
+  escapeHtml: safeString((val: string): string => rsEscapeHtml(val)),
 
-  stripHtml: (val: string): string => rsStripHtml(val),
+  stripHtml: safeString((val: string): string => rsStripHtml(val)),
 
-  preventSql: (val: string): string => {
+  preventSql: safeString((val: string): string => {
     try {
       return rsPreventSql(val)
     } catch (e: any) {
       throw new Error(`Sanitization failed: ${e.message}`, { cause: e })
     }
-  },
+  }),
 
-  preventTraversal: (val: string): string => {
+  preventTraversal: safeString((val: string): string => {
     try {
       return rsPreventTraversal(val)
     } catch (e: any) {
       throw new Error(`Sanitization failed: ${e.message}`, { cause: e })
     }
-  },
+  }),
 
-  maskEmail: (val: string): string => rsMaskEmail(val),
+  maskEmail: safeString((val: string): string => rsMaskEmail(val)),
 
-  maskString: (val: string): string => rsMaskString(val),
+  maskString: safeString((val: string): string => rsMaskString(val)),
 
   // ─── Javascript Utilities ────────────────────────────────────────────────
 

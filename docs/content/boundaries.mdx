@@ -21,20 +21,22 @@ A `boundary.ts` has two distinct, independent parts:
 | Signature | Detected as | Execution timing |
 |---|---|---|
 | `(req, res, next)` | Chain Step | Runs in file/declaration order, before the route |
+| `beforeHandle(req, res)` | Boundary Guard Hook | Immediately before the route handler. Short-circuits on `false` or when sending headers |
+| `afterHandle(req, res, data)` | Response Hook | Immediately after the route handler. Mutates returned payload or logs audit data |
 | `(ctx, next)` — default export (functional) or class method `handle(ctx, next)` (OOP) | Request Wrapper | Wraps around all chain steps and the nested route/boundary |
 
 ---
 
 ## 1. Functional Paradigm
 
-In functional style, export `config = defineBoundary(...)`, export named middleware functions `(req, res, next)` for chain steps, and optionally provide a `default export` function `(ctx, next)` as an onion-style wrapper.
+In functional style, export `config = defineBoundary(...)`, export named middleware functions `(req, res, next)` for chain steps, and optionally provide a `default export` function `(ctx, next)` as an onion-style wrapper. You can also configure `beforeHandle` and `afterHandle` hooks directly inside `defineBoundary({ ... })`.
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
 import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
 import { UnauthorizedError } from 'exisjs/error'
 
-// 1. Configuration (CORS, Headers, Exclusions, DI Providers)
+// 1. Configuration (CORS, Headers, Exclusions, Hooks, DI Providers)
 export const config = defineBoundary({
   cors: {
     origin: ['https://admin.yourdomain.com'],
@@ -47,6 +49,20 @@ export const config = defineBoundary({
     '/admin/health',
     { path: '/admin/public/*', method: 'GET' }
   ],
+
+  // Pre-handler hook: Return false to reject with 403, or send custom response
+  beforeHandle(req, res) {
+    if (!req.headers['x-admin-token']) {
+      res.status(401).json({ error: 'Missing admin access token' })
+      return false
+    }
+  },
+
+  // Post-handler hook: Transform outgoing response payload or perform async audit
+  afterHandle(req, res, data) {
+    res.setHeader('X-Audited', 'true')
+    return { ...data, auditedAt: Date.now() }
+  },
 })
 
 // 2. Chain Step (auto-detected by (req, res, next) signature)
@@ -78,7 +94,7 @@ export default async function (ctx: BoundaryContext, next: Next) {
 
 ## 2. Class-Based (OOP) Paradigm
 
-In OOP style, decorate a class with `@Boundary(...)`. Named methods taking `(req, res, next)` are auto-detected as chain steps, and a method named `handle(ctx, next)` serves as the request wrapper.
+In OOP style, decorate a class with `@Boundary(...)`. Named methods taking `(req, res, next)` are auto-detected as chain steps, `beforeHandle(req, res)` and `afterHandle(req, res, data)` act as lifecycle hooks, and a method named `handle(ctx, next)` serves as the request wrapper.
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { Boundary } from 'exisjs/decorators'
@@ -96,6 +112,20 @@ import { UnauthorizedError } from 'exisjs/error'
   exclude: ['/admin/health'],
 })
 export default class AdminBoundary {
+  // Pre-handler hook
+  beforeHandle(req: Request, res: Response) {
+    if (!req.headers['x-admin-token']) {
+      res.status(401).json({ error: 'Missing admin access token' })
+      return false
+    }
+  }
+
+  // Post-handler hook
+  afterHandle(req: Request, res: Response, data: any) {
+    res.setHeader('X-Audited', 'true')
+    return { ...data, auditedAt: Date.now() }
+  }
+
   // Chain step
   requireAuth(req: Request, res: Response, next: Next) {
     if (!req.headers['x-api-key']) {

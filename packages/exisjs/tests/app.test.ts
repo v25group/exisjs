@@ -270,4 +270,22 @@ describe('App Lifecycle', () => {
 
     expect(closeListener).toHaveBeenCalled()
   })
+
+  it('closes idle keep-alive connections immediately during app.close()', async () => {
+    const app = new App({ logger: false })
+    const server = app.listen(0)
+    await new Promise<void>((r) => server.on('listening', r))
+
+    let idleClosed = false
+    if ('closeIdleConnections' in server) {
+      const orig = (server as any).closeIdleConnections
+      ;(server as any).closeIdleConnections = function () {
+        idleClosed = true
+        return orig.call(this)
+      }
+    }
+
+    await app.close()
+    expect(idleClosed).toBe(true)
+  })
 })

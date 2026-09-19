@@ -228,6 +228,21 @@ describe('res.cookie()', () => {
     expect(header).toHaveLength(2)
   })
 
+  it('supports partitioned, priority, and auto-secures sameSite none', () => {
+    const res = createMockResponse()
+    res.cookie('cross', '123', {
+      sameSite: 'none',
+      partitioned: true,
+      priority: 'high',
+    })
+
+    const header = res.getHeader('Set-Cookie') as string
+    expect(header).toContain('Partitioned')
+    expect(header).toContain('SameSite=None')
+    expect(header).toContain('Secure')
+    expect(header).toContain('Priority=High')
+  })
+
   it('returns this for chaining', () => {
     const res = createMockResponse()
     expect(res.cookie('a', '1')).toBe(res)
@@ -235,13 +250,16 @@ describe('res.cookie()', () => {
 })
 
 describe('res.clearCookie()', () => {
-  it('sets expired cookie', () => {
+  it('sets expired cookie with Max-Age=0 and custom options', () => {
     const res = createMockResponse()
-    res.clearCookie('session')
+    res.clearCookie('session', { path: '/admin', domain: '.example.com' })
 
     const header = res.getHeader('Set-Cookie') as string
     expect(header).toContain('session=')
     expect(header).toContain('Expires=Thu, 01 Jan 1970')
+    expect(header).toContain('Max-Age=0')
+    expect(header).toContain('Path=/admin')
+    expect(header).toContain('Domain=.example.com')
     expect(header).toContain('HttpOnly')
   })
 
@@ -283,5 +301,96 @@ describe('res.sendStream()', () => {
 
     // Should keep custom type, not override
     expect(res.getHeader('Content-Type')).toBe('text/event-stream')
+  })
+})
+
+// ─── Stream Destruction & isWritable Safety ──────────────────────────────────
+
+describe('Stream Destruction & isWritable Safety', () => {
+  it('reports isWritable correctly based on headersSent, destroyed, and writableEnded', () => {
+    const res = createMockResponse()
+    expect(res.isWritable).toBe(true)
+
+    Object.defineProperty(res.raw, 'destroyed', {
+      value: true,
+      configurable: true,
+      writable: true,
+    })
+    expect(res.isWritable).toBe(false)
+
+    Object.defineProperty(res.raw, 'destroyed', {
+      value: false,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(res.raw, 'writableEnded', {
+      value: true,
+      configurable: true,
+      writable: true,
+    })
+    expect(res.isWritable).toBe(false)
+
+    Object.defineProperty(res.raw, 'writableEnded', {
+      value: false,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(res.raw, 'headersSent', {
+      value: true,
+      configurable: true,
+      writable: true,
+    })
+    expect(res.isWritable).toBe(false)
+  })
+
+  it('no-ops safely when stream is destroyed before response is sent', () => {
+    const res = createMockResponse()
+    ;(res.raw as any).destroyed = true
+
+    // None of these should throw or mutate destroyed stream
+    expect(() => res.send('hello')).not.toThrow()
+    expect(() => res.json({ test: true })).not.toThrow()
+    expect(() => res.html('<h1>Hi</h1>')).not.toThrow()
+    expect(() => res.redirect('/home')).not.toThrow()
+    expect(() => res.status(500)).not.toThrow()
+    expect(() => res.setHeader('X-Custom', 'value')).not.toThrow()
+    expect(res.getHeader('X-Custom')).toBeUndefined()
+  })
+
+  it('destroys readable stream when client disconnects during sendStream', () => {
+    const res = createMockResponse()
+    let destroyed = false
+
+    const readable = new Readable({
+      read() {},
+      destroy(err, cb) {
+        destroyed = true
+        cb(err)
+      },
+    })
+
+    res.sendStream(readable)
+    expect(destroyed).toBe(false)
+
+    // Simulate client abrupt disconnect
+    res.raw.emit('close')
+    expect(destroyed).toBe(true)
+  })
+
+  it('handles readable stream error gracefully in sendStream without crashing', () => {
+    const res = createMockResponse()
+
+    const readable = new Readable({
+      read() {},
+    })
+
+    res.sendStream(readable)
+
+    // Emitting error on stream should be caught and handled cleanly
+    expect(() => {
+      readable.emit('error', new Error('Disk read failure'))
+    }).not.toThrow()
+
+    expect(res.statusCode).toBe(500)
   })
 })

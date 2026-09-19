@@ -83,4 +83,16 @@ describe('loadEnv', () => {
 
     expect(process.env.DB_NAME).toBe('prod_db')
   })
+
+  it('falls back to .env.development in production mode if production file is absent', () => {
+    writeTempFile(
+      tmpDir,
+      '.env.development',
+      'DATABASE_URL=postgres://localhost/dev'
+    )
+
+    loadEnv(tmpDir, 'production', true)
+
+    expect(process.env.DATABASE_URL).toBe('postgres://localhost/dev')
+  })
 })

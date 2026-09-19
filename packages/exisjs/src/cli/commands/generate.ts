@@ -220,6 +220,33 @@ export async function generateBoundary(
   success(`Generated boundary in src/http/${name}/${filename}`)
 }
 
+export async function generateErrorHandler(cwd = process.cwd()) {
+  const targetDir = path.join(cwd, 'src', 'http')
+  await ensureDir(targetDir)
+  const filePath = path.join(targetDir, 'error.ts')
+
+  const code = `import type { Request, Response } from 'exisjs'
+
+/**
+ * Global Exception Handler for ExisJS
+ * Auto-mounted by the framework to catch unhandled errors and format error responses.
+ */
+export function onError(err: any, req: Request, res: Response) {
+  const status = err.statusCode || err.status || 500
+  res.status(status).json({
+    success: false,
+    error: {
+      message: err.message || 'Internal Server Error',
+      code: err.code || 'INTERNAL_ERROR',
+    },
+  })
+}
+`
+
+  await fs.writeFile(filePath, code)
+  success('Generated global exception handler in src/http/error.ts')
+}
+
 export async function generateResource(
   name: string,
   cwd = process.cwd(),

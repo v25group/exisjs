@@ -217,12 +217,18 @@ export async function doctorCommand(
         f.endsWith('boundary.js') ||
         /\.boundary\.[jt]s$/.test(f)
     )
+    const errorFiles = allFiles.filter(
+      (f) =>
+        f.endsWith('error.ts') ||
+        f.endsWith('error.js') ||
+        /\.error\.[jt]s$/.test(f)
+    )
 
     results.push({
       category: 'Routes & Pipeline',
       name: 'File-System Route Slices',
       status: 'pass',
-      message: `Discovered ${routeFiles.length} route(s), ${schemaFiles.length} schema(s), ${boundaryFiles.length} boundary definition(s)`,
+      message: `Discovered ${routeFiles.length} route(s), ${schemaFiles.length} schema(s), ${boundaryFiles.length} boundary definition(s)${errorFiles.length > 0 ? `, ${errorFiles.length} global error handler(s)` : ''}`,
     })
 
     // Check for suspicious naming like route.controller.ts or routes.ts (plural)
@@ -245,7 +251,7 @@ export async function doctorCommand(
         name: 'Naming Conventions',
         status: 'warn',
         message: `Found non-standard file names: ${rels}`,
-        hint: 'ExisJS detects route.ts, <name>.route.ts, schema.ts, or boundary.ts. Plural "routes.ts" will not be mounted automatically.',
+        hint: 'ExisJS detects route.ts, <name>.route.ts, schema.ts, boundary.ts, or error.ts. Plural "routes.ts" will not be mounted automatically.',
       })
     }
   }

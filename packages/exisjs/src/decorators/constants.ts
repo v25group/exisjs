@@ -51,6 +51,8 @@ export interface BoundaryConfig {
   headers?: Record<string, string>
   imports?: any[]
   providers?: any[]
+  beforeHandle?: any
+  afterHandle?: any
 }
 
 export interface ClassModuleOptions {

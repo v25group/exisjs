@@ -59,6 +59,14 @@ async function start() {
 
     // Support declarative `export default exis({ ... })` or `@Server` classes
     let app = mod.default || mod.app
+    if (
+      app &&
+      !app._isExisAppDefinition &&
+      typeof app.create !== 'function' &&
+      app.default
+    ) {
+      app = app.default
+    }
     let instance: import('../server/app.js').App | null = null
     const { setActiveAppInstance } = await import('../server/app.js')
 
@@ -148,7 +156,10 @@ async function start() {
       // On SIGTERM (Kubernetes, Docker stop) or SIGINT (Ctrl+C), close the
       // server cleanly rather than hard-killing it — this allows in-flight
       // requests to complete and prevents data loss.
+      let isShuttingDown = false
       const shutdown = async (signal: string) => {
+        if (isShuttingDown) return
+        isShuttingDown = true
         const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
         if (!isCLI) {
           console.error(
@@ -169,6 +180,15 @@ async function start() {
 
       process.once('SIGTERM', () => shutdown('SIGTERM'))
       process.once('SIGINT', () => shutdown('SIGINT'))
+
+      process.on('message', (msg: any) => {
+        if (
+          msg === 'shutdown' ||
+          (typeof msg === 'object' && msg?.type === 'exis:shutdown')
+        ) {
+          shutdown('IPC')
+        }
+      })
 
       // ─── Dev Server Error Boundary ───────────────────────────────────────────
       // Prevent dev server from fatally crashing on strict unhandled errors (e.g. Postgres disconnected)

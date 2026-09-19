@@ -3,6 +3,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import http from 'node:http'
 import net from 'node:net'
+import { pathToFileURL } from 'node:url'
 import { error, c, warn } from '../utils'
 import { getFormattedTime } from '../../utils/time'
 import { loadEnv } from '../../config/env'
@@ -121,15 +122,24 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   )
 
   // Hardcode Esbuild (tsx) as the Native HMR runner
+  let tsxArgs = [require.resolve('tsx/cli')]
+  try {
+    const resolved = require.resolve('tsx', { paths: [cwd, __dirname] })
+    tsxArgs = ['--import', pathToFileURL(resolved).href]
+  } catch {
+    /* fallback to tsx/cli if resolve fails */
+  }
+
   const runner = {
     name: 'tsx',
     bin: process.execPath,
-    args: [require.resolve('tsx/cli')],
+    args: tsxArgs,
     needsManualWatch: true,
   }
 
   let child: ChildProcess | null = null
   let isShuttingDown = false
+  let watcher: any = null
 
   const CHILD_EXIT_TIMEOUT_MS = 10000
 
@@ -148,6 +158,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     isShuttingDown = true
     cleanupPid()
 
+    if (watcher) {
+      try {
+        watcher.close()
+      } catch {
+        /* ignore */
+      }
+      watcher = null
+    }
+
     const time = getFormattedTime()
     const primary = '\x1b[38;2;160;70;255m'
     console.log(
@@ -162,11 +181,12 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       }
     }
 
-    if (child && child.pid) {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        process.exit(0)
-      }
-
+    if (
+      child &&
+      child.pid &&
+      child.exitCode === null &&
+      child.signalCode === null
+    ) {
       const exitTimeout = setTimeout(() => {
         if (child && !child.killed) {
           console.log(
@@ -187,21 +207,30 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         process.exit(0)
       }, CHILD_EXIT_TIMEOUT_MS)
 
-      child.on('exit', () => {
+      let hasExited = false
+      const finishExit = () => {
+        if (hasExited) return
+        hasExited = true
         clearTimeout(exitTimeout)
-        // Small delay to allow the child's buffered stdout to fully flush
-        // before the parent exits (fixes Windows race condition where the
-        // PS prompt appears before the last log lines are printed).
-        setTimeout(() => process.exit(0), 300)
+        process.exit(0)
+      }
+
+      child.once('close', finishExit)
+      child.once('exit', () => {
+        // Fallback delay to allow any buffered stdout/stderr to drain if close doesn't trigger
+        setTimeout(finishExit, 300)
       })
 
       try {
-        if (process.platform === 'win32') {
-          // On Windows, signals are not natively supported — send Ctrl+C
-          // event to the child's console group so it can shut down gracefully.
-          // The child already receives SIGINT from the terminal directly, so
-          // this is a no-op safety net; the real fix is the drain delay above.
-        } else {
+        if (child.connected) {
+          child.send({ type: 'exis:shutdown' })
+        }
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        if (process.platform !== 'win32') {
           child.kill('SIGTERM')
         }
       } catch {
@@ -228,9 +257,32 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     }
   }
 
-  function startFallbackServer(errorMessage: string) {
+  let configuredPort: number | null = null
+  try {
+    const configTs = path.join(cwd, 'exis.config.ts')
+    const configJs = path.join(cwd, 'exis.config.js')
+    const configFile = fs.existsSync(configTs)
+      ? configTs
+      : fs.existsSync(configJs)
+        ? configJs
+        : null
+    if (configFile) {
+      const content = fs.readFileSync(configFile, 'utf8')
+      const match = content.match(/\bport\s*:\s*(\d+)/)
+      if (match) {
+        configuredPort = parseInt(match[1], 10)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  function startFallbackServer(errorMessage: string, customPort?: number) {
     closeFallbackServer()
-    const port = parseInt(process.env.PORT || '4000', 10)
+    const port =
+      customPort ??
+      (process.env.PORT ? parseInt(process.env.PORT, 10) : configuredPort) ??
+      4000
     fallbackServer = http.createServer((req, res) => {
       res.writeHead(500, { 'Content-Type': 'text/html' })
       res.end(`
@@ -272,11 +324,36 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     isRestarting = true
     closeFallbackServer()
 
-    if (child) {
-      child.kill('SIGTERM')
+    if (child && !child.killed) {
+      try {
+        if (child.connected) {
+          child.send({ type: 'exis:shutdown' })
+        }
+      } catch {
+        /* ignore */
+      }
+      try {
+        if (process.platform !== 'win32') {
+          child.kill('SIGTERM')
+        }
+      } catch {
+        /* ignore */
+      }
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
-          if (child) child.kill('SIGKILL')
+          if (child && !child.killed) {
+            try {
+              if (process.platform === 'win32') {
+                spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                  stdio: 'ignore',
+                })
+              } else {
+                child.kill('SIGKILL')
+              }
+            } catch {
+              /* ignore */
+            }
+          }
           resolve()
         }, 5000)
 
@@ -347,20 +424,46 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (runner.needsManualWatch && !options._disableWatch) {
     const chokidar = await importChokidar()
     if (chokidar) {
-      const watcher = chokidar.watch([cwd], {
+      watcher = chokidar.watch([cwd], {
         cwd,
         ignoreInitial: true,
         ignored: [
           // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])\../, // ignore dotfiles
+          /(^|[\/\\])\../, // ignore dotfiles (.git, .vscode, .idea, etc.)
           /node_modules/,
           /\.exis/,
           /dist/,
+          /build/,
           /exis\.d\.ts$/,
+          /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
+          /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
+          /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
+          /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i, // media & binary docs
         ],
       })
 
+      watcher.on('error', (err: any) => {
+        // Suppress non-fatal Windows file lock / permission errors (EBUSY / EPERM)
+        if (
+          err?.code === 'EBUSY' ||
+          err?.code === 'EPERM' ||
+          err?.code === 'UNKNOWN'
+        ) {
+          return
+        }
+        console.warn(
+          `\x1b[33m[exis watcher notice]\x1b[0m ${err?.message || err}`
+        )
+      })
+
       watcher.on('all', async (eventName: string, file: string) => {
+        if (
+          /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso|bak|tmp|temp|swp|swo|lock|pid|log|sqlite|sqlite3|db|png|jpe?g|gif|svg|ico|webp|pdf)$/i.test(
+            file
+          )
+        ) {
+          return
+        }
         const time = getFormattedTime()
         const primary = '\x1b[38;2;160;70;255m'
         console.log(
@@ -410,12 +513,12 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           closeFallbackServer()
         } else if (line.includes('error TS')) {
           const time = getTime()
-          console.error(`\n${c.red}[${time}] ERROR:${c.reset} ${line}`)
+          console.error(`\n${c.red}${time} ERROR:${c.reset} ${line}`)
           tscErrors.push(line)
         } else if (line.includes('Found') && line.includes('error')) {
           // "Found X errors." summary line
           const time = getTime()
-          console.error(`\n${c.yellow}[${time}] INFO:${c.reset} ${line}`)
+          console.error(`\n${c.yellow}${time} INFO:${c.reset} ${line}`)
           if (tscErrors.length > 0) {
             startFallbackServer(
               `TypeScript Compilation Errors\n${'─'.repeat(50)}\n\n` +
@@ -427,7 +530,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           !line.includes('File change detected')
         ) {
           const time = getTime()
-          console.error(`${c.yellow}[${time}] INFO:${c.reset} ${line}`)
+          console.error(`${c.yellow}${time} INFO:${c.reset} ${line}`)
         }
       }
     })
