@@ -166,3 +166,14 @@ export default class UserController {
 
 > [!TIP]
 > For deep services inside an OOP architecture, you can still seamlessly use `getContext()`, `getRequest()`, or `after()` from `exisjs/router` to access the async context without prop-drilling!
+
+---
+
+## Context Isolation & Memory Leak Safety
+
+In high-concurrency micro-benchmarks or long-lived streaming connections (SSE / WebSockets), holding references in `AsyncLocalStorage` without explicit teardown can lead to memory retention. ExisJS enforces a deterministic context cleanup lifecycle:
+
+1. **Deterministic Teardown (`cleanupContext`)**: When a response emits the `'finish'` or `'close'` event, ExisJS automatically executes all remaining `after()` callbacks, clears request-scoped dependency injection instances (`diCache`), purges the `state` dictionary, and unlinks circular references (`req = null!`, `res = null!`, `app = null!`).
+2. **`try / finally` Dispatch Boundary**: The router wraps every handler dispatch in a `try ... finally` boundary, guaranteeing that unhandled exceptions or rejected promises cannot leak state into subsequent async continuations.
+3. **Recycling Pool Memory Scrubbing**: When recycled `ExisRequest` and `ExisResponse` instances return to the internal object pool, their internal dependency injection caches and request metadata are scrubbed clean.
+

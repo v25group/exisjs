@@ -13,11 +13,17 @@ export function defineConfig(config: ExisConfig): ExisConfig {
 
 export type ResolvedConfig = Omit<
   Required<ExisConfig>,
-  'ssl' | 'queue' | 'transformResponse'
+  | 'ssl'
+  | 'queue'
+  | 'transformResponse'
+  | 'blockProbes'
+  | 'blockSuspiciousProbes'
 > & {
   ssl?: ExisConfig['ssl']
   queue?: ExisConfig['queue']
   transformResponse?: ExisConfig['transformResponse']
+  blockProbes?: ExisConfig['blockProbes']
+  blockSuspiciousProbes?: ExisConfig['blockSuspiciousProbes']
 }
 
 export const defaultConfig: ResolvedConfig = {

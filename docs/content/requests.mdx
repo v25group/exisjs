@@ -97,7 +97,9 @@ Handling `multipart/form-data` in Node.js can be difficult. ExisJS provides mult
 
 ### A. Declarative Route Uploads (Recommended)
 
-You can declare file upload requirements directly inside your route schema. ExisJS automatically executes the multipart parser, validates MIME types, enforces byte caps, and populates `req.file` or `req.files` along with non-file fields in `req.body`:
+You can declare file upload requirements directly inside your route schema or decorators. ExisJS automatically executes the multipart parser, validates MIME types, enforces byte caps, and populates `req.file` or `req.files` along with non-file fields in `req.body`:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/upload/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -128,9 +130,46 @@ export default controller({
 })
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/upload/route.ts"
+import { Controller, Post, UseUpload, UploadedFile, Body } from 'exisjs/decorators'
+import { tex } from 'exisjs/validator'
+import type { UploadedFile as IUploadedFile } from 'exisjs/router'
+
+const TitleSchema = tex.object({
+  title: tex.string({ min: 1 }),
+})
+
+@Controller('/upload')
+export default class UploadController {
+  @Post('/')
+  @UseUpload({
+    field: 'photo',
+    maxBytes: 10 * 1024 * 1024,
+    mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  })
+  async uploadPhoto(
+    @UploadedFile() file: IUploadedFile,
+    @Body(TitleSchema) body: { title: string }
+  ) {
+    console.log(`Uploaded ${file.originalname} (${file.size} bytes)`)
+
+    return {
+      success: true,
+      filename: file.filename,
+      mimetype: file.mimetype,
+      title: body.title,
+    }
+  }
+}
+```
+
 ### B. First-Party `fileUpload` Middleware
 
 ExisJS exports a dedicated `fileUpload` middleware from `exisjs/middleware` supporting single, multiple, and multi-field uploads:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/documents/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -173,9 +212,43 @@ export default controller({
 })
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/documents/route.ts"
+import { Controller, Post, Use, UploadedFile, UploadedFiles } from 'exisjs/decorators'
+import { fileUpload } from 'exisjs/middleware'
+import type { UploadedFile as IUploadedFile } from 'exisjs/router'
+
+@Controller('/documents')
+export default class DocumentsController {
+  // Single file upload
+  @Post('/single')
+  @Use(fileUpload.single('document', { maxBytes: 15 * 1024 * 1024, dest: './uploads/docs' }))
+  async uploadSingle(@UploadedFile() file: IUploadedFile) {
+    return { file }
+  }
+
+  // Multiple files with the same field name
+  @Post('/gallery')
+  @Use(fileUpload.array('photos', 5, { mimeTypes: ['image/*'] }))
+  async uploadGallery(@UploadedFiles() files: IUploadedFile[]) {
+    return { count: files.length, files }
+  }
+
+  // Multiple distinct fields
+  @Post('/profile')
+  @Use(fileUpload.fields([{ name: 'avatar', maxCount: 1 }, { name: 'cover', maxCount: 1 }]))
+  async uploadProfile(@UploadedFiles() files: Record<string, IUploadedFile[]>) {
+    return { files }
+  }
+}
+```
+
 ### C. Integrating Express/Connect Middleware (e.g. Multer)
 
 If your enterprise project relies on existing Express middleware like **Multer** (for custom storage engines, S3 direct-to-cloud streams, or specialized filters), ExisJS provides the `fromExpress()` bridge:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/legacy/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -199,9 +272,35 @@ export default controller({
 })
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/legacy/route.ts"
+import { Controller, Post, Use, Req } from 'exisjs/decorators'
+import { fromExpress } from 'exisjs/middleware'
+import type { Request } from 'exisjs/router'
+import multer from 'multer'
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+})
+
+@Controller('/legacy')
+export default class LegacyUploadController {
+  @Post('/upload')
+  @Use(fromExpress(upload.single('file')))
+  async upload(@Req() req: Request) {
+    const file = (req.raw as any).file || req.file
+    return { success: true, originalname: file?.originalname }
+  }
+}
+```
+
 ### D. Manual `req.formData()` & Streaming Uploads
 
 For manual control over incoming multipart streams without route middleware:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/upload/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -223,6 +322,29 @@ export default controller({
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/upload/route.ts"
+import { Controller, Post, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
+
+@Controller('/upload')
+export default class ManualUploadController {
+  @Post('/avatar')
+  async uploadAvatar(@Req() req: Request) {
+    const { fields, files } = await req.formData()
+    const uploadedFile = files['profile_pic']
+
+    if (uploadedFile) {
+      const savedPath = await uploadedFile.saveToDisk('./uploads/avatars')
+      return { success: true, path: savedPath }
+    }
+
+    return { success: false, error: 'No file uploaded' }
+  }
+}
 ```
 
 ---
@@ -260,27 +382,53 @@ ExisJS ships with a **60-second default request timeout** in its `timeout()` mid
 
 ### Dynamic In-Handler Control
 
-Handlers can dynamically extend or cancel the active timeout on the fly using `req.setTimeout()` and `req.clearTimeout()`:
+Handlers can dynamically extend or cancel the active timeout on the fly using `req.setTimeout()` and `req.clearTimeout()`, or declaratively via `@Timeout(ms)`:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/ai/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
   generateVideo: route.post('/', {
+    timeoutMs: 180000, // 1. Declarative 3-minute timeout for this endpoint
     async handle({ req }) {
-      // 1. Extend timeout for heavy AI pass generation (e.g. 3 minutes)
-      req.setTimeout(180000)
+      // 2. Or dynamically adjust timeout during processing
+      req.setTimeout(240000)
 
       try {
         const result = await longRunningAiTask()
         return { success: true, result }
       } finally {
-        // 2. Clear timeout once work completes
         req.clearTimeout()
       }
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/ai/route.ts"
+import { Controller, Post, Timeout, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
+
+@Controller('/ai')
+export default class AiTaskController {
+  @Post('/generate-video')
+  @Timeout(180000) // 1. Declarative 3-minute timeout
+  async generateVideo(@Req() req: Request) {
+    // 2. Or dynamically adjust on the fly
+    req.setTimeout(240000)
+
+    try {
+      const result = await longRunningAiTask()
+      return { success: true, result }
+    } finally {
+      req.clearTimeout()
+    }
+  }
+}
 ```
 
 ---
@@ -321,7 +469,7 @@ ExisJS provides a first-class standard Web API `req.signal: AbortSignal` tied di
 
 When a client closes their browser tab, cancels a download, or aborts an HTTP request, `req.signal` immediately triggers an `abort` event. You can pass `req.signal` directly to ORMs, database drivers, and HTTP clients to cancel expensive in-flight operations and eliminate wasted server resources.
 
-#### Example: Passing to Database Queries & Upstream Fetches
+#### Functional Paradigm
 
 ```typescript filename="src/http/reports/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -344,6 +492,32 @@ export default controller({
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/reports/route.ts"
+import { Controller, Get, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
+
+@Controller('/reports')
+export default class ReportsController {
+  @Get('/')
+  async heavyReport(@Req() req: Request) {
+    // 1. Pass req.signal to fetch()
+    const upstream = await fetch('https://api.external.com/data', {
+      signal: req.signal,
+    })
+    const payload = await upstream.json()
+
+    // 2. Pass req.signal to your database queries
+    const results = await db.query(sql`SELECT * FROM heavy_analytics`, {
+      signal: req.signal,
+    })
+
+    return { payload, results }
+  }
+}
 ```
 
 ---

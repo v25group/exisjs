@@ -88,6 +88,9 @@ export interface ExisConfig {
   bodyLimit?: number // bytes, default 10mb
   env?: 'development' | 'production' | 'test'
   compression?: boolean
+  blockProbes?: boolean | import('../middleware/security').BlockProbesOptions
+  blockSuspiciousProbes?:
+    boolean | import('../middleware/security').BlockProbesOptions
   keepAlive?: KeepAliveConfig | boolean
   ssl?: SslConfig
   http2?: boolean // Default true when SSL is provided

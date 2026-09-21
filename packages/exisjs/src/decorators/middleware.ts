@@ -4,6 +4,17 @@ import {
   LIFECYCLE_METADATA_PROP,
 } from './constants'
 import { MetadataEngine } from './core/metadata'
+import { rateLimit } from '../middleware/rate-limit'
+import { cors } from '../middleware/middleware'
+import { routeTimeout } from '../middleware/security'
+import { ipFilter } from '../middleware/ip-filter'
+import { compression } from '../middleware/compression'
+import { dedupeMiddleware } from '../middleware/dedupe'
+import { idempotent as IdempotentMiddleware } from '../middleware/idempotency'
+import {
+  blockSuspiciousProbes,
+  type BlockProbesOptions,
+} from '../middleware/security'
 
 /**
  * Classifies a handler item into middleware, guard, interceptor, or filter.
@@ -155,8 +166,60 @@ export function UseFilters(...filters: any[]): any {
 }
 
 /**
+ * Helper to apply a middleware factory at either class or method level.
+ */
+function applyMiddlewareDecorator(
+  target: any,
+  contextOrPropertyKey: string | symbol | any,
+  descriptor: PropertyDescriptor | any,
+  middlewareFactory: (req: any, res: any, next: any) => any,
+  unshift = false
+) {
+  const isStandard =
+    typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
+  const kind = isStandard ? contextOrPropertyKey.kind : undefined
+
+  if (
+    kind === 'class' ||
+    (!isStandard && typeof target === 'function' && !contextOrPropertyKey)
+  ) {
+    const proto = target.prototype || target
+    const classMiddlewares = MetadataEngine.init<any>(
+      proto,
+      MIDDLEWARE_REGISTRY,
+      { _classMiddlewares: [] }
+    )
+    if (!classMiddlewares._classMiddlewares) {
+      classMiddlewares._classMiddlewares = []
+    }
+    if (unshift) {
+      classMiddlewares._classMiddlewares.unshift(middlewareFactory)
+    } else {
+      classMiddlewares._classMiddlewares.push(middlewareFactory)
+    }
+  } else {
+    const fn = isStandard
+      ? target
+      : descriptor
+        ? descriptor.value
+        : target[contextOrPropertyKey]
+    const methodMiddlewares = MetadataEngine.init<any[]>(
+      fn,
+      METHOD_MIDDLEWARES,
+      []
+    )
+    if (unshift) {
+      methodMiddlewares.unshift(middlewareFactory)
+    } else {
+      methodMiddlewares.push(middlewareFactory)
+    }
+  }
+}
+
+/**
  * Idempotency Decorator.
  * Caches responses based on the provided Idempotency-Key header.
+ * Works on both Controller classes and individual route methods.
  *
  * Example:
  *     @Post('/checkout')
@@ -166,40 +229,19 @@ export function UseFilters(...filters: any[]): any {
 export function Idempotent(
   options: import('../middleware/idempotency').IdempotentOptions = {}
 ): any {
+  const handler = IdempotentMiddleware(options)
   return function (
     target: any,
     contextOrPropertyKey?: string | symbol | any,
     descriptor?: PropertyDescriptor | any
   ) {
-    const isStandard =
-      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
-    const fn = isStandard
-      ? target
-      : descriptor
-        ? descriptor.value
-        : target[contextOrPropertyKey]
-
-    const methodMiddlewares = MetadataEngine.init<any[]>(
-      fn,
-      METHOD_MIDDLEWARES,
-      []
-    )
-
-    // Defer import to avoid circular dependencies
-    const middlewareProxy = async (req: any, res: any, next: any) => {
-      const { Idempotent: IdempotentMiddleware } =
-        await import('../middleware/idempotency')
-      const handler = IdempotentMiddleware(options)
-      return handler(req, res, next)
-    }
-
-    methodMiddlewares.push(middlewareProxy)
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
   }
 }
 
 /**
- * Route-Level Timeout Decorator.
- * Configures an explicit timeout override for a long-running endpoint.
+ * Route-Level / Controller-Level Timeout Decorator.
+ * Configures an explicit timeout override for a route method or entire controller.
  *
  * Example:
  *     @Post('/heavy-task')
@@ -209,31 +251,152 @@ export function Idempotent(
 export function Timeout(
   msOrOptions: number | import('../middleware/security').TimeoutOptions
 ): any {
+  const handler = routeTimeout(msOrOptions)
   return function (
     target: any,
     contextOrPropertyKey?: string | symbol | any,
     descriptor?: PropertyDescriptor | any
   ) {
-    const isStandard =
-      typeof contextOrPropertyKey === 'object' && contextOrPropertyKey !== null
-    const fn = isStandard
-      ? target
-      : descriptor
-        ? descriptor.value
-        : target[contextOrPropertyKey]
-
-    const methodMiddlewares = MetadataEngine.init<any[]>(
-      fn,
-      METHOD_MIDDLEWARES,
-      []
+    applyMiddlewareDecorator(
+      target,
+      contextOrPropertyKey,
+      descriptor,
+      handler,
+      true
     )
-
-    const middlewareProxy = async (req: any, res: any, next: any) => {
-      const { routeTimeout } = await import('../middleware/security')
-      const handler = routeTimeout(msOrOptions)
-      return handler(req, res, next)
-    }
-
-    methodMiddlewares.unshift(middlewareProxy)
   }
 }
+
+/**
+ * Rate Limiting Decorator.
+ * Enforces request rate limits on a Controller class or route method.
+ *
+ * Example:
+ *     @Get('/sensitive-data')
+ *     @RateLimit({ max: 10, windowMs: 60000 })
+ *     getSensitiveData() {}
+ */
+export function RateLimit(
+  options: import('../middleware/rate-limit').RateLimitOptions = {}
+): any {
+  const handler = rateLimit(options)
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
+  }
+}
+
+/**
+ * CORS Decorator.
+ * Configures Cross-Origin Resource Sharing on a Controller class or route method.
+ *
+ * Example:
+ *     @Get('/public-api')
+ *     @Cors({ origin: '*' })
+ *     getPublicData() {}
+ */
+export function Cors(options: import('../types').CorsConfig = {}): any {
+  const handler = cors(options)
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(
+      target,
+      contextOrPropertyKey,
+      descriptor,
+      handler,
+      true
+    )
+  }
+}
+
+/**
+ * IP Filter Decorator.
+ * Enforces IP/CIDR allowlist and denylist on a Controller class or route method.
+ *
+ * Example:
+ *     @Controller('/admin')
+ *     @IpFilter({ allow: ['127.0.0.1', '10.0.0.0/8'] })
+ *     export class AdminController {}
+ */
+export function IpFilter(
+  options: import('../middleware/ip-filter').IpFilterOptions
+): any {
+  const handler = ipFilter(options)
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
+  }
+}
+
+/**
+ * Compression Decorator.
+ * Enables automatic gzip/brotli response compression on a Controller class or route method.
+ *
+ * Example:
+ *     @Get('/large-dataset')
+ *     @Compress()
+ *     getDataset() {}
+ */
+export function Compress(): any {
+  const handler = compression()
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
+  }
+}
+
+/**
+ * Request Deduplication Decorator.
+ * Prevents duplicate parallel requests sharing the same key.
+ *
+ * Example:
+ *     @Post('/order/charge')
+ *     @Dedupe({ keyGenerator: (req) => req.user?.id || req.ip })
+ *     chargeOrder() {}
+ */
+export function Dedupe(
+  options: import('../middleware/dedupe').DedupeOptions
+): any {
+  const handler = dedupeMiddleware(options)
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
+  }
+}
+
+/**
+ * Security Scanner Noise Suppression & Blackhole Decorator.
+ * Intercepts exploit probes (`.env`, `/.git`, `/.DS_Store`) and blackholes them.
+ *
+ * Example:
+ *     @Controller('/api')
+ *     @BlockProbes({ statusCode: 404, silent: true })
+ *     export default class ApiController {}
+ */
+export function BlockProbes(options?: BlockProbesOptions): any {
+  const handler = blockSuspiciousProbes(options)
+  return function (
+    target: any,
+    contextOrPropertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    applyMiddlewareDecorator(target, contextOrPropertyKey, descriptor, handler)
+  }
+}
+
+export const BlockSuspiciousProbes = BlockProbes

@@ -7,12 +7,12 @@ First off, thank you for considering contributing to Exis JS! It's people like y
 1. **Fork & Clone**: Fork the repository on GitHub and clone your fork locally.
 2. **Install Dependencies**: Run `npm install` in the root directory.
 3. **Build the packages**: Run `npm run build` from the root directory. This will compile the TypeScript code into the `dist/` folders.
-4. **Run Tests**: Make sure all tests are passing by running `npm run test`. We have a suite of over 300 tests that must remain green.
+4. **Run Tests**: Make sure all tests are passing by running `npm test`. We have a suite of over 500 tests across the monorepo that must remain green.
 
 ## Making Changes
 
 1. Create a new branch: `git checkout -b feature/your-feature-name`
-2. Make your changes in the appropriate package (`packages/exisjs` or `packages/create`).
+2. Make your changes in the appropriate package (`packages/exisjs`, `packages/create`, `packages/fetch`, `packages/telemetry`, or `packages/rs`).
 3. If you add a new feature, please add a corresponding test in the `tests/` directory.
 4. Ensure your code passes the linter by running `npm run lint`.
 

@@ -11,13 +11,23 @@ ExisJS ships with a efficient, integrated validation library out of the box, exp
 
 ## Core Types
 
-The `tex` object provides factory functions for every common primitive and data structure.
+The `tex` object provides factory functions for every common primitive and data structure:
 
-- `tex.string()`: Validates a string.
-- `tex.number()`: Validates a number.
-- `tex.boolean()`: Validates a boolean.
-- `tex.email()`: Validates standard email formatting.
-- `tex.enum(['A', 'B'])`: Validates against a specific set of allowed strings.
+- `tex.string(options?)`: Validates a string (supports min, max, trim, sanitizers, masking, SQL injection prevention, defaults).
+- `tex.number(options?)`: Validates a numeric value (supports min, max, coercion, defaults).
+- `tex.boolean(options?)`: Validates a boolean value (supports coercion, defaults).
+- `tex.email(options?)`: Validates standard email formatting.
+- `tex.uuid(options?)`: Validates UUID v1 or v4 strings (`{ version: 1 | 4 }`).
+- `tex.cuid(options?)`: Validates CUID identifiers.
+- `tex.password(options?)`: Enforces password complexity rules (`requireNumbers`, `requireSymbols`, `requireUppercase`, `requireLowercase`).
+- `tex.creditCard(options?)`: Validates credit card number format with optional masking (`{ mask: true }`).
+- `tex.date(options?)`: Validates Date instances, or coerces ISO 8601 strings and UNIX timestamps with `minDate` / `maxDate` bounds.
+- `tex.enum(values, options?)`: Validates against a specific set of allowed strings.
+- `tex.literal(value)`: Validates against an exact literal value (`string | number | boolean`).
+- `tex.record(schema)`: Validates a dictionary / map of key-value pairs matching the given value schema.
+- `tex.union(schemas)`: Validates that the input matches at least one of the provided schemas.
+- `tex.any()`: Allows any arbitrary payload value without constraints.
+- `tex.file(options?)`: Validates multipart file uploads (`maxSize`, `mimeTypes`).
 
 ### Objects & Arrays
 
@@ -114,7 +124,23 @@ All validators accept an options object that allows you to configure validation 
 - `optional` / `.optional()`: Marks the field as optional (allows `undefined`).
 - `nullable` / `.nullable()`: Marks the field as nullable (allows `null`).
 - `nullish` / `.nullish()`: Marks the field as nullish (allows both `null` and `undefined`).
+- `default`: Accepts a static literal value (`string | number | boolean | ...`) or a lazy factory function (`() => value`). Automatically marks the field as optional in schemas while inferring a non-optional concrete TypeScript return type.
 - `coerce`: Instructs the Rust engine to automatically convert types when possible before validating. For example, converting `"123"` into a number, or `3000` into a string.
+
+> [!TIP]
+> **Static vs. Dynamic Defaults**:
+> ```typescript
+> const ConfigSchema = tex.object({
+>   // Static defaults
+>   PORT: tex.number({ coerce: true, default: 3000 }),
+>   THEME: tex.enum(['light', 'dark'] as const, { default: 'light' }),
+>   TAGS: tex.array(tex.string(), { default: ['exis', 'framework'] }),
+> 
+>   // Dynamic defaults (evaluated per parse call)
+>   createdAt: tex.date({ default: () => new Date() }),
+>   requestId: tex.string({ default: () => crypto.randomUUID() }),
+> })
+> ```
 
 > [!NOTE]
 > **Empty String Interop**: If an incoming string is empty (`""`), and the field is configured as `optional`, `nullable`, or `nullish`, ExisJS automatically converts it to `undefined` or `null` before running type checks. This cleanly handles form submissions and query strings without requiring ad-hoc pre-processors.
@@ -133,20 +159,28 @@ const EnvSchema = tex.object({
 })
 ```
 
-### String Options
-- `min`: Enforces a minimum string length.
-- `max`: Enforces a maximum string length.
+### Primitive Options Summary
 
-### Number Options
-- `min`: Enforces a minimum numeric value.
-- `max`: Enforces a maximum numeric value.
+| Primitive | Available Options |
+| :--- | :--- |
+| `tex.string(opts?)` | `min`, `max`, `trim`, `collapseWhitespace`, `toLowerCase`, `toUpperCase`, `escapeHtml`, `stripHtml`, `slugify`, `mask`, `preventSql`, `preventTraversal`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.number(opts?)` | `min`, `max`, `coerce`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.boolean(opts?)` | `coerce`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.date(opts?)` | `coerce`, `minDate`, `maxDate`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.array(schema, opts?)` | `min`, `max`, `dedupe`, `coerce`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.enum(values, opts?)` | `default`, `optional`, `nullable`, `nullish` |
+| `tex.uuid(opts?)` | `version: 1 \| 4`, `default`, `optional`, `nullable`, `nullish` |
+| `tex.password(opts?)` | `min`, `max`, `requireNumbers`, `requireSymbols`, `requireUppercase`, `requireLowercase`, `optional`, `nullable`, `nullish` |
+| `tex.creditCard(opts?)` | `mask: boolean`, `optional`, `nullable`, `nullish` |
+| `tex.file(opts?)` | `maxSize`, `mimeTypes: string[]`, `optional`, `nullable`, `nullish` |
 
 ```typescript
 const User = tex.object({ 
   id: tex.string(), 
   email: tex.email(), 
   password: tex.string({ min: 8, max: 100 }),
-  age: tex.number({ min: 13, optional: true })
+  age: tex.number({ min: 13, optional: true }),
+  role: tex.enum(['admin', 'member'], { default: 'member' })
 })
 ```
 
@@ -204,18 +238,44 @@ The `TexEngine` automatically converts validation schemas into strictly complian
 
 ---
 
-## Environment Validation
+## Environment Validation (`tex.env`)
 
-You can safely parse and validate your environment variables at startup using the standard `.parse()` method.
+Because `process.env` always supplies raw string values (e.g. `"4000"`, `"true"`, `"1"`), ExisJS provides a dedicated `tex.env()` schema parser that automatically applies type coercion (`number`, `boolean`, `date`, `array`) and parses string representations without requiring verbose `{ coerce: true }` flags on every field.
 
-```typescript filename="env.ts"
+```typescript filename="src/config/env.ts"
 import { tex } from 'exisjs/validator'
 
-// Validates process.env synchronously. Crashes the app on boot with a 
-// beautiful error message if validation fails.
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
+// Validates process.env synchronously with automatic type coercion on boot.
+export const env = tex.env({
+  PORT: tex.number({ default: 3000 }), // Automatically coerced from "3000" -> 3000
+  DEBUG: tex.boolean({ default: false }), // Parsed from "true" | "1" | "false" | "0"
   DATABASE_URL: tex.string(),
-  JWT_SECRET: tex.string({ min: 32 })
+  JWT_SECRET: tex.string({ min: 32 }),
+  ALLOWED_ORIGINS: tex.array(tex.string()), // Parsed from "http://localhost:3000,https://app.com"
+  NODE_ENV: tex.enum(['development', 'production', 'test'] as const, {
+    default: 'development',
+  }),
 }).parse(process.env)
 ```
+
+> [!TIP]
+> `tex.env` automatically applies defaults and lazy factories (`default: () => ...`) when environment variables are omitted, while throwing structured `ValidatorError` diagnostics on boot if required keys are missing.
+
+---
+
+## Validation Error Descriptors (`ValidationErrorDescriptor`)
+
+When validation fails, ExisJS emits structured error descriptors passed across the FFI boundary:
+
+```typescript
+export interface ValidationErrorDescriptor {
+  path: string      // e.g. "email" or "items[0].sku"
+  message: string   // Human-readable failure description
+  expected: string  // Expected constraint or type rule
+  received: string  // Received value representation
+  code: string      // Machine-readable code (e.g. MISSING_REQUIRED_FIELD, INVALID_TYPE, VALUE_TOO_SMALL)
+}
+```
+
+In HTTP 400 responses, the envelope contains both a legacy `errors: Record<string, string>` dictionary for backward compatibility and a structured `details: ValidationErrorDescriptor[]` array for modern form libraries.
+

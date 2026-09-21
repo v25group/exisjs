@@ -61,6 +61,29 @@ export type Handler<
   | (unknown extends TResponse ? any : TResponse)
   | Promise<unknown extends TResponse ? any : TResponse>
 
+/** Helper to convert union to intersection: U1 | U2 -> U1 & U2 */
+export type UnionToIntersection<U> = (
+  U extends any ? (k: U) => void : never
+) extends (k: infer I) => void
+  ? I
+  : never
+
+/** Extracts context type attached by a middleware handler */
+export type ExtractMiddlewareContext<T> = T extends (
+  req: Request<any, any, any, infer C>,
+  res: any,
+  next: any
+) => any
+  ? C
+  : Record<string, any>
+
+/** Extracts merged context type from a middleware or array/tuple of middlewares */
+export type ExtractContextFromMiddlewares<T> = T extends readonly (infer M)[]
+  ? UnionToIntersection<ExtractMiddlewareContext<M>>
+  : T extends (infer M)[]
+    ? UnionToIntersection<ExtractMiddlewareContext<M>>
+    : ExtractMiddlewareContext<T>
+
 export type ErrorHandler = (
   err: Error,
   req: Request,
@@ -115,9 +138,11 @@ export interface RouteSchema<
   body?: RouteValidator<TBody>
   query?: RouteValidator<TQuery>
   params?: RouteValidator<TParams>
+  headers?: RouteValidator<any>
   upload?: RouteUploadOptions | string
   timeout?: number | { ms: number; statusCode?: number; message?: string }
   timeoutMs?: number
+  cors?: boolean | import('../config/types').CorsConfig
   host?: string | string[]
   filters?: any | any[]
   metadata?: Record<string, any>

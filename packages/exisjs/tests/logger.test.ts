@@ -128,3 +128,119 @@ describe('Public Logger API & QueryParam', () => {
     expect(typeof Query).toBe('function')
   })
 })
+
+// ─── Terminal Request Log Formatting Helpers ─────────────────────────────────
+
+import {
+  formatBytes,
+  formatLatency,
+  formatMethod,
+  formatStatus,
+  formatUrl,
+  formatIp,
+  extractValidationSummary,
+  extractErrorMessage,
+} from '../src/logger'
+
+describe('Terminal Request Log Formatting Helpers', () => {
+  it('formatBytes() formats byte sizes accurately', () => {
+    expect(formatBytes(0)).toBe('')
+    expect(formatBytes(124)).toBe('124 B')
+    expect(formatBytes(1024)).toBe('1.0 KB')
+    expect(formatBytes(2048)).toBe('2.0 KB')
+    expect(formatBytes(1048576)).toBe('1.0 MB')
+    expect(formatBytes(undefined)).toBe('')
+  })
+
+  it('formatLatency() formats milliseconds with threshold colors', () => {
+    expect(formatLatency(0.5)).toContain('<1ms')
+    expect(formatLatency(24)).toContain('24ms')
+    expect(formatLatency(150)).toContain('150ms')
+    expect(formatLatency(1500)).toContain('1.50s')
+    expect(formatLatency(undefined)).toBe('')
+  })
+
+  it('formatMethod() pads and colorizes HTTP methods', () => {
+    expect(formatMethod('GET')).toContain('GET')
+    expect(formatMethod('POST')).toContain('POST')
+    expect(formatMethod('DELETE')).toContain('DELETE')
+    expect(formatMethod('PATCH')).toContain('PATCH')
+    expect(formatMethod('OPTIONS')).toContain('OPTIONS')
+    expect(formatMethod('QUERY')).toContain('QUERY')
+    expect(formatMethod('SEARCH')).toContain('SEARCH')
+    expect(formatMethod('WS')).toContain('WS')
+    expect(formatMethod('SSE')).toContain('SSE')
+    expect(formatMethod('PURGE')).toContain('PURGE')
+    expect(formatMethod('CONNECT')).toContain('CONNECT')
+    expect(formatMethod('TRACE')).toContain('TRACE')
+  })
+
+  it('formatStatus() maps status codes to HTTP reason phrases', () => {
+    expect(formatStatus(101)).toContain('101 Switching Protocols')
+    expect(formatStatus(200)).toContain('200 OK')
+    expect(formatStatus(201)).toContain('201 Created')
+    expect(formatStatus(400)).toContain('400 Bad Request')
+    expect(formatStatus(404)).toContain('404 Not Found')
+    expect(formatStatus(500)).toContain('500 Internal Server Error')
+  })
+
+  it('formatUrl() highlights path and dims query params', () => {
+    expect(formatUrl('/api/v1/users')).toContain('/api/v1/users')
+    const formatted = formatUrl('/api/v1/users?limit=10&page=2')
+    expect(formatted).toContain('/api/v1/users')
+    expect(formatted).toContain('?limit=10&page=2')
+  })
+
+  it('formatIp() omits localhost and formats remote client IPs', () => {
+    expect(formatIp('127.0.0.1')).toBe('')
+    expect(formatIp('::1')).toBe('')
+    expect(formatIp('localhost')).toBe('')
+    expect(formatIp(undefined)).toBe('')
+    expect(formatIp('192.168.1.5')).toContain('192.168.1.5')
+  })
+
+  it('extractValidationSummary() produces clean summaries', () => {
+    expect(extractValidationSummary('Invalid format')).toBe('Invalid format')
+    expect(
+      extractValidationSummary({
+        errors: { email: 'must be a valid email' },
+      })
+    ).toBe('Field "email" must be a valid email')
+    expect(
+      extractValidationSummary({
+        errors: { email: 'must be a valid email' },
+        httpPart: 'body',
+      })
+    ).toBe('[body]: Field "email" must be a valid email')
+    expect(
+      extractValidationSummary({
+        errors: { email: 'invalid', age: 'too small' },
+        httpPart: 'query',
+      })
+    ).toBe('[query]: 2 validation errors (email, age)')
+    expect(
+      extractValidationSummary({
+        details: [{ field: 'name', expected: 'string', received: 'number' }],
+        httpPart: 'params',
+      })
+    ).toBe('[params]: Field "name" expected string, received number')
+  })
+
+  it('extractErrorMessage() handles strings and Error objects', () => {
+    expect(extractErrorMessage('Database connection failed')).toBe(
+      'Database connection failed'
+    )
+    expect(
+      extractErrorMessage(new Error('Postgres connection pool exhausted'))
+    ).toBe('Postgres connection pool exhausted')
+    expect(extractErrorMessage({ message: 'Gateway timeout' })).toBe(
+      'Gateway timeout'
+    )
+  })
+
+  it('createLogger({ pretty: true }) creates pretty logger with custom stream', () => {
+    const prettyLogger = createLogger({ pretty: true, level: 'info' })
+    expect(prettyLogger).toBeDefined()
+    expect(typeof prettyLogger.info).toBe('function')
+  })
+})

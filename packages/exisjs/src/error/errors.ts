@@ -347,6 +347,13 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     ) {
       let message = err.message
       const errorsMap: Record<string, string> = {}
+      const detailsList: {
+        field: string
+        message: string
+        expected?: string
+        received?: string
+        code?: string
+      }[] = []
 
       // Normalize ZodError / Standard schema issues
       if (
@@ -362,6 +369,14 @@ export function createErrorHandler(isDev = false): ErrorHandler {
             ? issue.path.join('.')
             : String(issue.path || issue.field || 'general')
           errorsMap[field || 'general'] = issue.message
+          detailsList.push({
+            field: field || 'general',
+            message: issue.message,
+            expected: issue.expected || issue.message,
+            received:
+              issue.received !== undefined ? String(issue.received) : undefined,
+            code: issue.code || 'VALIDATION_ERROR',
+          })
         }
         if (Object.keys(errorsMap).length > 0) {
           message =
@@ -379,7 +394,14 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         (err as any).inner.length > 0
       ) {
         for (const e of (err as any).inner) {
-          errorsMap[e.path || 'general'] = e.message
+          const field = e.path || 'general'
+          errorsMap[field] = e.message
+          detailsList.push({
+            field,
+            message: e.message,
+            expected: e.type || e.message,
+            code: e.type || 'VALIDATION_ERROR',
+          })
         }
         message =
           'Validation Error: ' +
@@ -394,7 +416,15 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         Array.isArray((err as any).errors)
       ) {
         for (const e of (err as any).errors) {
-          errorsMap[e.path || 'general'] = e.message
+          const field = e.path || 'general'
+          errorsMap[field] = e.message
+          detailsList.push({
+            field,
+            message: e.message,
+            expected: e.expected || e.message,
+            received: e.received,
+            code: e.code || 'VALIDATION_ERROR',
+          })
         }
         message = 'Validation Error'
       } else if (
@@ -403,15 +433,23 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         !Array.isArray((err as any).errors)
       ) {
         Object.assign(errorsMap, (err as any).errors)
+        for (const [field, msg] of Object.entries((err as any).errors)) {
+          detailsList.push({
+            field,
+            message: String(msg),
+            expected: String(msg),
+            code: 'VALIDATION_ERROR',
+          })
+        }
       }
 
       // Terminal diagnostic logging
       const part = (err as any).httpPart
         ? ` (part: ${(err as any).httpPart})`
         : ''
-      const diagnosticLines = Object.entries(errorsMap).map(
-        ([f, msg]) => `  ✖ ${f}: ${msg}`
-      )
+      const routeLoc = (err as any).routePath
+        ? `${(err as any).routeMethod || req.method} ${(err as any).routePath}`
+        : `${req.method} ${req.url || req.path || ''}`
 
       const receivedSource =
         (err as any).received !== undefined
@@ -428,59 +466,68 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         field: string
         received: string
         expected: string
+        code?: string
       }[] = []
 
       for (const [field, expectedMsg] of Object.entries(errorsMap)) {
-        let rawReceived: any
-        if (receivedSource && typeof receivedSource === 'object') {
-          if (field in receivedSource) {
-            rawReceived = receivedSource[field]
-          } else {
-            try {
-              const parts = field.replace(/\[(\w+)\]/g, '.$1').split('.')
-              let curr = receivedSource
-              for (const p of parts) {
-                if (curr === undefined || curr === null) break
-                curr = curr[p]
+        const itemDetail = detailsList.find((d) => d.field === field)
+        let formattedReceived = itemDetail?.received
+
+        if (formattedReceived === undefined) {
+          let rawReceived: any
+          if (receivedSource && typeof receivedSource === 'object') {
+            if (field in receivedSource) {
+              rawReceived = receivedSource[field]
+            } else {
+              try {
+                const parts = field.replace(/\[(\w+)\]/g, '.$1').split('.')
+                let curr = receivedSource
+                for (const p of parts) {
+                  if (curr === undefined || curr === null) break
+                  curr = curr[p]
+                }
+                rawReceived = curr
+              } catch {
+                rawReceived = undefined
               }
-              rawReceived = curr
-            } catch {
-              rawReceived = undefined
             }
           }
-        }
 
-        let formattedReceived: string
-        if (rawReceived === undefined) {
-          formattedReceived = 'undefined'
-        } else if (rawReceived === null) {
-          formattedReceived = 'null'
-        } else if (typeof rawReceived === 'string') {
-          formattedReceived = JSON.stringify(rawReceived)
-        } else if (
-          typeof rawReceived === 'number' ||
-          typeof rawReceived === 'boolean'
-        ) {
-          formattedReceived = String(rawReceived)
-        } else if (typeof rawReceived === 'object') {
-          try {
+          if (rawReceived === undefined) {
+            formattedReceived = 'undefined'
+          } else if (rawReceived === null) {
+            formattedReceived = 'null'
+          } else if (typeof rawReceived === 'string') {
             formattedReceived = JSON.stringify(rawReceived)
-          } catch {
-            formattedReceived = '[object Object]'
+          } else if (
+            typeof rawReceived === 'number' ||
+            typeof rawReceived === 'boolean'
+          ) {
+            formattedReceived = String(rawReceived)
+          } else if (typeof rawReceived === 'object') {
+            try {
+              formattedReceived = JSON.stringify(rawReceived)
+            } catch {
+              formattedReceived = '[object Object]'
+            }
+          } else {
+            formattedReceived = String(rawReceived)
           }
-        } else {
-          formattedReceived = String(rawReceived)
         }
 
         tableRows.push({
           field,
           received: formattedReceived,
-          expected: expectedMsg,
+          expected: itemDetail?.expected || expectedMsg,
+          code: itemDetail?.code,
         })
       }
 
+      const diagnosticLines = Object.entries(errorsMap).map(
+        ([f, msg]) => `  ✖ ${f}: ${msg}`
+      )
       const table = renderValidationTable(tableRows)
-      const diagnosticMsg = `[Validation Failed] ${req.method} ${req.url || req.path || ''}${part}\n${diagnosticLines.join('\n')}\n${table}`
+      const diagnosticMsg = `[Validation Failed] ${routeLoc}${part}\n${diagnosticLines.join('\n')}\n${table}`
 
       if (req.log && typeof req.log.warn === 'function') {
         req.log.warn(
@@ -488,6 +535,8 @@ export function createErrorHandler(isDev = false): ErrorHandler {
             validationErrors: errorsMap,
             validationTable: tableRows,
             httpPart: (err as any).httpPart,
+            routePath: (err as any).routePath,
+            routeMethod: (err as any).routeMethod,
           },
           diagnosticMsg
         )
@@ -499,13 +548,24 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       ;(req as any)._validationError = {
         errors: errorsMap,
         httpPart: (err as any).httpPart,
+        details: tableRows,
       }
+
+      const responseDetails = tableRows.map((r) => ({
+        field: r.field,
+        message: errorsMap[r.field] || r.expected,
+        expected: r.expected,
+        received: r.received,
+        code: r.code || 'VALIDATION_ERROR',
+        httpPart: (err as any).httpPart,
+      }))
 
       res.status(400).json({
         statusCode: 400,
         error: 'Bad Request',
         message: message || 'Validation Error',
         errors: errorsMap,
+        details: responseDetails,
       })
       return
     }
@@ -523,6 +583,7 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     }
 
     // unknown error — don't leak internals in production
+    ;(req as any)._error = err
     if (req.log) {
       req.log.error({ err }, 'unhandled server error')
     } else {

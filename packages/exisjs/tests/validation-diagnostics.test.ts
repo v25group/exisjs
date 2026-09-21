@@ -285,4 +285,161 @@ describe('Validation Error Diagnostic Visibility', () => {
     expect(res.bio).toBeNull()
     expect(res.notes === undefined || res.notes === null).toBe(true)
   })
+
+  it('maps Rust validator errors to structured ValidationErrorDescriptor with expected, received, and code', () => {
+    const userSchema = tex.object({
+      name: tex.string({ min: 3 }),
+      age: tex.number({ min: 18 }),
+      email: tex.email(),
+      role: tex.enum(['admin', 'user']),
+      tags: tex.array(tex.string(), { min: 1 }),
+      password: tex.password({ requireNumbers: true, requireUppercase: true }),
+    })
+
+    // Test missing field
+    try {
+      userSchema.parse({})
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors.length).toBeGreaterThan(0)
+      expect(err.errors[0].code).toBe('MISSING_REQUIRED_FIELD')
+      expect(err.errors[0].expected).toBe('defined')
+      expect(err.errors[0].received).toBe('undefined')
+    }
+
+    // Test invalid type
+    try {
+      userSchema.parse({
+        name: 12345,
+        age: 20,
+        email: 'test@example.com',
+        role: 'admin',
+        tags: ['a'],
+        password: 'Password1!',
+      })
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors[0].code).toBe('INVALID_TYPE')
+      expect(err.errors[0].expected).toBe('string')
+      expect(err.errors[0].received).toBe('12345')
+    }
+
+    // Test bounds / constraint errors
+    try {
+      userSchema.parse({
+        name: 'Jo',
+        age: 20,
+        email: 'test@example.com',
+        role: 'admin',
+        tags: ['a'],
+        password: 'Password1!',
+      })
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors[0].code).toBe('VALUE_TOO_SMALL')
+      expect(err.errors[0].expected).toContain('at least 3 characters')
+      expect(err.errors[0].received).toBe('"Jo"')
+    }
+
+    // Test email error
+    try {
+      userSchema.parse({
+        name: 'John',
+        age: 25,
+        email: 'not-an-email',
+        role: 'admin',
+        tags: ['a'],
+        password: 'Password1!',
+      })
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors[0].code).toBe('INVALID_EMAIL')
+      expect(err.errors[0].expected).toBe('valid email address')
+    }
+
+    // Test enum error
+    try {
+      userSchema.parse({
+        name: 'John',
+        age: 25,
+        email: 'john@example.com',
+        role: 'superadmin',
+        tags: ['a'],
+        password: 'Password1!',
+      })
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors[0].code).toBe('INVALID_ENUM_VALUE')
+    }
+
+    // Test strict mode error
+    const strictSchema = tex.object({ name: tex.string() }, { strict: true })
+    try {
+      strictSchema.parse({ name: 'Alice', extraField: 'not allowed' })
+    } catch (err: any) {
+      expect(err.name).toBe('ValidatorError')
+      expect(err.errors[0].code).toBe('UNRECOGNIZED_KEYS')
+      expect(err.errors[0].path).toBe('extraField')
+      expect(err.errors[0].expected).toBe('undefined (field omitted)')
+    }
+  })
+
+  it('attaches routePath and routeMethod and returns details array in 400 response', async () => {
+    const router = new Router()
+    const BodySchema = tex.object({
+      username: tex.string({ min: 4 }),
+      score: tex.number(),
+    })
+
+    router.post('/api/v1/players', { body: BodySchema }, (req, res) => {
+      res.json({ ok: true })
+    })
+
+    const req = createMockRequest({
+      method: 'POST',
+      url: '/api/v1/players',
+      body: { username: 'bob', score: 100 },
+    })
+
+    const handler = createErrorHandler(true)
+    const logs: { data?: any; msg?: string }[] = []
+    ;(req as any).log = {
+      warn: (data: any, msg?: string) => {
+        logs.push({ data, msg })
+      },
+    }
+
+    const res = createMockResponse()
+    await new Promise<void>((resolve) => {
+      router.handle(req, res, (err) => {
+        if (err) handler(err, req, res, () => {})
+        resolve()
+      })
+    })
+
+    expect(res.statusCode).toBe(400)
+    const body = getResponseBody<any>(res)
+    expect(body.statusCode).toBe(400)
+    expect(body.error).toBe('Bad Request')
+    expect(body.errors).toEqual({
+      username: 'Must be at least 4 characters',
+    })
+    expect(body.details).toBeDefined()
+    expect(Array.isArray(body.details)).toBe(true)
+    expect(body.details[0]).toEqual({
+      field: 'username',
+      message: 'Must be at least 4 characters',
+      expected: 'must be at least 4 characters',
+      received: '"bob"',
+      code: 'VALUE_TOO_SMALL',
+      httpPart: 'body',
+    })
+
+    expect(logs.length).toBe(1)
+    expect(logs[0].msg).toContain(
+      '[Validation Failed] POST /api/v1/players (part: body)'
+    )
+    expect(logs[0].data?.routePath).toBe('/api/v1/players')
+    expect(logs[0].data?.routeMethod).toBe('POST')
+  })
 })

@@ -1,47 +1,97 @@
 ---
 title: "Logger"
-description: "API Reference for the ExisJS structured logger (exisjs/logger)."
+description: "API Reference and Architecture Guide for the ExisJS structured logger (exisjs/logger)."
 ---
 
 # Logger (`exisjs/logger`)
 
-ExisJS includes a built-in, high-performance structured logger powered by Pino. It provides colored, pretty-printed logs in development and fast, structured JSON in production.
-
-All logger APIs are imported directly from the dedicated subpath `exisjs/logger`.
+ExisJS includes a high-performance, zero-overhead structured logging engine powered by Pino. It provides an **industry-standard single-line terminal format** in development and **ultra-fast structured NDJSON** in production for cloud observability platforms (Datadog, Loki, CloudWatch, OpenTelemetry).
 
 ```typescript
-import { logger, configureLogger, setLogger } from 'exisjs/logger'
+import {
+  logger,
+  configureLogger,
+  setLogger,
+  createLogger,
+  createSilentLogger,
+  isLogger,
+  formatBytes,
+  formatLatency,
+  formatMethod,
+  formatStatus,
+  formatUrl,
+  formatIp,
+} from 'exisjs/logger'
 ```
 
 ---
 
-## 1. Global Logger Singleton (`logger`)
+## 1. Terminal Request Logging (Development DX)
 
-The `logger` singleton can be imported and called anywhere in your application:
+When running your application in development mode (`exis dev` or `pretty: true`), ExisJS automatically formats every incoming HTTP request into a clean, concise, single-line terminal log:
+
+```text
+[22:50:17] [exis] GET     /                            304 Not Modified 18ms
+[22:50:55] [exis] GET     /api/v1/profile              200 OK          1.2ms   240 B
+[22:51:02] [exis] POST    /api/v1/users                201 Created     14.5ms  1.4 KB
+[22:51:10] [exis] PATCH   /api/v1/users/42             400 Bad Request 3.1ms   120 B
+   └─ ⚠ Validation [body]: Field "email" must be a valid email format
+[22:51:15] [exis] GET     /api/v1/unknown              404 Not Found   0.8ms    45 B
+[22:51:22] [exis] POST    /api/v1/checkout             500 Internal Error 320ms 82 B
+   └─ ✖ Error: Database connection timeout
+```
+
+### Visual Features & Formatting Elements
+
+| Element | Description | Behavior / Color Coding |
+| :--- | :--- | :--- |
+| **Timestamp** | `[HH:MM:SS]` | Dimmed gray for non-intrusive readability |
+| **Brand Badge** | `[exis]` | Framework brand color (`\x1b[38;2;160;70;255m`), `[warn]` (yellow), `[error]` (red) |
+| **HTTP Method** | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `QUERY`, `SEARCH`, `OPTIONS`, `HEAD`, `WS`, `SSE`, `CONNECT`, `TRACE`, `PURGE` | Fixed-width padded badge with distinct colors (`GET`/`SEARCH` cyan, `POST` green, `PUT`/`PATCH` yellow, `DELETE`/`PURGE` red, `QUERY` blue, `OPTIONS`/`HEAD`/`WS` magenta) |
+| **Path & Query** | `/api/v1/items?page=1` | Path in bright white, query parameters in dimmed gray |
+| **Status Code** | `101 Switching Protocols`, `200 OK`, `201 Created`, `400 Bad Request`, `404 Not Found`, `500 Internal Error` | Color-coded by range: `101` magenta, `2xx` green, `3xx` cyan, `4xx` yellow, `5xx` red |
+| **Response Latency** | `1.2ms`, `18ms`, `1.45s` | Dynamic threshold color coding: `< 50ms` (green), `50ms - 250ms` (yellow), `> 250ms` (red) |
+| **Content Size** | `120 B`, `1.4 KB`, `2.8 MB` | Formatted human-readable byte sizes from `Content-Length` |
+| **Client IP** | `192.168.1.5` | Localhost (`127.0.0.1` / `::1`) is suppressed by default for minimal noise; remote client IPs are cleanly displayed |
+| **Diagnostic Sublines** | `└─ ⚠ Validation: ...` / `└─ ✖ Error: ...` | Indented warning and error summaries printed directly below failed requests |
+
+---
+
+## 2. Structured Logging in Production (NDJSON)
+
+In production (`NODE_ENV === 'production'` or `pretty: false`), the logger outputs single-line structured JSON (NDJSON) directly to `stdout` with zero serialization overhead:
+
+```json
+{"level":30,"time":1774286390000,"pid":1234,"hostname":"prod-app-01","requestId":"req-42","method":"GET","url":"/api/v1/profile","statusCode":200,"responseTime":1.2,"contentLength":240,"ip":"10.0.0.4","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","msg":"GET /api/v1/profile"}
+```
+
+---
+
+## 3. Global Logger Singleton (`logger`)
+
+The `logger` singleton is a high-performance proxy that can be imported and used anywhere in your services, repositories, workers, and controllers:
 
 ```typescript
 import { logger } from 'exisjs/logger'
 
-logger.info('Server boot sequence initiated')
-logger.warn({ origin: req.headers.origin }, 'Untrusted origin detected')
-logger.error({ err }, 'Failed to persist record to database')
-logger.debug({ payload }, 'Parsing incoming request payload')
-```
+// Standard level methods
+logger.info('Payment service initialized')
+logger.warn({ ip: req.ip, attempts: 3 }, 'Multiple failed login attempts')
+logger.error({ err, orderId: 'ord_123' }, 'Stripe webhook processing failed')
+logger.debug({ payload }, 'Parsed RPC frame')
+logger.trace('Entering database connection pool checkout')
+logger.fatal({ err }, 'Unrecoverable process state')
 
-### Methods
-- `logger.info([obj], msg, ...args)`
-- `logger.warn([obj], msg, ...args)`
-- `logger.error([obj], msg, ...args)`
-- `logger.debug([obj], msg, ...args)`
-- `logger.trace([obj], msg, ...args)`
-- `logger.fatal([obj], msg, ...args)`
-- `logger.child(bindings)`: Creates a child logger with bound metadata (e.g. `{ requestId: '123' }`).
+// Child loggers with bound context
+const workerLogger = logger.child({ workerId: 'worker-1', queue: 'emails' })
+workerLogger.info('Processing email batch')
+```
 
 ---
 
-## 2. Configuration (`configureLogger`)
+## 4. Configuration (`configureLogger`)
 
-Use `configureLogger()` to adjust log levels, toggle pretty printing, and customize sensitive field redactions across the entire application:
+Use `configureLogger()` to adjust log levels, toggle pretty printing, and customize sensitive field redactions across your entire application:
 
 ```typescript filename="src/http/server.ts"
 import { configureLogger } from 'exisjs/logger'
@@ -49,21 +99,87 @@ import { configureLogger } from 'exisjs/logger'
 configureLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   pretty: process.env.NODE_ENV !== 'production',
-  redact: ['*.password', '*.token', '*.secret', 'req.headers.cookie'],
+  redact: ['*.password', '*.token', '*.secret', 'req.headers.cookie', '*.creditCard'],
 })
 ```
 
-### Options
-- `level` (`'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'silent'`): Minimum level to output (default: `'info'`).
-- `pretty` (`boolean`): Whether to format log lines with bracketed timestamp and colorized labels (`[HH:MM:ss] LEVEL: message`). Default is `true` in development and `false` in production.
-- `redact` (`string[]`): Property paths to censor automatically from log payloads.
-- `replaceRedact` (`boolean`): When `true`, replaces default redact paths instead of merging with them.
+### Options Reference
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `level` | `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace' \| 'silent'` | `'info'` | Minimum log level to emit |
+| `pretty` | `boolean` | `NODE_ENV !== 'production'` | Whether to use colored single-line terminal formatting |
+| `redact` | `string[]` | *See Redaction section* | Array of object paths to automatically censor from logs |
+| `replaceRedact` | `boolean` | `false` | When `true`, overrides default redact paths instead of merging |
 
 ---
 
-## 3. Custom Logger Instance (`setLogger`)
+## 5. Security & Sensitive Data Redaction
 
-If you want to plug in your own custom Pino instance or transport (e.g., streaming logs directly to Loki, Datadog, or Elasticsearch), pass it to `setLogger()`:
+By default, ExisJS automatically censors sensitive fields in all log payloads before they are serialized to disk or terminal:
+
+```typescript
+// Built-in default redacted paths:
+[
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.body.password',
+  'req.body.token',
+  'req.body.secret',
+  '*.password',
+  '*.token',
+  '*.secret',
+  'password',
+  'token',
+  'secret'
+]
+```
+
+When logging objects containing these keys (e.g. `{ username: 'alex', password: 'supersecretpassword' }`), the value is replaced with `"[Redacted]"`.
+
+---
+
+## 6. Request-Scoped Logger (`req.log` / `ctx.log`)
+
+Every incoming HTTP request in ExisJS provides a zero-allocation lazy child logger bound to `req.log`. It automatically inherits and binds:
+- `requestId` (`req.requestId`)
+- `method` (`req.method`)
+- `url` (`req.path`)
+
+```typescript filename="src/http/orders/route.ts"
+import { route, controller } from 'exisjs/router'
+
+export default controller({
+  create: route.post('/', {
+    async handle({ req, body }) {
+      // req.log automatically includes { requestId, method, url }
+      req.log.info({ orderId: body.id }, 'Creating order record')
+      return { success: true }
+    }
+  })
+})
+```
+
+---
+
+## 7. OpenTelemetry & Distributed Tracing
+
+ExisJS automatically integrates with `@opentelemetry/api` when present in your environment. Every log entry emitted via `logger` or `req.log` automatically receives the active `trace_id` and `span_id`:
+
+```json
+{
+  "level": 30,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "msg": "Order created successfully"
+}
+```
+
+---
+
+## 8. Custom Logger Integration (`setLogger`)
+
+To route ExisJS logs directly into custom transports (such as `pino-loki`, `@google-cloud/logging`, or Elasticsearch), supply your custom instance to `setLogger()`:
 
 ```typescript filename="src/http/server.ts"
 import { setLogger } from 'exisjs/logger'
@@ -82,19 +198,35 @@ setLogger(customPino)
 
 ---
 
-## 4. Request-Scoped Logger (`req.log`)
+## 9. Formatting Helper Utilities
 
-Every incoming HTTP request in ExisJS automatically receives a child logger bound to `req.log`. It automatically includes request context such as `req.requestId`:
+ExisJS exports all terminal formatting helpers from `exisjs/logger` so you can use them in custom CLI tools, workers, and plugins:
 
-```typescript filename="src/http/users/route.ts"
-import { route, controller } from 'exisjs/router'
+```typescript
+import {
+  formatBytes,
+  formatLatency,
+  formatMethod,
+  formatStatus,
+  formatUrl,
+  formatIp,
+  extractValidationSummary,
+  extractErrorMessage,
+} from 'exisjs/logger'
 
-export default controller({
-  profile: route.get('/profile', {
-    async handle({ req }) {
-      req.log.info('Fetching user profile')
-      return { ok: true }
-    }
-  })
-})
+// Byte formatting
+formatBytes(1420) // "1.4 KB"
+
+// Latency with color threshold
+formatLatency(14.5) // "\x1b[32m14.5ms\x1b[0m"
+
+// Padded color-coded method
+formatMethod('GET') // "\x1b[1;36mGET    \x1b[0m"
+
+// Status code with standard phrase
+formatStatus(200) // "\x1b[1;32m200 OK\x1b[0m"
+
+// Localhost suppression
+formatIp('127.0.0.1') // "" (suppressed)
+formatIp('192.168.1.10') // "\x1b[90m192.168.1.10\x1b[0m"
 ```

@@ -11,9 +11,58 @@ export interface InternalContext {
   res: Response
   app: App
   diCache: Map<any, any>
+  cleanedUp?: boolean
 }
 
 export const executionContext = new AsyncLocalStorage<InternalContext>()
+
+/**
+ * Safely executes remaining after() callbacks, clears request-scoped DI cache,
+ * purges state objects, and breaks circular references to ensure zero memory leaks.
+ */
+export function cleanupContext(
+  store: InternalContext,
+  logger?: { error: (data: any, msg: string) => void }
+): void {
+  if (!store || store.cleanedUp) return
+  store.cleanedUp = true
+
+  // 1. Drain and execute after() callbacks safely
+  if (store.afterCallbacks && store.afterCallbacks.length > 0) {
+    while (store.afterCallbacks.length > 0) {
+      const cb = store.afterCallbacks.shift()
+      if (cb) {
+        try {
+          const r = cb()
+          if (r instanceof Promise) {
+            r.catch((e) => {
+              logger?.error({ err: e }, 'Error in after() callback')
+            })
+          }
+        } catch (e) {
+          logger?.error({ err: e }, 'Error in after() callback')
+        }
+      }
+    }
+  }
+
+  // 2. Clear request-scoped DI cache
+  if (store.diCache) {
+    store.diCache.clear()
+  }
+
+  // 3. Purge request state
+  if (store.state) {
+    for (const key of Object.keys(store.state)) {
+      delete store.state[key]
+    }
+  }
+
+  // 4. Break circular references to allow V8 GC collection
+  ;(store as any).req = null
+  ;(store as any).res = null
+  ;(store as any).app = null
+}
 
 /**
  * Retrieves the current request context state.
@@ -21,7 +70,7 @@ export const executionContext = new AsyncLocalStorage<InternalContext>()
  */
 export function getContext<T = ExisContext>(): T {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp) {
     throw new Error(
       'getContext() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
@@ -35,7 +84,7 @@ export function getContext<T = ExisContext>(): T {
  */
 export function setContext(key: string, value: any): void {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp) {
     throw new Error(
       'setContext() can only be called inside an active Exis request handler.'
     )
@@ -48,7 +97,7 @@ export function setContext(key: string, value: any): void {
  */
 export function getRequest(): Request {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp || !store.req) {
     throw new Error(
       'getRequest() can only be called inside an active Exis request handler.'
     )
@@ -61,7 +110,7 @@ export function getRequest(): Request {
  */
 export function getResponse(): Response {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp || !store.res) {
     throw new Error(
       'getResponse() can only be called inside an active Exis request handler.'
     )
@@ -74,7 +123,7 @@ export function getResponse(): Response {
  */
 export function after(callback: () => void | Promise<void>): void {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp) {
     throw new Error(
       'after() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
@@ -87,7 +136,7 @@ export function after(callback: () => void | Promise<void>): void {
  */
 export function getApp(): App {
   const store = executionContext.getStore()
-  if (!store) {
+  if (!store || store.cleanedUp || !store.app) {
     throw new Error(
       'getApp() can only be called inside an active Exis request handler.'
     )

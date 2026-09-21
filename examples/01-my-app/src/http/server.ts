@@ -46,5 +46,8 @@ export default exis({
   async onClose(app) {
     // Gracefully close database connections here
     // await db.disconnect()
+    console.log(
+      '[onClose Hook]: Gracefully disconnecting database & releasing resources...'
+    )
   },
 })

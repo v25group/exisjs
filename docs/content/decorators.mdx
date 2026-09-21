@@ -134,6 +134,12 @@ export default class UsersController {
 - `@Param(nameOrPipe?)` — Extracts a route path param (e.g. `:id`).
 - `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)` — Extracts a query parameter from the URL query string.
 - `@Headers(nameOrPipe?)` — Extracts a request header by name.
+- `@Cookies(nameOrPipe?)` / `@Cookie(nameOrPipe?)` — Injects incoming parsed cookies or a specific cookie value.
+- `@State(keyOrPipe?)` — Injects request state from execution context or middleware.
+- `@AppCtx()` — Injects the root ExisJS Application instance.
+- `@Fields(nameOrPipe?)` — Injects non-file multipart form fields.
+- `@UploadedFile(nameOrPipe?)` — Injects a single uploaded file.
+- `@UploadedFiles(nameOrPipe?)` — Injects multiple uploaded files.
 - `@HostParam(nameOrPipe?)` — Extracts a host subdomain parameter.
 - `@Req()` — Injects the raw request object.
 - `@Res(options?)` — Injects the response object (e.g. `{ passthrough: true }`).
@@ -150,16 +156,19 @@ export default class UsersController {
 
 ## 4. Middleware & Pipeline Decorators
 
-You can bind middlewares, guards, interceptors, and exception filters to controllers or route methods using the unified `@Use()` decorator:
+You can bind middlewares, guards, interceptors, and exception filters to controllers or route methods using first-class decorators:
 
 ```typescript filename="src/http/checkout/route.ts"
-import { Controller, Post, Use, Idempotent } from 'exisjs/decorators'
+import { Controller, Post, Use, Idempotent, RateLimit, Cors, Timeout } from 'exisjs/decorators'
 import { requireAuth } from '../../middleware/auth'
 
 @Controller('/checkout')
 @Use(requireAuth) // Applies to all routes in this controller
+@Cors({ origin: 'https://app.yourdomain.com' })
+@RateLimit({ max: 10, windowMs: 60000 })
 export default class CheckoutController {
   @Post('/')
+  @Timeout(30000)
   @Idempotent({ ttlMs: 86400000 }) // In-memory off-heap idempotency protection
   async processPayment() {
     return { success: true }
@@ -169,7 +178,15 @@ export default class CheckoutController {
 
 ### Available Lifecycle & Middleware Decorators
 - `@Use(...items)` — Unified decorator that attaches middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a class or method.
-- `@Idempotent(options?)` — Caches responses based on the `Idempotency-Key` header using off-heap native memory.
+- `@Timeout(ms: number | TimeoutOptions)` — Overrides the request timeout for a class or method.
+- `@Idempotent(options?)` — Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
+- `@RateLimit(options?)` — Enforces request rate limits on a controller class or route method.
+- `@Cors(options?)` — Configures Cross-Origin Resource Sharing rules on a controller class or route method.
+- `@IpFilter(options)` — Enforces IP/CIDR allowlist and denylist.
+- `@Compress()` — Enables automatic response compression (Gzip/Brotli).
+- `@Dedupe(options)` — Deduplicates concurrent identical requests sharing the same key.
+- `@UseUpload(options)` / `@Upload(options)` — Configures multipart file upload handling.
+- `@BlockProbes(options?)` — Intercepts scanner exploit probes (`.env`, `/.git`, `/.DS_Store`) and blackholes them without log noise.
 
 ---
 
@@ -229,7 +246,8 @@ export class UserService {
 You can inject dependencies using tokens or classes, and mark optional dependencies with `@Optional()`:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { Inject, Optional } from 'exisjs/di'
 import { UserService } from './service'
 
 @Controller('/users')

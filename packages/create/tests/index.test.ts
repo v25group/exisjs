@@ -8,7 +8,7 @@ import {
   beforeAll,
   afterAll,
   beforeEach,
-} from 'exisjs/testing'
+} from '../../exisjs/src/testing'
 import Module from 'node:module'
 
 const mockModules: Record<string, any> = {
@@ -81,12 +81,14 @@ describe('create-exis scaffolding', () => {
     expect(fs.existsSync(targetDir)).toBe(true)
     expect(fs.existsSync(path.join(targetDir, 'package.json'))).toBe(true)
     expect(fs.existsSync(path.join(targetDir, 'exis.config.ts'))).toBe(true)
-    expect(fs.existsSync(path.join(targetDir, 'src/http/server.ts'))).toBe(true)
-    expect(fs.existsSync(path.join(targetDir, 'src/http/boundary.ts'))).toBe(
-      true
-    )
     expect(
-      fs.existsSync(path.join(targetDir, 'src/http/health/route.ts'))
+      fs.existsSync(path.join(targetDir, 'src', 'http', 'server.ts'))
+    ).toBe(true)
+    expect(
+      fs.existsSync(path.join(targetDir, 'src', 'http', 'boundary.ts'))
+    ).toBe(true)
+    expect(
+      fs.existsSync(path.join(targetDir, 'src', 'http', 'health', 'route.ts'))
     ).toBe(true)
 
     // Check package.json contents
@@ -94,5 +96,17 @@ describe('create-exis scaffolding', () => {
       fs.readFileSync(path.join(targetDir, 'package.json'), 'utf-8')
     )
     expect(pkg.name).toBe('my-test-app')
+
+    // Check .gitignore contains all critical ignore entries
+    const gitignore = fs.readFileSync(
+      path.join(targetDir, '.gitignore'),
+      'utf-8'
+    )
+    expect(gitignore.includes('.exis/')).toBe(true)
+    expect(gitignore.includes('dist/')).toBe(true)
+    expect(gitignore.includes('.env')).toBe(true)
+    expect(gitignore.includes('node_modules/')).toBe(true)
+    expect(gitignore.includes('.DS_Store')).toBe(true)
+    expect(gitignore.includes('Thumbs.db')).toBe(true)
   })
 })

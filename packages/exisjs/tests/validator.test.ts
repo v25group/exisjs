@@ -406,4 +406,124 @@ describe('Tex Native Validation Engine', () => {
       expect(resNull.archivedAt).toBeUndefined()
     })
   })
+
+  describe('Default Values and Lazy Factory Functions', () => {
+    it('applies static default values across primitives when omitted', () => {
+      const schema = tex.object({
+        PORT: tex.number({ coerce: true, default: 3000 }),
+        TIMEOUT: tex.number({ default: 5000 }),
+        API_NAMESPACE: tex.string({ default: 'default_ns' }),
+        THEME: tex.enum(['light', 'dark'] as const, { default: 'light' }),
+        DEBUG: tex.boolean({ default: false }),
+        TAGS: tex.array(tex.string(), { default: ['exis', 'framework'] }),
+      })
+
+      const result = schema.parse({})
+      expect(result.PORT).toBe(3000)
+      expect(result.TIMEOUT).toBe(5000)
+      expect(result.API_NAMESPACE).toBe('default_ns')
+      expect(result.THEME).toBe('light')
+      expect(result.DEBUG).toBe(false)
+      expect(result.TAGS).toEqual(['exis', 'framework'])
+    })
+
+    it('preserves provided values when present instead of defaults', () => {
+      const schema = tex.object({
+        PORT: tex.number({ coerce: true, default: 3000 }),
+        THEME: tex.enum(['light', 'dark'] as const, { default: 'light' }),
+        API_NAMESPACE: tex.string({ default: 'default_ns' }),
+      })
+
+      const result = schema.parse({
+        PORT: 8080,
+        THEME: 'dark',
+        API_NAMESPACE: 'custom_ns',
+      })
+      expect(result.PORT).toBe(8080)
+      expect(result.THEME).toBe('dark')
+      expect(result.API_NAMESPACE).toBe('custom_ns')
+    })
+
+    it('evaluates dynamic lazy factory functions per parse call', () => {
+      let counter = 0
+      const schema = tex.object({
+        createdAt: tex.date({
+          default: () => new Date('2026-09-20T00:00:00Z'),
+        }),
+        requestId: tex.string({ default: () => `req_${++counter}` }),
+      })
+
+      const res1 = schema.parse({})
+      expect(res1.createdAt instanceof Date).toBe(true)
+      expect(res1.createdAt.toISOString()).toBe('2026-09-20T00:00:00.000Z')
+      expect(res1.requestId).toBe('req_1')
+
+      const res2 = schema.parse({})
+      expect(res2.requestId).toBe('req_2')
+    })
+  })
+
+  describe('Dedicated Environment Schema Parser (tex.env)', () => {
+    it('automatically coerces numbers, booleans, dates, and arrays from string env vars', () => {
+      const envSchema = tex.env({
+        PORT: tex.number(),
+        DEBUG: tex.boolean(),
+        ENABLED: tex.boolean(),
+        TIMEOUT: tex.number({ default: 5000 }),
+        DATABASE_URL: tex.string(),
+        LOG_LEVEL: tex.enum(['info', 'debug', 'error'] as const, {
+          default: 'info',
+        }),
+        TAGS: tex.array(tex.string()),
+        PORTS: tex.array(tex.number()),
+      })
+
+      const mockProcessEnv = {
+        PORT: '4000',
+        DEBUG: 'true',
+        ENABLED: '1',
+        DATABASE_URL: 'postgres://localhost:5432/mydb',
+        TAGS: 'prod,web,api',
+        PORTS: '80,443,8080',
+      }
+
+      const env = envSchema.parse(mockProcessEnv)
+      expect(env.PORT).toBe(4000)
+      expect(env.DEBUG).toBe(true)
+      expect(env.ENABLED).toBe(true)
+      expect(env.TIMEOUT).toBe(5000)
+      expect(env.DATABASE_URL).toBe('postgres://localhost:5432/mydb')
+      expect(env.LOG_LEVEL).toBe('info')
+      expect(env.TAGS).toEqual(['prod', 'web', 'api'])
+      expect(env.PORTS).toEqual([80, 443, 8080])
+    })
+
+    it('handles false/0 booleans and custom defaults correctly in tex.env', () => {
+      const envSchema = tex.env({
+        FEATURE_FLAG: tex.boolean({ default: false }),
+        ANALYTICS: tex.boolean(),
+        MAX_CONNECTIONS: tex.number({ default: 20 }),
+      })
+
+      const mockEnv = {
+        ANALYTICS: '0',
+      }
+
+      const env = envSchema.parse(mockEnv)
+      expect(env.FEATURE_FLAG).toBe(false)
+      expect(env.ANALYTICS).toBe(false)
+      expect(env.MAX_CONNECTIONS).toBe(20)
+    })
+
+    it('throws validation error when required environment variable is missing', () => {
+      const envSchema = tex.env({
+        DATABASE_URL: tex.string(),
+        PORT: tex.number(),
+      })
+
+      expect(() => envSchema.parse({ PORT: '3000' })).toThrow(
+        /Expected value, received undefined/
+      )
+    })
+  })
 })

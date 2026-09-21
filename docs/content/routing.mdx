@@ -653,6 +653,51 @@ export default class OrdersController {
 
   
 
+## Type-Safe Client Route Manifest Contract (`AppRouter`)
+
+ExisJS generates a compile-time route manifest in `.exis/types.d.ts` (and exposed via root `exis.d.ts`), converting your filesystem routes into an `AppRouter` type definition.
+
+### Zero-Cost Return Type & DTO Preservation
+When you return data from `handle()`, ExisJS preserves the exact TypeScript return type (including Drizzle/Prisma models, Tex schemas, or custom records) on the route definition:
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
+
+export default controller({
+  getUser: route.get('/:id', {
+    params: tex.object({ id: tex.string() }),
+    async handle({ params }) {
+      // Inferred return type is strictly preserved as { id: string, name: string, active: boolean }
+      return { id: params.id, name: 'Alice', active: true }
+    }
+  })
+})
+```
+
+### Consuming `AppRouter` with `@exisjs/fetch`
+You can import `AppRouter` in your frontend or external client applications for zero-cost end-to-end type safety and autocomplete:
+
+```typescript filename="src/client/api.ts"
+import { createClient } from '@exisjs/fetch'
+import type { AppRouter } from '../server/.exis/types'
+
+const api = createClient<AppRouter>({
+  baseUrl: 'http://localhost:4000',
+})
+
+// 1. Hierarchical dot-notation RPC call:
+const user = await api.users('123').getUser.get()
+
+// 2. Direct path index call:
+const userByPath = await api['/users/:id'].getUser.get({ params: { id: '123' } })
+```
+
+### Dynamic Dev Watcher Sync
+During `exis dev`, adding, renaming, moving, or deleting route files automatically updates `.exis/types.d.ts` and `.exis/types/index.d.ts` in real-time without requiring a dev server restart or manual `.exis` folder deletion.
+
+---
+
 ## Modular Architecture
 
 While putting all logic in `route.ts` is fine for small apps, ExisJS strongly encourages separating concerns alongside your route definition:
@@ -661,3 +706,4 @@ While putting all logic in `route.ts` is fine for small apps, ExisJS strongly en
 - **`service.ts`**: Pure functions that interact with your database.
 - **`controller.ts`**: Handles business orchestration.
 - **`route.ts`**: Wires it to the HTTP network.
+

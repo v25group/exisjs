@@ -79,14 +79,30 @@ export default class UsersController {
 
 ## 2. Standardized JSON Responses (`exisjs/response`)
 
-To keep your APIs consistent, ExisJS exports standard `success()` and `error()` builders. 
-Using these ensures your entire application adheres to a unified `{ success: boolean, data?: any, error?: any }` structure, which frontend teams love.
+To keep your APIs consistent and predictable across teams, ExisJS provides standard response helpers, envelope constructors, status code constants, and RFC 7807 problem details in `exisjs/response` (also re-exported from the root `exisjs` package).
 
-#### Functional Paradigm
+Using these ensures your entire backend adheres to a clean, strongly-typed `{ success: boolean, data?: any, error?: any, meta?: any }` structure that frontend clients and SDK generators can reliably consume.
+
+### Available Response Builders
+
+| Builder | HTTP Status | Envelope / Output | Purpose |
+| :--- | :--- | :--- | :--- |
+| `success(data, message?, meta?)` | 200 OK | `{ success: true, data, message?, meta? }` | Standard successful payload |
+| `created(data, message?, meta?)` | 201 Created | `{ success: true, data, message: 'Created', meta? }` | Created resource |
+| `accepted(data?, message?, meta?)` | 202 Accepted | `{ success: true, data, message: 'Accepted', meta? }` | Queued async/background job |
+| `noContent()` | 204 No Content | `{ success: true, data: null }` | Empty successful action |
+| `error(msg, code?, details?, status?)` | 4xx / 5xx | `{ success: false, error: { message, code?, details?, status? } }` | Structured error envelope |
+| `problem(title, status, detail?, opts?)` | Custom | RFC 7807 / RFC 9457 Problem Details object | Standard API problem specification |
+| `paginate(items, total, options)` | 200 OK | `{ success: true, data: items, pagination: { ... } }` | Standard pagination envelope |
+| `getPaginationSkip(query)` | N/A | `{ skip, limit, page }` | Database offset/limit calculator |
+| `json(data, status?, headers?)` | Custom | `{ data, status, headers }` | Typed JSON payload descriptor |
+| `redirect(url, status?)` | 3xx | `{ redirect, status }` | Redirection descriptor |
+
+#### Functional Paradigm Example
 
 ```typescript filename="src/http/route.ts"
 import { controller, route } from 'exisjs/router'
-import { success, error } from 'exisjs/response'
+import { success, created, error, HttpStatus } from 'exisjs/response'
 
 export default controller({
   getUser: route.get('/:id', {
@@ -94,7 +110,7 @@ export default controller({
       const user = db.users.find(req.params.id)
       
       if (!user) {
-        res.status(404)
+        res.status(HttpStatus.NOT_FOUND)
         // Generates: { success: false, error: { message: "User not found", code: "NOT_FOUND" } }
         return error("User not found", "NOT_FOUND")
       }
@@ -102,15 +118,24 @@ export default controller({
       // Generates: { success: true, data: { id: 1, name: "Alice" }, message: "Found user" }
       return success(user, "Found user")
     }
+  }),
+
+  createUser: route.post('/', {
+    handle(req, res) {
+      const user = db.users.create(req.body)
+      res.status(HttpStatus.CREATED)
+      // Generates: { success: true, data: user, message: "User registered" }
+      return created(user, "User registered")
+    }
   })
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+#### Class-Based (OOP) Paradigm Example
 
 ```typescript filename="src/http/route.ts"
-import { Controller, Get, Param, Res } from 'exisjs/decorators'
-import { success, error } from 'exisjs/response'
+import { Controller, Get, Post, Param, Body, Res } from 'exisjs/decorators'
+import { success, created, error, HttpStatus } from 'exisjs/response'
 
 @Controller()
 export default class UsersController {
@@ -119,22 +144,48 @@ export default class UsersController {
     const user = db.users.find(id)
     
     if (!user) {
-      res.status(404)
-      // Generates: { success: false, error: { message: "User not found", code: "NOT_FOUND" } }
+      res.status(HttpStatus.NOT_FOUND)
       return error("User not found", "NOT_FOUND")
     }
     
-    // Generates: { success: true, data: { id: 1, name: "Alice" }, message: "Found user" }
     return success(user, "Found user")
+  }
+
+  @Post('/')
+  async createUser(@Body() body: any, @Res() res: any) {
+    const user = db.users.create(body)
+    res.status(HttpStatus.CREATED)
+    return created(user, "User created successfully")
   }
 }
 ```
+
+### RFC 7807 / RFC 9457 Problem Details (`problem`)
+
+For enterprise and public REST APIs requiring standardized error models, `problem()` produces RFC-compliant Problem Details:
+
+```typescript
+import { problem, HttpStatus } from 'exisjs/response'
+
+res.status(HttpStatus.UNPROCESSABLE_ENTITY)
+return problem('Invalid Request Parameters', 422, 'One or more fields failed schema validation', {
+  type: 'https://api.example.com/errors/validation',
+  instance: req.url,
+  invalidParams: [
+    { name: 'email', reason: 'Must be a valid email address' },
+    { name: 'age', reason: 'Must be greater than 18' }
+  ]
+})
+```
+
 
 ---
 
 ## 3. Standardized Pagination Envelopes (`paginate`)
 
 To eliminate pagination inconsistency across different endpoints, ExisJS exports standard `paginate()` and `getPaginationSkip()` utilities directly from `exisjs/validator` (as well as `exisjs/response`).
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/products/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -158,6 +209,30 @@ export default controller({
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/products/route.ts"
+import { Controller, Get, Query } from 'exisjs/decorators'
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+const ProductQuerySchema = tex.pagination({ defaultLimit: 15, maxLimit: 50 })
+
+@Controller('/products')
+export default class ProductsController {
+  @Get('/', { query: ProductQuerySchema })
+  async listProducts(@Query() query: any) {
+    const { skip, limit, page } = getPaginationSkip(query)
+
+    const [items, total] = await Promise.all([
+      db.product.findMany({ skip, take: limit, orderBy: { createdAt: 'desc' } }),
+      db.product.count(),
+    ])
+
+    return paginate(items, total, { page, limit })
+  }
+}
 ```
 
 ### The Standardized Pagination Envelope
@@ -298,22 +373,28 @@ export default class ReportController {
 }
 ```
 
-### `res.sendStream()`
-Pipe any Node.js `Readable` stream directly to the client with built-in leak prevention:
-- **Client Disconnect Cleanup**: If the client aborts or closes the connection prematurely, the source stream is immediately destroyed (`stream.destroy()`), releasing underlying file handles or external sockets.
-- **Unhandled Error Catching**: Errors emitted during stream consumption are trapped gracefully, preventing unhandled stream crashes.
+### `res.sendStream()` & `res.stream()`
+ExisJS provides first-class streaming support across `res.sendStream()` (aliased as `res.stream()`), accepting:
+- **Node.js `Readable` streams** (e.g. `fs.createReadStream`, database cursors, zlib streams)
+- **Web Standard `ReadableStream`** (e.g. from `fetch()`, OpenAI SDK, Anthropic SDK, and AI frameworks)
+- **`AsyncIterable` & Async Generators** (e.g. `async function* generate() { yield ... }`)
 
-#### Functional Paradigm
+#### Core Reliability Guarantees:
+- **Socket Backpressure Control**: If the underlying network socket buffer fills up (`res.raw.write()` returns `false`), ExisJS automatically pauses stream consumption until the `'drain'` event fires, preventing fast producers from exhausting server RAM.
+- **Client Disconnect Teardown**: If the client aborts or closes the connection prematurely (`req.raw.on('close')`), ExisJS cancels Web stream readers (`reader.cancel()`), destroys Node streams (`stream.destroy()`), or terminates async generators (`generator.return()`).
+- **Resilient Error Trapping**: Stream transmission failures are trapped without crashing the Node.js process. If headers have not yet been sent, a structured 500 error envelope is returned.
 
-```typescript
+#### 1. Streaming Node.js Readable Streams
+
+##### Functional Paradigm
+```typescript filename="src/http/video/route.ts"
 import { controller, route } from 'exisjs/router'
 import fs from 'node:fs'
 
 export default controller({
-  streamVideo: route.get('/video', {
+  streamVideo: route.get('/', {
     handle(req, res) {
       const videoStream = fs.createReadStream('/path/to/video.mp4')
-      
       res.type('video/mp4')
       res.sendStream(videoStream)
     }
@@ -321,20 +402,140 @@ export default controller({
 })
 ```
 
-#### Class-Based (OOP) Paradigm
-
-```typescript
+##### Class-Based (OOP) Paradigm
+```typescript filename="src/http/video/route.ts"
 import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
 import fs from 'node:fs'
 
-@Controller()
+@Controller('/video')
 export default class VideoController {
-  @Get('/video')
-  async streamVideo(@Res() res: any) {
+  @Get('/')
+  streamVideo(@Res() res: Response) {
     const videoStream = fs.createReadStream('/path/to/video.mp4')
-    
     res.type('video/mp4')
     res.sendStream(videoStream)
+  }
+}
+```
+
+#### 2. Streaming Web Standard `ReadableStream` (AI SDKs & Fetch)
+
+##### Functional Paradigm
+```typescript filename="src/http/ai/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  chat: route.post('/', {
+    async handle(req, res) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: JSON.stringify({ model: 'gpt-4o', stream: true, messages: req.body.messages }),
+      })
+
+      res.type('text/event-stream')
+      res.stream(response.body!) // Web ReadableStream piped with backpressure
+    }
+  })
+})
+```
+
+##### Class-Based (OOP) Paradigm
+```typescript filename="src/http/ai/route.ts"
+import { Controller, Post, Body, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller('/ai')
+export default class AiController {
+  @Post('/chat')
+  async chat(@Body() body: any, @Res() res: Response) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: JSON.stringify({ model: 'gpt-4o', stream: true, messages: body.messages }),
+    })
+
+    res.type('text/event-stream')
+    res.stream(response.body!)
+  }
+}
+```
+
+#### 3. Streaming Async Generators
+
+##### Functional Paradigm
+```typescript filename="src/http/feed/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  feed: route.get('/', {
+    handle(req, res) {
+      async function* generateData() {
+        for (let i = 0; i < 100; i++) {
+          yield `data: item ${i}\n\n`
+          await new Promise((r) => setTimeout(r, 50))
+        }
+      }
+
+      res.type('text/event-stream')
+      res.stream(generateData())
+    }
+  })
+})
+```
+
+##### Class-Based (OOP) Paradigm
+```typescript filename="src/http/feed/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller('/feed')
+export default class FeedController {
+  @Get('/')
+  streamFeed(@Res() res: Response) {
+    async function* generateData() {
+      for (let i = 0; i < 100; i++) {
+        yield `data: item ${i}\n\n`
+        await new Promise((r) => setTimeout(r, 50))
+      }
+    }
+
+    res.type('text/event-stream')
+    res.stream(generateData())
+  }
+}
+```
+
+#### 4. Automatic Stream Piping from Handler Return Values
+Route handlers returning a stream or async generator directly are automatically detected by the ExisJS pipeline and piped via `res.sendStream()`:
+
+##### Functional Paradigm
+```typescript filename="src/http/export/route.ts"
+import { controller, route } from 'exisjs/router'
+import fs from 'node:fs'
+
+export default controller({
+  exportCsv: route.get('/', {
+    handle() {
+      // Simply return the readable stream; ExisJS auto-pipes it to res!
+      return fs.createReadStream('./data/export.csv')
+    }
+  })
+})
+```
+
+##### Class-Based (OOP) Paradigm
+```typescript filename="src/http/export/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import fs from 'node:fs'
+
+@Controller('/export')
+export default class ExportController {
+  @Get('/')
+  exportCsv() {
+    // Simply return the readable stream; ExisJS auto-pipes it to res!
+    return fs.createReadStream('./data/export.csv')
   }
 }
 ```
@@ -345,12 +546,31 @@ export default class VideoController {
 
 You can instantly redirect users to another URL using `res.redirect()`. It defaults to a `302 Found` temporary redirect, but you can override the status code.
 
-```typescript
-// Temporary Redirect (302)
-res.redirect('/login')
+#### Functional Paradigm
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
 
-// Permanent Redirect (301)
-res.redirect('https://google.com', 301)
+export default controller({
+  login: route.get('/login', {
+    handle(req, res) {
+      res.redirect('https://auth.example.com/login', 302)
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/auth/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller('/auth')
+export default class AuthController {
+  @Get('/login')
+  login(@Res() res: Response) {
+    res.redirect('https://auth.example.com/login', 302)
+  }
+}
 ```
 
 ---
@@ -428,7 +648,9 @@ export default class EventsController {
 
 ### AI / LLM Streaming with `sse.pipeFrom()`
 
-You can directly stream chunks from any `AsyncIterable` (such as the OpenAI SDK or custom generators) using `sse.pipeFrom()`:
+You can directly stream chunks from any `AsyncIterable` (such as the OpenAI SDK, Anthropic SDK, or custom async generators) using `sse.pipeFrom()`:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/ai/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -455,6 +677,35 @@ export default controller({
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/ai/route.ts"
+import { Controller, Post, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+
+@Controller('/ai')
+export default class AiController {
+  @Post('/chat')
+  chat(@Res() res: Response) {
+    res.sse(async (sse) => {
+      async function* generateTokens() {
+        yield 'Hello'
+        yield ' from'
+        yield ' ExisJS'
+        yield ' AI streaming!'
+      }
+
+      await sse.pipeFrom(generateTokens(), (token) => ({
+        event: 'delta',
+        data: { text: token }
+      }))
+
+      sse.close()
+    })
+  }
+}
 ```
 
 ### SSE Options & Methods

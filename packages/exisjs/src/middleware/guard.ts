@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from '../types'
+import type { Request, Response, NextFunction, Handler } from '../types'
 
 export interface GuardOptions {
   statusCode?: number
@@ -9,11 +9,17 @@ export interface GuardOptions {
  * Creates a Guard middleware.
  * Guards evaluate a condition and return true to allow the request or false to block it.
  */
-export function guard(
-  canActivate: (req: Request) => boolean | Promise<boolean>,
+export function guard<TContext = Record<string, any>>(
+  canActivate: (
+    req: Request<any, any, any, TContext>
+  ) => boolean | Promise<boolean>,
   options?: GuardOptions
-) {
-  return async (req: Request, res: Response, next: NextFunction) => {
+): Handler<any, any, any, any, TContext> {
+  return async (
+    req: Request<any, any, any, TContext>,
+    res: Response,
+    next: NextFunction
+  ) => {
     try {
       const isAllowed = await canActivate(req)
       if (isAllowed) {

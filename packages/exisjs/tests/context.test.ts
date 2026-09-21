@@ -69,4 +69,106 @@ describe('Context API & after()', () => {
       'after() must be called during an active request lifecycle. Ensure asyncContext: true is set in createApp() options.'
     )
   })
+
+  it('guarantees context isolation under high concurrency with interleaved async tasks', async () => {
+    const app = exis({
+      asyncContext: true,
+      async onStart(activeApp) {
+        activeApp.get('/concurrent/:id', (req, res) => {
+          setContext('id', req.params.id)
+          setContext('timestamp', Date.now())
+
+          const delay = Math.floor(Math.random() * 20) + 5
+          setTimeout(() => {
+            const ctx = getContext<{ id: string; timestamp: number }>()
+            res.json({ id: ctx.id, matches: ctx.id === req.params.id })
+          }, delay)
+        })
+      },
+    })
+
+    const server = createTestApp(app)
+    const requestCount = 50
+
+    const results = await Promise.all(
+      Array.from({ length: requestCount }, (_, i) =>
+        server.get(`/concurrent/req_${i}`)
+      )
+    )
+
+    for (let i = 0; i < requestCount; i++) {
+      expect(results[i].status).toBe(200)
+      expect(results[i].body.id).toBe(`req_${i}`)
+      expect(results[i].body.matches).toBe(true)
+    }
+  })
+
+  it('cleans up context state, diCache, and circular references when response finishes', async () => {
+    let capturedStore: any = null
+
+    const app = exis({
+      asyncContext: true,
+      async onStart(activeApp) {
+        activeApp.get('/leak-test', (req, res) => {
+          setContext('secretData', 'sensitive-token')
+          const { executionContext } = require('../src/server/context')
+          capturedStore = executionContext.getStore()
+
+          // Populate diCache
+          capturedStore.diCache.set('TestService', { instance: 123 })
+
+          res.json({ ok: true })
+        })
+      },
+    })
+
+    const server = createTestApp(app)
+    const res = await server.get('/leak-test')
+
+    expect(res.status).toBe(200)
+
+    // Await finish event processing
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(capturedStore).toBeDefined()
+    expect(capturedStore.cleanedUp).toBe(true)
+    expect(capturedStore.diCache.size).toBe(0)
+    expect(Object.keys(capturedStore.state).length).toBe(0)
+    expect(capturedStore.req).toBeNull()
+    expect(capturedStore.res).toBeNull()
+    expect(capturedStore.app).toBeNull()
+  })
+
+  it('cleans up context gracefully when unhandled errors occur inside route handlers', async () => {
+    let capturedStore: any = null
+
+    const app = exis({
+      asyncContext: true,
+      async onStart(activeApp) {
+        activeApp.get('/error-test', (req, res) => {
+          setContext('failedData', 'error-value')
+          const { executionContext } = require('../src/server/context')
+          capturedStore = executionContext.getStore()
+          throw new Error('Intentional route crash')
+        })
+
+        activeApp.get('/subsequent', (req, res) => {
+          const state = getContext()
+          res.json({ stateKeys: Object.keys(state) })
+        })
+      },
+    })
+
+    const server = createTestApp(app)
+    const errRes = await server.get('/error-test')
+    expect(errRes.status).toBe(500)
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(capturedStore.cleanedUp).toBe(true)
+
+    // Verify subsequent request has a clean, uncorrupted context
+    const nextRes = await server.get('/subsequent')
+    expect(nextRes.status).toBe(200)
+    expect(nextRes.body.stateKeys).toEqual([])
+  })
 })

@@ -68,6 +68,10 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Param(nameOrPipe?)`: Injects a URL path parameter (e.g., `id` from `/:id`).
 - `@Headers(nameOrPipe?)`: Injects an HTTP header by name.
 - `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)`: Injects a URL query parameter (e.g., `?search=term`).
+- `@Cookies(nameOrPipe?)` / `@Cookie(nameOrPipe?)`: Injects incoming parsed cookies or a specific cookie value.
+- `@State(keyOrPipe?)`: Injects request state from execution context or middleware.
+- `@AppCtx()`: Injects the root ExisJS Application instance.
+- `@Fields(nameOrPipe?)`: Injects non-file multipart form fields.
 - `@UploadedFile()`: Injects the uploaded file (`req.file`) into the method argument.
 - `@UploadedFiles()`: Injects the uploaded files array or dictionary (`req.files`) into the method argument.
 - `@HostParam(nameOrPipe?)`: Injects a subdomain parameter.
@@ -83,8 +87,14 @@ Parameter decorators automatically extract data from the incoming request and in
 
 - `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
 - `@Upload(fieldName, options?)` / `@UseUpload(...)`: Configures multipart file upload handling for a method, populating `@UploadedFile()` or `@UploadedFiles()`.
-- `@Timeout(ms: number | TimeoutOptions)`: Overrides the request timeout for this method (e.g. `@Timeout(120000)`). Passing `0` disables timeouts for long-running streaming or exports.
-- `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
+- `@Timeout(ms: number | TimeoutOptions)`: Overrides the request timeout for a class or method (e.g. `@Timeout(120000)`). Passing `0` disables timeouts for long-running streaming or exports.
+- `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage. Works at class and method level.
+- `@RateLimit(options?)`: Enforces rate limits (e.g. `@RateLimit({ max: 100, windowMs: 60000 })`) at class or method level.
+- `@Cors(options?)`: Enforces Cross-Origin Resource Sharing rules at class or method level.
+- `@IpFilter(options)`: Enforces CIDR and IP allow/deny lists at class or method level.
+- `@Compress()`: Enables automatic Gzip and Brotli compression on responses.
+- `@Dedupe(options)`: Deduplicates concurrent identical requests sharing the same key.
+- `@BlockProbes(options?)`: Intercepts vulnerability scanner probes (`.env`, `/.git`, `/.DS_Store`) and blackholes them without triggering log noise.
 
 ---
 
@@ -108,8 +118,8 @@ Parameter decorators automatically extract data from the incoming request and in
 
 - `@Module({ imports?, controllers?, providers?, exports? })`: OOP class decorator equivalent to `defineModule()` for structuring application modules.
 - `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container. Supports `{ scope: 'singleton' | 'request' | 'transient' }`.
-- `@Inject(token)`: Constructor parameter decorator for injecting dependencies by class, string, or symbol token.
-- `@Optional()`: Constructor parameter decorator resolving missing dependencies to `undefined` without throwing.
+- `@Inject(token)`: Constructor parameter decorator from `exisjs/di` for injecting dependencies by class, string, or symbol token.
+- `@Optional()`: Constructor parameter decorator from `exisjs/di` resolving missing dependencies to `undefined` without throwing.
 - `@Boundary(config)`: Marks a class as a folder-scoped Boundary configuring CORS, headers, exclusions, and pipeline steps.
 - `@Server(config)`: Marks a class as a root server definition.
 

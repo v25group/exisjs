@@ -6,8 +6,14 @@ export class TexType<IsOpt extends boolean = false> {
     fn: (val: any) => any
     message?: string | ((val: any) => string)
   }[] = []
+  public defaultValue?: any | (() => any)
 
-  constructor(public _raw: string) {}
+  constructor(
+    public _raw: string,
+    defaultValue?: any | (() => any)
+  ) {
+    this.defaultValue = defaultValue
+  }
 
   sanitize(...fns: ((val: any) => any)[]): this {
     this.sanitizers.push(...fns)

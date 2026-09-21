@@ -102,12 +102,28 @@ In most cases, you don't need to manually access the entire request object. Inst
         <td className="px-4 py-3 text-muted-foreground">The client's IP address</td>
       </tr>
       <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Cookies(name?) / <span className="text-primary">@</span>Cookie(name?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Incoming parsed cookies or specific cookie value</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>State(key?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Request state from execution context or middleware</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>AppCtx()</td>
+        <td className="px-4 py-3 text-muted-foreground">The root ExisJS Application instance</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Fields(name?)</td>
+        <td className="px-4 py-3 text-muted-foreground">Non-file multipart form fields</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
         <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFile()</td>
         <td className="px-4 py-3 text-muted-foreground">A single uploaded file (multipart/form-data)</td>
       </tr>
       <tr className="bg-background hover:bg-muted/30 transition-colors">
         <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFiles()</td>
-        <td className="px-4 py-3 text-muted-foreground">Array of uploaded files</td>
+        <td className="px-4 py-3 text-muted-foreground">Array or dictionary of uploaded files</td>
       </tr>
     </tbody>
   </table>
@@ -115,22 +131,123 @@ In most cases, you don't need to manually access the entire request object. Inst
 
 ## Payloads & Validation
 
-For POST and PUT endpoints, you need to read the incoming JSON payload. Use the `@Body()` decorator to inject it.
+For POST, PUT, and PATCH endpoints, you can validate and read incoming payloads using either method-level schemas or parameter-level `@Body(Schema)` decorators:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Post, Body } from 'exisjs/decorators'
+import { Controller, Post, Body, HttpCode } from 'exisjs/decorators'
+import { tex } from 'exisjs/validator'
+import type { ResolveSchema } from 'exisjs/validator'
 
-export class CreateUserDto {
-  name: string;
-  email: string;
-  role: string;
-}
+export const CreateUserSchema = tex.object({
+  name: tex.string({ min: 2 }),
+  email: tex.email(),
+  role: tex.enum(['admin', 'user'], { default: 'user' }),
+})
+
+export type CreateUserDto = ResolveSchema<typeof CreateUserSchema>
 
 @Controller('users')
 export default class UsersController {
-  @Post()
-  async create(@Body() createUserDto: CreateUserDto) {
-    return { id: 3, ...createUserDto }
+  // 1. Parameter-level validation schema
+  @Post('/')
+  @HttpCode(201)
+  async create(@Body(CreateUserSchema) dto: CreateUserDto) {
+    return { id: 3, ...dto }
+  }
+
+  // 2. Or method-level schema object
+  @Post('/raw', { body: CreateUserSchema })
+  async createWithMethodSchema(@Body() dto: CreateUserDto) {
+    return { id: 4, ...dto }
+  }
+}
+```
+
+## Dependency Injection in Controllers
+
+Controllers can inject services using either the ergonomic `inject()` helper or standard constructor injection:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { inject, Inject, Optional } from 'exisjs/di'
+import { UsersService } from './service'
+
+@Controller('users')
+export default class UsersController {
+  // Approach A: Property-level injection (Recommended)
+  private usersService = inject(UsersService)
+
+  // Approach B: Constructor injection
+  constructor(
+    @Inject('DATABASE_URL') private dbUrl: string,
+    @Optional() @Inject('METRICS') private metrics?: any
+  ) {}
+
+  @Get('/:id')
+  async getUser(@Param('id') id: string) {
+    return this.usersService.findById(id)
+  }
+}
+```
+
+## File Uploads
+
+You can process file uploads in OOP controllers using `@UseUpload` or `@Upload` decorators alongside `@UploadedFile()` and `@UploadedFiles()`:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, UseUpload, UploadedFile, Body } from 'exisjs/decorators'
+import type { UploadedFile as IUploadedFile } from 'exisjs/router'
+
+@Controller('users')
+export default class UsersController {
+  @Post('/avatar')
+  @UseUpload({
+    field: 'avatar',
+    maxBytes: 5 * 1024 * 1024,
+    mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  })
+  async uploadAvatar(
+    @UploadedFile() file: IUploadedFile,
+    @Body() body: { caption?: string }
+  ) {
+    return {
+      success: true,
+      filename: file.filename,
+      size: file.size,
+      caption: body.caption,
+    }
+  }
+}
+```
+
+## Streaming & Downloads
+
+OOP controllers support all streaming features including Node.js `Readable` streams, Web `ReadableStream`, async generators, and file downloads:
+
+```typescript filename="src/http/files/route.ts"
+import { Controller, Get, Res } from 'exisjs/decorators'
+import type { Response } from 'exisjs/router'
+import fs from 'node:fs'
+
+@Controller('files')
+export default class FilesController {
+  // 1. Force file download
+  @Get('/download')
+  download(@Res() res: Response) {
+    res.download('./reports/annual.pdf', 'Annual-Report.pdf')
+  }
+
+  // 2. Stream Node.js Readable or auto-pipe return value
+  @Get('/stream')
+  streamCsv() {
+    return fs.createReadStream('./data/export.csv')
+  }
+
+  // 3. Server-Sent Events (SSE)
+  @Get('/events')
+  events(@Res() res: Response) {
+    const sse = res.sse()
+    sse.send({ event: 'ping', data: { time: Date.now() } })
   }
 }
 ```

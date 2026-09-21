@@ -192,9 +192,18 @@ function primaryProcess(workerCount: number, config?: ClusterConfig) {
       `\n  ${c.primary}[exis-cluster]${c.reset} Received ${c.yellow}${signal}${c.reset}, shutting down workers...`
     )
 
-    // Send SIGTERM to all workers and let them close gracefully
+    // Send IPC shutdown message and SIGTERM to all workers and let them close gracefully
     for (const id in cluster.workers) {
-      cluster.workers[id]?.process.kill('SIGTERM')
+      try {
+        cluster.workers[id]?.send({ type: 'exis:shutdown' })
+      } catch {
+        // ignore
+      }
+      try {
+        cluster.workers[id]?.process.kill('SIGTERM')
+      } catch {
+        // ignore
+      }
     }
 
     // Give workers a grace period to shut down, then force kill

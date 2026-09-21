@@ -69,6 +69,24 @@ export class ExisRequest<
 
   public cleanup(): void {
     this.raw.removeListener('close', this._onClose)
+    this._diCache.clear()
+    this.user = undefined as any
+    this.session = undefined
+    this.body = undefined as any
+    this.params = undefined as any
+    this.files = []
+    this._file = undefined
+    this.rawBody = undefined
+    this.requestId = undefined
+    this.tenantId = undefined
+    this._path = undefined
+    this._query = undefined
+    this._cookies = undefined
+    this._ips = undefined
+    this._ip = undefined
+    this._protocol = undefined
+    this._hostname = undefined
+    this._method = undefined
   }
 
   constructor(

@@ -108,3 +108,5 @@ export function ipFilterMiddleware(options: IpFilterOptions = {}): Handler {
     next()
   }
 }
+
+export const ipFilter = ipFilterMiddleware

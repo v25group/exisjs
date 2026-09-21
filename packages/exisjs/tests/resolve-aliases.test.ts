@@ -76,4 +76,61 @@ describe('resolvePathAliases (ESM relative imports & aliases)', () => {
     expect(result).toContain(`import data from './data.json'`)
     expect(result).toContain(`import { h } from './helper.js'`)
   })
+
+  it('correctly parses custom tsconfig paths, baseUrls, and resolves path aliases', async () => {
+    const projectDir = createTempDir('exis-tsconfig-paths-')
+    try {
+      const tsconfig = {
+        compilerOptions: {
+          baseUrl: './src',
+          paths: {
+            '@/*': ['./*'],
+            '@services/*': ['./services/*'],
+            '@models/*': ['./models/*'],
+            '@db': ['./db/client.ts'],
+          },
+        },
+      }
+      fs.writeFileSync(
+        path.join(projectDir, 'tsconfig.json'),
+        JSON.stringify(tsconfig, null, 2)
+      )
+
+      const { parseAliases } = await import('../src/cli/resolve-aliases')
+      const aliases = parseAliases(projectDir)
+      expect(aliases.length).toBeGreaterThanOrEqual(4)
+
+      // Verified priority sorting (more specific prefix first)
+      const serviceAliasIdx = aliases.findIndex(
+        (a) => a.prefix === '@services/'
+      )
+      const atAliasIdx = aliases.findIndex((a) => a.prefix === '@/')
+      expect(serviceAliasIdx).toBeLessThan(atAliasIdx)
+
+      // Test path resolution on output files
+      const outDir = path.join(projectDir, 'dist')
+      const routesDir = path.join(outDir, 'routes')
+      const servicesDir = path.join(outDir, 'services')
+      fs.mkdirSync(routesDir, { recursive: true })
+      fs.mkdirSync(servicesDir, { recursive: true })
+
+      writeTempFile(
+        projectDir,
+        'dist/services/auth.js',
+        'export const Auth = {}'
+      )
+      writeTempFile(
+        projectDir,
+        'dist/routes/user.js',
+        `import { Auth } from '@services/auth'\nexport const user = {}`
+      )
+
+      await resolvePathAliases(projectDir, 'dist')
+
+      const rewritten = fs.readFileSync(path.join(routesDir, 'user.js'), 'utf8')
+      expect(rewritten).toContain(`import { Auth } from '../services/auth.js'`)
+    } finally {
+      cleanupTempDir(projectDir)
+    }
+  })
 })

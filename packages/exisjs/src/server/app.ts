@@ -471,6 +471,18 @@ export class App<TRoutes extends Record<string, any> = {}> {
     // Request ID always on
     this.globalMiddleware.unshift(requestId())
 
+    if (this.options.blockProbes || this.options.blockSuspiciousProbes) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { blockSuspiciousProbes } = require('../middleware/security')
+      const probeOpts =
+        typeof this.options.blockProbes === 'object'
+          ? this.options.blockProbes
+          : typeof this.options.blockSuspiciousProbes === 'object'
+            ? this.options.blockSuspiciousProbes
+            : {}
+      this.globalMiddleware.unshift(blockSuspiciousProbes(probeOpts))
+    }
+
     if (logOpt !== false) {
       this.globalMiddleware.push(requestLogger(this.log))
     }
@@ -567,6 +579,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     url: string
     headers?: Record<string, string>
     body?: any
+    payload?: any
   }): Promise<import('../testing/client').TestResponse> {
     return this.requestHandler.inject(options)
   }

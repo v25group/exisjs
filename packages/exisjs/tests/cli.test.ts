@@ -281,6 +281,7 @@ describe('CLI Commands', () => {
 
       const mockChild = {
         on: ex.fn(),
+        once: ex.fn(),
         kill: ex.fn(),
       }
       mockSpawn.mockReturnValue(mockChild)
@@ -299,6 +300,7 @@ describe('CLI Commands', () => {
 
       const mockChild = {
         on: ex.fn(),
+        once: ex.fn(),
         kill: ex.fn(),
       }
       mockSpawn.mockReturnValue(mockChild)
@@ -365,8 +367,7 @@ describe('CLI Commands', () => {
     it('attaches error handler and ignores archive/lock files in watcher', async () => {
       const chokidar = await import('chokidar')
       const ignored = [
-        // eslint-disable-next-line no-useless-escape
-        /(^|[\/\\])\../,
+        /(^|[/\\])\../,
         /node_modules/,
         /\.exis/,
         /dist/,

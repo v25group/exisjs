@@ -14,16 +14,20 @@ export interface BoundaryExcludeRule {
   method?: HttpMethod
 }
 
-export interface BoundaryConfig {
+export interface BoundaryConfig<TContext = Record<string, any>> {
   /**
    * Middleware to apply to all routes in this directory and subdirectories.
    * Replaces the old router.use() globally for a folder.
    */
-  middleware?: Handler[] | Handler
+  middleware?:
+    | Handler<any, any, any, any, TContext>[]
+    | Handler<any, any, any, any, TContext>
   /**
    * Alias for `middleware`. Supports plural naming.
    */
-  middlewares?: Handler[] | Handler
+  middlewares?:
+    | Handler<any, any, any, any, TContext>[]
+    | Handler<any, any, any, any, TContext>
 
   /**
    * CORS configuration applied to all routes in this directory and subdirectories.
@@ -81,7 +85,9 @@ export interface BoundaryConfig {
    */
   timeout?:
     | number
-    | ((req: import('../types').Request<any, any, any>) => number | undefined)
+    | ((
+        req: import('../types').Request<any, any, any, TContext>
+      ) => number | undefined)
 
   /**
    * Cascading metadata (e.g., OpenAPI tags, roles) applied to all routes in this directory.
@@ -89,25 +95,39 @@ export interface BoundaryConfig {
   metadata?: Record<string, any>
 
   /**
+   * Opt-in security scanner noise suppression & exploit probe blocker.
+   * Intercepts automated vulnerability scanner probes (e.g. `/.env`, `/.git`, `/.DS_Store`)
+   * and blackholes them immediately without running downstream handlers or flooding error logs.
+   */
+  blockProbes?: boolean | import('../middleware/security').BlockProbesOptions
+  blockSuspiciousProbes?:
+    boolean | import('../middleware/security').BlockProbesOptions
+
+  /**
    * Hook executed immediately before any route handler in this boundary.
    * Can short-circuit execution by returning `false` or sending a response directly.
    */
-  beforeHandle?: BoundaryBeforeHandleHook | BoundaryBeforeHandleHook[]
+  beforeHandle?:
+    BoundaryBeforeHandleHook<TContext> | BoundaryBeforeHandleHook<TContext>[]
 
   /**
    * Hook executed immediately after a route handler in this boundary successfully returns.
    * Receives `(req, res, data)` and can transform the outgoing payload or perform audit logging.
    */
-  afterHandle?: BoundaryAfterHandleHook | BoundaryAfterHandleHook[]
+  afterHandle?:
+    | BoundaryAfterHandleHook<any, TContext>
+    | BoundaryAfterHandleHook<any, TContext>[]
 }
 
-export type BoundaryBeforeHandleHook = (
-  req: import('../types').Request<any, any, any>,
+export type { BlockProbesOptions } from '../middleware/security'
+
+export type BoundaryBeforeHandleHook<TContext = Record<string, any>> = (
+  req: import('../types').Request<any, any, any, TContext>,
   res: import('../types').Response
 ) => void | boolean | Promise<void | boolean>
 
-export type BoundaryAfterHandleHook<T = any> = (
-  req: import('../types').Request<any, any, any>,
+export type BoundaryAfterHandleHook<T = any, TContext = Record<string, any>> = (
+  req: import('../types').Request<any, any, any, TContext>,
   res: import('../types').Response,
   data?: T
 ) => void | any | Promise<void | any>
@@ -116,6 +136,8 @@ export type BoundaryAfterHandleHook<T = any> = (
  * Defines a boundary that acts as folder-scoped config + request pipeline for
  * everything in this directory and subdirectories.
  */
-export function defineBoundary(config: BoundaryConfig): BoundaryConfig {
+export function defineBoundary<TContext = Record<string, any>>(
+  config: BoundaryConfig<TContext>
+): BoundaryConfig<TContext> {
   return config
 }

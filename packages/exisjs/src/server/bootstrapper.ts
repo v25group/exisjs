@@ -202,16 +202,79 @@ export class ServerBootstrapper {
       const finish = async () => {
         if (finishCalled) return
         finishCalled = true
+
         try {
-          for (const hook of this.shutdownHooks) {
-            await hook()
+          // Close engine listener
+          if (this.engine) {
+            try {
+              await this.engine.close()
+            } catch {
+              // ignore engine close error
+            }
           }
+
+          const runHookSafely = async (
+            hook: () => Promise<void> | void,
+            hookName: string,
+            hookTimeoutMs: number
+          ) => {
+            let timer: NodeJS.Timeout | undefined
+            const timeoutPromise = new Promise((_, rejectTimeout) => {
+              timer = setTimeout(() => {
+                rejectTimeout(
+                  new Error(
+                    `[exis] ${hookName} exceeded timeout of ${hookTimeoutMs}ms`
+                  )
+                )
+              }, hookTimeoutMs)
+              timer.unref?.()
+            })
+            try {
+              await Promise.race([Promise.resolve(hook()), timeoutPromise])
+            } catch (err: any) {
+              this.app.log.error(
+                { err: err?.message || err },
+                `Error executing ${hookName}`
+              )
+            } finally {
+              if (timer) clearTimeout(timer)
+            }
+          }
+
+          const perHookTimeout = Math.max(1000, Math.floor(timeout / 2))
+
+          // Execute shutdown hooks
+          for (let i = 0; i < this.shutdownHooks.length; i++) {
+            await runHookSafely(
+              () => this.shutdownHooks[i](),
+              `shutdownHook[${i}]`,
+              perHookTimeout
+            )
+          }
+
           // Also execute onClose hooks
-          for (const hook of this.app.hooks.close) {
-            await hook()
+          for (let i = 0; i < this.app.hooks.close.length; i++) {
+            await runHookSafely(
+              () => this.app.hooks.close[i](),
+              `onClose hook[${i}]`,
+              perHookTimeout
+            )
           }
+
           if (this.app.onCloseHook) {
-            await this.app.onCloseHook(this.app)
+            await runHookSafely(
+              () => this.app.onCloseHook!(this.app),
+              'app.onClose',
+              perHookTimeout
+            )
+          }
+
+          // Automatically unregister process-level listeners registered during App lifetime
+          try {
+            const { ProcessLifecycle } = await import('./lifecycle')
+            ProcessLifecycle.cleanup()
+          } catch {
+            // ignore
           }
 
           if (!isCLI) this.app.log.info('Graceful shutdown completed')
@@ -227,42 +290,62 @@ export class ServerBootstrapper {
         return
       }
 
-      setTimeout(async () => {
-        await this.engine.close()
-        process.exit(0)
-      }, timeout).unref()
+      // Stop accepting new incoming requests immediately
+      try {
+        if ('server' in this.engine && (this.engine as any).server) {
+          ;(this.engine as any).server.close?.()
+        }
+      } catch {
+        // ignore
+      }
 
       // Close idle keep-alive connections immediately
       if ('closeIdleConnections' in this.engine) {
-        ;(this.engine as any).closeIdleConnections?.()
+        try {
+          ;(this.engine as any).closeIdleConnections?.()
+        } catch {
+          // ignore
+        }
       }
 
-      let checkIdle: NodeJS.Timeout | undefined
+      let timer: NodeJS.Timeout | null = null
+      let done = false
+
+      const finishOnce = async () => {
+        if (done) return
+        done = true
+        if (timer) clearTimeout(timer)
+        clearInterval(checkIdle)
+        await finish()
+      }
+
+      const checkIdle = setInterval(() => {
+        if (RequestHandler.activeRequests === 0) {
+          finishOnce()
+        }
+      }, 50)
+      checkIdle.unref()
+
       // Set timeout to force close active connections
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         this.app.log.warn(
           `Shutdown timeout of ${timeout}ms exceeded, forcefully terminating active connections`
         )
         if ('closeAllConnections' in this.engine) {
-          ;(this.engine as any).closeAllConnections?.()
-        }
-        if (checkIdle) clearInterval(checkIdle)
-        finish() // Ensure finish is called on timeout
-      }, timeout)
-
-      const cleanupAndFinish = async () => {
-        checkIdle = setInterval(async () => {
-          const active = RequestHandler.activeRequests
-          if (active === 0) {
-            clearInterval(checkIdle)
-            clearTimeout(timer)
-            await finish()
+          try {
+            ;(this.engine as any).closeAllConnections?.()
+          } catch {
+            // ignore
           }
-        }, 100)
-      }
+        }
+        finishOnce()
+      }, timeout)
+      timer.unref()
 
-      this.engine.close()
-      cleanupAndFinish()
+      // Initial check in case activeRequests is already 0
+      if (RequestHandler.activeRequests === 0) {
+        finishOnce()
+      }
     })
   }
 }

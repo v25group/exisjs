@@ -170,3 +170,47 @@ app.use((err, req, res, next) => {
 ExisJS natively intercepts and handles Promise rejections at the core routing level. 
 
 Unlike Express, you do **not** need to wrap your routes in an `asyncHandler`. However, for strict compatibility with older Express middleware ecosystems, `exisjs/error` does export an `asyncHandler` wrapper. Note that using it in ExisJS is entirely redundant and merely adds unnecessary Promise allocations.
+
+---
+
+## Developer Error Formatting & Overlay Utilities
+
+`exisjs/error` also exports powerful error diagnostic utilities that you can use in custom error handlers, CLI scripts, background workers, and testing:
+
+```typescript
+import {
+  formatDevError,
+  renderDevErrorToString,
+  categorizeError,
+  generateErrorHint,
+  buildCodeFrame,
+  stripInternalStackFrames,
+  devErrorResponse,
+  type ParsedError,
+} from 'exisjs/error'
+```
+
+### Utility Functions
+
+| Function | Signature | Description |
+| :--- | :--- | :--- |
+| `formatDevError` | `(err: Error, optionsOrFile?: string \| { routeFile?: string; title?: string }) => void` | Prints a formatted terminal error envelope with code frames and actionable hints |
+| `renderDevErrorToString` | `(err: Error, optionsOrFile?: ...) => string` | Returns the formatted terminal error envelope string |
+| `categorizeError` | `(err: Error) => string` | Intelligently classifies errors into domain categories (`Validation Schema Error`, `Environment Configuration Error`, etc.) |
+| `generateErrorHint` | `(err: Error) => string \| null` | Generates actionable hints for common coding mistakes |
+| `buildCodeFrame` | `(filePath: string, line: number, col?: number) => string` | Builds a source code snippet visualizer with gutter line numbers and caret indicator |
+| `stripInternalStackFrames` | `(stack?: string) => string[]` | Strips internal Node.js and framework runtime stack frames |
+| `devErrorResponse` | `(err: Error, routeFile?: string) => object` | Generates a structured developer error envelope payload for JSON API responses |
+
+### Example: Custom Worker or Script Error Handling
+
+```typescript filename="src/workers/import-csv.ts"
+import { formatDevError, categorizeError } from 'exisjs/error'
+
+try {
+  await processCsvImport(filePath)
+} catch (err: any) {
+  // Prints a clean code frame with line numbers and actionable hints directly in terminal
+  formatDevError(err, { routeFile: filePath, title: categorizeError(err) })
+}
+```

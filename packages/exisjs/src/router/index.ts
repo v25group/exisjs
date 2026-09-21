@@ -1,6 +1,12 @@
-export { route, controller, createRouter } from './route-builder'
+export {
+  route,
+  controller,
+  createRouter,
+  defineMiddleware,
+} from './route-builder'
 export type {
   RouteConfig,
+  RouteDefinition,
   ControllerConfig,
   SuperContext,
 } from './route-builder'

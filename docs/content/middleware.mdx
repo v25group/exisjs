@@ -32,9 +32,131 @@ export const config = defineBoundary({})
 export const logger = requestLogger({ level: 'debug' })
 ```
 
-### Middleware vs Inline Execution
+### Middleware Context Type Inference (`defineMiddleware`)
 
-Middleware executes **before** your route handler. If you are using custom typed contexts to destructure variables (e.g., `async handle({ user })`), you must use middleware to populate `req.user`.
+When custom middlewares attach data to `req` (such as authenticated user details, session data, or tenant tokens), ExisJS supports **End-to-End Middleware Context Type Inference**.
+
+By using `defineMiddleware<TContext>()`, downstream route handlers automatically inherit strongly typed properties on `req` with zero manual type casts (`as any`) or boilerplate.
+
+#### Local Route-Level Inference (Recommended)
+
+```typescript filename="src/http/route.ts"
+import { controller, route, defineMiddleware } from 'exisjs/router'
+
+// 1. Define your custom context shape
+interface AuthContext {
+  user: {
+    id: string
+    role: 'admin' | 'user'
+    email: string
+  }
+}
+
+// 2. Define the middleware with your context
+export const authMiddleware = defineMiddleware<AuthContext>((req, res, next) => {
+  req.user = {
+    id: 'usr_123',
+    role: 'admin',
+    email: 'alex@example.com'
+  }
+  next()
+})
+
+export default controller({
+  profile: route.get('/profile', {
+    middlewares: [authMiddleware],
+    handle({ req, res }) {
+      // ✨ req.user is automatically inferred directly from middlewares: [authMiddleware]!
+      // Full autocomplete and strict type safety:
+      return res.json({
+        userId: req.user.id,
+        role: req.user.role,
+        email: req.user.email
+      })
+    }
+  })
+})
+```
+
+#### Multi-Middleware Context Composition
+
+When passing multiple middlewares, ExisJS automatically merges all injected contexts:
+
+```typescript
+const authMw = defineMiddleware<{ user: { id: string } }>(...)
+const tenantMw = defineMiddleware<{ tenantId: string }>(...)
+
+export default controller({
+  data: route.get('/data', {
+    middlewares: [authMw, tenantMw],
+    handle({ req }) {
+      // req has both `req.user` and `req.tenantId` strictly typed!
+      return { userId: req.user.id, tenant: req.tenantId }
+    }
+  })
+})
+```
+
+#### Module-Scoped Context (`createRouter<TContext>()`)
+
+If an entire file or subsystem shares the same context, use `createRouter<TContext>()`:
+
+```typescript filename="src/http/admin/route.ts"
+import { createRouter } from 'exisjs/router'
+
+interface AdminContext {
+  user: { id: string; role: 'admin' }
+}
+
+const { route, controller } = createRouter<AdminContext>()
+
+export default controller({
+  settings: route.get('/settings', {
+    middlewares: [authMiddleware],
+    handle({ req }) {
+      return { adminId: req.user.id }
+    }
+  })
+})
+```
+
+#### Boundary-Scoped Context (`defineBoundary<TContext>()`)
+
+Propagate context types across all routes in a directory tree:
+
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+
+export const config = defineBoundary<AdminContext>({
+  beforeHandle: async ({ req }) => {
+    console.log(`Admin action by: ${req.user.id}`)
+  }
+})
+```
+
+#### Class-Based (OOP) Context Usage
+
+In OOP controllers, you can attach typed middlewares via `@Use()` and type the injected `@Req()` object:
+
+```typescript filename="src/http/admin/route.ts"
+import { Controller, Get, Use, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
+import { authMiddleware } from '../../middleware/auth'
+import type { AuthContext } from '../../middleware/auth'
+
+@Controller('/admin')
+@Use(authMiddleware)
+export default class AdminController {
+  @Get('/profile')
+  getProfile(@Req() req: Request & AuthContext) {
+    return {
+      userId: req.user.id,
+      role: req.user.role,
+      email: req.user.email,
+    }
+  }
+}
+```
 
 #### Functional Paradigm
 
@@ -132,13 +254,40 @@ app.use(requestId())
 
 ExisJS provides high-performance rate limiting powered by Rust native memory:
 
-```typescript filename="src/http/boundary.ts"
+#### Functional Paradigm
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
 import { rateLimit } from 'exisjs/middleware'
 
-export const limiter = rateLimit({
-  windowMs: 60000,
-  max: 100,
+const authLimiter = rateLimit({ windowMs: 60000, max: 10 })
+
+export default controller({
+  login: route.post('/login', {
+    middlewares: [authLimiter],
+    handle({ req }) {
+      return { status: 'ok' }
+    }
+  })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/auth/route.ts"
+import { Controller, Post, Use } from 'exisjs/decorators'
+import { rateLimit } from 'exisjs/middleware'
+
+const authLimiter = rateLimit({ windowMs: 60000, max: 10 })
+
+@Controller('/auth')
+export default class AuthController {
+  @Post('/login')
+  @Use(authLimiter)
+  async login() {
+    return { status: 'ok' }
+  }
+}
 ```
 
 > [!NOTE]
@@ -149,6 +298,24 @@ export const limiter = rateLimit({
 ## 5. Idempotency (In-Memory / Native Off-Heap)
 
 Idempotency caches responses based on the `Idempotency-Key` header, preventing duplicate mutations:
+
+#### Functional Paradigm
+
+```typescript filename="src/http/checkout/route.ts"
+import { controller, route } from 'exisjs/router'
+import { idempotent } from 'exisjs/middleware'
+
+export default controller({
+  checkout: route.post('/', {
+    middlewares: [idempotent({ ttlMs: 86400000 })],
+    async handle() {
+      return { success: true }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/checkout/route.ts"
 import { Controller, Post, Idempotent } from 'exisjs/decorators'
@@ -169,6 +336,8 @@ export default class CheckoutController {
 
 If multiple clients request the exact same resource concurrently, `dedupe` collapses identical in-flight requests into a single operation:
 
+#### Functional Paradigm
+
 ```typescript filename="src/http/stats/route.ts"
 import { controller, route } from 'exisjs/router'
 import { dedupe } from 'exisjs/middleware'
@@ -181,6 +350,22 @@ export default controller({
     }
   })
 })
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/stats/route.ts"
+import { Controller, Get, Use } from 'exisjs/decorators'
+import { dedupe } from 'exisjs/middleware'
+
+@Controller('/stats')
+export default class StatsController {
+  @Get('/')
+  @Use(dedupe({ ttlMs: 5000 }))
+  async getStats() {
+    return { activeUsers: 1000 }
+  }
+}
 ```
 
 ---
@@ -350,4 +535,82 @@ export default controller({
   )
 })
 ```
+
+---
+
+## 10. Security Scanner Noise Suppression & Blackhole (`blockSuspiciousProbes`)
+
+In public production deployments, automated vulnerability scanners aggressively probe for `.env`, `/.git/HEAD`, `/.env.backup`, `/.DS_Store`, `wp-config.php`, etc.
+
+Each probe generates a `404` error log with structured JSON logging (`{"level":40,"statusCode":404}`), flooding log aggregators and triggering false security alerts.
+
+ExisJS provides `blockSuspiciousProbes` (alias `blockProbes`) to immediately intercept known exploit patterns, terminate the request with an empty response (blackhole), and suppress logger noise.
+
+### Global Usage (`server.ts` / `exis.config.ts`)
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { blockSuspiciousProbes } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
+    // Intercept probes before downstream routes or loggers
+    app.use(blockSuspiciousProbes({
+      statusCode: 404, // or 403
+      silent: true,    // Suppresses level-40 warning logs in requestLogger
+    }))
+  }
+})
+```
+
+Or enable directly in `exis.config.ts`:
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
+export default async () => defineConfig({
+  blockProbes: true, // or { statusCode: 404, silent: true }
+})
+```
+
+### Folder-Scoped Boundary (`boundary.ts`)
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+
+export default defineBoundary({
+  blockProbes: {
+    statusCode: 404,
+    silent: true,
+    exclude: ['/.well-known/security.txt'],
+  }
+})
+```
+
+### Class-Based (OOP) Decorator
+
+```typescript filename="src/http/api/route.ts"
+import { Controller, Get, BlockProbes } from 'exisjs/decorators'
+
+@Controller('/api')
+@BlockProbes({ statusCode: 404 })
+export default class ApiController {
+  @Get('/health')
+  health() {
+    return { status: 'healthy' }
+  }
+}
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `statusCode` | `number` | `404` | HTTP status code to return for blocked probes |
+| `blackhole` | `boolean` | `true` | Immediately terminates connection with empty body without calling downstream middleware |
+| `silent` | `boolean` | `true` | Suppresses `requestLogger` warning logs for blocked probe requests |
+| `patterns` | `(string \| RegExp)[]` | `[]` | Additional custom probe patterns to block |
+| `exclude` | `(string \| RegExp)[]` | `[]` | Whitelist patterns to allow through without blocking |
+| `onProbe` | `(req, res, pattern) => void` | `undefined` | Callback hook when a probe is detected (for SIEM or IP reputation metrics) |
+
 

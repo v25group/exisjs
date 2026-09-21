@@ -134,6 +134,15 @@ export const UploadedFile = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('uploadedFile', nameOrPipe, ...pipes)
 export const UploadedFiles = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('uploadedFiles', nameOrPipe, ...pipes)
+export const Cookies = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('cookies', nameOrPipe, ...pipes)
+export const Cookie = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('cookie', nameOrPipe, ...pipes)
+export const State = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('state', nameOrPipe, ...pipes)
+export const AppCtx = () => createParamDecorator('app')
+export const Fields = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('fields', nameOrPipe, ...pipes)
 
 export const Res = (options?: { passthrough?: boolean }): any => {
   return function (

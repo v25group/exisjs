@@ -74,35 +74,59 @@ export function Returns(
 }
 
 export const Redirect = (url: string, statusCode = 302): any => {
-  return function (target: any, propertyKey: string | symbol) {
-    const fn = target[propertyKey]
-    fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
-    fn[ROUTE_METADATA_PROP].redirect = { url, statusCode }
+  return function (
+    target: any,
+    propertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard = typeof propertyKey === 'object' && propertyKey !== null
+    const fn = isStandard
+      ? target
+      : (descriptor?.value ?? (propertyKey ? target[propertyKey] : target))
+    if (fn) {
+      fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
+      fn[ROUTE_METADATA_PROP].redirect = { url, statusCode }
+    }
   }
 }
 
 export const Permissions = (...permissions: string[]): any => {
-  return function (target: any, propertyKey?: string | symbol) {
-    if (propertyKey) {
-      const fn = target[propertyKey]
-      fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
-      fn[ROUTE_METADATA_PROP].permissions = permissions
-    } else {
-      const proto = typeof target === 'function' ? target.prototype : target
-      proto[ROUTE_METADATA_PROP] = proto[ROUTE_METADATA_PROP] || {}
-      proto[ROUTE_METADATA_PROP].permissions = permissions
+  return function (
+    target: any,
+    propertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard = typeof propertyKey === 'object' && propertyKey !== null
+    if (propertyKey && !isStandard) {
+      const fn = descriptor?.value ?? target[propertyKey]
+      if (fn) {
+        fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
+        fn[ROUTE_METADATA_PROP].permissions = permissions
+        return
+      }
     }
+    const proto = typeof target === 'function' ? target.prototype : target
+    proto[ROUTE_METADATA_PROP] = proto[ROUTE_METADATA_PROP] || {}
+    proto[ROUTE_METADATA_PROP].permissions = permissions
   }
 }
 
 export const Hosts = (...hosts: string[]): any => {
-  return function (target: any, propertyKey?: string | symbol) {
-    if (propertyKey) {
-      const fn = target[propertyKey]
-      fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
-      fn[ROUTE_METADATA_PROP].hosts = hosts
-    } else {
-      target.prototype[CONTROLLER_HOST] = hosts
+  return function (
+    target: any,
+    propertyKey?: string | symbol | any,
+    descriptor?: PropertyDescriptor | any
+  ) {
+    const isStandard = typeof propertyKey === 'object' && propertyKey !== null
+    if (propertyKey && !isStandard) {
+      const fn = descriptor?.value ?? target[propertyKey]
+      if (fn) {
+        fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
+        fn[ROUTE_METADATA_PROP].hosts = hosts
+        return
+      }
     }
+    const proto = typeof target === 'function' ? target.prototype : target
+    proto[CONTROLLER_HOST] = hosts
   }
 }

@@ -177,7 +177,11 @@ export function createTestContext(appInput: any): TestApp {
     const serverInstance = new app()
     if (serverConfig.providers) {
       for (const p of serverConfig.providers) {
-        instance.provide(p[0], p[1])
+        if (Array.isArray(p)) {
+          instance.provide(p[0], p[1])
+        } else {
+          instance.provide(p, p)
+        }
       }
     }
 

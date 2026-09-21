@@ -359,10 +359,21 @@ export class ExisResponse<TResponse = any> {
     this.end()
   }
 
-  sendStream(readable: NodeJS.ReadableStream): void {
+  /**
+   * Stream a Node.js Readable stream, Web standard ReadableStream, or AsyncIterable
+   * to the client with native HTTP backpressure handling and automatic cancellation
+   * if the client disconnects prematurely.
+   */
+  sendStream(
+    readable: NodeJS.ReadableStream | ReadableStream | AsyncIterable<any>
+  ): void {
     if (!this.isWritable) {
       if (typeof (readable as any).destroy === 'function') {
         ;(readable as any).destroy()
+      } else if (typeof (readable as any).cancel === 'function') {
+        ;(readable as any).cancel().catch(() => {
+          /* ignore */
+        })
       }
       return
     }
@@ -371,14 +382,149 @@ export class ExisResponse<TResponse = any> {
       this.setHeader('Content-Type', 'application/octet-stream')
     }
 
+    // 1. Web Standard ReadableStream (e.g. from fetch, OpenAI, Anthropic, AI SDKs)
+    if (typeof (readable as any).getReader === 'function') {
+      const reader = (readable as any).getReader()
+      let closed = false
+
+      const cleanup = () => {
+        if (closed) return
+        closed = true
+        try {
+          reader.cancel().catch(() => {
+            /* ignore */
+          })
+        } catch {
+          // ignore
+        }
+      }
+
+      this.raw.once('close', cleanup)
+      if (this.req && (this.req as any).raw) {
+        ;(this.req as any).raw.once('close', cleanup)
+        ;(this.req as any).raw.once('aborted', cleanup)
+      }
+
+      ;(async () => {
+        try {
+          while (true) {
+            if (closed || this.raw.destroyed) {
+              cleanup()
+              break
+            }
+            const { done, value } = await reader.read()
+            if (done) {
+              this.raw.removeListener('close', cleanup)
+              if (!this.raw.writableEnded && !this.raw.destroyed) {
+                this.end()
+              }
+              break
+            }
+            if (value !== undefined && value !== null) {
+              const ok = this.raw.write(value)
+              if (!ok && !this.raw.destroyed && !this.raw.writableEnded) {
+                await new Promise<void>((resolve) =>
+                  this.raw.once('drain', resolve)
+                )
+              }
+            }
+          }
+        } catch (err: any) {
+          cleanup()
+          if (this.req && this.req.log) {
+            this.req.log.error({ err }, '[ExisJS] Error in Web ReadableStream')
+          } else {
+            logger.error({ err }, '[ExisJS] Error in Web ReadableStream')
+          }
+          if (this.isWritable && !this.headersSent) {
+            this.statusCode = 500
+            this.end('{"error":"Stream transmission failed"}')
+          } else if (!this.raw.destroyed) {
+            this.raw.destroy(err)
+          }
+        }
+      })()
+      return
+    }
+
+    // 2. AsyncIterable / Generator stream
+    if (
+      typeof (readable as any)[Symbol.asyncIterator] === 'function' &&
+      typeof (readable as any).pipe !== 'function'
+    ) {
+      let closed = false
+      const cleanup = () => {
+        closed = true
+        if (typeof (readable as any).return === 'function') {
+          ;(readable as any).return().catch(() => {
+            /* ignore */
+          })
+        }
+      }
+
+      this.raw.once('close', cleanup)
+      if (this.req && (this.req as any).raw) {
+        ;(this.req as any).raw.once('close', cleanup)
+      }
+
+      ;(async () => {
+        try {
+          for await (const chunk of readable as AsyncIterable<any>) {
+            if (closed || this.raw.destroyed) break
+            if (chunk !== undefined && chunk !== null) {
+              const payload =
+                typeof chunk === 'string' || Buffer.isBuffer(chunk)
+                  ? chunk
+                  : JSON.stringify(chunk)
+              const ok = this.raw.write(payload)
+              if (!ok && !this.raw.destroyed && !this.raw.writableEnded) {
+                await new Promise<void>((resolve) =>
+                  this.raw.once('drain', resolve)
+                )
+              }
+            }
+          }
+          this.raw.removeListener('close', cleanup)
+          if (!this.raw.writableEnded && !this.raw.destroyed) {
+            this.end()
+          }
+        } catch (err: any) {
+          cleanup()
+          if (this.req && this.req.log) {
+            this.req.log.error(
+              { err },
+              '[ExisJS] Error in AsyncIterable stream'
+            )
+          } else {
+            logger.error({ err }, '[ExisJS] Error in AsyncIterable stream')
+          }
+          if (this.isWritable && !this.headersSent) {
+            this.statusCode = 500
+            this.end('{"error":"Stream transmission failed"}')
+          } else if (!this.raw.destroyed) {
+            this.raw.destroy(err)
+          }
+        }
+      })()
+      return
+    }
+
+    // 3. Standard Node.js Readable Stream
     const cleanup = () => {
-      if (typeof (readable as any).destroy === 'function') {
+      if (
+        typeof (readable as any).destroy === 'function' &&
+        !(readable as any).destroyed
+      ) {
         ;(readable as any).destroy()
       }
     }
 
     // Auto-destroy stream if client aborts or response closes early
     this.raw.once('close', cleanup)
+    if (this.req && (this.req as any).raw) {
+      ;(this.req as any).raw.once('close', cleanup)
+      ;(this.req as any).raw.once('aborted', cleanup)
+    }
 
     // Handle stream error to prevent process crash
     if (typeof (readable as any).on === 'function') {
@@ -389,11 +535,14 @@ export class ExisResponse<TResponse = any> {
         } else {
           logger.error({ err }, '[ExisJS] Error in sendStream')
         }
-        if (this.isWritable) {
+        if (this.isWritable && !this.headersSent) {
           this.statusCode = 500
           this.end('{"error":"Stream transmission failed"}')
         } else {
           cleanup()
+          if (!this.raw.destroyed) {
+            this.raw.destroy(err)
+          }
         }
       })
     }
@@ -404,7 +553,16 @@ export class ExisResponse<TResponse = any> {
       })
     }
 
-    readable.pipe(this.raw as unknown as NodeJS.WritableStream)
+    ;(readable as any).pipe(this.raw as unknown as NodeJS.WritableStream)
+  }
+
+  /**
+   * Alias for `sendStream()`.
+   */
+  stream(
+    readable: NodeJS.ReadableStream | ReadableStream | AsyncIterable<any>
+  ): void {
+    this.sendStream(readable)
   }
 
   /**

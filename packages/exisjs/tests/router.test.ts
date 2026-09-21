@@ -7,7 +7,11 @@ import {
 } from './helpers'
 import type { Request, Response, NextFunction } from '../src/types'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
-import { route } from '../src/router/route-builder'
+import {
+  route,
+  createRouter,
+  defineMiddleware,
+} from '../src/router/route-builder'
 // ─── Path Compilation & Route Matching ────────────────────────────────────────
 
 describe('Router route matching', () => {
@@ -416,5 +420,78 @@ describe('runHandlers()', () => {
       params: { userId: 'u1', postId: 'p2' },
     })
     expect(executed).toEqual({ userId: 'u1', postId: 'p2' })
+  })
+
+  it('infers strongly typed custom request context from route middleware and createRouter', () => {
+    interface AuthContext {
+      user: { id: string; role: string; email: string }
+      tenantId: string
+    }
+
+    // 1. Direct route with generic context
+    const protectedRoute = route.get<
+      '/profile',
+      unknown,
+      Record<string, string>,
+      Record<string, string>,
+      AuthContext
+    >('/profile', {
+      handle({ req, user, tenantId }) {
+        // req.user, ctx.user and ctx.tenantId are typed with full autocomplete
+        return {
+          userId: req.user.id,
+          role: user.role,
+          tenant: tenantId,
+        }
+      },
+    })
+
+    const ctx = {
+      req: { user: { id: 'u_123', role: 'admin', email: 'admin@exis.dev' } },
+      user: { id: 'u_123', role: 'admin', email: 'admin@exis.dev' },
+      tenantId: 'tenant_abc',
+    }
+    const res = (protectedRoute as any).handle(ctx)
+    expect(res).toEqual({
+      userId: 'u_123',
+      role: 'admin',
+      tenant: 'tenant_abc',
+    })
+
+    // 2. Strongly typed router via createRouter<AuthContext>()
+    const { route: authRoute, controller } = createRouter<AuthContext>()
+    const scopedRoute = authRoute.get('/scoped', {
+      handle({ req, user }) {
+        return { userEmail: req.user.email, role: user.role }
+      },
+    })
+
+    const scopedRes = (scopedRoute as any).handle(ctx)
+    expect(scopedRes).toEqual({
+      userEmail: 'admin@exis.dev',
+      role: 'admin',
+    })
+
+    // 3. Direct route with automatic middleware context inference
+    const authMw = defineMiddleware<AuthContext>((req, _res, next) => {
+      req.user = { id: 'u_999', role: 'editor', email: 'editor@exis.dev' }
+      next()
+    })
+
+    const autoInferredRoute = route.get('/auto', {
+      middlewares: [authMw],
+      handle({ req }) {
+        return { id: req.user.id, role: req.user.role }
+      },
+    })
+
+    const autoRes = (autoInferredRoute as any).handle({
+      req: { user: { id: 'u_999', role: 'editor', email: 'editor@exis.dev' } },
+    })
+    expect(autoRes).toEqual({ id: 'u_999', role: 'editor' })
+
+    expect(protectedRoute.method).toBe('get')
+    expect(scopedRoute.method).toBe('get')
+    expect(autoInferredRoute.method).toBe('get')
   })
 })

@@ -5,7 +5,7 @@ import { tex } from '../validator/index'
 import { pathToFileURL } from 'node:url'
 import { executionContext } from '../server/context'
 import type { Handler } from '../types'
-import { formatDevError } from '../dev/error-overlay'
+import { formatDevError } from '../error/overlay'
 
 export class RouteScanner {
   public lazyRoutes = new Map<string, { filePath: string; loaded: boolean }>()
@@ -452,6 +452,20 @@ export class RouteScanner {
           } else if (boundaryMod && typeof boundaryMod === 'object') {
             boundaryConfig = boundaryMod
           }
+
+          if (
+            boundaryConfig &&
+            boundaryConfig.providers &&
+            Array.isArray(boundaryConfig.providers)
+          ) {
+            for (const p of boundaryConfig.providers) {
+              if (Array.isArray(p)) {
+                this.app.container.provide(p[0], p[1])
+              } else {
+                this.app.container.provide(p, p)
+              }
+            }
+          }
           const isExcluded = (reqPath: string, reqMethod: string) => {
             if (!boundaryConfig || !boundaryConfig.exclude) return false
             for (const rule of boundaryConfig.exclude) {
@@ -641,6 +655,21 @@ export class RouteScanner {
           }
 
           if (boundaryConfig) {
+            if (
+              boundaryConfig.blockProbes ||
+              boundaryConfig.blockSuspiciousProbes
+            ) {
+              const probeOpts =
+                typeof boundaryConfig.blockProbes === 'object'
+                  ? boundaryConfig.blockProbes
+                  : typeof boundaryConfig.blockSuspiciousProbes === 'object'
+                    ? boundaryConfig.blockSuspiciousProbes
+                    : {}
+              const { blockSuspiciousProbes } =
+                await import('../middleware/security')
+              allMiddlewares.push(blockSuspiciousProbes(probeOpts))
+            }
+
             const bMiddleware =
               boundaryConfig.middleware || boundaryConfig.middlewares
             if (bMiddleware) {

@@ -63,8 +63,7 @@ export function packageJsonTemplate(
   return JSON.stringify(pkg, null, 2)
 }
 
-export function tsconfigTemplate(useSrc: boolean, alias: string): string {
-  const aliasPath = useSrc ? './src/*' : './*'
+export function tsconfigTemplate(alias = '@/*'): string {
   return JSON.stringify(
     {
       compilerOptions: {
@@ -82,11 +81,11 @@ export function tsconfigTemplate(useSrc: boolean, alias: string): string {
         isolatedModules: true,
         noEmit: true,
         paths: {
-          [alias]: [aliasPath],
+          [alias]: ['./src/*'],
         },
       },
-      include: useSrc ? ['src/**/*.ts', 'exis.config.ts'] : ['**/*.ts'],
-      exclude: ['node_modules', '.exis', 'dist'],
+      include: ['src/**/*.ts', 'tests/**/*.ts', 'exis.config.ts'],
+      exclude: ['node_modules', '.exis', 'dist', 'build'],
     },
     null,
     2
@@ -128,19 +127,23 @@ export function envTsTemplate(useTypeScript: boolean): string {
   if (useTypeScript) {
     return `import { tex } from 'exisjs/validator'
 
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
-  NODE_ENV: tex.enum(['development', 'production', 'test'], { optional: true }),
-  CORS_ORIGIN: tex.string({ optional: true }),
+export const env = tex.env({
+  PORT: tex.number({ default: 4000 }),
+  NODE_ENV: tex.enum(['development', 'production', 'test'] as const, {
+    default: 'development',
+  }),
+  CORS_ORIGIN: tex.string({ default: '*' }),
 }).parse(process.env)
 `
   } else {
     return `import { tex } from 'exisjs/validator'
 
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
-  NODE_ENV: tex.enum(['development', 'production', 'test'], { optional: true }),
-  CORS_ORIGIN: tex.string({ optional: true }),
+export const env = tex.env({
+  PORT: tex.number({ default: 4000 }),
+  NODE_ENV: tex.enum(['development', 'production', 'test'], {
+    default: 'development',
+  }),
+  CORS_ORIGIN: tex.string({ default: '*' }),
 }).parse(process.env)
 `
   }
@@ -267,12 +270,14 @@ CORS_ORIGIN=*
 export function gitignoreTemplate(): string {
   return `# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Exis JS Cache
+# Exis JS Cache & Artifacts
 .exis/
+dist/
+build/
 
-# dependencies
-/node_modules
-/.pnp
+# Dependencies
+node_modules/
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -280,23 +285,28 @@ export function gitignoreTemplate(): string {
 !.yarn/releases
 !.yarn/versions
 
-# testing
-/coverage
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
 
-# misc
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# OS Artifacts
 .DS_Store
+Thumbs.db
 *.pem
 
-# debug
+# Debug Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
-# typescript
+# TypeScript
 *.tsbuildinfo
 `
 }

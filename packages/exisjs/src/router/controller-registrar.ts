@@ -223,6 +223,30 @@ export class ControllerRegistrar {
                       rawArg = isMulti ? files : files[0]
                     }
                     break
+                  case 'cookies':
+                  case 'cookie':
+                    rawArg = param.name
+                      ? (req.cookies as any)?.[param.name]
+                      : req.cookies
+                    break
+                  case 'state': {
+                    const storeState = executionContext.getStore()?.state
+                    const reqState = (req as any).state
+                    const stateObj = {
+                      ...(storeState || {}),
+                      ...(reqState || {}),
+                    }
+                    rawArg = param.name ? stateObj[param.name] : stateObj
+                    break
+                  }
+                  case 'app':
+                    rawArg = this.app
+                    break
+                  case 'fields':
+                    rawArg = param.name
+                      ? (req as any).fields?.[param.name]
+                      : (req as any).fields
+                    break
                   case 'customParam':
                     if (typeof param.customFactory === 'function') {
                       const executionCtx = {
@@ -330,7 +354,22 @@ export class ControllerRegistrar {
               }
 
               if (result !== undefined) {
-                res.json(result)
+                if (
+                  result &&
+                  (typeof result.pipe === 'function' ||
+                    (typeof result.getReader === 'function' &&
+                      typeof result.tee === 'function') ||
+                    (typeof result[Symbol.asyncIterator] === 'function' &&
+                      !Array.isArray(result)))
+                ) {
+                  ;(res as any).sendStream(result)
+                } else if (!(
+                  result &&
+                  typeof (result as any).send === 'function' &&
+                  typeof (result as any).onClose === 'function'
+                )) {
+                  res.json(result)
+                }
               }
             }
           } catch (err) {
@@ -403,6 +442,8 @@ export class ControllerRegistrar {
 
         let extractedBodySchema: any = undefined
         let extractedQuerySchema: any = undefined
+        let extractedParamsSchema: any = undefined
+        let extractedHeadersSchema: any = undefined
 
         for (const param of paramMetadata) {
           if (!param) continue
@@ -418,6 +459,18 @@ export class ControllerRegistrar {
             )
             if (queryPipe) extractedQuerySchema = queryPipe
           }
+          if (param.type === 'param') {
+            const paramPipe = param.pipes?.find(
+              (p: any) => p && typeof p.parse === 'function'
+            )
+            if (paramPipe) extractedParamsSchema = paramPipe
+          }
+          if (param.type === 'header') {
+            const headerPipe = param.pipes?.find(
+              (p: any) => p && typeof p.parse === 'function'
+            )
+            if (headerPipe) extractedHeadersSchema = headerPipe
+          }
         }
 
         const extractedResponseSchema = routeMeta.responseSchema
@@ -427,6 +480,8 @@ export class ControllerRegistrar {
           finalHost ||
           extractedBodySchema ||
           extractedQuerySchema ||
+          extractedParamsSchema ||
+          extractedHeadersSchema ||
           extractedResponseSchema
         ) {
           schema = schema || {}
@@ -435,6 +490,10 @@ export class ControllerRegistrar {
             schema.body = extractedBodySchema
           if (extractedQuerySchema && !schema.query)
             schema.query = extractedQuerySchema
+          if (extractedParamsSchema && !schema.params)
+            schema.params = extractedParamsSchema
+          if (extractedHeadersSchema && !schema.headers)
+            schema.headers = extractedHeadersSchema
           if (extractedResponseSchema && !schema.response)
             schema.response = extractedResponseSchema
 

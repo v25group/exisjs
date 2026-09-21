@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs'
 import { error, c } from '../utils'
@@ -48,35 +48,51 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
 
   let isShuttingDown = false
 
-  const handleExit = (code: number | null, signal: string | null) => {
-    if (isShuttingDown) {
-      process.exit(0)
-    }
-
-    if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGINT') {
-      error(`Process exited with code ${code}`)
-      process.exit(code ?? 1)
-    } else {
-      process.exit(0)
-    }
+  let hasExited = false
+  const finishExit = () => {
+    if (hasExited) return
+    hasExited = true
+    const time = getFormattedTime()
+    const primary = '\x1b[38;2;160;70;255m'
+    console.log(
+      `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
+    )
+    process.exit(0)
   }
 
-  child.on('close', (code, signal) => handleExit(code, signal))
-  child.on('exit', (code, signal) => handleExit(code, signal))
+  child.on('close', finishExit)
+  child.on('exit', () => {
+    // Fallback: give 'close' event a moment to fire (stdio drain), then exit
+    setTimeout(finishExit, 300)
+  })
+
+  // Handle unexpected child crashes (non-shutdown)
+  child.on('exit', (code, signal) => {
+    if (!isShuttingDown) {
+      if (code !== 0 && signal !== 'SIGTERM' && signal !== 'SIGINT') {
+        error(`Process exited with code ${code}`)
+        process.exit(code ?? 1)
+      }
+    }
+  })
 
   const shutdown = () => {
     if (isShuttingDown) return
     isShuttingDown = true
 
-    const time = getFormattedTime()
-    const primary = '\x1b[38;2;160;70;255m'
-    console.log(
-      `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
-    )
-
+    // Send IPC shutdown message to child
     try {
       if (child.connected) {
         child.send({ type: 'exis:shutdown' })
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // Disconnect IPC channel to prevent UV_HANDLE_CLOSING assertion on Windows
+    try {
+      if (child.connected) {
+        child.disconnect()
       }
     } catch {
       /* ignore */
@@ -89,6 +105,27 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     } catch {
       /* ignore */
     }
+
+    // Safety timeout: force exit if child takes longer than 10s.
+    // IMPORTANT: Do NOT .unref() — this keeps the parent event loop alive
+    // so we wait for the child to finish its graceful shutdown before exiting.
+    const forceTimeout = setTimeout(() => {
+      try {
+        if (process.platform === 'win32') {
+          spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+            stdio: 'ignore',
+          })
+        } else {
+          child.kill('SIGKILL')
+        }
+      } catch {
+        /* ignore */
+      }
+      process.exit(0)
+    }, 10_000)
+
+    // Clean up force timeout when child exits naturally
+    child.once('exit', () => clearTimeout(forceTimeout))
   }
 
   process.on('SIGINT', shutdown)

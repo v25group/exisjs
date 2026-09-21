@@ -147,7 +147,12 @@ export class Container {
     let resolvedValue: any
     let scope: 'singleton' | 'request' | 'transient' = 'singleton'
 
-    if (provider && typeof provider === 'object') {
+    if (typeof provider === 'function') {
+      const classScope =
+        (provider as any).prototype?.[SCOPE_METADATA] || 'singleton'
+      scope = classScope
+      resolvedValue = this.instantiateClass(provider as any, requestCache)
+    } else if (provider && typeof provider === 'object') {
       if ('scope' in provider && provider.scope) {
         scope = provider.scope
       }

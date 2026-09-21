@@ -11,7 +11,7 @@ export interface AliasMapping {
 
 /**
  * Parses tsconfig.json and extracts path alias mappings.
- * Supports patterns like: "@/*": ["./src/*"]
+ * Supports patterns like: "@/*": ["./src/*"], "@models/*": ["./src/models/*"], "@db": ["./src/db/index.ts"]
  */
 export function parseAliases(cwd: string): AliasMapping[] {
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
@@ -44,19 +44,20 @@ export function parseAliases(cwd: string): AliasMapping[] {
 
   if (paths && typeof paths === 'object') {
     for (const [aliasPattern, targets] of Object.entries(paths)) {
-      // We only handle wildcard patterns like "@/*" -> ["./src/*"]
-      if (!aliasPattern.endsWith('/*')) continue
       const targetArray = targets as string[]
       if (!targetArray?.length) continue
 
       const firstTarget = targetArray[0]
-      if (!firstTarget.endsWith('/*')) continue
-
-      const prefix = aliasPattern.slice(0, -1) // "@/*" -> "@/"
-      const targetRelative = firstTarget.slice(0, -1) // "./src/*" -> "./src/"
-      const targetDir = path.resolve(baseDir, targetRelative)
-
-      aliases.push({ prefix, targetDir })
+      if (aliasPattern.endsWith('/*') && firstTarget.endsWith('/*')) {
+        const prefix = aliasPattern.slice(0, -1) // "@/*" -> "@/"
+        const targetRelative = firstTarget.slice(0, -1) // "./src/*" -> "./src/"
+        const targetDir = path.resolve(baseDir, targetRelative)
+        aliases.push({ prefix, targetDir })
+      } else if (!aliasPattern.includes('*') && !firstTarget.includes('*')) {
+        const prefix = aliasPattern
+        const targetDir = path.resolve(baseDir, firstTarget)
+        aliases.push({ prefix, targetDir })
+      }
     }
   }
 
@@ -66,7 +67,9 @@ export function parseAliases(cwd: string): AliasMapping[] {
     aliases.push({ prefix: '@/', targetDir: defaultSrcDir })
   }
 
-  return aliases
+  // Sort aliases by prefix length descending so longer/more specific aliases match first
+  // e.g. "@services/" matches before "@/"
+  return aliases.sort((a, b) => b.prefix.length - a.prefix.length)
 }
 
 /**
@@ -158,8 +161,26 @@ function resolveSpecifier(
     if (specifier.startsWith(alias.prefix)) {
       const remainder = specifier.slice(alias.prefix.length)
       const targetSourcePath = path.join(alias.targetDir, remainder)
-      const relFromCwd = path.relative(cwd, targetSourcePath)
-      const targetOutputPath = path.join(outDir, relFromCwd)
+
+      const relFromSource = path.relative(cwd, targetSourcePath)
+      // When files are compiled from src/ to outDir (dist/), strip leading 'src/' if target files are placed directly in outDir
+      // Check both outDir/relFromCwd and outDir/(stripped relFromCwd)
+      let targetOutputPath = path.join(outDir, relFromSource)
+      if (
+        !fs.existsSync(targetOutputPath) &&
+        !fs.existsSync(targetOutputPath + '.js') &&
+        !fs.existsSync(targetOutputPath + '.mjs')
+      ) {
+        const strippedSrc = relFromSource.replace(/^src[\\/]/, '')
+        const altPath = path.join(outDir, strippedSrc)
+        if (
+          fs.existsSync(altPath) ||
+          fs.existsSync(altPath + '.js') ||
+          fs.existsSync(altPath + '.mjs')
+        ) {
+          targetOutputPath = altPath
+        }
+      }
 
       let resolvedTarget = targetOutputPath
       const ext = path.extname(resolvedTarget)

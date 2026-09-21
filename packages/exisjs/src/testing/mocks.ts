@@ -80,16 +80,28 @@ export function createMockResponse(): MockResponse {
   res._statusCode = 200
   res._ended = false
 
-  // Override end to capture output instead of writing to socket
+  // Override write & end to capture output instead of writing to socket
+  const originalRawWrite = res.raw.write.bind(res.raw)
+  res.raw.write = function (chunk: any, ...args: any[]) {
+    if (chunk) {
+      if (Buffer.isBuffer(chunk)) {
+        res._body += chunk.toString('utf8')
+      } else if (typeof chunk === 'string') {
+        res._body += chunk
+      }
+    }
+    return originalRawWrite(chunk, ...args)
+  }
+
   const originalEnd = res.end.bind(res)
   res.end = function (...args: unknown[]) {
     res._ended = true
     const chunk = args[0]
     if (chunk) {
       if (Buffer.isBuffer(chunk)) {
-        res._body = chunk.toString('utf8')
+        res._body += chunk.toString('utf8')
       } else if (typeof chunk === 'string') {
-        res._body = chunk
+        res._body += chunk
       }
     }
     res._statusCode = res.statusCode

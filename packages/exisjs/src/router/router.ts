@@ -12,6 +12,7 @@ import { RadixTree } from './radix'
 import { SSEStream } from '../server/sse'
 import { fileUpload, parseSizeToBytes } from '../middleware/upload'
 import { routeTimeout } from '../middleware/security'
+import { cors } from '../middleware/middleware'
 let fastJsonStringify: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -123,6 +124,8 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'body'
             err.received = body
+            err.routePath = fullPath
+            err.routeMethod = method
           }
           next(err as Error)
         }
@@ -167,6 +170,8 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'query'
             err.received = req.query
+            err.routePath = fullPath
+            err.routeMethod = method
           }
           next(err as Error)
         }
@@ -213,6 +218,8 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'params'
             err.received = req.params
+            err.routePath = fullPath
+            err.routeMethod = method
           }
           next(err as Error)
         }
@@ -266,6 +273,12 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
     if (routeTimeoutSetting !== undefined) {
       actualHandlers.unshift(routeTimeout(routeTimeoutSetting))
+    }
+
+    if (schema?.cors) {
+      actualHandlers.unshift(
+        cors(typeof schema.cors === 'object' ? schema.cors : {})
+      )
     }
 
     const routeInfo: Route = {
@@ -512,6 +525,25 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   }
 }
 
+function isStreamLike(val: any): boolean {
+  if (val === null || val === undefined || typeof val !== 'object') return false
+  if (val instanceof SSEStream) return false
+  return (
+    typeof val.pipe === 'function' ||
+    (typeof val.getReader === 'function' && typeof val.tee === 'function') ||
+    (typeof val[Symbol.asyncIterator] === 'function' && !Array.isArray(val))
+  )
+}
+
+function handleReturnedData(data: unknown, res: Response): void {
+  if (data === undefined || data === res || res.headersSent) return
+  if (isStreamLike(data)) {
+    ;(res as any).sendStream(data)
+  } else if (!(data instanceof SSEStream)) {
+    res.json(data)
+  }
+}
+
 export function runHandlers(
   handlers: Handler<any, any, any>[],
   req: Request,
@@ -542,18 +574,14 @@ export function runHandlers(
     if (result instanceof Promise) {
       result.then(
         (data: unknown) => {
-          if (data !== undefined && data !== res && !res.headersSent) {
-            res.json(data)
-          }
+          handleReturnedData(data, res)
         },
         (e: unknown) => {
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
     } else {
-      if (result !== undefined && result !== res && !res.headersSent) {
-        res.json(result)
-      }
+      handleReturnedData(result, res)
     }
     return
   }
@@ -620,26 +648,14 @@ export function runHandlers(
     if (result instanceof Promise) {
       result.then(
         (data: unknown) => {
-          if (
-            data !== undefined &&
-            data !== res &&
-            !(data instanceof SSEStream) &&
-            !res.headersSent
-          ) {
-            res.json(data)
-          }
+          handleReturnedData(data, res)
         },
         (e: unknown) => {
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
-    } else if (
-      result !== undefined &&
-      result !== res &&
-      !(result instanceof SSEStream) &&
-      !res.headersSent
-    ) {
-      res.json(result)
+    } else {
+      handleReturnedData(result, res)
     }
   }
 

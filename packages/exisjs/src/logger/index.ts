@@ -147,5 +147,17 @@ export function resetLogger(): void {
 
 // ─── Re-exports ───────────────────────────────────────────────────────────────
 
-export { createLogger, createSilentLogger, isLogger } from '../utils/logger'
+export {
+  createLogger,
+  createSilentLogger,
+  isLogger,
+  formatBytes,
+  formatLatency,
+  formatMethod,
+  formatStatus,
+  formatUrl,
+  formatIp,
+  extractValidationSummary,
+  extractErrorMessage,
+} from '../utils/logger'
 export type { Logger, LoggerConfig } from '../types'

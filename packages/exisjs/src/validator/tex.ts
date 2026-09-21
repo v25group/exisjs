@@ -13,7 +13,10 @@ import {
   TexAny,
   TexFile,
   ResolveSchema,
+  ResolveTexType,
 } from './tex-types'
+
+export type TexDefaultValue<T> = T | (() => T)
 
 export interface TexBaseOptions {
   optional?: boolean
@@ -34,28 +37,33 @@ export interface TexStringOptions extends TexBaseOptions {
   mask?: boolean
   preventSql?: boolean
   preventTraversal?: boolean
+  default?: TexDefaultValue<string>
 }
 
 export interface TexNumberOptions extends TexBaseOptions {
   min?: number
   max?: number
   coerce?: boolean
-  default?: number
+  default?: TexDefaultValue<number>
 }
 
 export interface TexBooleanOptions extends TexBaseOptions {
   coerce?: boolean
+  default?: TexDefaultValue<boolean>
 }
 
-export interface TexArrayOptions extends TexBaseOptions {
+export interface TexArrayOptions<T = any> extends TexBaseOptions {
   min?: number
   max?: number
   dedupe?: boolean
   coerce?: boolean
+  default?: TexDefaultValue<ResolveTexType<T>[]>
 }
 
-export interface TexEnumOptions extends TexBaseOptions {
-  default?: string
+export interface TexEnumOptions<
+  T extends string = string,
+> extends TexBaseOptions {
+  default?: TexDefaultValue<T>
 }
 
 export interface TexObjectOptions {
@@ -78,6 +86,7 @@ export interface TexDateOptions extends TexBaseOptions {
   minDate?: string
   maxDate?: string
   coerce?: boolean
+  default?: TexDefaultValue<Date | string | number>
 }
 
 export class TexBuilder {
@@ -85,7 +94,7 @@ export class TexBuilder {
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'string'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
@@ -100,7 +109,7 @@ export class TexBuilder {
     if (opts?.mask) base += ' | mask'
     if (opts?.preventSql) base += ' | preventSql'
     if (opts?.preventTraversal) base += ' | preventTraversal'
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
@@ -109,14 +118,13 @@ export class TexBuilder {
     opts?: O
   ): TexNumber<O['optional'] extends true ? true : false> {
     let base = 'number'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.coerce) base += ' | coerce'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
-    if (opts?.default !== undefined) base += ` | default:${opts.default}`
-    return new TexType(base) as unknown as TexNumber<
+    return new TexType(base, opts?.default) as unknown as TexNumber<
       O['optional'] extends true ? true : false
     >
   }
@@ -125,11 +133,11 @@ export class TexBuilder {
     opts?: O
   ): TexBoolean<O['optional'] extends true ? true : false> {
     let base = 'boolean'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.coerce) base += ' | coerce'
-    return new TexType(base) as unknown as TexBoolean<
+    return new TexType(base, opts?.default) as unknown as TexBoolean<
       O['optional'] extends true ? true : false
     >
   }
@@ -138,13 +146,13 @@ export class TexBuilder {
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'email'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.trim) base += ' | trim'
     if (opts?.toLowerCase) base += ' | lowercase'
     if (opts?.mask) base += ' | mask'
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
@@ -155,11 +163,11 @@ export class TexBuilder {
     },
   >(opts?: O): TexString<O['optional'] extends true ? true : false> {
     let base = 'uuid'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.version) base += ` | version:${opts.version}`
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
@@ -168,10 +176,10 @@ export class TexBuilder {
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'cuid'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
@@ -180,11 +188,11 @@ export class TexBuilder {
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'creditcard'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.mask) base += ' | mask'
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
@@ -193,7 +201,7 @@ export class TexBuilder {
     opts?: O
   ): TexString<O['optional'] extends true ? true : false> {
     let base = 'password'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
@@ -202,12 +210,12 @@ export class TexBuilder {
     if (opts?.requireSymbols) base += ' | requireSymbols'
     if (opts?.requireUppercase) base += ' | requireUppercase'
     if (opts?.requireLowercase) base += ' | requireLowercase'
-    return new TexType(base) as unknown as TexString<
+    return new TexType(base, opts?.default) as unknown as TexString<
       O['optional'] extends true ? true : false
     >
   }
 
-  array<T, O extends TexArrayOptions = TexArrayOptions>(
+  array<T, O extends TexArrayOptions<T> = TexArrayOptions<T>>(
     schema: T,
     opts?: O
   ): TexArray<T, O['optional'] extends true ? true : false> {
@@ -228,14 +236,14 @@ export class TexBuilder {
           ? resolvedItem._raw
           : (resolvedItem as string)
     let base = `array<${itemSchema}>`
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
     if (opts?.dedupe) base += ' | dedupe'
     if (opts?.coerce) base += ' | coerce'
-    const res = new TexType(base) as unknown as TexArray<
+    const res = new TexType(base, opts?.default) as unknown as TexArray<
       T,
       O['optional'] extends true ? true : false
     >
@@ -243,16 +251,15 @@ export class TexBuilder {
     return res
   }
 
-  enum<T extends string, O extends TexEnumOptions = TexEnumOptions>(
+  enum<T extends string, O extends TexEnumOptions<T> = TexEnumOptions<T>>(
     values: T[],
     opts?: O
   ): TexEnum<T, O['optional'] extends true ? true : false> {
     let base = `enum:${values.join(',')}`
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    if (opts?.default) base += ` | default:${opts.default}`
-    return new TexType(base) as unknown as TexEnum<
+    return new TexType(base, opts?.default) as unknown as TexEnum<
       T,
       O['optional'] extends true ? true : false
     >
@@ -294,13 +301,13 @@ export class TexBuilder {
     opts?: O
   ): TexDate<O['optional'] extends true ? true : false> {
     let base = 'date'
-    if (opts?.optional) base += '?'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.coerce) base += ' | coerce'
     if (opts?.minDate) base += ` | minDate:${opts.minDate}`
     if (opts?.maxDate) base += ` | maxDate:${opts.maxDate}`
-    return new TexType(base) as unknown as TexDate<
+    return new TexType(base, opts?.default) as unknown as TexDate<
       O['optional'] extends true ? true : false
     >
   }
@@ -364,6 +371,57 @@ export class TexBuilder {
     return new TexEngine(compiledSchema, schema, opts?.strict)
   }
 
+  /**
+   * Dedicated Environment Schema parser (tex.env).
+   * Automatically coerces numbers, booleans, dates, and arrays from process.env string values,
+   * while preserving strict type validation and defaults.
+   */
+  env<T extends Record<string, any>>(
+    schema: T,
+    opts?: TexObjectOptions
+  ): TexEngine<ResolveSchema<T>> {
+    const coercedSchema: Record<string, any> = {}
+    for (const [key, value] of Object.entries(schema)) {
+      if (value instanceof TexType) {
+        let raw = value._raw
+        // Auto-inject coercion if not already present
+        if (
+          (raw.startsWith('number') ||
+            raw.startsWith('boolean') ||
+            raw.startsWith('date') ||
+            raw.startsWith('array<')) &&
+          !raw.includes('coerce')
+        ) {
+          raw = `${raw} | coerce`
+        }
+        const cloned = new TexType(raw, value.defaultValue)
+        cloned.sanitizers = [...value.sanitizers]
+        cloned.refinements = [...value.refinements]
+        if ((value as any)._item) {
+          ;(cloned as any)._item = (value as any)._item
+        }
+        coercedSchema[key] = cloned
+      } else if (value instanceof TexEngine) {
+        coercedSchema[key] = value
+      } else if (typeof value === 'string') {
+        let raw = value
+        if (
+          (raw.startsWith('number') ||
+            raw.startsWith('boolean') ||
+            raw.startsWith('date') ||
+            raw.startsWith('array<')) &&
+          !raw.includes('coerce')
+        ) {
+          raw = `${raw} | coerce`
+        }
+        coercedSchema[key] = new TexType(raw)
+      } else {
+        coercedSchema[key] = value
+      }
+    }
+    return this.object(coercedSchema as T, opts)
+  }
+
   pagination(options?: { defaultLimit?: number; maxLimit?: number }) {
     const defaultLimit = options?.defaultLimit ?? 10
     const maxLimit = options?.maxLimit ?? 100
@@ -382,13 +440,68 @@ export class TexBuilder {
   }
 }
 
+export interface ValidationErrorDescriptor {
+  path: string
+  message: string
+  expected?: string
+  received?: string
+  code?: string
+}
+
+function getNestedValue(obj: any, path: string): any {
+  if (!obj || typeof obj !== 'object' || !path) return undefined
+  if (path in obj) return obj[path]
+  try {
+    const keys = path.replace(/\[(\w+)\]/g, '.$1').split('.')
+    let curr = obj
+    for (const k of keys) {
+      if (curr === undefined || curr === null) return undefined
+      curr = curr[k]
+    }
+    return curr
+  } catch {
+    return undefined
+  }
+}
+
+function formatReceivedValue(val: any): string {
+  if (val === undefined) return 'undefined'
+  if (val === null) return 'null'
+  if (typeof val === 'string') return JSON.stringify(val)
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val)
+  if (Array.isArray(val)) {
+    try {
+      const str = JSON.stringify(val)
+      return str.length > 30 ? `Array(${val.length})` : str
+    } catch {
+      return `Array(${val.length})`
+    }
+  }
+  if (typeof val === 'object') {
+    try {
+      const str = JSON.stringify(val)
+      return str.length > 30 ? '[object Object]' : str
+    } catch {
+      return '[object Object]'
+    }
+  }
+  return String(val)
+}
+
 export class ValidatorError extends Error {
-  constructor(public errors: { path: string; message: string }[]) {
+  public readonly errors: ValidationErrorDescriptor[]
+  public httpPart?: string
+  public routePath?: string
+  public routeMethod?: string
+  public received?: any
+
+  constructor(errors: ValidationErrorDescriptor[]) {
     super(
       'Validation Error: ' +
         errors.map((e) => `${e.path}: ${e.message}`).join(', ')
     )
     this.name = 'ValidatorError'
+    this.errors = errors
   }
 }
 
@@ -476,9 +589,19 @@ export class TexEngine<T = any> {
   }
 
   parse(data: any): T {
-    // 1. Run pre-validation sanitizers on the raw payload (if it's an object)
+    // 1. Apply defaults and run pre-validation sanitizers on the raw payload (if it's an object)
     if (data && typeof data === 'object') {
       for (const [key, val] of Object.entries(this.rawSchema)) {
+        // Apply default value / lazy factory function if field is omitted or undefined
+        if (data[key] === undefined) {
+          if (val instanceof TexType && val.defaultValue !== undefined) {
+            data[key] =
+              typeof val.defaultValue === 'function'
+                ? val.defaultValue()
+                : val.defaultValue
+          }
+        }
+
         if (typeof data[key] === 'string' && data[key].trim() === '') {
           const raw = val instanceof TexType ? val._raw : String(val)
           if (
@@ -496,6 +619,13 @@ export class TexEngine<T = any> {
               data[key] = null
             } else {
               delete data[key]
+              // If deleted but default is defined, apply default
+              if (val instanceof TexType && val.defaultValue !== undefined) {
+                data[key] =
+                  typeof val.defaultValue === 'function'
+                    ? val.defaultValue()
+                    : val.defaultValue
+              }
             }
           }
         }
@@ -509,7 +639,13 @@ export class TexEngine<T = any> {
                 const d = new Date(data[key])
                 if (isNaN(d.getTime())) {
                   throw new ValidatorError([
-                    { path: key, message: 'Must be a valid date' },
+                    {
+                      path: key,
+                      message: 'Must be a valid date',
+                      expected: 'valid date string or timestamp',
+                      received: formatReceivedValue(data[key]),
+                      code: 'INVALID_DATE',
+                    },
                   ])
                 }
                 data[key] = d
@@ -521,12 +657,24 @@ export class TexEngine<T = any> {
               typeof data[key] !== 'number'
             ) {
               throw new ValidatorError([
-                { path: key, message: 'Must be a valid date' },
+                {
+                  path: key,
+                  message: 'Must be a valid date',
+                  expected: 'valid date or date string',
+                  received: formatReceivedValue(data[key]),
+                  code: 'INVALID_TYPE',
+                },
               ])
             }
             if (data[key] instanceof Date && isNaN(data[key].getTime())) {
               throw new ValidatorError([
-                { path: key, message: 'Must be a valid date' },
+                {
+                  path: key,
+                  message: 'Must be a valid date',
+                  expected: 'valid date string or timestamp',
+                  received: formatReceivedValue(data[key]),
+                  code: 'INVALID_DATE',
+                },
               ])
             }
             if (val._raw.includes('minDate:')) {
@@ -536,7 +684,13 @@ export class TexEngine<T = any> {
                 new Date(data[key]).getTime() < new Date(minStr).getTime()
               ) {
                 throw new ValidatorError([
-                  { path: key, message: `Date must be after ${minStr}` },
+                  {
+                    path: key,
+                    message: `Date must be after ${minStr}`,
+                    expected: `>= ${minStr}`,
+                    received: formatReceivedValue(data[key]),
+                    code: 'DATE_TOO_EARLY',
+                  },
                 ])
               }
             }
@@ -547,7 +701,13 @@ export class TexEngine<T = any> {
                 new Date(data[key]).getTime() > new Date(maxStr).getTime()
               ) {
                 throw new ValidatorError([
-                  { path: key, message: `Date must be before ${maxStr}` },
+                  {
+                    path: key,
+                    message: `Date must be before ${maxStr}`,
+                    expected: `<= ${maxStr}`,
+                    received: formatReceivedValue(data[key]),
+                    code: 'DATE_TOO_LATE',
+                  },
                 ])
               }
             }
@@ -654,36 +814,116 @@ export class TexEngine<T = any> {
 
       let path = 'root'
       let message = err.message || 'Validation failed'
+      let expected: string | undefined
+      let code = 'VALIDATION_ERROR'
 
       if (message.startsWith('Missing required field: ')) {
         path = message.replace('Missing required field: ', '').trim()
         message = 'Expected value, received undefined'
+        expected = 'defined'
+        code = 'MISSING_REQUIRED_FIELD'
       } else if (message.startsWith("Field '")) {
         const match = message.match(/Field '([^']+)' (.+)/)
         if (match) {
           path = match[1]
-          message = match[2].charAt(0).toUpperCase() + match[2].slice(1)
+          const constraint = match[2]
+          message = constraint.charAt(0).toUpperCase() + constraint.slice(1)
+
+          if (constraint.startsWith('must be a string')) {
+            expected = 'string'
+            code = 'INVALID_TYPE'
+          } else if (constraint.startsWith('must be a number')) {
+            expected = 'number'
+            code = 'INVALID_TYPE'
+          } else if (constraint.startsWith('must be a boolean')) {
+            expected = 'boolean'
+            code = 'INVALID_TYPE'
+          } else if (
+            constraint.startsWith('must be an array') ||
+            constraint.includes('array must have') ||
+            constraint.includes('array exceeds')
+          ) {
+            expected = 'array'
+            code = constraint.includes('array must have')
+              ? 'ARRAY_TOO_SHORT'
+              : constraint.includes('array exceeds')
+                ? 'ARRAY_TOO_LONG'
+                : 'INVALID_TYPE'
+          } else if (constraint.startsWith('must be an object')) {
+            expected = 'object'
+            code = 'INVALID_TYPE'
+          } else if (constraint.startsWith('must be a valid email')) {
+            expected = 'valid email address'
+            code = 'INVALID_EMAIL'
+          } else if (constraint.startsWith('must be one of')) {
+            expected = constraint.replace('must be one of', '').trim()
+            code = 'INVALID_ENUM_VALUE'
+          } else if (
+            constraint.startsWith('must be at least') ||
+            constraint.startsWith('must be >=')
+          ) {
+            expected = constraint
+            code = 'VALUE_TOO_SMALL'
+          } else if (
+            constraint.startsWith('must be at most') ||
+            constraint.startsWith('must be <=')
+          ) {
+            expected = constraint
+            code = 'VALUE_TOO_LARGE'
+          } else if (constraint.startsWith('must contain a number')) {
+            expected = 'must contain at least one digit'
+            code = 'PASSWORD_REQUIRES_NUMBER'
+          } else if (constraint.startsWith('must contain an uppercase')) {
+            expected = 'must contain at least one uppercase letter'
+            code = 'PASSWORD_REQUIRES_UPPERCASE'
+          } else if (constraint.startsWith('must contain a lowercase')) {
+            expected = 'must contain at least one lowercase letter'
+            code = 'PASSWORD_REQUIRES_LOWERCASE'
+          } else if (constraint.startsWith('must contain a symbol')) {
+            expected = 'must contain at least one symbol'
+            code = 'PASSWORD_REQUIRES_SYMBOL'
+          } else {
+            expected = constraint
+          }
         }
       } else if (message.startsWith("Strict mode error: Unknown field '")) {
         const match = message.match(
-          /Strict mode error: Unknown field '([^']+)'/
+          /Strict mode error: Unknown field '([^']+)'(?: at path '([^']*)')?/
         )
         if (match) {
-          path = match[1]
+          const key = match[1]
+          const parentPath = match[2]
+          path =
+            parentPath && parentPath.length > 0 ? `${parentPath}.${key}` : key
           message = 'Unknown field not allowed in strict mode'
+          expected = 'undefined (field omitted)'
+          code = 'UNRECOGNIZED_KEYS'
         }
       }
 
-      throw new ValidatorError([{ path, message }])
+      const receivedRaw = getNestedValue(data, path)
+      const received = formatReceivedValue(receivedRaw)
+
+      throw new ValidatorError([{ path, message, expected, received, code }])
     }
 
-    // Preserve coerced Date objects
+    // Preserve Date objects and ensure defaults are applied
     if (parsedData && typeof parsedData === 'object') {
       for (const [key, val] of Object.entries(this.rawSchema)) {
         if (
+          parsedData[key] === undefined &&
+          val instanceof TexType &&
+          val.defaultValue !== undefined
+        ) {
+          parsedData[key] =
+            typeof val.defaultValue === 'function'
+              ? val.defaultValue()
+              : val.defaultValue
+        }
+        if (
           val instanceof TexType &&
           val._raw.startsWith('date') &&
-          val._raw.includes('coerce') &&
+          data &&
           data[key] instanceof Date
         ) {
           parsedData[key] = data[key]
@@ -692,7 +932,7 @@ export class TexEngine<T = any> {
     }
 
     // 3. Post-validation synchronous refinements
-    const errors: { path: string; message: string }[] = []
+    const errors: ValidationErrorDescriptor[] = []
     if (parsedData && typeof parsedData === 'object') {
       for (const [key, val] of Object.entries(this.rawSchema)) {
         if (parsedData[key] !== undefined) {
@@ -710,7 +950,13 @@ export class TexEngine<T = any> {
                   typeof r.message === 'function'
                     ? r.message(parsedData[key])
                     : r.message || 'Invalid value'
-                errors.push({ path: key, message: msg })
+                errors.push({
+                  path: key,
+                  message: msg,
+                  expected: 'custom refinement rule',
+                  received: formatReceivedValue(parsedData[key]),
+                  code: 'CUSTOM_VALIDATION',
+                })
               }
             }
           }
@@ -731,7 +977,13 @@ export class TexEngine<T = any> {
                       typeof r.message === 'function'
                         ? r.message(parsedData[key][i])
                         : r.message || 'Invalid value'
-                    errors.push({ path: `${key}[${i}]`, message: msg })
+                    errors.push({
+                      path: `${key}[${i}]`,
+                      message: msg,
+                      expected: 'custom refinement rule',
+                      received: formatReceivedValue(parsedData[key][i]),
+                      code: 'CUSTOM_VALIDATION',
+                    })
                   }
                 }
               }
@@ -748,7 +1000,7 @@ export class TexEngine<T = any> {
   async parseAsync(data: any): Promise<T> {
     const parsed = this.parse(data) // Handles sync sanitizers + rust + sync refine
 
-    const errors: { path: string; message: string }[] = []
+    const errors: ValidationErrorDescriptor[] = []
     if (parsed && typeof parsed === 'object') {
       await Promise.all(
         Object.entries(this.rawSchema).map(async ([key, val]) => {
@@ -769,7 +1021,13 @@ export class TexEngine<T = any> {
                   typeof r.message === 'function'
                     ? r.message(valData)
                     : r.message || 'Invalid value'
-                errors.push({ path: key, message: msg })
+                errors.push({
+                  path: key,
+                  message: msg,
+                  expected: 'custom async refinement rule',
+                  received: formatReceivedValue(valData),
+                  code: 'CUSTOM_VALIDATION',
+                })
               }
             }
           }

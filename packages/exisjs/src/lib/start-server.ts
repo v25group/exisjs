@@ -4,7 +4,7 @@ import { runInCluster } from '../server/cluster.js'
 
 async function start() {
   // ─── Memory threshold monitor (only runs on worker processes) ───────────
-  setInterval(() => {
+  const memMonitor = setInterval(() => {
     const stats = v8.getHeapStatistics()
     if (stats.used_heap_size > 0.8 * stats.heap_size_limit) {
       console.error(
@@ -19,6 +19,13 @@ async function start() {
   if (!entryFile) {
     console.error('EXIS_ENTRY_FILE environment variable is missing.')
     process.exit(1)
+  }
+
+  try {
+    const { ProcessLifecycle } = await import('../server/lifecycle.js')
+    ProcessLifecycle.startTracking()
+  } catch {
+    /* ignore */
   }
 
   try {
@@ -99,7 +106,11 @@ async function start() {
       const serverInstance = new app()
       if (serverConfig.providers) {
         for (const p of serverConfig.providers) {
-          instance.provide(p[0], p[1])
+          if (Array.isArray(p)) {
+            instance.provide(p[0], p[1])
+          } else {
+            instance.provide(p, p)
+          }
         }
       }
 
@@ -160,6 +171,7 @@ async function start() {
       const shutdown = async (signal: string) => {
         if (isShuttingDown) return
         isShuttingDown = true
+        clearInterval(memMonitor)
         const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
         if (!isCLI) {
           console.error(
@@ -193,16 +205,30 @@ async function start() {
       // ─── Dev Server Error Boundary ───────────────────────────────────────────
       // Prevent dev server from fatally crashing on strict unhandled errors (e.g. Postgres disconnected)
       if (process.env.__EXIS_DEV_SERVER) {
-        process.on('unhandledRejection', (reason) => {
-          console.error('\n\x1b[31m[Exis Unhandled Error]\x1b[0m', reason)
+        process.on('unhandledRejection', async (reason: any) => {
+          const { formatDevError } = await import('../error/overlay.js')
+          if (reason instanceof Error) {
+            formatDevError(reason)
+          } else {
+            console.error(
+              '\n\x1b[31m[exis] Unhandled Rejection:\x1b[0m',
+              reason
+            )
+          }
         })
-        process.on('uncaughtException', (error) => {
-          console.error('\n\x1b[31m[Exis Uncaught Exception]\x1b[0m', error)
+        process.on('uncaughtException', async (error: Error) => {
+          const { formatDevError } = await import('../error/overlay.js')
+          formatDevError(error)
         })
       }
     }
-  } catch (err) {
-    console.error(err)
+  } catch (err: any) {
+    try {
+      const { formatDevError } = await import('../error/overlay.js')
+      formatDevError(err instanceof Error ? err : new Error(String(err)))
+    } catch {
+      console.error(err)
+    }
     process.exit(1)
   }
 }

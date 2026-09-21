@@ -6,9 +6,29 @@ import type {
   HookResponse,
   RouteSchema,
   ExisFile,
+  ExtractContextFromMiddlewares,
 } from '../types'
 import type { App } from '../server/app'
 import { logger } from '../logger'
+
+/**
+ * Creates a strongly typed middleware that injects context into downstream routes or boundaries.
+ *
+ * @example
+ * const authenticate = defineMiddleware<AuthContext>(async (req, res, next) => {
+ *   req.user = { id: '123', role: 'admin' }
+ *   next()
+ * })
+ */
+export function defineMiddleware<TContext = Record<string, any>>(
+  fn: (
+    req: Request<any, any, any, TContext>,
+    res: Response,
+    next: import('../types').NextFunction
+  ) => any | Promise<any>
+): Handler<any, any, any, any, TContext> {
+  return fn as Handler<any, any, any, any, TContext>
+}
 
 /**
  * The execution context passed to every route handler.
@@ -88,9 +108,10 @@ export type RouteConfig<
   Q = any,
   P = any,
   TContext = Record<string, any>,
+  TReturn = any,
 > = BaseRouteConfig<TContext> &
   RouteSchema<B, Q, P, any, TContext> & {
-    handle: (ctx: SuperContext<B, Q, P, TContext>) => any | Promise<any>
+    handle: (ctx: SuperContext<B, Q, P, TContext>) => TReturn | Promise<TReturn>
   }
 
 /**
@@ -101,9 +122,16 @@ export type RouteDefinition<
   Q = any,
   P = any,
   TContext = Record<string, any>,
-> = RouteConfig<B, Q, P, TContext> & {
+  TReturn = any,
+> = RouteConfig<B, Q, P, TContext, TReturn> & {
   method: string
   path: string
+  readonly __type?: {
+    body: B
+    query: Q
+    params: P
+    return: TReturn
+  }
 }
 
 /**
@@ -112,32 +140,24 @@ export type RouteDefinition<
 export const route = {
   /**
    * Defines a GET route.
-   *
-   * Example:
-   *
-   *     route.get('/users', {
-   *       // Validate the query string
-   *       query: tex.object({ search: tex.string() }),
-   *
-   *       async handle(ctx) {
-   *         // ctx.query is typed as { search: string }
-   *       }
-   *     })
-   *
-   * @param {string} path
-   * @param {RouteConfig} config
-   * @public
    */
   get: <
     TPath extends string = string,
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> => {
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> => {
     if ('body' in config && config.body) {
       logger.warn(
         `GET route '${path}' defines a body schema, but GET requests cannot have bodies.`
@@ -151,11 +171,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'post', path, ...config }) as any,
 
   put: <
@@ -163,11 +190,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'put', path, ...config }) as any,
 
   delete: <
@@ -175,11 +209,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'delete', path, ...config }) as any,
 
   patch: <
@@ -187,11 +228,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'patch', path, ...config }) as any,
 
   options: <
@@ -199,11 +247,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'options', path, ...config }) as any,
 
   head: <
@@ -211,11 +266,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'head', path, ...config }) as any,
 
   connect: <
@@ -223,11 +285,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'connect', path, ...config }) as any,
 
   trace: <
@@ -235,11 +304,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'trace', path, ...config }) as any,
 
   query: <
@@ -247,11 +323,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'query', path, ...config }) as any,
 
   all: <
@@ -259,11 +342,18 @@ export const route = {
     B = unknown,
     Q = Record<string, string>,
     P = ExtractRouteParams<TPath>,
-    TContext = Record<string, any>,
+    TMid = undefined,
+    TContext = TMid extends undefined
+      ? Record<string, any>
+      : ExtractContextFromMiddlewares<TMid>,
+    TReturn = any,
   >(
     path: TPath,
-    config: RouteConfig<B, Q, P, TContext>
-  ): RouteDefinition<B, Q, P, TContext> =>
+    config: RouteConfig<B, Q, P, TContext, TReturn> & {
+      middleware?: TMid
+      middlewares?: TMid
+    }
+  ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'all', path, ...config }) as any,
 }
 
@@ -332,55 +422,61 @@ export function createRouter<TContext = Record<string, any>>() {
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
       post: <
         TPath extends string = string,
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
       put: <
         TPath extends string = string,
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
       patch: <
         TPath extends string = string,
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
       delete: <
         TPath extends string = string,
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
       all: <
         TPath extends string = string,
         B = any,
         Q = any,
         P = ExtractRouteParams<TPath>,
+        TReturn = any,
       >(
         path: TPath,
-        config: RouteConfig<B, Q, P, TContext>
-      ) => RouteDefinition<B, Q, P, TContext>
+        config: RouteConfig<B, Q, P, TContext, TReturn>
+      ) => RouteDefinition<B, Q, P, TContext, TReturn>
     },
     controller: <T extends ControllerConfig>(
       config: T

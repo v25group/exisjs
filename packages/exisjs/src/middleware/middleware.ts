@@ -199,12 +199,25 @@ export function requestLogger(
     // Use _onFinish to capture response timing without deoptimizing V8 hidden classes
     res._onFinish.push(() => {
       const responseTime = Date.now() - start
+      const cl = res.getHeader('content-length')
+      const contentLength = cl ? parseInt(String(cl), 10) : undefined
+
       const logData: Record<string, any> = {
         statusCode: res.statusCode,
         responseTime,
+        method: req.method,
+        url: req.url || req.path,
+        contentLength,
+        ip: req.ip || (req.raw?.socket as any)?.remoteAddress,
+        requestId: req.requestId,
       }
       if ((req as any)._validationError) {
         logData.validation = (req as any)._validationError
+      }
+      if ((req as any)._error || (res as any)._error) {
+        const err = (req as any)._error || (res as any)._error
+        logData.error =
+          err instanceof Error ? { message: err.message, name: err.name } : err
       }
       // Use child if already created, otherwise use parent with inline context
       const logger = _childLog || parentLog
@@ -212,9 +225,11 @@ export function requestLogger(
       if (res.statusCode >= 500) {
         logger.error(logData, `${req.method} ${req.path}`)
       } else if (res.statusCode >= 400) {
-        // Silently ignore favicon 404s to reduce noise
+        // Silently ignore favicon 404s and probe noise to reduce log clutter
         if (req.path === '/favicon.ico' && res.statusCode === 404) {
           // ignore
+        } else if ((req as any)._silentLog || (req as any)._probeBlocked) {
+          // ignore scanner probes / silent log requests
         } else {
           logger.warn(logData, `${req.method} ${req.path}`)
         }
@@ -249,12 +264,16 @@ export {
   hpp,
   mongoSanitize,
   dbSanitize,
+  blockSuspiciousProbes,
+  blockProbes,
+  DEFAULT_PROBE_PATTERNS,
 } from './security'
 export type {
   CsrfOptions,
   TimeoutOptions,
   DbSanitizeOptions,
   HelmetOptions,
+  BlockProbesOptions,
 } from './security'
 export { rateLimit } from './rate-limit'
 export type { RateLimitOptions } from './rate-limit'

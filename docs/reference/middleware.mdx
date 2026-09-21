@@ -48,6 +48,37 @@ export default controller({
 
 ---
 
+## Middleware Context Inference
+
+### `defineMiddleware<TContext>(fn)`
+
+Creates a strongly-typed middleware function that attaches custom typed properties (like `user`, `session`, or `tenantId`) to `req`. Downstream route handlers (`route.get`, `route.post`, etc.) automatically inherit and infer this context with full IDE autocomplete and zero manual type casts.
+
+```typescript
+import { controller, route, defineMiddleware } from 'exisjs/router'
+
+interface AuthContext {
+  user: { id: string; role: 'admin' | 'user'; email: string }
+}
+
+const auth = defineMiddleware<AuthContext>((req, res, next) => {
+  req.user = { id: 'u1', role: 'admin', email: 'alex@example.com' }
+  next()
+})
+
+export default controller({
+  profile: route.get('/profile', {
+    middlewares: [auth],
+    handle({ req, res }) {
+      // req.user has full autocomplete and strict typing:
+      return res.json({ id: req.user.id, role: req.user.role })
+    }
+  })
+})
+```
+
+---
+
 ## Security Middleware
 
 ### `helmet(options?)`

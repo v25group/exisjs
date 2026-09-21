@@ -32,22 +32,34 @@ const safeData = userSchema.parse(rawInput)
 
 ExisJS supports a comprehensive set of strict validation primitives:
 
-- `tex.string()` - String validation (supports options like `{ min: 5, max: 10, pattern: /regex/ }`).
-- `tex.email()` - Validates standard email formatting.
+- `tex.string()` - String validation (supports options like `{ min, max, trim, toLowerCase, toUpperCase, escapeHtml, stripHtml, slugify, mask, default }`).
+- `tex.email()` - Validates standard email formatting (supports `{ trim, toLowerCase, mask, default }`).
+- `tex.uuid()` - Validates UUID strings (supports `{ version: 1 | 4, default }`).
+- `tex.cuid()` - Validates CUID identifiers (supports `{ default }`).
+- `tex.password()` - Validates password complexity (`{ min, max, requireNumbers, requireSymbols, requireUppercase, requireLowercase }`).
+- `tex.creditCard()` - Validates credit card number formats with optional masking (`{ mask: true }`).
 - `tex.number()` - Strict number validation (fails if passed a string unless `coerce: true`).
-- `tex.number({ coerce: true, min: 0, max: 100 })` - Automatically coerces incoming string representations (e.g., query params) into native numbers.
+- `tex.number({ coerce: true, min: 0, max: 100, default: 10 })` - Automatically coerces incoming string representations (e.g., query params) into native numbers with optional default fallback.
 - `tex.boolean()` - Strict boolean validation.
-- `tex.boolean({ coerce: true })` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
+- `tex.boolean({ coerce: true, default: false })` - Coerces `"true"`/`"1"` and `"false"`/`"0"` into native booleans.
 - `tex.date()` - Strict Date instance validation.
-- `tex.date({ coerce: true, minDate: new Date('2020-01-01'), maxDate: new Date() })` - Automatically parses ISO 8601 strings, UNIX timestamps, or date strings into native JavaScript `Date` objects with optional boundary checks.
-- `tex.array(schema, { coerce: true, min: 1, max: 10 })` - Validates an array of items. When `{ coerce: true }` is enabled, automatically converts single items or comma-separated query strings (`"apple,banana"`) into typed arrays. Accepts primitive types, `tex.object(...)`, or shorthand plain objects `{ ... }`.
+- `tex.date({ coerce: true, minDate: '2020-01-01', maxDate: '2030-01-01', default: () => new Date() })` - Automatically parses ISO 8601 strings, UNIX timestamps, or date strings into native JavaScript `Date` objects with optional boundary checks and lazy default factories.
+- `tex.array(schema, { coerce: true, min: 1, max: 10, default: [] })` - Validates an array of items. When `{ coerce: true }` is enabled, automatically converts single items or comma-separated query strings (`"apple,banana"`) into typed arrays. Accepts primitive types, `tex.object(...)`, or shorthand plain objects `{ ... }`.
+- `tex.enum(['admin', 'user'], { default: 'user' })` - Ensures the value matches one of the provided exact strings.
+- `tex.literal(value)` - Validates against an exact primitive literal (`string | number | boolean`).
+- `tex.record(schema)` - Validates a dictionary/record of key-value pairs matching the value schema.
+- `tex.any()` - Allows any payload value without constraint.
+- `tex.file({ maxSize: 5 * 1024 * 1024, mimeTypes: ['image/png', 'image/jpeg'] })` - Validates uploaded file payloads (size and MIME type).
 - `tex.object({ ... })` - Validates structured JSON objects.
-- `tex.enum(['A', 'B'])` - Ensures the value matches one of the provided exact strings.
 
 All primitives accept modifier options or chained helper methods:
 - `.optional()` / `{ optional: true }` - Allows `undefined`.
 - `.nullable()` / `{ nullable: true }` - Allows `null`.
 - `.nullish()` / `{ nullish: true }` - Allows both `null` and `undefined`.
+- `{ default: value | (() => value) }` - Provides a static default or dynamic factory function when the field is omitted or `undefined`. Automatically marks the field as optional in schemas and infers concrete types in TypeScript.
+
+> [!TIP]
+> **Unified Defaults without Method Chaining**: ExisJS avoids `.default()` chaining overhead in favor of declarative options objects (e.g. `tex.number({ default: 3000 })` or `tex.date({ default: () => new Date() })`). Dynamic factory functions evaluate per request so timestamps and UUIDs remain fresh!
 
 > [!TIP]
 > **Automatic Empty String `""` Normalization**: When forms or query parameters pass empty strings `""` for fields marked as `.optional()`, `.nullable()`, or `.nullish()`, ExisJS automatically converts them to `undefined` or `null` before running type validation. This prevents false positive type errors on numeric, UUID, or enum fields!
@@ -260,6 +272,8 @@ export const RegisterUserSchema = tex.object({
 
 Query strings in HTTP cannot natively represent arrays or date instances. ExisJS solves this elegantly through `{ coerce: true }`:
 
+#### Functional Paradigm
+
 ```typescript filename="src/http/events/route.ts"
 import { controller, route } from 'exisjs/router'
 import { tex } from 'exisjs/validator'
@@ -290,11 +304,38 @@ export default controller({
 })
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/events/route.ts"
+import { Controller, Get, Query } from 'exisjs/decorators'
+import { tex } from 'exisjs/validator'
+import type { ResolveSchema } from 'exisjs/validator'
+
+const FilterSchema = tex.object({
+  from: tex.date({ coerce: true, optional: true }),
+  to: tex.date({ coerce: true, optional: true }),
+  tags: tex.array(tex.string(), { coerce: true, optional: true }),
+  ids: tex.array(tex.number({ coerce: true }), { coerce: true, optional: true }),
+})
+
+type FilterDto = ResolveSchema<typeof FilterSchema>
+
+@Controller('/events')
+export default class EventsController {
+  @Get('/', { query: FilterSchema })
+  listEvents(@Query() query: FilterDto) {
+    return { filter: query }
+  }
+}
+```
+
 ---
 
 ## Pagination Schemas (`tex.pagination`)
 
 ExisJS provides a dedicated schema primitive for query pagination. It automatically coerces incoming string query parameters (`?page=2&limit=25&sort=name&order=asc`) into typed numbers and strings while enforcing sensible bounds:
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/items/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -319,11 +360,35 @@ export default controller({
 })
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/items/route.ts"
+import { Controller, Get, Query } from 'exisjs/decorators'
+import { tex, paginate, getPaginationSkip } from 'exisjs/validator'
+
+const ItemQuerySchema = tex.pagination({
+  defaultLimit: 20,
+  maxLimit: 100,
+})
+
+@Controller('/items')
+export default class ItemsController {
+  @Get('/', { query: ItemQuerySchema })
+  async list(@Query() query: any) {
+    const { skip, limit, page } = getPaginationSkip(query)
+    const items = await fetchItems({ skip, limit, sort: query.sort, order: query.order })
+    const total = await countItems()
+
+    return paginate(items, total, { page, limit })
+  }
+}
+```
+
 ---
 
 ## Error Handling & Developer Diagnostics
 
-If a request fails validation, ExisJS intercepts the rejection and returns a standardized `400 Bad Request` containing a machine-readable `errors: Record<string, string>` dictionary for frontend form field mapping:
+If a request fails validation, ExisJS intercepts the rejection and returns a standardized `400 Bad Request` containing both a legacy `errors: Record<string, string>` dictionary and a structured `details: ValidationErrorDescriptor[]` array for frontend form field mapping:
 
 ```json filename="HTTP 400 Bad Request Response"
 {
@@ -333,16 +398,32 @@ If a request fails validation, ExisJS intercepts the rejection and returns a sta
   "errors": {
     "username": "Field must be at least 4 characters",
     "profile.tags": "Expected array of strings"
-  }
+  },
+  "details": [
+    {
+      "path": "username",
+      "message": "Field must be at least 4 characters",
+      "expected": "min: 4",
+      "received": "abc",
+      "code": "VALUE_TOO_SMALL"
+    },
+    {
+      "path": "profile.tags",
+      "message": "Expected array of strings",
+      "expected": "Array of string",
+      "received": "number",
+      "code": "INVALID_TYPE"
+    }
+  ]
 }
 ```
 
 ### Dev Mode Terminal Diagnostics
 
-When validation fails in development mode, ExisJS prints an immediate tabular diagnostic to your terminal displaying the failing HTTP part, exact field path, received value, and expected schema constraint:
+When validation fails in development mode, ExisJS prints an immediate tabular diagnostic to your terminal displaying the HTTP method, route path, failing HTTP part (`body`, `query`, `params`, `headers`), exact field path, received value, and expected schema constraint:
 
 ```text
-[VALIDATION FAILED] POST /visits (part: body)
+[VALIDATION FAILED] POST /api/v1/visits (part: body)
 ┌─────────────┬───────────────────────────┬──────────────────┐
 │ Field       │ Received                  │ Expected         │
 ├─────────────┼───────────────────────────┼──────────────────┤
@@ -350,4 +431,102 @@ When validation fails in development mode, ExisJS prints an immediate tabular di
 │ idProofs    │ "[object Object]"         │ Array of IDProof │
 └─────────────┴───────────────────────────┴──────────────────┘
 ```
+
+---
+
+## Environment Variable Validation (`tex.env`)
+
+Because `process.env` always supplies raw string values (e.g. `"4000"`, `"true"`, `"1"`), ExisJS includes a dedicated `tex.env()` schema parser. It automatically injects coercion for numbers, booleans, dates, and arrays, allowing you to validate your environment variables on boot without writing `{ coerce: true }` on every field:
+
+```typescript filename="src/config/env.ts"
+import { tex } from 'exisjs/validator'
+
+export const env = tex.env({
+  PORT: tex.number({ default: 4000 }), // Automatically coerced from "4000" -> 4000
+  DEBUG: tex.boolean({ default: false }), // Parsed from "true" | "1" | "false" | "0"
+  DATABASE_URL: tex.string(),
+  JWT_SECRET: tex.string({ min: 32 }),
+  ALLOWED_ORIGINS: tex.array(tex.string()), // Parsed from "http://localhost:3000,https://app.com"
+  NODE_ENV: tex.enum(['development', 'production', 'test'] as const, {
+    default: 'development',
+  }),
+}).parse(process.env)
+```
+
+> [!TIP]
+> **Zero-Boilerplate Boot Safety**: `tex.env()` automatically validates `process.env` on server startup. If a required environment variable is missing, it crashes immediately with a clean diagnostic log before the HTTP listener opens.
+
+---
+
+## Third-Party Validator Interoperability (Zod, Valibot, ArkType)
+
+While ExisJS provides the high-performance native `tex` engine out of the box, it is **100% interoperable with external schema libraries like Zod, Valibot, or ArkType** via Duck Typing.
+
+Any object with a `.parse()` or `.safeParse()` method can be passed directly as a route schema or used in `src/config/env.ts`.
+
+### Using Zod in Routes
+
+#### Functional Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { z } from 'zod'
+
+const CreateUserSchema = z.object({
+  name: z.string().min(3),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user']),
+})
+
+export default controller({
+  create: route.post('/', {
+    body: CreateUserSchema, // 👈 Directly pass your Zod schema!
+    async handle({ body, res }) {
+      return res.status(201).json({ success: true, user: body })
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body, HttpCode } from 'exisjs/decorators'
+import { z } from 'zod'
+
+const CreateUserSchema = z.object({
+  name: z.string().min(3),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user']),
+})
+
+type CreateUserDto = z.infer<typeof CreateUserSchema>
+
+@Controller('/users')
+export default class UsersController {
+  @Post('/')
+  @HttpCode(201)
+  async create(@Body(CreateUserSchema) body: CreateUserDto) {
+    return { success: true, user: body }
+  }
+}
+```
+
+### Using Zod for Environment Validation
+
+```typescript filename="src/config/env.ts"
+import { z } from 'zod'
+
+const EnvSchema = z.object({
+  PORT: z.coerce.number().default(4000),
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  DATABASE_URL: z.string().url(),
+  JWT_SECRET: z.string().min(32),
+})
+
+export const env = EnvSchema.parse(process.env)
+```
+
+> [!NOTE]
+> **Universal Error Normalization**: Regardless of which library you use (**Zod**, **Valibot**, **Yup**, **Joi**, **ArkType**, or any Standard Schema-compliant library), ExisJS inspects the error structure (`issues`, `errors`, `inner`) and automatically normalizes it into standardized `400 Bad Request` JSON responses with complete field mappings and dev-mode terminal overlays.
 

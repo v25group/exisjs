@@ -24,3 +24,16 @@ export {
   RateLimitException,
   InternalException,
 } from './errors'
+
+export {
+  stripInternalStackFrames,
+  categorizeError,
+  generateErrorHint,
+  parseErrorLocation,
+  buildCodeFrame,
+  renderDevErrorToString,
+  formatDevError,
+  formatCliError,
+  devErrorResponse,
+  type ParsedError,
+} from './overlay'

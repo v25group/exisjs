@@ -248,3 +248,25 @@ ExisJS provides a rich ecosystem of decorators to apply middleware, configure re
 - `@Returns(schema)`: Explicitly defines the response schema for OpenAPI generation.
 - `@Idempotent()`: Enforces idempotency keys for mutations (e.g., checkout/payments).
 
+---
+
+## 3. Streaming & Backpressure Pipeline
+
+The response object supports universal streaming with backpressure management across all route types:
+
+- `res.sendStream(source)`: Streams a Node.js `stream.Readable`, Web `ReadableStream`, or `AsyncIterable` directly to the client socket. Pauses consumption when socket buffers fill up and terminates source readers upon client disconnection.
+- `res.stream(source)`: Alias for `sendStream()`.
+- **Automatic Handler Auto-Piping**: Returning a Node.js stream, Web standard `ReadableStream`, or `AsyncIterable` generator directly from `handle()` automatically delegates to `res.sendStream()`.
+
+---
+
+## 4. `AppRouter` Client Manifest Contract
+
+ExisJS generates a compile-time route manifest in `.exis/types.d.ts` and `.exis/types/index.d.ts`:
+
+- `AppRouterPaths`: Flat dictionary mapping URL route patterns (e.g. `'/users/:id'`) to their strongly-typed handler contracts (`(payload?: B, options?: { query?: Q; params?: P }) => Promise<R>`).
+- `AppRouterTree`: Hierarchical dot-notation tree mapping nested folder paths (`users: { ':id': ... }`) for `@exisjs/fetch`'s `createClient<AppRouter>()`.
+- `AppRouter`: Combined intersection type `AppRouterPaths & AppRouterTree`.
+- `RouteDefinition.__type`: Phantom type property on every route definition preserving exact inferred return types, DTO schemas, and Drizzle/Prisma models.
+
+

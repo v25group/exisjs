@@ -283,4 +283,12 @@ program
     }
   })
 
-program.parse(process.argv)
+program.parseAsync(process.argv).catch(async (err) => {
+  try {
+    const { formatCliError } = await import('../error/overlay')
+    formatCliError(err instanceof Error ? err : new Error(String(err)))
+  } catch {
+    console.error(err)
+  }
+  process.exit(1)
+})

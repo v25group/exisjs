@@ -457,3 +457,159 @@ export function dbSanitize(
     next()
   }
 }
+
+// ─── Security Scanner Noise Suppression & Blackhole Handler ────────────────────
+
+export interface BlockProbesOptions {
+  /**
+   * HTTP status code to return for blocked exploit probes.
+   * Defaults to 404 (or 403 if specified).
+   */
+  statusCode?: number
+  /**
+   * Whether to terminate the connection immediately with an empty body (blackhole).
+   * Defaults to true.
+   */
+  blackhole?: boolean
+  /**
+   * Optional custom response message (if blackhole is false or a string response is desired).
+   */
+  message?: string
+  /**
+   * Whether to suppress warning and error logs in requestLogger for probe requests.
+   * Defaults to true.
+   */
+  silent?: boolean
+  /**
+   * Custom additional probe regex patterns or strings to block.
+   */
+  patterns?: (string | RegExp)[]
+  /**
+   * Custom whitelist patterns to exclude from being blocked.
+   */
+  exclude?: (string | RegExp)[]
+  /**
+   * Optional callback triggered when a probe is detected.
+   * Useful for honeypot telemetry, custom SIEM alerting, or IP reputation systems.
+   */
+  onProbe?: (
+    req: Request,
+    res: Response,
+    matchedPattern: string | RegExp
+  ) => void
+}
+
+export const DEFAULT_PROBE_PATTERNS: RegExp[] = [
+  // Environment and secrets
+  /(?:^|\/)\.env(?:\..*)?$/i,
+  /(?:^|\/)\.env(?:$|[.\-_/])/i,
+  /(?:^|\/)\.(?:aws|ssh|docker|kube|npmrc|dockercfg)(?:$|\/)/i,
+  // Version control
+  /(?:^|\/)\.git(?:$|\/)/i,
+  /(?:^|\/)\.svn(?:$|\/)/i,
+  /(?:^|\/)\.hg(?:$|\/)/i,
+  /(?:^|\/)\.bzr(?:$|\/)/i,
+  // OS artifacts
+  /(?:^|\/)\.DS_Store$/i,
+  /(?:^|\/)Thumbs\.db$/i,
+  // Common scanner/CMS targets on Node servers
+  /(?:^|\/)(?:wp-config\.php|wp-login\.php|wp-admin|xmlrpc\.php)(?:$|\/)/i,
+  /(?:^|\/)(?:phpinfo\.php|info\.php|eval-stdin\.php)(?:$|\/)/i,
+  /(?:^|\/)actuator\/(?:heapdump|env)/i,
+]
+
+function decodePathSafely(rawPath: string): string {
+  try {
+    return decodeURIComponent(rawPath)
+  } catch {
+    return rawPath
+  }
+}
+
+/**
+ * Intercepts automated vulnerability scanner probes (e.g. `.env`, `/.git`, `/.DS_Store`)
+ * and blackholes/terminates them immediately without running downstream handlers or
+ * flooding production error logs with 404 warnings.
+ */
+export function blockSuspiciousProbes(
+  options: BlockProbesOptions = {}
+): Handler {
+  const statusCode = options.statusCode ?? 404
+  const blackhole = options.blackhole !== false
+  const silent = options.silent !== false
+  const customPatterns: (string | RegExp)[] = options.patterns || []
+  const excludePatterns: (string | RegExp)[] = options.exclude || []
+  const onProbe = options.onProbe
+
+  // Precompile patterns to avoid runtime regex parsing overhead
+  const compiledPatterns: (RegExp | string)[] = [
+    ...DEFAULT_PROBE_PATTERNS,
+    ...customPatterns,
+  ]
+
+  return (req: Request, res: Response, next: NextFunction) => {
+    const rawPath = req.path || req.url || '/'
+    const decodedPath = decodePathSafely(rawPath)
+
+    // Check whitelist/exclusions
+    if (excludePatterns.length > 0) {
+      const isExcluded = excludePatterns.some((pattern) => {
+        if (typeof pattern === 'string') {
+          return rawPath.startsWith(pattern) || decodedPath.startsWith(pattern)
+        }
+        return pattern.test(rawPath) || pattern.test(decodedPath)
+      })
+      if (isExcluded) {
+        return next()
+      }
+    }
+
+    // Check probe patterns
+    let matchedPattern: string | RegExp | null = null
+    for (const pattern of compiledPatterns) {
+      if (typeof pattern === 'string') {
+        if (rawPath.includes(pattern) || decodedPath.includes(pattern)) {
+          matchedPattern = pattern
+          break
+        }
+      } else if (pattern.test(rawPath) || pattern.test(decodedPath)) {
+        matchedPattern = pattern
+        break
+      }
+    }
+
+    if (matchedPattern) {
+      ;(req as any)._probeBlocked = true
+      if (silent) {
+        ;(req as any)._silentLog = true
+      }
+
+      if (typeof onProbe === 'function') {
+        try {
+          onProbe(req, res, matchedPattern)
+        } catch {
+          /* ignore hook error */
+        }
+      }
+
+      if (blackhole) {
+        if (!res.headersSent) {
+          res.status(statusCode).send(options.message || '')
+        }
+        return
+      }
+
+      return next(
+        new HttpError(
+          options.message || 'Forbidden',
+          statusCode,
+          'PROBE_BLOCKED'
+        )
+      )
+    }
+
+    next()
+  }
+}
+
+export const blockProbes = blockSuspiciousProbes

@@ -141,8 +141,6 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   let isShuttingDown = false
   let watcher: any = null
 
-  const CHILD_EXIT_TIMEOUT_MS = 10000
-
   function cleanupPid() {
     try {
       if (fs.existsSync(pidFile)) {
@@ -153,10 +151,39 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     }
   }
 
+  let forceExitTriggered = false
+
   async function handleSessionStop(_signal: string) {
-    if (isShuttingDown) return
+    if (isShuttingDown) {
+      if (!forceExitTriggered) {
+        forceExitTriggered = true
+        cleanupPid()
+        if (child && child.pid) {
+          try {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        process.exit(0)
+      }
+      return
+    }
+
     isShuttingDown = true
     cleanupPid()
+
+    const time = getFormattedTime()
+    const primary = '\x1b[38;2;160;70;255m'
+    console.log(
+      `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
+    )
 
     if (watcher) {
       try {
@@ -166,12 +193,6 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       }
       watcher = null
     }
-
-    const time = getFormattedTime()
-    const primary = '\x1b[38;2;160;70;255m'
-    console.log(
-      `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
-    )
 
     if ((global as any)._tscProcess) {
       try {
@@ -187,43 +208,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       child.exitCode === null &&
       child.signalCode === null
     ) {
-      const exitTimeout = setTimeout(() => {
-        if (child && !child.killed) {
-          console.log(
-            `${c.red}  Force killing process after timeout...${c.reset}`
-          )
-          try {
-            if (process.platform === 'win32') {
-              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
-                stdio: 'ignore',
-              })
-            } else {
-              child.kill('SIGKILL')
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        process.exit(0)
-      }, CHILD_EXIT_TIMEOUT_MS)
-
-      let hasExited = false
-      const finishExit = () => {
-        if (hasExited) return
-        hasExited = true
-        clearTimeout(exitTimeout)
-        process.exit(0)
-      }
-
-      child.once('close', finishExit)
-      child.once('exit', () => {
-        // Fallback delay to allow any buffered stdout/stderr to drain if close doesn't trigger
-        setTimeout(finishExit, 300)
-      })
-
       try {
         if (child.connected) {
           child.send({ type: 'exis:shutdown' })
+          child.disconnect()
         }
       } catch {
         /* ignore */
@@ -236,6 +224,31 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       } catch {
         /* ignore */
       }
+
+      const exitTimeout = setTimeout(() => {
+        try {
+          if (child && !child.killed) {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        process.exit(0)
+      }, 2000)
+
+      const onChildDone = () => {
+        clearTimeout(exitTimeout)
+        process.exit(0)
+      }
+
+      child.once('close', onChildDone)
+      child.once('exit', onChildDone)
     } else {
       process.exit(0)
     }
@@ -319,50 +332,90 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   }
 
   let isRestarting = false
+  let pendingRestart = false
+  let reloadDebounceTimer: NodeJS.Timeout | null = null
+  const queuedChangedFiles = new Set<string>()
+  const RELOAD_DEBOUNCE_MS = 150
+  const RELOAD_TIMEOUT_MS = 3000
+
+  async function killChildGracefully(): Promise<void> {
+    if (!child || child.killed) return
+
+    // 1. Send IPC shutdown message so the child can run app.close() / onClose hooks
+    try {
+      if (child.connected) {
+        child.send({ type: 'exis:shutdown' })
+      }
+    } catch {
+      /* ignore — child may have already exited */
+    }
+
+    // 2. Disconnect the IPC channel IMMEDIATELY after sending the shutdown message.
+    //    On Windows, this is CRITICAL: it closes the parent's end of the IPC pipe
+    //    before the child starts tearing down its libuv handles, preventing the
+    //    UV_HANDLE_CLOSING assertion crash in src\win\async.c.
+    try {
+      if (child.connected) {
+        child.disconnect()
+      }
+    } catch {
+      /* ignore — channel may already be closed */
+    }
+
+    // 3. On non-Windows, also send SIGTERM as a direct signal
+    try {
+      if (process.platform !== 'win32') {
+        child.kill('SIGTERM')
+      }
+    } catch {
+      /* ignore */
+    }
+
+    // 4. Wait for clean exit with a generous graceful timeout (3000ms).
+    //    Child will usually exit in ~50-200ms once onClose finishes.
+    await new Promise<void>((resolve) => {
+      let resolved = false
+      const onExitOrClose = () => {
+        if (resolved) return
+        resolved = true
+        clearTimeout(timer)
+        resolve()
+      }
+
+      const timer = setTimeout(() => {
+        if (resolved) return
+        resolved = true
+        // Timeout expired — force kill the child process tree
+        if (child && !child.killed) {
+          try {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        resolve()
+      }, RELOAD_TIMEOUT_MS)
+
+      child!.once('close', onExitOrClose)
+      child!.once('exit', onExitOrClose)
+    })
+  }
+
   async function startProcess(): Promise<void> {
-    if (isRestarting) return
+    if (isRestarting) {
+      pendingRestart = true
+      return
+    }
     isRestarting = true
     closeFallbackServer()
 
-    if (child && !child.killed) {
-      try {
-        if (child.connected) {
-          child.send({ type: 'exis:shutdown' })
-        }
-      } catch {
-        /* ignore */
-      }
-      try {
-        if (process.platform !== 'win32') {
-          child.kill('SIGTERM')
-        }
-      } catch {
-        /* ignore */
-      }
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          if (child && !child.killed) {
-            try {
-              if (process.platform === 'win32') {
-                spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
-                  stdio: 'ignore',
-                })
-              } else {
-                child.kill('SIGKILL')
-              }
-            } catch {
-              /* ignore */
-            }
-          }
-          resolve()
-        }, 5000)
-
-        child!.once('exit', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-      })
-    }
+    await killChildGracefully()
 
     child = spawn(runner!.bin, [...runner!.args, startServerPath], {
       cwd,
@@ -372,17 +425,13 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         __EXIS_IS_RESTART: (global as any)._hasStartedBefore ? '1' : '',
         EXIS_ENTRY_FILE: entryFile!,
       },
-      stdio: ['inherit', 'pipe', 'pipe', 'ipc'],
+      stdio: ['inherit', 'inherit', 'pipe', 'ipc'],
       shell: runner!.bin === process.execPath ? false : true,
     })
 
     ;(global as any)._hasStartedBefore = true
 
     let stderrBuffer = ''
-
-    child!.stdout?.on('data', (chunk) => {
-      process.stdout.write(chunk)
-    })
 
     child!.stderr?.on('data', (chunk) => {
       const str = chunk.toString()
@@ -418,6 +467,44 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     })
 
     isRestarting = false
+
+    // If more file changes arrived while we were restarting, trigger consolidated reload
+    if (pendingRestart) {
+      pendingRestart = false
+      startProcess()
+    }
+  }
+
+  function scheduleReload(file?: string) {
+    if (file) {
+      queuedChangedFiles.add(file)
+    }
+
+    if (reloadDebounceTimer) {
+      clearTimeout(reloadDebounceTimer)
+    }
+
+    reloadDebounceTimer = setTimeout(async () => {
+      reloadDebounceTimer = null
+      const files = Array.from(queuedChangedFiles)
+      queuedChangedFiles.clear()
+
+      const time = getFormattedTime()
+      const primary = '\x1b[38;2;160;70;255m'
+      const fileLabel =
+        files.length === 1
+          ? files[0]
+          : files.length > 1
+            ? `${files[0]} (+${files.length - 1} other files)`
+            : 'file changes'
+
+      console.log(
+        `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${fileLabel}${c.reset}`
+      )
+
+      await generateManifest(cwd, '', true)
+      startProcess()
+    }, RELOAD_DEBOUNCE_MS)
   }
 
   // Handle restarts for runners that don't support watch natively
@@ -464,13 +551,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         ) {
           return
         }
-        const time = getFormattedTime()
-        const primary = '\x1b[38;2;160;70;255m'
-        console.log(
-          `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${file}${c.reset}`
-        )
-        await generateManifest(cwd, '', true)
-        startProcess()
+        scheduleReload(file)
       })
     }
   }

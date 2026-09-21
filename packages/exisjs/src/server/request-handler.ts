@@ -2,7 +2,7 @@ import type { App } from './app'
 import http, { IncomingMessage, ServerResponse } from 'node:http'
 import { ExisRequest } from './request'
 import { ExisResponse } from './response'
-import { executionContext } from './context'
+import { executionContext, cleanupContext } from './context'
 import { runHandlers } from '../router/router'
 import { notFound } from '../middleware/middleware'
 import type { Handler } from '../types'
@@ -49,6 +49,7 @@ export class RequestHandler {
   }
 
   private _releaseRes(res: ExisResponse): void {
+    res.req = undefined as any
     if (this._resPool.length < RequestHandler.MAX_POOL_SIZE) {
       this._resPool.push(res)
     }
@@ -70,6 +71,7 @@ export class RequestHandler {
     url: string
     headers?: Record<string, string>
     body?: any
+    payload?: any
   }): Promise<import('../testing/client').TestResponse> {
     if (!(this.app as any)._routesMounted) {
       if (typeof this.app.create === 'function') await this.app.create()
@@ -79,7 +81,7 @@ export class RequestHandler {
 
     const method = (options.method || 'GET').toUpperCase()
     const path = options.url
-    const payload = options.body
+    const payload = options.body !== undefined ? options.body : options.payload
 
     return new Promise((resolve, reject) => {
       const server = http.createServer((req, res) => {
@@ -173,27 +175,36 @@ export class RequestHandler {
         diCache: new Map(),
       }
 
-      res._onFinish.push(() => {
-        for (const cb of store.afterCallbacks) {
-          try {
-            const r = cb()
-            if (r instanceof Promise)
-              r.catch(() => {
-                /* noop */
-              })
-          } catch (e) {
-            this.app.log.error({ err: e }, 'Error in after() callback')
-          }
-        }
-      })
+      const doCleanup = () => {
+        cleanupContext(store, this.app.log)
+      }
 
-      executionContext.run(store, execution)
+      res._onFinish.push(doCleanup)
+      res.raw.once('close', doCleanup)
+
+      try {
+        executionContext.run(store, execution)
+      } catch (err) {
+        doCleanup()
+        throw err
+      }
     } else {
       execution()
     }
   }
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
+    RequestHandler.activeRequests++
+    let decremented = false
+    const decrementActive = () => {
+      if (!decremented) {
+        decremented = true
+        if (RequestHandler.activeRequests > 0) {
+          RequestHandler.activeRequests--
+        }
+      }
+    }
+
     const res = this._acquireRes(rawRes)
     const req = this._acquireReq(
       rawReq,
@@ -206,11 +217,13 @@ export class RequestHandler {
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
 
-    // Recycle objects back to pool when the response is fully done
+    // Recycle objects back to pool and decrement active request counter when the response is fully done
     rawRes.on('close', () => {
+      decrementActive()
       this._releaseReq(req)
       this._releaseRes(res)
     })
+    rawRes.on('finish', decrementActive)
 
     this._executeWithContext(req, res, () => {
       if (
