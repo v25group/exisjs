@@ -53,91 +53,174 @@ import {
 Assigns one or more tags to a controller class or method handler.
 *(Alias: `@Tags()`)*
 
-```typescript
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { ApiTags } from 'exisjs/swagger'
+
 @ApiTags('Users', 'Authentication')
-@Controller('/users')
-export class UserController {}
+@Controller()
+export default class UserController {
+  @Get('/')
+  findAll() {
+    return []
+  }
+}
 ```
 
 ### `@ApiOperation(options)`
 Attaches summary, description, operationId, and deprecated status to a route method.
 *(Alias: `@Operation()`)*
 
-```typescript
-@Get('/:id')
-@ApiOperation({
-  summary: 'Get user by UUID',
-  description: 'Fetches user details from database',
-  deprecated: false,
-})
-getUser() {}
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { ApiOperation } from 'exisjs/swagger'
+
+@Controller()
+export default class UserController {
+  @Get('/:id')
+  @ApiOperation({
+    summary: 'Get user by UUID',
+    description: 'Fetches user details from database',
+    deprecated: false,
+  })
+  getUser(@Param('id') id: string) {
+    return { id, name: 'Alice' }
+  }
+}
 ```
 
 ### `@ApiResponse(options)`
 Defines an expected HTTP response status code and optional schema.
 
-```typescript
-@ApiResponse({
-  status: 200,
-  description: 'User details found',
-  schema: UserResponseSchema,
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { ApiOperation, ApiResponse } from 'exisjs/swagger'
+import { tex } from 'exisjs/validator'
+
+const UserSchema = tex.object({
+  id: tex.uuid(),
+  name: tex.string(),
 })
-@ApiResponse({ status: 404, description: 'User not found' })
-getUser() {}
+
+@Controller()
+export default class UserController {
+  @Get('/:id')
+  @ApiResponse({
+    status: 200,
+    description: 'User details found',
+    schema: UserSchema,
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  getUser(@Param('id') id: string) {
+    return { id, name: 'Alice' }
+  }
+}
 ```
 
 ### `@ApiBearerAuth(name?: string)`
 Requires Bearer JWT authentication for this endpoint or controller.
 *(Alias: `@BearerAuth()`)*
 
-```typescript
+```typescript filename="src/http/users/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { ApiBearerAuth } from 'exisjs/swagger'
+
 @ApiBearerAuth()
-@Get('/me')
-getMe() {}
+@Controller()
+export default class UserController {
+  @Get('/me')
+  getMe() {
+    return { id: 'user-123', role: 'admin' }
+  }
+}
 ```
 
 ### `@ApiSecurity(name: string, scopes?: string[])`
 Requires custom security scheme authentication for this endpoint or controller.
 
-```typescript
-@ApiSecurity('apiKeyAuth')
-@Get('/metrics')
-getMetrics() {}
+```typescript filename="src/http/metrics/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { ApiSecurity } from 'exisjs/swagger'
+
+@Controller()
+export default class MetricsController {
+  @Get('/')
+  @ApiSecurity('apiKeyAuth')
+  getMetrics() {
+    return { uptime: process.uptime() }
+  }
+}
 ```
 
 ### `@ApiExclude()`
 Excludes an endpoint or controller class from OpenAPI and Swagger generation.
 
-```typescript
-@Get('/internal')
-@ApiExclude()
-getInternal() {}
+```typescript filename="src/http/internal/route.ts"
+import { Controller, Get } from 'exisjs/decorators'
+import { ApiExclude } from 'exisjs/swagger'
+
+@Controller()
+export default class InternalController {
+  @Get('/health')
+  @ApiExclude()
+  getHealth() {
+    return { status: 'healthy' }
+  }
+}
 ```
 
 ### `@ApiProperty(options?: { description?: string; example?: any; required?: boolean })`
 Annotates a class property with metadata for OpenAPI schema models.
+
+```typescript filename="src/http/users/dto.ts"
+import { ApiProperty } from 'exisjs/swagger'
+
+export class CreateUserDto {
+  @ApiProperty({ description: 'Full name of the user', example: 'Alice Johnson', required: true })
+  name!: string
+
+  @ApiProperty({ description: 'Work email address', example: 'alice@example.com', required: true })
+  email!: string
+}
+```
 
 ---
 
 ## Functions
 
 ### `swagger(config?: SwaggerConfig)`
-Convenience helper to mount Swagger/OpenAPI documentation on an ExisJS App instance.
+Convenience helper to mount Swagger/OpenAPI documentation on an ExisJS App instance (typically inside `onStart` or custom server setups).
 
-```typescript
-import { App } from 'exisjs'
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
 import { swagger } from 'exisjs/swagger'
 
-const app = new App()
-swagger({ title: 'My API', path: '/docs' })(app)
+export default exis({
+  onStart(app) {
+    swagger({ title: 'My API', path: '/docs' })(app)
+  },
+})
 ```
 
 ### `generateOpenApiSpec(routesOrApp, config)`
-Pure generator function that introspects routes, parameters, Tex/Zod schemas, and returns an `OpenApiSpec` object.
+Pure generator function that introspects routes, parameters, and `TexEngine`/Zod schemas and returns a complete `OpenApiSpec` object.
 
 ```typescript
+import { generateOpenApiSpec } from 'exisjs/swagger'
+
 const spec = generateOpenApiSpec(app, { title: 'My API', version: '1.0.0' })
 ```
 
 ### `renderDocumentationHtml(config)`
 Renders standalone HTML markup for Swagger UI or Scalar API reference.
+
+```typescript
+import { renderDocumentationHtml } from 'exisjs/swagger'
+
+const html = renderDocumentationHtml({
+  title: 'My API',
+  specPath: '/docs/json',
+  ui: 'scalar',
+})
+```
+

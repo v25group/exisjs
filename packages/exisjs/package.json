@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -84,6 +84,10 @@
     "./logger": {
       "types": "./dist/logger/index.d.ts",
       "default": "./dist/logger/index.js"
+    },
+    "./swagger": {
+      "types": "./dist/swagger/index.d.ts",
+      "default": "./dist/swagger/index.js"
     }
   },
   "files": [

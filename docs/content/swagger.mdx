@@ -5,7 +5,7 @@ nextTitle: "Swagger API Reference"
 
 # Swagger & OpenAPI 3.1 Documentation
 
-ExisJS comes with a native, zero-bloat **Swagger & OpenAPI 3.1** documentation engine. It automatically discovers all registered routes, introspects **Tex** and **Zod** validation schemas, and serves interactive API documentation at `/docs`.
+ExisJS comes with a native, built-in **Swagger & OpenAPI 3.1** documentation engine. It automatically discovers all registered routes, introspects **Tex** and **Zod** validation schemas, and serves interactive API documentation at `/docs`.
 
 ---
 
@@ -44,6 +44,8 @@ The industry-standard interactive Swagger explorer featuring **Try it out**, liv
 A modern, high-performance, dark-mode-first API reference documentation viewer with integrated code snippets and fast search.
 
 ```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
 export default defineConfig({
   docs: {
     enabled: true,
@@ -56,14 +58,14 @@ export default defineConfig({
 
 ## Documenting Functional Routes
 
-When writing functional route controllers (`export default controller({ ... })`), add metadata directly to the route definition:
+In ExisJS folder-based routing, each endpoint folder contains a `route.ts` file that exports a default `controller({ ... })`. You can add OpenAPI metadata directly to each route definition:
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
 import { tex, getPaginationSkip } from 'exisjs/validator'
 
 export default controller({
-  listUsers: route.get('/', {
+  list: route.get('/', {
     summary: 'List active users',
     description: 'Returns a paginated list of all active users in the system.',
     tags: ['Users'],
@@ -80,11 +82,19 @@ export default controller({
     },
     async handle({ query }) {
       const { skip, limit } = getPaginationSkip(query)
-      return UserService.find(skip, limit)
+      return {
+        data: [
+          { id: '550e8400-e29b-41d4-a716-446655440000', name: 'Alice' },
+          { id: '550e8400-e29b-41d4-a716-446655440001', name: 'Bob' },
+        ],
+        total: 2,
+        skip,
+        limit,
+      }
     },
   }),
 
-  createUser: route.post('/', {
+  create: route.post('/', {
     summary: 'Create a new user',
     tags: ['Users'],
     body: tex.object({
@@ -96,11 +106,11 @@ export default controller({
       400: { description: 'Validation error' },
     },
     async handle({ body }) {
-      return UserService.create(body)
+      return { id: '550e8400-e29b-41d4-a716-446655440002', ...body }
     },
   }),
 
-  getUser: route.get('/:id', {
+  getById: route.get('/:id', {
     summary: 'Get user by UUID',
     tags: ['Users'],
     params: tex.object({ id: tex.uuid() }),
@@ -109,7 +119,7 @@ export default controller({
       404: { description: 'User not found' },
     },
     async handle({ params }) {
-      return UserService.findById(params.id)
+      return { id: params.id, name: 'Alice' }
     },
   }),
 })
@@ -119,9 +129,9 @@ export default controller({
 
 ## Documenting Class-Based Controllers (OOP)
 
-For class-based controllers, use decorators from `exisjs/swagger` or `exisjs/decorators`:
+For class-based controllers in `route.ts`, use OpenAPI decorators from `exisjs/swagger` alongside standard routing decorators:
 
-```typescript filename="src/http/products/controller.ts"
+```typescript filename="src/http/products/route.ts"
 import { Controller, Get, Post, Body, Param, Query } from 'exisjs/decorators'
 import {
   ApiTags,
@@ -130,32 +140,42 @@ import {
   ApiBearerAuth,
   ApiExclude,
 } from 'exisjs/swagger'
-import { tex } from 'exisjs/validator'
 
 @ApiTags('Products')
 @ApiBearerAuth()
-@Controller('/products')
-export class ProductController {
+@Controller()
+export default class ProductsController {
   @Get('/')
   @ApiOperation({
     summary: 'List products',
     description: 'Fetches paginated list of catalog products',
   })
   @ApiResponse({ status: 200, description: 'List of products' })
-  async list(@Query('page') page: number) {
-    return ProductService.findAll(page)
+  async list(@Query('page') page: number = 1) {
+    return [
+      { id: 1, name: 'Mechanical Keyboard', price: 99 },
+      { id: 2, name: 'Ergonomic Mouse', price: 49 },
+    ]
   }
 
   @Post('/')
   @ApiOperation({ summary: 'Create new product' })
   @ApiResponse({ status: 201, description: 'Product created' })
-  async create(@Body() dto: any) {
-    return ProductService.create(dto)
+  async create(@Body() dto: { name: string; price: number }) {
+    return { id: 3, ...dto }
   }
 
-  @Get('/internal-stats')
+  @Get('/:id')
+  @ApiOperation({ summary: 'Get product by ID' })
+  @ApiResponse({ status: 200, description: 'Product found' })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async getById(@Param('id') id: string) {
+    return { id, name: 'Mechanical Keyboard', price: 99 }
+  }
+
+  @Get('/internal/metrics')
   @ApiExclude() // Excluded from Swagger documentation
-  async stats() {
+  async metrics() {
     return { uptime: process.uptime() }
   }
 }
@@ -165,7 +185,7 @@ export class ProductController {
 
 ## Cascading Boundary Metadata
 
-Cascading boundaries (`boundary.ts`) can assign shared tags, descriptions, or security requirements to all nested routes:
+Cascading boundaries (`boundary.ts`) can assign shared tags, descriptions, or security requirements to all nested routes in the directory:
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
@@ -183,6 +203,8 @@ export const config = defineBoundary({
 Define reusable security schemes (such as Bearer JWT, API Keys, or OAuth2) in `exis.config.ts`:
 
 ```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
 export default defineConfig({
   docs: {
     enabled: true,
@@ -208,21 +230,60 @@ export default defineConfig({
 
 ---
 
-## Programmatic / Custom Setup
+## Advanced Configuration (`exis.config.ts`)
 
-You can also mount Swagger programmatically on any `App` instance:
+For advanced customization, such as modifying the generated OpenAPI spec before serving or injecting custom styling:
 
-```typescript filename="src/index.ts"
-import { App } from 'exisjs'
-import { swagger } from 'exisjs/swagger'
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
 
-const app = new App()
-
-// Mount custom swagger documentation
-swagger({
-  title: 'Custom API',
-  version: '2.0.0',
-  path: '/api/docs',
-  specPath: '/api/docs/spec.json',
-})(app)
+export default defineConfig({
+  docs: {
+    enabled: true,
+    title: 'Enterprise API Gateway',
+    version: '2.0.0',
+    description: 'Internal and external microservices API reference',
+    ui: 'scalar', // 'swagger-ui' | 'scalar'
+    servers: [
+      { url: 'https://api.example.com', description: 'Production Server' },
+      { url: 'http://localhost:3000', description: 'Local Development' },
+    ],
+    transformSpec(spec) {
+      // Programmatically mutate or enrich OpenAPI specification
+      spec.info.contact = { name: 'API Support', email: 'support@example.com' }
+      return spec
+    },
+  },
+})
 ```
+
+---
+
+## Server Lifecycle Hook (`server.ts`)
+
+You can also interact with the Swagger subsystem or application instance during server boot in `src/http/server.ts`:
+
+### Functional Paradigm
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+
+export default exis({
+  onStart(app) {
+    console.log('[API] Swagger documentation ready at /docs')
+  },
+})
+```
+
+### Class-Based (OOP) Paradigm
+```typescript filename="src/http/server.ts"
+import { Server } from 'exisjs/decorators'
+import type { App } from 'exisjs'
+
+@Server()
+export default class RootServer {
+  async onStart(app: App) {
+    console.log('[API] Swagger documentation ready at /docs')
+  }
+}
+```
+

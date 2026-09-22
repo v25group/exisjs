@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.8`** | 2026-09-22 | Patch & Export Fixes | Subpath export `exisjs/swagger`, root exports, canonical doc fixes | [**Read v0.7.8 Notes →**](./changelog/v0.7/v0.7.8.md) |
 | **`v0.7.7`** | 2026-09-22 | Features & Architecture | Native Swagger/OpenAPI 3.1, subsystem modularization, comprehensive TSDoc | [**Read v0.7.7 Notes →**](./changelog/v0.7/v0.7.7.md) |
 | **`v0.7.6`** | 2026-09-21 | Stability, DX & Perf | Response toolkit, actionable error envelopes, single-line logger, `tex.env` | [**Read v0.7.6 Notes →**](./changelog/v0.7/v0.7.6.md) |
 | **`v0.7.5`** | 2026-09-19 | Resilience & DX | Error convention, boundary hooks, AbortSignal, CHIPS, instant shutdown | [**Read v0.7.5 Notes →**](./changelog/v0.7/v0.7.5.md) |
@@ -22,24 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.7] - 2026-09-22
+## Current Release: [0.7.8] - 2026-09-22
 
-> For full technical details and code examples, see [**`changelog/v0.7/v0.7.7.md`**](./changelog/v0.7/v0.7.7.md).
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.8.md`**](./changelog/v0.7/v0.7.8.md).
 
 ### Added
-- **Native Swagger & OpenAPI 3.1 Engine (`exisjs/swagger`)**: Auto-generated OpenAPI 3.1 specification at `/docs/json` and interactive documentation UIs (**Swagger UI** & **Scalar**) served at `/docs`.
-- **Dual-Paradigm Documentation Support**:
-  - Declarative route metadata (`summary`, `description`, `tags`, `responses`, `operationId`, `deprecated`) on functional `route.get('/...', { ... })` with automatic `TexEngine` and `tex.pagination()` reflection.
-  - Class-based decorators (`@ApiTags`, `@ApiOperation`, `@ApiResponse`, `@ApiBearerAuth`, `@ApiSecurity`, `@ApiExclude`, `@ApiProperty`).
-- **Comprehensive TSDoc & IDE Hover Intelligence**: Rich, copy-pasteable real-world examples strictly following canonical ExisJS patterns across all public APIs (`route.*`, `controller`, `defineBoundary`, `tex.*`, `res.*`, `req.*`, `cron.*`, `@Controller`, etc.).
-- **Official Documentation**: Comprehensive Swagger guide (`docs/content/swagger.mdx`), API Reference (`docs/reference/swagger.mdx`), and updated navigation sidebar (`web/components/docs/sidebar.tsx`).
-
-### Changed
-- **Architectural Modularization**: Refactored large monolithic modules into focused, maintainable sub-modules (~300 lines) under `src/router/scanner/`, `src/validator/`, and `src/server/helpers/`.
+- **Subpath Export (`exisjs/swagger`)**: Registered `./swagger` subpath export in `packages/exisjs/package.json` for dedicated module resolution of `swagger`, `docs`, `generateOpenApiSpec`, `renderDocumentationHtml`, and all OpenAPI decorators.
 
 ### Fixed
-- **Dev Server Process Lifecycle**: Prevented false-positive `Process crashed with code 1` messages by marking intentional process terminations during hot reloads.
-- **Watcher Isolation**: Excluded `tests/`, `__tests__/`, and `*.test.ts` / `*.spec.ts` files from triggering dev server reloads.
-- **Interceptor Bypass for Specs**: Ensured OpenAPI JSON specification endpoints are served as raw JSON, bypassing global response interceptors.
-- **Cron Subsystem Signatures**: Restored multi-signature overloads for `app.cron.schedule()`, `app.cron.interval()`, `app.cron.timeout()`, `app.cron.has()`, and `CronJob.resume()`.
+- **Documentation Parity**: Corrected file path annotations and controller export syntaxes across `docs/content/swagger.mdx` and `docs/reference/swagger.mdx` to reflect standard ExisJS folder routing (`route.ts`).
+- **Template Dependency Update**: Bumped template generator dependency in `create-exisjs` to `exisjs: '^0.7.8'`.
+
 
