@@ -40,6 +40,7 @@ import { PluginManager } from '../plugin/manager'
 import { RouteScanner } from '../router/route-scanner'
 import { RequestHandler } from './request-handler'
 import { ControllerRegistrar } from '../router/controller-registrar'
+import { CronManager } from '../cron/manager'
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export class App<TRoutes extends Record<string, any> = {}> {
@@ -63,6 +64,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
   public routeScanner: RouteScanner
   public requestHandler: RequestHandler
   public controllerRegistrar: ControllerRegistrar
+  public cron: CronManager
 
   get onStartHook() {
     return this.pluginManager.onStartHook
@@ -122,6 +124,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
     this.routeScanner = new RouteScanner(this)
     this.requestHandler = new RequestHandler(this)
     this.controllerRegistrar = new ControllerRegistrar(this)
+    this.cron = new CronManager(this)
+
+    this.bootstrapper.onShutdown(() => this.cron.drain())
   }
 
   private ensureLogger() {

@@ -220,12 +220,35 @@ export async function generateBoundary(
   success(`Generated boundary in src/http/${name}/${filename}`)
 }
 
-export async function generateErrorHandler(cwd = process.cwd()) {
+export async function generateErrorHandler(
+  cwd = process.cwd(),
+  options: { oop?: boolean } = {}
+) {
   const targetDir = path.join(cwd, 'src', 'http')
   await ensureDir(targetDir)
   const filePath = path.join(targetDir, 'error.ts')
 
-  const code = `import type { Request, Response } from 'exisjs'
+  const code = options.oop
+    ? `import type { Request, Response } from 'exisjs'
+
+/**
+ * Global Exception Handler for ExisJS (OOP Paradigm)
+ * Auto-mounted by the framework to catch unhandled errors and format error responses.
+ */
+export default class GlobalErrorHandler {
+  onError(err: any, req: Request, res: Response) {
+    const status = err.statusCode || err.status || 500
+    res.status(status).json({
+      success: false,
+      error: {
+        message: err.message || 'Internal Server Error',
+        code: err.code || 'INTERNAL_ERROR',
+      },
+    })
+  }
+}
+`
+    : `import type { Request, Response } from 'exisjs'
 
 /**
  * Global Exception Handler for ExisJS
@@ -245,6 +268,47 @@ export function onError(err: any, req: Request, res: Response) {
 
   await fs.writeFile(filePath, code)
   success('Generated global exception handler in src/http/error.ts')
+}
+
+export async function generateCronJob(
+  name: string,
+  cwd = process.cwd(),
+  options: { oop?: boolean } = {}
+) {
+  const targetDir = path.join(cwd, 'src', 'cron')
+  await ensureDir(targetDir)
+  const filename = `${name.toLowerCase()}.ts`
+  const filePath = path.join(targetDir, filename)
+  const capitalizedName = toPascalCase(name)
+
+  const code = options.oop
+    ? `import { Injectable, Cron, CronExpression } from 'exisjs/decorators'
+
+@Injectable()
+export default class ${capitalizedName}Job {
+  @Cron(CronExpression.EVERY_HOUR, {
+    name: '${name.toLowerCase()}',
+    preventOverlap: true,
+  })
+  async handle() {
+    console.log('[cron] Executing ${capitalizedName}Job')
+  }
+}
+`
+    : `import { cron, CronExpression } from 'exisjs/cron'
+
+export default cron({
+  name: '${name.toLowerCase()}',
+  schedule: CronExpression.EVERY_HOUR,
+  preventOverlap: true,
+  async run({ log }) {
+    log.info('[cron] Executing ${name.toLowerCase()} job')
+  },
+})
+`
+
+  await fs.writeFile(filePath, code)
+  success(`Generated cron job in src/cron/${filename}`)
 }
 
 export async function generateResource(

@@ -51,6 +51,14 @@ export default async (phase: string, { defaultConfig }: any) => {
         }
       ]
     },
+    docs: {
+      enabled: true,
+      path: '/docs',
+      title: '01-My-App API Documentation',
+      version: '1.0.0',
+      description: 'Auto-generated Interactive Swagger API Documentation for 01-My-App',
+      ui: 'swagger-ui',
+    },
 
     /**
      * Advanced Tuning

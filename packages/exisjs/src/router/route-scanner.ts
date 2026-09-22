@@ -1,11 +1,21 @@
 import type { App } from '../server/app'
 import { Router } from '../router/router'
 import { cors } from '../middleware/middleware'
-import { tex } from '../validator/index'
+import * as path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { executionContext } from '../server/context'
 import type { Handler } from '../types'
 import { formatDevError } from '../error/overlay'
+import {
+  scanDirectory,
+  isBoundaryFile,
+  isRouteFile,
+  loadActiveBoundaries,
+  compileFunctionalController,
+  mountCronJobs,
+  mountCronJobsFromEntries,
+  mountErrorHandler,
+  mountErrorHandlerFromModule,
+} from './scanner'
 
 export class RouteScanner {
   public lazyRoutes = new Map<string, { filePath: string; loaded: boolean }>()
@@ -18,17 +28,17 @@ export class RouteScanner {
   constructor(public app: App) {}
 
   async loadAllRoutes(): Promise<void> {
-    for (const [filePath, entry] of this.lazyRoutes.entries()) {
+    for (const [, entry] of this.lazyRoutes.entries()) {
       if (!entry.loaded) {
         entry.loaded = true
-        this.app.getRouter().removeRoutesBySource('lazy:' + filePath)
-        const routePath = this.routeMap.get(filePath)
+        this.app.getRouter().removeRoutesBySource('lazy:' + entry.filePath)
+        const routePath = this.routeMap.get(entry.filePath)
         if (routePath) {
           try {
-            await this.mountRouteFile(filePath, routePath)
+            await this.mountRouteFile(entry.filePath, routePath)
           } catch (e) {
             this.app.log.error(
-              { err: e, file: filePath },
+              { err: e, file: entry.filePath },
               'Failed to eager-load route'
             )
           }
@@ -54,6 +64,8 @@ export class RouteScanner {
 
     // Try to load the pre-built manifest first (O(1) boot)
     let manifest: any = undefined
+    let manifestErrorHandler: any = undefined
+    let manifestCronJobs: any = undefined
 
     // STANDALONE MODE: If the bundler statically injected the manifest, skip filesystem!
     if ((globalThis as any).__EXIS_STANDALONE_MANIFEST__) {
@@ -77,6 +89,8 @@ export class RouteScanner {
             mod = await dynamicImport(url)
           }
           manifest = mod.manifest
+          manifestErrorHandler = mod.errorHandler
+          manifestCronJobs = mod.cronJobs
         }
       } catch (err: any) {
         if (err.code !== 'ENOENT') {
@@ -91,15 +105,30 @@ export class RouteScanner {
     const searchDirs = isProd
       ? [
           path.join(root, '.exis', 'server', 'src', 'http'),
-          path.join(root, 'dist', 'src', 'http'),
           path.join(root, 'src', 'http'),
         ]
       : [path.join(root, 'src', 'http')]
 
     if (Array.isArray(manifest)) {
-      for (const dir of searchDirs) {
-        await this.mountErrorHandler(dir)
+      if (manifestErrorHandler !== undefined) {
+        if (manifestErrorHandler) {
+          this.mountErrorHandlerFromModule(
+            manifestErrorHandler,
+            'manifest:error'
+          )
+        }
+      } else {
+        for (const dir of searchDirs) {
+          await this.mountErrorHandler(dir)
+        }
       }
+
+      if (Array.isArray(manifestCronJobs)) {
+        this.mountCronJobsFromEntries(manifestCronJobs)
+      } else {
+        await this.mountCronJobs(root)
+      }
+
       for (const entry of manifest) {
         const { routePath, module: routeMod, filePath } = entry
         const normalizedPath = path.resolve(root, filePath)
@@ -176,31 +205,24 @@ export class RouteScanner {
       }
     }
 
-    if (appDirs.length === 0) return
+    if (appDirs.length === 0) {
+      await this.mountCronJobs(root)
+      return
+    }
 
     this.apiDir = appDirs[0] // keep property name for backwards compatibility
-    ;(this as any)._allApiDirs = appDirs
+    this._allApiDirs = appDirs
 
     for (const appDir of appDirs) {
       await this.mountErrorHandler(appDir)
       const routes = await this.scanDirectory(appDir)
 
       for (const { filePath, routePath } of routes) {
-        const isBoundaryFile =
-          filePath.endsWith('boundary.ts') ||
-          filePath.endsWith('boundary.js') ||
-          /\.boundary\.[jt]s$/.test(filePath)
-
-        if (isBoundaryFile) {
+        if (isBoundaryFile(filePath)) {
           this.hasBoundaries = true
         }
 
-        const isRouteFile =
-          filePath.endsWith('route.ts') ||
-          filePath.endsWith('route.js') ||
-          /\.route\.[jt]s$/.test(filePath)
-
-        if (isRouteFile) {
+        if (isRouteFile(filePath)) {
           const normalized = path.resolve(filePath)
           this.routeMap.set(normalized, routePath)
 
@@ -248,6 +270,8 @@ export class RouteScanner {
         }
       }
     }
+
+    await this.mountCronJobs(root)
 
     // ─── Eager Paradigm Validation ──────────────────────────────────────────────
     // Even in dev mode (lazy routes), pre-scan all route files at startup to
@@ -313,6 +337,20 @@ export class RouteScanner {
         'No boundary.ts found — applying default security headers.'
       )
     }
+
+    const docsConfig = this.app.options.docs || this.app.options.swagger
+    if (
+      docsConfig &&
+      (typeof docsConfig === 'boolean'
+        ? docsConfig
+        : docsConfig.enabled !== false)
+    ) {
+      const { mountDocumentation } = await import('../swagger/mounter.js')
+      mountDocumentation(
+        this.app,
+        typeof docsConfig === 'object' ? docsConfig : {}
+      )
+    }
   }
 
   // ─── Route File Mounting (shared by autoMount and HotReloader) ──────────────
@@ -339,540 +377,29 @@ export class RouteScanner {
       mod = require(filePath)
     }
 
-    const path = await import('node:path')
-    const fs = await import('node:fs/promises')
+    const {
+      activeBoundaries,
+      boundaryMiddlewares,
+      boundaryFilters,
+      boundaryGuards,
+      boundaryInterceptors,
+      boundaryMetadata,
+      boundaryCors,
+      boundaryHeaders,
+      hasBoundaries,
+    } = await loadActiveBoundaries(
+      filePath,
+      this.apiDir || path.dirname(filePath),
+      this.app
+    )
 
-    const dirname = path.dirname(filePath)
-    const apiDir = this.apiDir || dirname
-
-    const normDirname = path.resolve(dirname).replace(/\\/g, '/').toLowerCase()
-    const normApiDir = path.resolve(apiDir).replace(/\\/g, '/').toLowerCase()
-
-    const segments = normDirname.startsWith(normApiDir)
-      ? normDirname.slice(normApiDir.length).split('/').filter(Boolean)
-      : []
-
-    const allMiddlewares: any[] = []
-    const allFilters: any[] = []
-    const allGuards: any[] = []
-    const allInterceptors: any[] = []
-    let allMetadata: Record<string, any> = {}
-    let allCors: any = undefined
-    let allHeaders: Record<string, string> = {}
-    const activeBoundaries: string[] = []
-
-    const dirsToCheck = [apiDir]
-    let tempDir = apiDir
-    for (const segment of segments) {
-      tempDir = path.join(tempDir, segment)
-      dirsToCheck.push(tempDir)
+    if (hasBoundaries) {
+      this.hasBoundaries = true
     }
 
-    for (const dir of dirsToCheck) {
-      try {
-        // Detect deprecated gateway.ts / gateway.js
-        const gatewayPathTs = path.join(dir, 'gateway.ts')
-        const gatewayPathJs = path.join(dir, 'gateway.js')
-        if (
-          (await fs.stat(gatewayPathTs).catch(() => null)) ||
-          (await fs.stat(gatewayPathJs).catch(() => null))
-        ) {
-          this.app.log.warn(
-            `Found deprecated 'gateway' file in '${dir}'. Gateways have been renamed to 'boundary.ts' in ExisJS v0.7+. Please rename it to boundary.ts.`
-          )
-        }
-
-        const boundaryPathTs = path.join(dir, 'boundary.ts')
-        const boundaryPathJs = path.join(dir, 'boundary.js')
-        let targetBoundary = ''
-        if (await fs.stat(boundaryPathTs).catch(() => null))
-          targetBoundary = boundaryPathTs
-        else if (await fs.stat(boundaryPathJs).catch(() => null))
-          targetBoundary = boundaryPathJs
-        else {
-          // Check for named boundaries like user.boundary.ts
-          const dirFiles = await fs.readdir(dir).catch(() => [])
-          const namedBoundary = dirFiles.find((f: string) =>
-            /\.boundary\.[jt]s$/.test(f)
-          )
-          if (namedBoundary) {
-            targetBoundary = path.join(dir, namedBoundary)
-          }
-        }
-
-        if (targetBoundary) {
-          activeBoundaries.push(targetBoundary)
-          this.hasBoundaries = true
-          const boundaryUrl =
-            process.env.VITEST || process.env.NODE_ENV === 'test'
-              ? pathToFileURL(targetBoundary).href
-              : pathToFileURL(targetBoundary).href + '?t=' + Date.now()
-          let boundaryMod: any
-          try {
-            if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-              boundaryMod = await import(boundaryUrl)
-            } else {
-              const dynamicImportBoundary = new Function(
-                'specifier',
-                'return import(specifier)'
-              )
-              boundaryMod = await dynamicImportBoundary(boundaryUrl)
-            }
-          } catch {
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            boundaryMod = require(targetBoundary)
-          }
-
-          // Extract config: check boundaryMod.config, boundaryMod.default, or boundaryMod itself
-          let boundaryConfig: any = null
-          const BOUNDARY_CONFIG = Symbol.for('exisjs:boundary_config')
-          const boundaryDefault =
-            boundaryMod && boundaryMod.default && boundaryMod.default.default
-              ? boundaryMod.default.default
-              : boundaryMod && boundaryMod.default
-                ? boundaryMod.default
-                : null
-
-          if (
-            boundaryMod &&
-            boundaryMod.config &&
-            typeof boundaryMod.config === 'object'
-          ) {
-            boundaryConfig = boundaryMod.config
-          } else if (
-            boundaryDefault &&
-            typeof boundaryDefault === 'function' &&
-            boundaryDefault.prototype &&
-            boundaryDefault.prototype[BOUNDARY_CONFIG]
-          ) {
-            // Class-based boundary with @Boundary
-            boundaryConfig = boundaryDefault.prototype[BOUNDARY_CONFIG]
-          } else if (boundaryDefault && typeof boundaryDefault === 'object') {
-            boundaryConfig = boundaryDefault
-          } else if (boundaryMod && typeof boundaryMod === 'object') {
-            boundaryConfig = boundaryMod
-          }
-
-          if (
-            boundaryConfig &&
-            boundaryConfig.providers &&
-            Array.isArray(boundaryConfig.providers)
-          ) {
-            for (const p of boundaryConfig.providers) {
-              if (Array.isArray(p)) {
-                this.app.container.provide(p[0], p[1])
-              } else {
-                this.app.container.provide(p, p)
-              }
-            }
-          }
-          const isExcluded = (reqPath: string, reqMethod: string) => {
-            if (!boundaryConfig || !boundaryConfig.exclude) return false
-            for (const rule of boundaryConfig.exclude) {
-              if (typeof rule === 'string') {
-                if (rule.endsWith('/*')) {
-                  if (reqPath.startsWith(rule.slice(0, -2))) return true
-                } else if (reqPath === rule) return true
-              } else {
-                const pathMatch = rule.path.endsWith('/*')
-                  ? reqPath.startsWith(rule.path.slice(0, -2))
-                  : reqPath === rule.path
-                if (pathMatch) {
-                  const methods =
-                    rule.methods || (rule.method ? [rule.method] : undefined)
-                  if (!methods || methods.includes(reqMethod as any))
-                    return true
-                }
-              }
-            }
-            return false
-          }
-
-          // 1. Auto-detect named middleware functions: (req, res, next)
-          if (boundaryMod && typeof boundaryMod === 'object') {
-            for (const [exportKey, exportVal] of Object.entries(boundaryMod)) {
-              if (
-                exportKey !== 'default' &&
-                exportKey !== 'config' &&
-                exportKey !== 'beforeHandle' &&
-                exportKey !== 'afterHandle' &&
-                typeof exportVal === 'function' &&
-                exportVal.length >= 3 // (req, res, next)
-              ) {
-                const namedMiddleware = (req: any, res: any, next: any) =>
-                  isExcluded(req.path, req.method)
-                    ? next()
-                    : (exportVal as any)(req, res, next)
-                allMiddlewares.push(namedMiddleware)
-              }
-            }
-            if (
-              typeof boundaryMod.beforeHandle === 'function' &&
-              !boundaryConfig?.beforeHandle
-            ) {
-              if (!boundaryConfig) boundaryConfig = {}
-              boundaryConfig.beforeHandle = boundaryMod.beforeHandle
-            }
-            if (
-              typeof boundaryMod.afterHandle === 'function' &&
-              !boundaryConfig?.afterHandle
-            ) {
-              if (!boundaryConfig) boundaryConfig = {}
-              boundaryConfig.afterHandle = boundaryMod.afterHandle
-            }
-          }
-
-          // 2. Auto-detect pipeline wrapper function: export default async function(ctx, next)
-          // or class method named `handle(ctx, next)`
-          let wrapperFn:
-            ((ctx: any, next: () => Promise<any>) => Promise<any>) | null = null
-          if (
-            boundaryDefault &&
-            typeof boundaryDefault === 'function' &&
-            boundaryDefault.length === 2 &&
-            !boundaryDefault.prototype?.[BOUNDARY_CONFIG]
-          ) {
-            wrapperFn = boundaryDefault
-          } else if (
-            boundaryDefault &&
-            typeof boundaryDefault === 'function' &&
-            boundaryDefault.prototype &&
-            boundaryDefault.prototype[BOUNDARY_CONFIG]
-          ) {
-            const proto = boundaryDefault.prototype
-            if (typeof proto.handle === 'function') {
-              const boundaryInstance = new boundaryDefault()
-              wrapperFn = proto.handle.bind(boundaryInstance)
-            }
-            // Also inspect method middlewares on class boundary
-            for (const prop of Object.getOwnPropertyNames(proto)) {
-              if (
-                prop !== 'constructor' &&
-                prop !== 'handle' &&
-                prop !== 'beforeHandle' &&
-                prop !== 'afterHandle'
-              ) {
-                const methodVal = proto[prop]
-                if (typeof methodVal === 'function' && methodVal.length >= 3) {
-                  const boundaryInstance = new boundaryDefault()
-                  const namedMiddleware = (req: any, res: any, next: any) =>
-                    isExcluded(req.path, req.method)
-                      ? next()
-                      : methodVal.call(boundaryInstance, req, res, next)
-                  allMiddlewares.push(namedMiddleware)
-                }
-              }
-            }
-            if (
-              typeof proto.beforeHandle === 'function' &&
-              !boundaryConfig?.beforeHandle
-            ) {
-              const boundaryInstance = new boundaryDefault()
-              if (!boundaryConfig) boundaryConfig = {}
-              boundaryConfig.beforeHandle =
-                proto.beforeHandle.bind(boundaryInstance)
-            }
-            if (
-              typeof proto.afterHandle === 'function' &&
-              !boundaryConfig?.afterHandle
-            ) {
-              const boundaryInstance = new boundaryDefault()
-              if (!boundaryConfig) boundaryConfig = {}
-              boundaryConfig.afterHandle =
-                proto.afterHandle.bind(boundaryInstance)
-            }
-          }
-
-          if (wrapperFn) {
-            const capturedWrapper = wrapperFn
-            const wrapperMiddleware = (req: any, res: any, next: any) => {
-              if (isExcluded(req.path, req.method)) return next()
-
-              let nextCalled = false
-              let nextResolve: (val: any) => void
-              let _nextReject: (err: any) => void
-              const nextPromise = new Promise((resolve, reject) => {
-                nextResolve = resolve
-                _nextReject = reject
-              })
-
-              // Intercept response methods to catch handler return values
-              const originalJson = res.json.bind(res)
-              const originalSend = res.send.bind(res)
-              let handledByRoute = false
-
-              res.json = function (body: any) {
-                if (!handledByRoute) {
-                  handledByRoute = true
-                  nextResolve(body)
-                } else {
-                  return originalJson(body)
-                }
-                return this
-              }
-              res.send = function (body: any) {
-                if (!handledByRoute) {
-                  handledByRoute = true
-                  nextResolve(body)
-                } else {
-                  return originalSend(body)
-                }
-                return this
-              }
-
-              const ctx = {
-                req,
-                res,
-                app: this.app,
-                resolve: <T>(token: any): T =>
-                  this.app.resolve(token, (req as any)._diCache),
-              }
-
-              capturedWrapper(ctx, async () => {
-                if (!nextCalled) {
-                  nextCalled = true
-                  next()
-                }
-                return nextPromise
-              })
-                .then((wrapperResult: any) => {
-                  if (wrapperResult !== undefined && !res.headersSent) {
-                    if (
-                      typeof wrapperResult === 'object' &&
-                      wrapperResult !== null
-                    ) {
-                      originalJson(wrapperResult)
-                    } else {
-                      originalSend(String(wrapperResult))
-                    }
-                  }
-                })
-                .catch((wrapperErr: any) => {
-                  next(wrapperErr)
-                })
-            }
-            allMiddlewares.push(wrapperMiddleware)
-          }
-
-          if (boundaryConfig) {
-            if (
-              boundaryConfig.blockProbes ||
-              boundaryConfig.blockSuspiciousProbes
-            ) {
-              const probeOpts =
-                typeof boundaryConfig.blockProbes === 'object'
-                  ? boundaryConfig.blockProbes
-                  : typeof boundaryConfig.blockSuspiciousProbes === 'object'
-                    ? boundaryConfig.blockSuspiciousProbes
-                    : {}
-              const { blockSuspiciousProbes } =
-                await import('../middleware/security')
-              allMiddlewares.push(blockSuspiciousProbes(probeOpts))
-            }
-
-            const bMiddleware =
-              boundaryConfig.middleware || boundaryConfig.middlewares
-            if (bMiddleware) {
-              const mList = Array.isArray(bMiddleware)
-                ? bMiddleware
-                : [bMiddleware]
-              const wrapped = mList.map(
-                (m: any) => (req: any, res: any, next: any) =>
-                  isExcluded(req.path, req.method) ? next() : m(req, res, next)
-              )
-              allMiddlewares.push(...wrapped)
-            }
-            if (boundaryConfig.filters) {
-              const wrapped = boundaryConfig.filters.map(
-                (f: any) => (err: any, req: any, res: any, next: any) =>
-                  isExcluded(req.path, req.method)
-                    ? next(err)
-                    : f.prototype && f.prototype.catch
-                      ? new f().catch(err, req, res, next)
-                      : f(err, req, res, next)
-              )
-              allFilters.push(...wrapped)
-            }
-            if (boundaryConfig.guards) {
-              const wrapped = boundaryConfig.guards.map((g: any) => {
-                return async (req: any) => {
-                  if (isExcluded(req.path, req.method)) return true
-                  return typeof g === 'function'
-                    ? g.prototype?.canActivate
-                      ? new g().canActivate(req)
-                      : g(req)
-                    : g.canActivate(req)
-                }
-              })
-              allGuards.push(...wrapped)
-            }
-            if (boundaryConfig.interceptors) {
-              const wrapped = boundaryConfig.interceptors.map((i: any) => {
-                return async (req: any, res: any) => {
-                  if (isExcluded(req.path, req.method)) return
-                  return typeof i === 'function'
-                    ? i.prototype?.intercept
-                      ? new i().intercept(req, res)
-                      : i(req, res)
-                    : i.intercept(req, res)
-                }
-              })
-              allInterceptors.push(...wrapped)
-            }
-            if (boundaryConfig.beforeHandle || boundaryConfig.afterHandle) {
-              const beforeHooks = (
-                Array.isArray(boundaryConfig.beforeHandle)
-                  ? boundaryConfig.beforeHandle
-                  : boundaryConfig.beforeHandle
-                    ? [boundaryConfig.beforeHandle]
-                    : []
-              ) as ((req: any, res: any) => any)[]
-
-              const afterHooks = (
-                Array.isArray(boundaryConfig.afterHandle)
-                  ? boundaryConfig.afterHandle
-                  : boundaryConfig.afterHandle
-                    ? [boundaryConfig.afterHandle]
-                    : []
-              ) as ((req: any, res: any, data: any) => any)[]
-
-              const hookMiddleware = async (req: any, res: any, next: any) => {
-                if (isExcluded(req.path, req.method)) return next()
-
-                for (const hook of beforeHooks) {
-                  try {
-                    const result = await hook(req, res)
-                    if (result === false) {
-                      if (!res.headersSent) {
-                        res.status(403).json({
-                          success: false,
-                          error: {
-                            code: 'FORBIDDEN',
-                            message: 'Forbidden by boundary guard',
-                          },
-                        })
-                      }
-                      return
-                    }
-                    if (res.headersSent) return
-                  } catch (err) {
-                    return next(err)
-                  }
-                }
-
-                if (afterHooks.length === 0) {
-                  return next()
-                }
-
-                const originalJson = res.json.bind(res)
-                const originalSend = res.send.bind(res)
-                let handled = false
-
-                res.json = function (body: any) {
-                  if (handled) return originalJson(body)
-                  handled = true
-
-                  const runAfterHooks = async () => {
-                    let currentData = body
-                    for (const afterHook of afterHooks) {
-                      const transformed = await afterHook(req, res, currentData)
-                      if (transformed !== undefined) {
-                        currentData = transformed
-                      }
-                      if (res.headersSent) return
-                    }
-                    originalJson(currentData)
-                  }
-
-                  runAfterHooks().catch((err) => {
-                    next(err)
-                  })
-                  return this
-                }
-
-                res.send = function (body: any) {
-                  if (handled) return originalSend(body)
-                  handled = true
-
-                  const runAfterHooks = async () => {
-                    let currentData = body
-                    for (const afterHook of afterHooks) {
-                      const transformed = await afterHook(req, res, currentData)
-                      if (transformed !== undefined) {
-                        currentData = transformed
-                      }
-                      if (res.headersSent) return
-                    }
-                    originalSend(currentData)
-                  }
-
-                  runAfterHooks().catch((err) => {
-                    next(err)
-                  })
-                  return this
-                }
-
-                next()
-              }
-
-              allMiddlewares.push(hookMiddleware)
-            }
-            if (boundaryConfig.timeout !== undefined) {
-              const baseTimeout = boundaryConfig.timeout
-              const timeoutMiddleware = (req: any, res: any, next: any) => {
-                if (isExcluded(req.path, req.method)) return next()
-                const ms =
-                  typeof baseTimeout === 'function'
-                    ? baseTimeout(req)
-                    : baseTimeout
-                if (ms) {
-                  req.timeoutTimer = setTimeout(() => {
-                    if (!res.headersSent) {
-                      res.status(408).json({
-                        success: false,
-                        error: {
-                          code: 'REQUEST_TIMEOUT',
-                          message: 'Request Timeout',
-                        },
-                      })
-                    }
-                  }, ms)
-                  res.raw.on('finish', () => clearTimeout(req.timeoutTimer))
-                }
-                next()
-              }
-              allMiddlewares.push(timeoutMiddleware)
-            }
-            if (boundaryConfig.metadata) {
-              allMetadata = { ...allMetadata, ...boundaryConfig.metadata }
-            }
-            if (boundaryConfig.cors !== undefined) allCors = boundaryConfig.cors
-            if (boundaryConfig.headers)
-              allHeaders = { ...allHeaders, ...boundaryConfig.headers }
-            if (boundaryConfig.plugins) {
-              for (const plugin of boundaryConfig.plugins) {
-                await this.app.pluginManager.register(plugin)
-              }
-            }
-            if (boundaryConfig.imports) {
-              for (const mod of boundaryConfig.imports) {
-                const name = 'plugin' in mod ? mod.plugin.name : mod.name
-                if (!this.app.pluginManager.hasPlugin(name)) {
-                  await this.app.pluginManager.register(mod)
-                }
-              }
-            }
-            if (boundaryConfig.providers) {
-              for (const [token, providerConfig] of boundaryConfig.providers) {
-                this.app.container.provide(token, providerConfig)
-              }
-            }
-          }
-        }
-      } catch {
-        /* ignore */
-      }
-    }
+    const allMiddlewares = [...boundaryMiddlewares]
+    let allCors = boundaryCors
+    let allHeaders = { ...boundaryHeaders }
 
     const currentMod =
       mod && mod.default && mod.default.default
@@ -893,12 +420,14 @@ export class RouteScanner {
       allCors = this.app.options.cors
 
     const rMiddleware = routeConfig.middleware || routeConfig.middlewares
-    if (rMiddleware)
+    if (rMiddleware) {
       allMiddlewares.push(
         ...(Array.isArray(rMiddleware) ? rMiddleware : [rMiddleware])
       )
-    if (routeConfig.headers)
+    }
+    if (routeConfig.headers) {
       allHeaders = { ...allHeaders, ...routeConfig.headers }
+    }
     if (routeConfig.plugins) {
       for (const plugin of routeConfig.plugins) {
         await this.app.pluginManager.register(plugin)
@@ -907,7 +436,7 @@ export class RouteScanner {
 
     // Pass boundary features to controllers via metadata if necessary
     const combinedFilters = [
-      ...allFilters,
+      ...boundaryFilters,
       ...(routeConfig.filters
         ? Array.isArray(routeConfig.filters)
           ? routeConfig.filters
@@ -915,7 +444,7 @@ export class RouteScanner {
         : []),
     ]
     const combinedGuards = [
-      ...allGuards,
+      ...boundaryGuards,
       ...(routeConfig.guards
         ? Array.isArray(routeConfig.guards)
           ? routeConfig.guards
@@ -923,7 +452,7 @@ export class RouteScanner {
         : []),
     ]
     const combinedInterceptors = [
-      ...allInterceptors,
+      ...boundaryInterceptors,
       ...(routeConfig.interceptors
         ? Array.isArray(routeConfig.interceptors)
           ? routeConfig.interceptors
@@ -945,7 +474,7 @@ export class RouteScanner {
 
         if (!mod.default.metadata) mod.default.metadata = {}
         Object.assign(mod.default.metadata, {
-          ...allMetadata,
+          ...boundaryMetadata,
           ...(routeConfig.metadata || {}),
         })
       } catch {
@@ -956,15 +485,12 @@ export class RouteScanner {
     const prefixMiddlewares: any[] = []
 
     if (this.app.options.debugRouting) {
-      const pathLib = await import('node:path')
-      const relFile = pathLib
-        .relative(process.cwd(), filePath)
-        .replace(/\\/g, '/')
+      const relFile = path.relative(process.cwd(), filePath).replace(/\\/g, '/')
       const boundaryStr =
         activeBoundaries.length > 0
           ? activeBoundaries
               .map((g: string) =>
-                pathLib.relative(process.cwd(), g).replace(/\\/g, '/')
+                path.relative(process.cwd(), g).replace(/\\/g, '/')
               )
               .join(' -> ') + ' -> '
           : ''
@@ -1057,256 +583,8 @@ export class RouteScanner {
     }
   }
 
-  private compileFunctionalController(
-    config: any
-  ): import('../router/router').Router {
-    const router = new Router()
-
-    const fileMiddleware: any[] = []
-    if (config.cors) {
-      fileMiddleware.push(config.cors === true ? cors({}) : cors(config.cors))
-    }
-    const fileMiddlewareConfig = config.middleware || config.middlewares
-    if (fileMiddlewareConfig) {
-      fileMiddleware.push(
-        ...(Array.isArray(fileMiddlewareConfig)
-          ? fileMiddlewareConfig
-          : [fileMiddlewareConfig])
-      )
-    }
-
-    const { onError, onResponse } = config
-
-    for (const [key, routeConfig] of Object.entries(config)) {
-      if (
-        [
-          'cors',
-          'middleware',
-          'middlewares',
-          'onError',
-          'onResponse',
-          '__isController',
-        ].includes(key)
-      )
-        continue
-
-      const rc = routeConfig as any
-      if (!rc || !rc.method || !rc.path || !rc.handle) continue
-
-      const routeMiddlewares = [...fileMiddleware]
-
-      if (rc.cors) {
-        routeMiddlewares.push(rc.cors === true ? cors({}) : cors(rc.cors))
-      }
-      const rcMiddleware = rc.middleware || rc.middlewares
-      if (rcMiddleware) {
-        routeMiddlewares.push(
-          ...(Array.isArray(rcMiddleware) ? rcMiddleware : [rcMiddleware])
-        )
-      }
-
-      // ─── SUPER HANDLER WRAPPER ───
-      const superHandler = async (req: any, res: any, next: any) => {
-        if (onResponse) {
-          res.raw.on('finish', () => onResponse(req, res))
-        }
-
-        try {
-          // Dynamic Route Timeout Override
-          const routeTimeoutVal =
-            rc.timeoutMs !== undefined ? rc.timeoutMs : rc.timeout
-          if (
-            routeTimeoutVal !== undefined &&
-            typeof req.setTimeout === 'function'
-          ) {
-            const ms =
-              typeof routeTimeoutVal === 'number'
-                ? routeTimeoutVal
-                : routeTimeoutVal?.ms
-            if (typeof ms === 'number') {
-              if (ms <= 0) req.clearTimeout?.()
-              else req.setTimeout(ms)
-            }
-          }
-
-          // 0. Enforce Route Permissions (Role Authorization)
-          if (rc.permissions && rc.permissions.length > 0) {
-            if (!req.user) {
-              res.status(401).json({
-                success: false,
-                error: {
-                  code: 'UNAUTHORIZED',
-                  message: 'Unauthorized: User not found on request',
-                },
-              })
-              return
-            }
-            const userPerms =
-              req.user.permissions || req.user.roles || req.user.role || []
-            const permsArray = Array.isArray(userPerms)
-              ? userPerms
-              : [userPerms]
-            const hasPerm = rc.permissions.every((p: string) =>
-              permsArray.includes(p)
-            )
-            if (!hasPerm) {
-              res.status(403).json({
-                success: false,
-                error: {
-                  code: 'FORBIDDEN',
-                  message: 'Forbidden: Insufficient permissions',
-                },
-              })
-              return
-            }
-          }
-
-          // 1. Run Guards
-          const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
-          for (const guard of routeGuards) {
-            const allowed = await (typeof guard === 'function'
-              ? guard.prototype?.canActivate
-                ? new guard().canActivate(req)
-                : guard(req)
-              : guard.canActivate(req))
-            if (!allowed) {
-              if (res && !res.headersSent) {
-                res.status(403).json({
-                  success: false,
-                  error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
-                })
-              }
-              return
-            }
-          }
-
-          // Build Context
-          const ctx: any = {
-            body: req.body,
-            query: req.query,
-            params: req.params,
-            headers: req.headers,
-            file: (req as any).file,
-            files: (req as any).files,
-            fields: req.body,
-            req,
-            res,
-            app: this.app,
-            resolve: <T>(token: any): T =>
-              this.app.resolve(token, (req as any)._diCache),
-            socket: (req as any).ws,
-            state: executionContext.getStore()?.state || {},
-          }
-          if (req.user !== undefined) ctx.user = req.user
-          if ((req as any).session !== undefined)
-            ctx.session = (req as any).session
-
-          const result = await rc.handle(ctx)
-
-          // 2. Run Interceptors
-          const routeInterceptors = [
-            ...(config.interceptors || []),
-            ...(rc.interceptors || []),
-          ]
-          for (const interceptor of routeInterceptors) {
-            await (typeof interceptor === 'function'
-              ? interceptor.prototype?.intercept
-                ? new interceptor().intercept(req, res)
-                : interceptor(req, res)
-              : interceptor.intercept(req, res))
-          }
-
-          if (result !== undefined && !res.headersSent) {
-            if (typeof result === 'object' && result !== null) {
-              res.json(result)
-            } else {
-              res.send(String(result))
-            }
-          }
-        } catch (err) {
-          if (onError) {
-            try {
-              await onError(err, req, res)
-            } catch (hookErr) {
-              next(hookErr)
-            }
-          } else {
-            next(err) // Hands off to ExisJS global error handler (which handles HttpErrors automatically!)
-          }
-        }
-      }
-
-      // Mount to router
-      const method = rc.method.toLowerCase()
-
-      const schema: any = {}
-
-      const isValidatorOrPipe = (v: any) =>
-        v.parse ||
-        v.transform ||
-        (typeof v === 'function' && v.prototype?.transform)
-
-      if (rc.body) {
-        schema.body = isValidatorOrPipe(rc.body) ? rc.body : tex.object(rc.body)
-      }
-      if (rc.query) {
-        schema.query = isValidatorOrPipe(rc.query)
-          ? rc.query
-          : tex.object(rc.query)
-      }
-      if (rc.params) {
-        schema.params = isValidatorOrPipe(rc.params)
-          ? rc.params
-          : tex.object(rc.params)
-      }
-      if (rc.host) {
-        schema.host = rc.host
-      }
-      if (rc.timeoutMs !== undefined) {
-        schema.timeoutMs = rc.timeoutMs
-      }
-      if (rc.timeout !== undefined) {
-        schema.timeout = rc.timeout
-      }
-      if (rc.upload !== undefined) {
-        schema.upload = rc.upload
-      }
-      const combinedFilters = [
-        ...(config.filters
-          ? Array.isArray(config.filters)
-            ? config.filters
-            : [config.filters]
-          : []),
-        ...(rc.filters
-          ? Array.isArray(rc.filters)
-            ? rc.filters
-            : [rc.filters]
-          : []),
-      ]
-      if (combinedFilters.length > 0) {
-        schema.filters = combinedFilters
-      }
-
-      const combinedMetadata = {
-        ...(config.metadata || {}),
-        ...(rc.metadata || {}),
-      }
-      if (Object.keys(combinedMetadata).length > 0) {
-        schema.metadata = combinedMetadata
-      }
-      if (Object.keys(schema).length > 0) {
-        ;(router as any)[method](
-          rc.path,
-          ...routeMiddlewares,
-          schema,
-          superHandler
-        )
-      } else {
-        ;(router as any)[method](rc.path, ...routeMiddlewares, superHandler)
-      }
-    }
-
-    return router
+  private compileFunctionalController(config: any): Router {
+    return compileFunctionalController(config, this.app)
   }
 
   private mountRouteWithSource(
@@ -1336,117 +614,28 @@ export class RouteScanner {
     return this
   }
 
+  public mountErrorHandlerFromModule(mod: any, errorFile = 'error.ts'): void {
+    mountErrorHandlerFromModule(mod, this.app, errorFile)
+  }
+
   private async mountErrorHandler(dir: string): Promise<void> {
-    const fs = await import('node:fs/promises')
-    const path = await import('node:path')
-
-    const candidateFiles = [
-      path.join(dir, 'error.ts'),
-      path.join(dir, 'error.js'),
-      path.join(dir, 'error.mjs'),
-      path.join(dir, 'error.cjs'),
-    ]
-
-    let errorFile: string | null = null
-    for (const file of candidateFiles) {
-      try {
-        const stat = await fs.stat(file)
-        if (stat.isFile()) {
-          errorFile = file
-          break
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (!errorFile) return
-
-    try {
-      const url =
-        process.env.VITEST || process.env.NODE_ENV === 'test'
-          ? pathToFileURL(errorFile).href
-          : pathToFileURL(errorFile).href + '?t=' + Date.now()
-
-      let mod: any
-      if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-        mod = await import(url)
-      } else {
-        const dynamicImport = new Function(
-          'specifier',
-          'return import(specifier)'
-        )
-        mod = await dynamicImport(url)
-      }
-
-      const unwrapped =
-        mod && mod.default && mod.default.default
-          ? mod.default.default
-          : mod && mod.default
-            ? mod.default
-            : mod
-
-      const handler =
-        mod.onError ||
-        (unwrapped && unwrapped.onError) ||
-        (typeof unwrapped === 'function' ? unwrapped : null) ||
-        mod.errorHandler ||
-        mod.handleError
-
-      if (typeof handler === 'function') {
-        if (handler.length === 4) {
-          this.app.use(handler)
-        } else {
-          this.app.onError(handler)
-        }
-        this.app.log.info(
-          { file: errorFile },
-          'Mounted global error handler from error.ts'
-        )
-      }
-    } catch (err) {
-      this.app.log.error(
-        { err, file: errorFile },
-        `Failed to load error handler file: ${errorFile}`
-      )
-    }
+    await mountErrorHandler(dir, this.app)
   }
 
   private async scanDirectory(
     dir: string,
     baseRoute = '/'
   ): Promise<{ filePath: string; routePath: string }[]> {
-    const fs = await import('node:fs/promises')
-    const path = await import('node:path')
+    return scanDirectory(dir, baseRoute)
+  }
 
-    const entries = await fs.readdir(dir, { withFileTypes: true })
-    const results: { filePath: string; routePath: string }[] = []
+  public async mountCronJobs(root: string): Promise<void> {
+    await mountCronJobs(root, this.app, this._allApiDirs)
+  }
 
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        let segment = entry.name
-
-        if (segment.startsWith('(') && segment.endsWith(')')) {
-          const subResults = await this.scanDirectory(fullPath, baseRoute)
-          results.push(...subResults)
-          continue
-        }
-
-        if (segment.startsWith('[...') && segment.endsWith(']')) {
-          segment = '*' + segment.slice(4, -1)
-        } else {
-          segment = segment.replace(/\[(.*?)\]/g, ':$1')
-        }
-
-        const nextBase =
-          baseRoute === '/' ? `/${segment}` : `${baseRoute}/${segment}`
-        const subResults = await this.scanDirectory(fullPath, nextBase)
-        results.push(...subResults)
-      } else {
-        results.push({ filePath: fullPath, routePath: baseRoute })
-      }
-    }
-    return results
+  public mountCronJobsFromEntries(
+    entries: { filePath: string; module: any }[]
+  ): void {
+    mountCronJobsFromEntries(entries, this.app)
   }
 }

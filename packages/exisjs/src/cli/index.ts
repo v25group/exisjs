@@ -51,6 +51,18 @@ program
     await buildCommand(options)
   })
 
+// ─── clean ────────────────────────────────────────────────────────────────────
+
+program
+  .command('clean')
+  .alias('cl')
+  .description('Clean .exis build artifacts and cached types')
+  .option('-a, --all', 'Also remove dist/ directory if present')
+  .action(async (options) => {
+    const { cleanCommand } = await import('./commands/clean')
+    await cleanCommand(options)
+  })
+
 // ─── start ────────────────────────────────────────────────────────────────────
 
 program
@@ -225,6 +237,7 @@ program
       generateSchema,
       generateBoundary,
       generateErrorHandler,
+      generateCronJob,
       generatePlugin,
       generateMiddleware,
       generateTest,
@@ -235,9 +248,13 @@ program
     const cwd = process.cwd()
 
     switch (type) {
+      case 'cron':
+      case 'job':
+        await generateCronJob(name, cwd, options)
+        break
       case 'error':
       case 'err':
-        await generateErrorHandler(cwd)
+        await generateErrorHandler(cwd, options)
         break
       case 'resource':
       case 'crud':

@@ -1,0 +1,228 @@
+---
+nextUrl: "/docs/reference/swagger"
+nextTitle: "Swagger API Reference"
+---
+
+# Swagger & OpenAPI 3.1 Documentation
+
+ExisJS comes with a native, zero-bloat **Swagger & OpenAPI 3.1** documentation engine. It automatically discovers all registered routes, introspects **Tex** and **Zod** validation schemas, and serves interactive API documentation at `/docs`.
+
+---
+
+## Quick Start
+
+Enable Swagger documentation in your `exis.config.ts`:
+
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
+
+export default defineConfig({
+  docs: {
+    enabled: true,              // Mounts UI at /docs and spec at /docs/json
+    title: 'Store API Documentation',
+    version: '1.0.0',
+    description: 'Auto-generated API documentation with native schema validation',
+    ui: 'swagger-ui',          // 'swagger-ui' | 'scalar'
+  }
+})
+```
+
+Once enabled:
+* Visit `http://localhost:3000/docs` to view the interactive documentation UI.
+* Visit `http://localhost:3000/docs/json` (or `/docs/openapi.json`) for the raw OpenAPI 3.1 specification.
+
+---
+
+## Interactive Documentation UIs
+
+ExisJS supports two built-in UI renderers:
+
+### 1. Swagger UI (`ui: 'swagger-ui'`, default)
+The industry-standard interactive Swagger explorer featuring **Try it out**, live request execution, and parameter inspection.
+
+### 2. Scalar API Reference (`ui: 'scalar'`)
+A modern, high-performance, dark-mode-first API reference documentation viewer with integrated code snippets and fast search.
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  docs: {
+    enabled: true,
+    ui: 'scalar', // Switches UI to modern Scalar
+  }
+})
+```
+
+---
+
+## Documenting Functional Routes
+
+When writing functional route controllers (`export default controller({ ... })`), add metadata directly to the route definition:
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { tex, getPaginationSkip } from 'exisjs/validator'
+
+export default controller({
+  listUsers: route.get('/', {
+    summary: 'List active users',
+    description: 'Returns a paginated list of all active users in the system.',
+    tags: ['Users'],
+    query: tex.pagination({ defaultLimit: 25, maxLimit: 100 }),
+    responses: {
+      200: {
+        description: 'Paginated user list',
+        schema: tex.object({
+          data: tex.array(tex.object({ id: tex.uuid(), name: tex.string() })),
+          total: tex.number(),
+        }),
+      },
+      400: { description: 'Invalid query parameters' },
+    },
+    async handle({ query }) {
+      const { skip, limit } = getPaginationSkip(query)
+      return UserService.find(skip, limit)
+    },
+  }),
+
+  createUser: route.post('/', {
+    summary: 'Create a new user',
+    tags: ['Users'],
+    body: tex.object({
+      name: tex.string({ min: 2 }),
+      email: tex.email(),
+    }),
+    responses: {
+      201: { description: 'User successfully created' },
+      400: { description: 'Validation error' },
+    },
+    async handle({ body }) {
+      return UserService.create(body)
+    },
+  }),
+
+  getUser: route.get('/:id', {
+    summary: 'Get user by UUID',
+    tags: ['Users'],
+    params: tex.object({ id: tex.uuid() }),
+    responses: {
+      200: { description: 'User details found' },
+      404: { description: 'User not found' },
+    },
+    async handle({ params }) {
+      return UserService.findById(params.id)
+    },
+  }),
+})
+```
+
+---
+
+## Documenting Class-Based Controllers (OOP)
+
+For class-based controllers, use decorators from `exisjs/swagger` or `exisjs/decorators`:
+
+```typescript filename="src/http/products/controller.ts"
+import { Controller, Get, Post, Body, Param, Query } from 'exisjs/decorators'
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiExclude,
+} from 'exisjs/swagger'
+import { tex } from 'exisjs/validator'
+
+@ApiTags('Products')
+@ApiBearerAuth()
+@Controller('/products')
+export class ProductController {
+  @Get('/')
+  @ApiOperation({
+    summary: 'List products',
+    description: 'Fetches paginated list of catalog products',
+  })
+  @ApiResponse({ status: 200, description: 'List of products' })
+  async list(@Query('page') page: number) {
+    return ProductService.findAll(page)
+  }
+
+  @Post('/')
+  @ApiOperation({ summary: 'Create new product' })
+  @ApiResponse({ status: 201, description: 'Product created' })
+  async create(@Body() dto: any) {
+    return ProductService.create(dto)
+  }
+
+  @Get('/internal-stats')
+  @ApiExclude() // Excluded from Swagger documentation
+  async stats() {
+    return { uptime: process.uptime() }
+  }
+}
+```
+
+---
+
+## Cascading Boundary Metadata
+
+Cascading boundaries (`boundary.ts`) can assign shared tags, descriptions, or security requirements to all nested routes:
+
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+
+export const config = defineBoundary({
+  tags: ['Admin Portal'],
+  security: [{ bearerAuth: [] }],
+})
+```
+
+---
+
+## Security Schemes & Authentication
+
+Define reusable security schemes (such as Bearer JWT, API Keys, or OAuth2) in `exis.config.ts`:
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  docs: {
+    enabled: true,
+    securitySchemes: {
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Enter your JWT token: Bearer <token>',
+      },
+      apiKeyAuth: {
+        type: 'apiKey',
+        in: 'header',
+        name: 'X-API-KEY',
+      },
+    },
+    security: [
+      { bearerAuth: [] },
+    ],
+  },
+})
+```
+
+---
+
+## Programmatic / Custom Setup
+
+You can also mount Swagger programmatically on any `App` instance:
+
+```typescript filename="src/index.ts"
+import { App } from 'exisjs'
+import { swagger } from 'exisjs/swagger'
+
+const app = new App()
+
+// Mount custom swagger documentation
+swagger({
+  title: 'Custom API',
+  version: '2.0.0',
+  path: '/api/docs',
+  specPath: '/api/docs/spec.json',
+})(app)
+```

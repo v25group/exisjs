@@ -123,3 +123,11 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Boundary(config)`: Marks a class as a folder-scoped Boundary configuring CORS, headers, exclusions, and pipeline steps.
 - `@Server(config)`: Marks a class as a root server definition.
 
+---
+
+## 6. Cron & Task Scheduling
+
+- `@Cron(schedule: string, options?: CronJobOptions)`: Schedules a class method as a recurring cron job on any `@Injectable()` service.
+- `@Interval(ms: number, options?: IntervalOptions)`: Schedules a class method to execute repeatedly every `ms` milliseconds.
+- `@TimeoutTask(ms: number, options?: TimeoutOptions)` (alias `@ScheduledTimeout`): Schedules a class method to execute once after `ms` milliseconds following application bootstrap.
+

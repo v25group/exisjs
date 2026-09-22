@@ -245,6 +245,22 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     process.exit(1)
   }
 
+  // Generate .exis/server/package.json to mirror host module type (ESM vs CJS)
+  try {
+    const serverPkgPath = path.join(cwd, outDir, 'package.json')
+    const serverPkgContent = JSON.stringify(
+      {
+        type: format === 'esm' ? 'module' : 'commonjs',
+        private: true,
+      },
+      null,
+      2
+    )
+    fs.writeFileSync(serverPkgPath, serverPkgContent, 'utf8')
+  } catch {
+    // ignore
+  }
+
   // ─── Build-time Validation ──────────────────────────────────────────────────
   // Eagerly import the generated manifest to catch route-level configuration
   // errors (e.g. missing cache keyGenerator, invalid middleware options) NOW,

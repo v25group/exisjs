@@ -1,0 +1,143 @@
+---
+title: "Swagger (exisjs/swagger)"
+description: "API Reference for ExisJS Swagger & OpenAPI 3.1 Documentation Subsystem"
+---
+
+# Swagger Reference (`exisjs/swagger`)
+
+The `exisjs/swagger` module provides tools and decorators for auto-generating OpenAPI 3.1 specifications and serving interactive documentation UIs.
+
+```typescript
+import {
+  swagger,
+  defineSwagger,
+  generateOpenApiSpec,
+  renderDocumentationHtml,
+  mountDocumentation,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiSecurity,
+  ApiExclude,
+  ApiProperty,
+} from 'exisjs/swagger'
+```
+
+---
+
+## Configuration (`SwaggerConfig`)
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | `boolean` | `false` | Whether to enable documentation routes |
+| `path` | `string` | `'/docs'` | URL path for the interactive HTML UI |
+| `specPath` | `string` | `'/docs/json'` | URL path for OpenAPI 3.1 JSON specification |
+| `title` | `string` | `'ExisJS API Documentation'` | API Title displayed in documentation |
+| `version` | `string` | `'1.0.0'` | API Version string |
+| `description` | `string` | `undefined` | Overview markdown or description |
+| `ui` | `'swagger-ui' \| 'scalar'` | `'swagger-ui'` | Documentation UI renderer |
+| `servers` | `OpenApiServer[]` | `[{ url: '/' }]` | Target server list |
+| `tags` | `OpenApiTag[]` | `[]` | Group tags with descriptions |
+| `security` | `Record<string, string[]>[]` | `[]` | Global security requirements |
+| `securitySchemes` | `Record<string, SecurityScheme>` | `{}` | Reusable security scheme definitions |
+| `customCss` | `string` | `undefined` | Custom CSS injected into the UI |
+| `customFavicon` | `string` | `undefined` | Custom favicon image URL |
+| `transformSpec` | `(spec: OpenApiSpec) => OpenApiSpec` | `undefined` | Hook to mutate OpenAPI spec before serving |
+
+---
+
+## Decorators
+
+### `@ApiTags(...tags: string[])`
+Assigns one or more tags to a controller class or method handler.
+*(Alias: `@Tags()`)*
+
+```typescript
+@ApiTags('Users', 'Authentication')
+@Controller('/users')
+export class UserController {}
+```
+
+### `@ApiOperation(options)`
+Attaches summary, description, operationId, and deprecated status to a route method.
+*(Alias: `@Operation()`)*
+
+```typescript
+@Get('/:id')
+@ApiOperation({
+  summary: 'Get user by UUID',
+  description: 'Fetches user details from database',
+  deprecated: false,
+})
+getUser() {}
+```
+
+### `@ApiResponse(options)`
+Defines an expected HTTP response status code and optional schema.
+
+```typescript
+@ApiResponse({
+  status: 200,
+  description: 'User details found',
+  schema: UserResponseSchema,
+})
+@ApiResponse({ status: 404, description: 'User not found' })
+getUser() {}
+```
+
+### `@ApiBearerAuth(name?: string)`
+Requires Bearer JWT authentication for this endpoint or controller.
+*(Alias: `@BearerAuth()`)*
+
+```typescript
+@ApiBearerAuth()
+@Get('/me')
+getMe() {}
+```
+
+### `@ApiSecurity(name: string, scopes?: string[])`
+Requires custom security scheme authentication for this endpoint or controller.
+
+```typescript
+@ApiSecurity('apiKeyAuth')
+@Get('/metrics')
+getMetrics() {}
+```
+
+### `@ApiExclude()`
+Excludes an endpoint or controller class from OpenAPI and Swagger generation.
+
+```typescript
+@Get('/internal')
+@ApiExclude()
+getInternal() {}
+```
+
+### `@ApiProperty(options?: { description?: string; example?: any; required?: boolean })`
+Annotates a class property with metadata for OpenAPI schema models.
+
+---
+
+## Functions
+
+### `swagger(config?: SwaggerConfig)`
+Convenience helper to mount Swagger/OpenAPI documentation on an ExisJS App instance.
+
+```typescript
+import { App } from 'exisjs'
+import { swagger } from 'exisjs/swagger'
+
+const app = new App()
+swagger({ title: 'My API', path: '/docs' })(app)
+```
+
+### `generateOpenApiSpec(routesOrApp, config)`
+Pure generator function that introspects routes, parameters, Tex/Zod schemas, and returns an `OpenApiSpec` object.
+
+```typescript
+const spec = generateOpenApiSpec(app, { title: 'My API', version: '1.0.0' })
+```
+
+### `renderDocumentationHtml(config)`
+Renders standalone HTML markup for Swagger UI or Scalar API reference.

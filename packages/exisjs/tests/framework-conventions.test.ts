@@ -108,6 +108,131 @@ describe('Framework Conventions: src/http/error.ts & Boundary Hooks', () => {
       expect(res.body.customError).toBe(true)
       expect(res.body.msg).toBe('Invalid payload')
     })
+
+    it('supports class-based (OOP) error.ts handler with onError method', async () => {
+      const httpDir = path.join(tmpDir, 'src', 'http')
+      await fs.mkdir(httpDir, { recursive: true })
+
+      await fs.writeFile(
+        path.join(httpDir, 'error.js'),
+        `
+        class GlobalErrorHandler {
+          onError(err, req, res) {
+            res.status(502).json({
+              oopHandled: true,
+              message: err.message,
+              path: req.path
+            })
+          }
+        }
+        exports.default = GlobalErrorHandler
+        `
+      )
+
+      await fs.writeFile(
+        path.join(httpDir, 'route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          oopFail: route.get('/oop-fail', {
+            async handle() {
+              throw new Error('OOP service failed')
+            }
+          })
+        })
+        `
+      )
+
+      app = new App()
+      await app.autoMountRoutes(tmpDir)
+
+      const res = await createTestApp(app).get('/oop-fail')
+      expect(res.status).toBe(502)
+      expect(res.body.oopHandled).toBe(true)
+      expect(res.body.message).toBe('OOP service failed')
+      expect(res.body.path).toBe('/oop-fail')
+    })
+
+    it('supports class-based error.ts with catch(err, host) ExceptionFilter signature', async () => {
+      const httpDir = path.join(tmpDir, 'src', 'http')
+      await fs.mkdir(httpDir, { recursive: true })
+
+      await fs.writeFile(
+        path.join(httpDir, 'error.js'),
+        `
+        class ExceptionFilter {
+          catch(err, host) {
+            host.res.status(503).json({
+              filterHandled: true,
+              err: err.message
+            })
+          }
+        }
+        exports.default = ExceptionFilter
+        `
+      )
+
+      await fs.writeFile(
+        path.join(httpDir, 'route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          filterFail: route.get('/filter-fail', {
+            async handle() {
+              throw new Error('Filter exception triggered')
+            }
+          })
+        })
+        `
+      )
+
+      app = new App()
+      await app.autoMountRoutes(tmpDir)
+
+      const res = await createTestApp(app).get('/filter-fail')
+      expect(res.status).toBe(503)
+      expect(res.body.filterHandled).toBe(true)
+      expect(res.body.err).toBe('Filter exception triggered')
+    })
+
+    it('discovers named error files (e.g. app.error.js)', async () => {
+      const httpDir = path.join(tmpDir, 'src', 'http')
+      await fs.mkdir(httpDir, { recursive: true })
+
+      await fs.writeFile(
+        path.join(httpDir, 'app.error.js'),
+        `
+        exports.onError = function(err, req, res) {
+          res.status(422).json({
+            namedErrorHandled: true,
+            msg: err.message
+          })
+        }
+        `
+      )
+
+      await fs.writeFile(
+        path.join(httpDir, 'route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          namedFail: route.get('/named-fail', {
+            async handle() {
+              throw new Error('Unprocessable entity')
+            }
+          })
+        })
+        `
+      )
+
+      app = new App()
+      await app.autoMountRoutes(tmpDir)
+
+      const res = await createTestApp(app).get('/named-fail')
+      expect(res.status).toBe(422)
+      expect(res.body.namedErrorHandled).toBe(true)
+      expect(res.body.msg).toBe('Unprocessable entity')
+    })
   })
 
   describe('boundary.ts beforeHandle & afterHandle hooks', () => {

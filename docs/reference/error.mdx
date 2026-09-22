@@ -133,6 +133,50 @@ export class InsufficientFundsError extends HttpError {
 
 ---
 
+## Framework Exception File Convention (`src/http/error.ts`)
+
+ExisJS natively discovers and auto-mounts `src/http/error.ts` (or `src/http/*.error.ts`) during application bootstrap. It serves as the single source of truth for centralized exception filtering without requiring manual middleware registration in `server.ts`.
+
+### Handler Signatures
+
+**Functional (`export function onError`):**
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from 'exisjs'
+
+export function onError(err: any, req: Request, res: Response): void | Promise<void> {
+  const status = err.statusCode || err.status || 500
+  res.status(status).json({
+    success: false,
+    error: {
+      code: err.code || 'ERROR',
+      message: err.message || 'Internal Server Error',
+      path: req.path,
+    },
+  })
+}
+```
+
+**Class-Based OOP (`export default class`):**
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from 'exisjs'
+
+export default class GlobalErrorHandler {
+  onError(err: any, req: Request, res: Response): void | Promise<void> {
+    const status = err.statusCode || err.status || 500
+    res.status(status).json({
+      success: false,
+      error: {
+        code: err.code || 'ERROR',
+        message: err.message || 'Internal Server Error',
+        path: req.path,
+      },
+    })
+  }
+}
+```
+
+---
+
 ## Global Error Handler
 
 ExisJS uses a highly sophisticated global error handler out of the box, generated via `createErrorHandler(isDev)`. 

@@ -371,6 +371,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       /* ignore */
     }
 
+    if (child) {
+      ;(child as any)._isIntentionalKill = true
+    }
+
     // 4. Wait for clean exit with a generous graceful timeout (3000ms).
     //    Child will usually exit in ~50-200ms once onClose finishes.
     await new Promise<void>((resolve) => {
@@ -432,6 +436,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     ;(global as any)._hasStartedBefore = true
 
     let stderrBuffer = ''
+    const currentSpawnedChild = child
 
     child!.stderr?.on('data', (chunk) => {
       const str = chunk.toString()
@@ -448,6 +453,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     })
 
     child!.on('exit', (code, signal) => {
+      if ((currentSpawnedChild as any)._isIntentionalKill) {
+        return
+      }
       if (
         !isShuttingDown &&
         signal !== 'SIGTERM' &&
@@ -521,6 +529,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           /\.exis/,
           /dist/,
           /build/,
+          // eslint-disable-next-line no-useless-escape
+          /(^|[\/\\])(tests?|coverage|__tests__)/, // ignore test folders
+          /\.(test|spec)\.[tj]sx?$/, // ignore test files
           /exis\.d\.ts$/,
           /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
           /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
@@ -545,6 +556,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
       watcher.on('all', async (eventName: string, file: string) => {
         if (
+          /\.(test|spec)\.[tj]sx?$/i.test(file) ||
+          // eslint-disable-next-line no-useless-escape
+          /(^|[\/\\])(tests?|coverage|__tests__)/i.test(file) ||
           /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso|bak|tmp|temp|swp|swo|lock|pid|log|sqlite|sqlite3|db|png|jpe?g|gif|svg|ico|webp|pdf)$/i.test(
             file
           )

@@ -1,0 +1,300 @@
+---
+title: "Cron & Scheduling"
+description: "API Reference for ExisJS Task Scheduling, Cron Expressions, and Job Management."
+---
+
+# Cron & Scheduling (`exisjs/cron`, `exisjs/decorators`)
+
+The `exisjs/cron` module provides task scheduling, cron expression parsing, interval timers, and runtime job management.
+
+---
+
+## 1. Functional Definition Helpers
+
+### `cron(scheduleOrOptions, handler?)`
+
+Defines a functional cron job.
+
+```typescript
+import { cron, CronExpression } from 'exisjs/cron'
+
+// Signature 1: Options object with inline run handler
+export default cron({
+  name: 'sync-users',
+  schedule: CronExpression.EVERY_10_MINUTES,
+  timezone: 'UTC',
+  preventOverlap: true,
+  retries: 2,
+  retryDelayMs: 1000,
+  async run({ app, log }) {
+    // ...
+  }
+})
+
+// Signature 2: Schedule string with handler
+export const purgeJob = cron('0 0 * * *', async ({ log }) => {
+  // ...
+})
+```
+
+### `cron.every(duration, handler, options?)`
+
+Shorthand helper accepting human-readable duration strings (e.g., `'10 seconds'`, `'5 minutes'`, `'2 hours'`).
+
+```typescript
+import { cron } from 'exisjs/cron'
+
+export const healthCheck = cron.every('30 seconds', async ({ log }) => {
+  log.info('Checking external dependencies...')
+}, {
+  name: 'ext-health-check'
+})
+```
+
+### `cron.interval(ms, handler, options?)`
+
+Shorthand helper for millisecond recurring intervals.
+
+```typescript
+import { cron } from 'exisjs/cron'
+
+export const heartbeat = cron.interval(60_000, async ({ log }) => {
+  log.info('Server heartbeat tick')
+})
+```
+
+### `cron.timeout(ms, handler, options?)`
+
+Shorthand helper for one-time delayed startup tasks (executes once after application boot).
+
+```typescript
+import { cron } from 'exisjs/cron'
+
+export const cacheWarmup = cron.timeout(5_000, async ({ app, log }) => {
+  log.info('Warming up Redis cache after boot')
+})
+```
+
+---
+
+## 2. OOP Decorators (`exisjs/decorators`)
+
+### `@Cron(schedule, options?)`
+
+Method decorator that marks a class method as a scheduled cron job. Can be used on any `@Injectable()` service.
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `schedule` | `string` | Standard 5 or 6 field cron expression or `CronExpression` constant. |
+| `options` | `CronJobOptions` | Optional job configuration (name, timezone, preventOverlap, retries, etc.). |
+
+```typescript
+import { Injectable, Cron, CronExpression } from 'exisjs/decorators'
+
+@Injectable()
+export default class ReportService {
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
+    name: 'nightly-report',
+    timezone: 'UTC',
+    preventOverlap: true,
+  })
+  async generateDailyReport() {
+    // ...
+  }
+}
+```
+
+### `@Interval(ms, options?)`
+
+Method decorator for recurring millisecond tasks.
+
+```typescript
+import { Injectable, Interval } from 'exisjs/decorators'
+
+@Injectable()
+export default class QueueMonitor {
+  @Interval(15_000, { name: 'queue-poll' })
+  async pollQueue() {
+    // ...
+  }
+}
+```
+
+### `@TimeoutTask(ms, options?)` (alias `@ScheduledTimeout`)
+
+Method decorator for one-time startup tasks executed after the specified millisecond delay.
+
+```typescript
+import { Injectable, TimeoutTask } from 'exisjs/decorators'
+
+@Injectable()
+export default class CacheBootstrap {
+  @TimeoutTask(3_000, { name: 'seed-cache' })
+  async seedCache() {
+    // ...
+  }
+}
+```
+
+---
+
+## 3. Configuration & Options
+
+### `CronJobOptions`
+
+Configuration object passed to `cron()` or decorator options:
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | `auto-generated` | Unique identifier for the job. Used in logs and runtime APIs. |
+| `schedule` | `string` | `undefined` | 5 or 6 field cron expression (e.g. `'0 0 * * *'`). |
+| `interval` | `number` | `undefined` | Millisecond interval for recurring execution. |
+| `timeout` | `number` | `undefined` | Millisecond delay for one-time execution. |
+| `timezone` | `string` | `'UTC'` | Valid IANA timezone string (e.g. `'America/New_York'`, `'Asia/Kolkata'`). |
+| `preventOverlap` | `boolean` | `true` | Skips execution if the previous tick is still running. |
+| `overlapPolicy` | `'skip' \| 'queue'` | `'skip'` | Action taken when execution overlap occurs. |
+| `retries` | `number` | `0` | Number of retry attempts upon failure. |
+| `retryDelayMs` | `number` | `1000` | Milliseconds to wait before executing a retry. |
+| `autoStart` | `boolean` | `true` | Whether the job automatically starts on application bootstrap. |
+| `run` / `handle` | `(ctx: CronContext) => Promise<any> \| any` | `undefined` | The execution callback function. |
+| `onError` | `(err: Error, ctx: CronContext) => void` | `undefined` | Hook called when the job fails after all retries. |
+
+### `CronContext`
+
+The context object provided as the first argument to job execution handlers:
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `string` | The unique name of the active job. |
+| `scheduledTime` | `Date` | The theoretical timestamp the job was scheduled to run. |
+| `executionTime` | `Date` | The actual timestamp execution began. |
+| `iteration` | `number` | Total number of executions completed by this job instance. |
+| `app` | `App` | Reference to the current ExisJS application instance. |
+| `log` | `Logger` | Scoped logger instance with `job: name` context. |
+
+---
+
+## 4. `CronExpression` Presets
+
+ExisJS exports pre-validated standard cron expression constants:
+
+| Constant | Value | Description |
+| :--- | :--- | :--- |
+| `CronExpression.EVERY_SECOND` | `* * * * * *` | Every second (6-field) |
+| `CronExpression.EVERY_5_SECONDS` | `*/5 * * * * *` | Every 5 seconds (6-field) |
+| `CronExpression.EVERY_10_SECONDS` | `*/10 * * * * *` | Every 10 seconds (6-field) |
+| `CronExpression.EVERY_30_SECONDS` | `*/30 * * * * *` | Every 30 seconds (6-field) |
+| `CronExpression.EVERY_MINUTE` | `* * * * *` | Every minute |
+| `CronExpression.EVERY_5_MINUTES` | `*/5 * * * *` | Every 5 minutes |
+| `CronExpression.EVERY_10_MINUTES` | `*/10 * * * *` | Every 10 minutes |
+| `CronExpression.EVERY_15_MINUTES` | `*/15 * * * *` | Every 15 minutes |
+| `CronExpression.EVERY_30_MINUTES` | `*/30 * * * *` | Every 30 minutes |
+| `CronExpression.EVERY_HOUR` | `0 * * * *` | Top of every hour |
+| `CronExpression.EVERY_2_HOURS` | `0 */2 * * *` | Every 2 hours |
+| `CronExpression.EVERY_6_HOURS` | `0 */6 * * *` | Every 6 hours |
+| `CronExpression.EVERY_12_HOURS` | `0 */12 * * *` | Every 12 hours |
+| `CronExpression.EVERY_DAY_AT_MIDNIGHT` | `0 0 * * *` | Daily at 00:00 (Midnight) |
+| `CronExpression.EVERY_DAY_AT_1AM` | `0 1 * * *` | Daily at 01:00 AM |
+| `CronExpression.EVERY_DAY_AT_2AM` | `0 2 * * *` | Daily at 02:00 AM |
+| `CronExpression.EVERY_DAY_AT_NOON` | `0 12 * * *` | Daily at 12:00 PM |
+| `CronExpression.EVERY_WEEK` | `0 0 * * 0` | Every Sunday at midnight |
+| `CronExpression.EVERY_MONTH` | `0 0 1 * *` | First day of every month at midnight |
+| `CronExpression.EVERY_YEAR` | `0 0 1 1 *` | January 1st at midnight |
+
+---
+
+## 5. Runtime Management API (`app.cron`)
+
+Access the cron manager via `app.cron`:
+
+### `app.cron.schedule(options)`
+Registers and schedules a new cron job dynamically.
+
+```typescript
+const job = app.cron.schedule({
+  name: 'dynamic-sync',
+  schedule: '0 */3 * * *',
+  run: async ({ log }) => {
+    log.info('Dynamic sync executed')
+  }
+})
+```
+
+### `app.cron.get(name)`
+Returns the `CronJob` instance by name, or `undefined` if not found.
+
+```typescript
+const job = app.cron.get('nightly-sync')
+```
+
+### `app.cron.has(name)`
+Returns `true` if a job with the specified name exists.
+
+```typescript
+if (app.cron.has('nightly-sync')) {
+  // ...
+}
+```
+
+### `app.cron.list()`
+Returns an array of all registered `CronJob` instances.
+
+```typescript
+const allJobs = app.cron.list()
+```
+
+### `app.cron.status()`
+Returns an array of status and metric descriptors for all registered jobs.
+
+```typescript
+const stats = app.cron.status()
+// [
+//   {
+//     name: 'nightly-sync',
+//     status: 'running',
+//     running: false,
+//     totalExecutions: 14,
+//     successCount: 14,
+//     failureCount: 0,
+//     lastExecution: '2026-09-22T00:00:00.000Z',
+//     nextExecution: '2026-09-23T00:00:00.000Z',
+//     lastDurationMs: 142
+//   }
+// ]
+```
+
+### `app.cron.trigger(name)`
+Manually triggers an immediate execution of the specified job, returning the handler result.
+
+```typescript
+const result = await app.cron.trigger('nightly-sync')
+```
+
+### `app.cron.pause(name)` / `app.cron.resume(name)`
+Pauses or resumes a job's automatic scheduling without unregistering it.
+
+```typescript
+app.cron.pause('nightly-sync')
+app.cron.resume('nightly-sync')
+```
+
+### `app.cron.remove(name)`
+Stops and unregisters a job by name.
+
+```typescript
+app.cron.remove('nightly-sync')
+```
+
+### `app.cron.stopAll()`
+Stops all scheduled timers across all registered jobs.
+
+```typescript
+app.cron.stopAll()
+```
+
+### `app.cron.drain(timeoutMs?)`
+Stops new ticks and awaits any currently running job executions to complete. Called automatically during graceful server shutdown.
+
+```typescript
+await app.cron.drain(5000)
+```

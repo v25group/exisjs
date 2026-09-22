@@ -25,18 +25,19 @@ import { MetadataEngine } from './core/metadata'
 
 /**
  * Marks a class as a controller, automatically grouping its routes under the provided prefix.
- * Uses standard ES decorators, completely avoiding reflect-metadata bloat.
  *
- * Example:
+ * @param prefixOrOptions Base route prefix string or configuration options
  *
- *     @Controller('/api/users')
- *     export class UserController {
- *       @Get()
- *       getUsers() { return []; }
- *     }
- *
- * @param {string | ControllerOptions} [prefixOrOptions] Route prefix or options
- * @public
+ * @example
+ * ```ts
+ * @Controller('/api/users')
+ * export class UserController {
+ *   @Get('/')
+ *   getUsers() {
+ *     return []
+ *   }
+ * }
+ * ```
  */
 export function Controller(prefixOrOptions?: string | ControllerOptions): any {
   return function (target: any, context?: ClassDecoratorContext) {
@@ -136,6 +137,23 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
 
 export const INJECTABLE_REGISTRY = new Set<any>()
 
+/**
+ * Decorates a class as a Dependency Injection provider managed by the Exis container.
+ *
+ * @param options Scope options (`singleton`, `request`, `transient`)
+ *
+ * @example
+ * ```ts
+ * @Injectable()
+ * export class UserService {
+ *   constructor(@Inject(DatabaseService) private db: DatabaseService) {}
+ *
+ *   async findById(id: string) {
+ *     return this.db.query('SELECT * FROM users WHERE id = $1', [id])
+ *   }
+ * }
+ * ```
+ */
 export function Injectable(options?: {
   scope?: 'singleton' | 'request' | 'transient'
 }): any {
@@ -147,6 +165,28 @@ export function Injectable(options?: {
         Symbol.for('exisjs:scope'),
         options.scope
       )
+    }
+
+    const proto = target.prototype
+    if (proto) {
+      const CRON_REGISTRY = Symbol.for('exisjs:cron_jobs')
+      const CRON_META = Symbol.for('exisjs:cron_meta')
+      MetadataEngine.init(proto, CRON_REGISTRY, [])
+      const cronRegistry = MetadataEngine.get(proto, CRON_REGISTRY)
+
+      for (const key of Object.getOwnPropertyNames(proto)) {
+        const descriptor = Object.getOwnPropertyDescriptor(proto, key)
+        if (descriptor && typeof descriptor.value === 'function') {
+          const fn = descriptor.value
+          const cronMeta = MetadataEngine.get(fn, CRON_META)
+          if (cronMeta) {
+            const exists = cronRegistry.some((c: any) => c.methodName === key)
+            if (!exists) {
+              cronRegistry.push({ ...cronMeta, methodName: key })
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -172,7 +212,7 @@ export function Boundary(options?: BoundaryConfig): any {
 /**
  * Marks a class as an OOP Module, configuring its imported modules, controllers, providers, and exports.
  *
- * Example:
+ * @example
  * ```ts
  * @Module({
  *   imports: [DatabaseModule],

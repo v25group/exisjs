@@ -74,6 +74,32 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     for (const h of handlers) {
       if (typeof h === 'object' && h !== null && !Array.isArray(h)) {
         schema = h as RouteSchema
+        if ((h as any).handle && typeof (h as any).handle === 'function') {
+          actualHandlers.push(async (req: any, res: any) => {
+            const ctx = {
+              body: req.body,
+              query: req.query,
+              params: req.params,
+              headers: req.headers,
+              req,
+              res,
+              app: req.app,
+              state: req.state || {},
+              resolve: req.resolve,
+              file: req.file,
+              files: req.files,
+              fields: req.fields,
+            }
+            const result = await (h as any).handle(ctx)
+            if (result !== undefined && !res.headersSent) {
+              if (typeof result === 'object' && result !== null) {
+                return res.json(result)
+              } else {
+                return res.send(result)
+              }
+            }
+          })
+        }
       } else if (typeof h === 'function') {
         actualHandlers.push(h as Handler)
       }

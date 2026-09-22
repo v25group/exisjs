@@ -163,39 +163,88 @@ ExisJS provides mechanisms for granular and centralized error handling.
 
 ### 1. Framework-Level Exception Handler (`src/http/error.ts`)
 
-Instead of writing manual `try/catch` blocks in every route or calling `app.onError` inside `server.ts`, ExisJS natively discovers and auto-mounts `src/http/error.ts` (or `error.js`).
+Instead of writing manual `try/catch` blocks in every route or wiring `app.onError` inside `server.ts`, ExisJS provides a dedicated file convention: **`src/http/error.ts`** (or `src/http/*.error.ts`).
 
-Export an `onError(err, req, res)` function to centrally format, log, and respond to all unhandled exceptions and validation errors:
+When `src/http/error.ts` is present, ExisJS automatically discovers and mounts it during application boot as the global exception interceptor. Any uncaught exception, thrown `HttpError`, or validation failure anywhere in your application is routed to this file.
+
+#### Functional Paradigm
 
 ```typescript filename="src/http/error.ts"
 import type { Request, Response } from 'exisjs'
+import { isDev } from 'exisjs/config'
 
 /**
- * Global Exception Handler for ExisJS
- * Auto-mounted at startup to intercept all unhandled exceptions.
+ * Global Framework Exception Handler
+ * Auto-mounted at startup to intercept all unhandled exceptions and validation errors.
  */
 export function onError(err: any, req: Request, res: Response) {
   const status = err.statusCode || err.status || 500
+  const isOperational = Boolean(err.isOperational || err.statusCode < 500)
 
-  // Centralized structured error response
+  // 1. Log unexpected crashes in production to external APM (Sentry, Datadog, Axiom)
+  if (!isOperational && !isDev) {
+    // e.g. Sentry.captureException(err, { extra: { path: req.path, method: req.method } })
+    req.log.error({ err }, '[Fatal] Unhandled Server Exception')
+  }
+
+  // 2. Format a unified, standard error envelope for client applications
   res.status(status).json({
     success: false,
     error: {
-      code: err.code || 'INTERNAL_ERROR',
+      code: err.code || (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'ERROR'),
       message: err.message || 'Internal Server Error',
+      ...(err.details ? { details: err.details } : {}),
+      ...(err.errors ? { errors: err.errors } : {}),
       path: req.path,
+      timestamp: new Date().toISOString(),
     },
   })
 }
 ```
 
+#### Class-Based (OOP) Paradigm
+
+```typescript filename="src/http/error.ts"
+import type { Request, Response } from 'exisjs'
+import { isDev } from 'exisjs/config'
+
+export default class GlobalErrorHandler {
+  onError(err: any, req: Request, res: Response) {
+    const status = err.statusCode || err.status || 500
+    const isOperational = Boolean(err.isOperational || err.statusCode < 500)
+
+    if (!isOperational && !isDev) {
+      req.log.error({ err }, '[Fatal] Unhandled Server Exception')
+    }
+
+    res.status(status).json({
+      success: false,
+      error: {
+        code: err.code || (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'ERROR'),
+        message: err.message || 'Internal Server Error',
+        ...(err.details ? { details: err.details } : {}),
+        path: req.path,
+        timestamp: new Date().toISOString(),
+      },
+    })
+  }
+}
+```
+
 > [!TIP]
-> You can also scaffold this file instantly via the CLI:
+> **Scaffold with CLI**: You can generate this file instantly using the ExisJS CLI:
 > ```bash
-> exis generate error
+> npx exis generate error
 > # or shorthand:
-> exis g error
+> npx exis g error
 > ```
+
+#### What `src/http/error.ts` Intercepts:
+- **`HttpError` instances**: (e.g. `throw HttpError.notFound()`, `throw HttpError.unauthorized()`).
+- **Validation failures**: Zod, Tex, or Yup validation rejections automatically pass structured `err.errors` and `err.details`.
+- **Database / Network exceptions**: Postgres connection failures, timeout rejections, and third-party API errors.
+- **Syntax errors**: Malformed JSON bodies or bad request payloads.
+
 
 ### 2. Exception Filters (`catchError`)
 

@@ -13,7 +13,7 @@ describe('My App Routes', () => {
     
     // 4. We assert on the response
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { message: 'Welcome to Exis!' } })
+    expect(res.body).toEqual({ success: true, data: { message: 'Welcome to ExisJS!' } })
   })
 
   it('should handle POST requests', async () => {

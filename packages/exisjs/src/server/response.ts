@@ -4,34 +4,18 @@ import path from 'node:path'
 import type { CookieOptions, Request as IRequest } from '../types'
 import { logger } from '../logger/index'
 import { SSEStream, type SSEOptions } from './sse'
+import {
+  serializeCookie,
+  serializeClearCookie,
+  generateETag,
+  nativeStringify,
+  streamToResponse,
+} from './helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const contentDisposition = require('content-disposition')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mime = require('mime-types')
-
-import { generateEtag, fastJsonStringifyBuffer } from '@exisjs/rs'
-
-function generateETag(content: Buffer): string {
-  return generateEtag(content)
-}
-
-function nativeStringify(data: unknown): Buffer | string {
-  if (data === null || data === undefined) {
-    return 'null'
-  }
-  // If native rust serialization is available, use it
-  if (typeof fastJsonStringifyBuffer === 'function') {
-    // Validate object can be serialized without throwing V8 check failure on circularity
-    const str = JSON.stringify(data)
-    if (str.length > 512) {
-      // For larger payloads, Rust serde serialization into Buffer gives zero V8 GC overhead
-      return fastJsonStringifyBuffer(data)
-    }
-    return str
-  }
-  return JSON.stringify(data)
-}
 
 export class ExisResponse<TResponse = any> {
   // A property to store back-reference to request for freshness checks
@@ -106,11 +90,15 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set status `code`.
+   * Sets the HTTP response status code.
    *
-   * @param {number} code
-   * @return {this}
-   * @public
+   * @param code HTTP status code (e.g. `200`, `201`, `400`, `404`, `500`)
+   * @returns Response instance for chaining
+   *
+   * @example
+   * ```ts
+   * res.status(201).json({ created: true })
+   * ```
    */
   status(code: number): this {
     if (this.raw.destroyed || this.raw.headersSent) return this
@@ -119,20 +107,11 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set header `field` to `val`, or pass
-   * an object of header fields.
+   * Sets a response header field to a specific value.
    *
-   * Examples:
-   *
-   *    res.set('Foo', ['bar', 'baz']);
-   *    res.set('Accept', 'application/json');
-   *
-   * Aliased as `res.header()`.
-   *
-   * @param {string} header
-   * @param {string | string[]} value
-   * @return {this}
-   * @public
+   * @param header Header name
+   * @param value Header value or array of values
+   * @returns Response instance for chaining
    */
   set(header: string, value: string | string[]): this {
     this.setHeader(header, value as string | string[])
@@ -140,32 +119,14 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set header `field` to `val`, or pass
-   * an object of header fields.
-   *
-   * Alias for `res.set()`.
-   *
-   * @param {string} name
-   * @param {string | string[]} value
-   * @return {this}
-   * @public
+   * Sets a response header field (alias for `res.set()`).
    */
   header(name: string, value: string | string[]): this {
     return this.set(name, value)
   }
 
   /**
-   * Send given HTTP status code.
-   *
-   * Sets the response status to `code` and the body
-   * to the string representation of the `code`.
-   *
-   * Examples:
-   *
-   *     res.sendStatus(200);
-   *
-   * @param {number} code
-   * @public
+   * Sets status code and sends its numeric string representation.
    */
   sendStatus(code: number): void {
     this.statusCode = code
@@ -185,18 +146,7 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Append additional header `field` with value `val`.
-   *
-   * Example:
-   *
-   *    res.append('Link', ['<http://localhost/>', '<http://localhost:3000/>']);
-   *    res.append('Set-Cookie', 'foo=bar; Path=/; HttpOnly');
-   *    res.append('Warning', '199 Miscellaneous warning');
-   *
-   * @param {string} field
-   * @param {string | string[]} value
-   * @return {this}
-   * @public
+   * Appends an additional value to an existing header field (e.g. `Set-Cookie`, `Link`, `Warning`).
    */
   append(field: string, value: string | string[]): this {
     const prev = this.getHeader(field)
@@ -213,16 +163,14 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Send a response.
+   * Sends a string, Buffer, or object response to the client.
    *
-   * Examples:
+   * @param body Response payload (string, Buffer, or object)
    *
-   *     res.send(Buffer.from('wahoo'));
-   *     res.send({ some: 'json' });
-   *     res.send('<p>some html</p>');
-   *
-   * @param {string | Buffer | object} body
-   * @public
+   * @example
+   * ```ts
+   * res.send('Hello World')
+   * ```
    */
   send(body: string | Buffer | object): void {
     if (!this.isWritable) return
@@ -258,8 +206,6 @@ export class ExisResponse<TResponse = any> {
       return
     }
 
-    // Rely on Node.js core to automatically calculate Content-Length
-    // for strings in res.end() rather than creating a Buffer here.
     if (isBuffer && !this.raw.hasHeader('Content-Length')) {
       this.raw.setHeader('Content-Length', (body as Buffer).length)
     }
@@ -267,15 +213,14 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Send JSON response.
+   * Sends a JSON response with automatic native serialization and fast ETag support.
    *
-   * Examples:
+   * @param data JSON-serializable data payload
    *
-   *     res.json(null);
-   *     res.json({ user: 'tj' });
-   *
-   * @param {unknown} data
-   * @public
+   * @example
+   * ```ts
+   * res.json({ success: true, users: ['Alice', 'Bob'] })
+   * ```
    */
   json(data: unknown extends TResponse ? any : TResponse): void {
     if (!this.isWritable) return
@@ -321,14 +266,14 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Send HTML response.
+   * Sends an HTML response with `Content-Type: text/html; charset=utf-8`.
    *
-   * Examples:
+   * @param content HTML string
    *
-   *     res.html('<h1>Hello</h1>');
-   *
-   * @param {string} content
-   * @public
+   * @example
+   * ```ts
+   * res.html('<h1>Welcome to ExisJS</h1>')
+   * ```
    */
   html(content: string): void {
     if (!this.isWritable) return
@@ -339,18 +284,15 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Redirect to the given `url` with optional response `status`
-   * defaulting to 302.
+   * Performs an HTTP redirect to a given URL with an optional status code (defaults to 302).
    *
-   * Examples:
+   * @param url Target destination URL
+   * @param code HTTP status code (`301` Moved Permanently, `302` Found, `307` Temporary Redirect, `308` Permanent Redirect)
    *
-   *     res.redirect('/foo/bar');
-   *     res.redirect('http://example.com');
-   *     res.redirect('http://example.com', 301);
-   *
-   * @param {string} url
-   * @param {number} [code=302]
-   * @public
+   * @example
+   * ```ts
+   * res.redirect('/login')
+   * ```
    */
   redirect(url: string, code = 302): void {
     if (!this.isWritable) return
@@ -360,200 +302,33 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Stream a Node.js Readable stream, Web standard ReadableStream, or AsyncIterable
-   * to the client with native HTTP backpressure handling and automatic cancellation
-   * if the client disconnects prematurely.
+   * Streams a Node.js Readable stream, Web standard `ReadableStream`, or `AsyncIterable` generator
+   * to the client with native backpressure handling and client disconnect auto-cancellation.
+   *
+   * @param readable Stream or async generator instance
+   *
+   * @example
+   * ```ts
+   * // Streaming from an AI SDK or Web stream:
+   * res.sendStream(aiResponse.toReadableStream())
+   * ```
    */
   sendStream(
     readable: NodeJS.ReadableStream | ReadableStream | AsyncIterable<any>
   ): void {
-    if (!this.isWritable) {
-      if (typeof (readable as any).destroy === 'function') {
-        ;(readable as any).destroy()
-      } else if (typeof (readable as any).cancel === 'function') {
-        ;(readable as any).cancel().catch(() => {
-          /* ignore */
-        })
-      }
-      return
-    }
-
-    if (!this.hasHeader('Content-Type')) {
-      this.setHeader('Content-Type', 'application/octet-stream')
-    }
-
-    // 1. Web Standard ReadableStream (e.g. from fetch, OpenAI, Anthropic, AI SDKs)
-    if (typeof (readable as any).getReader === 'function') {
-      const reader = (readable as any).getReader()
-      let closed = false
-
-      const cleanup = () => {
-        if (closed) return
-        closed = true
-        try {
-          reader.cancel().catch(() => {
-            /* ignore */
-          })
-        } catch {
-          // ignore
-        }
-      }
-
-      this.raw.once('close', cleanup)
-      if (this.req && (this.req as any).raw) {
-        ;(this.req as any).raw.once('close', cleanup)
-        ;(this.req as any).raw.once('aborted', cleanup)
-      }
-
-      ;(async () => {
-        try {
-          while (true) {
-            if (closed || this.raw.destroyed) {
-              cleanup()
-              break
-            }
-            const { done, value } = await reader.read()
-            if (done) {
-              this.raw.removeListener('close', cleanup)
-              if (!this.raw.writableEnded && !this.raw.destroyed) {
-                this.end()
-              }
-              break
-            }
-            if (value !== undefined && value !== null) {
-              const ok = this.raw.write(value)
-              if (!ok && !this.raw.destroyed && !this.raw.writableEnded) {
-                await new Promise<void>((resolve) =>
-                  this.raw.once('drain', resolve)
-                )
-              }
-            }
-          }
-        } catch (err: any) {
-          cleanup()
-          if (this.req && this.req.log) {
-            this.req.log.error({ err }, '[ExisJS] Error in Web ReadableStream')
-          } else {
-            logger.error({ err }, '[ExisJS] Error in Web ReadableStream')
-          }
-          if (this.isWritable && !this.headersSent) {
-            this.statusCode = 500
-            this.end('{"error":"Stream transmission failed"}')
-          } else if (!this.raw.destroyed) {
-            this.raw.destroy(err)
-          }
-        }
-      })()
-      return
-    }
-
-    // 2. AsyncIterable / Generator stream
-    if (
-      typeof (readable as any)[Symbol.asyncIterator] === 'function' &&
-      typeof (readable as any).pipe !== 'function'
-    ) {
-      let closed = false
-      const cleanup = () => {
-        closed = true
-        if (typeof (readable as any).return === 'function') {
-          ;(readable as any).return().catch(() => {
-            /* ignore */
-          })
-        }
-      }
-
-      this.raw.once('close', cleanup)
-      if (this.req && (this.req as any).raw) {
-        ;(this.req as any).raw.once('close', cleanup)
-      }
-
-      ;(async () => {
-        try {
-          for await (const chunk of readable as AsyncIterable<any>) {
-            if (closed || this.raw.destroyed) break
-            if (chunk !== undefined && chunk !== null) {
-              const payload =
-                typeof chunk === 'string' || Buffer.isBuffer(chunk)
-                  ? chunk
-                  : JSON.stringify(chunk)
-              const ok = this.raw.write(payload)
-              if (!ok && !this.raw.destroyed && !this.raw.writableEnded) {
-                await new Promise<void>((resolve) =>
-                  this.raw.once('drain', resolve)
-                )
-              }
-            }
-          }
-          this.raw.removeListener('close', cleanup)
-          if (!this.raw.writableEnded && !this.raw.destroyed) {
-            this.end()
-          }
-        } catch (err: any) {
-          cleanup()
-          if (this.req && this.req.log) {
-            this.req.log.error(
-              { err },
-              '[ExisJS] Error in AsyncIterable stream'
-            )
-          } else {
-            logger.error({ err }, '[ExisJS] Error in AsyncIterable stream')
-          }
-          if (this.isWritable && !this.headersSent) {
-            this.statusCode = 500
-            this.end('{"error":"Stream transmission failed"}')
-          } else if (!this.raw.destroyed) {
-            this.raw.destroy(err)
-          }
-        }
-      })()
-      return
-    }
-
-    // 3. Standard Node.js Readable Stream
-    const cleanup = () => {
-      if (
-        typeof (readable as any).destroy === 'function' &&
-        !(readable as any).destroyed
-      ) {
-        ;(readable as any).destroy()
-      }
-    }
-
-    // Auto-destroy stream if client aborts or response closes early
-    this.raw.once('close', cleanup)
-    if (this.req && (this.req as any).raw) {
-      ;(this.req as any).raw.once('close', cleanup)
-      ;(this.req as any).raw.once('aborted', cleanup)
-    }
-
-    // Handle stream error to prevent process crash
-    if (typeof (readable as any).on === 'function') {
-      ;(readable as any).once('error', (err: any) => {
-        this.raw.removeListener('close', cleanup)
-        if (this.req && this.req.log) {
-          this.req.log.error({ err }, '[ExisJS] Error in sendStream')
-        } else {
-          logger.error({ err }, '[ExisJS] Error in sendStream')
-        }
-        if (this.isWritable && !this.headersSent) {
-          this.statusCode = 500
-          this.end('{"error":"Stream transmission failed"}')
-        } else {
-          cleanup()
-          if (!this.raw.destroyed) {
-            this.raw.destroy(err)
-          }
-        }
-      })
-    }
-
-    if (typeof (readable as any).once === 'function') {
-      ;(readable as any).once('end', () => {
-        this.raw.removeListener('close', cleanup)
-      })
-    }
-
-    ;(readable as any).pipe(this.raw as unknown as NodeJS.WritableStream)
+    streamToResponse(
+      this.raw,
+      readable,
+      this.isWritable,
+      this.headersSent,
+      (name) => this.hasHeader(name),
+      (name, val) => this.setHeader(name, val),
+      (code) => {
+        this.statusCode = code
+      },
+      (data) => this.end(data),
+      this.req
+    )
   }
 
   /**
@@ -566,29 +341,33 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Initialize a Server-Sent Events (SSE) stream for real-time and AI streaming.
+   * Initializes a Server-Sent Events (SSE) stream for real-time data and AI token streaming.
    *
-   * Automatically sets standard SSE headers:
+   * Sets standard SSE headers automatically:
    * - `Content-Type: text/event-stream; charset=utf-8`
    * - `Cache-Control: no-cache, no-transform`
    * - `Connection: keep-alive`
-   * - `X-Accel-Buffering: no` (disables Nginx proxy buffering)
+   * - `X-Accel-Buffering: no`
    *
-   * @param options Optional configuration (heartbeat interval, custom headers)
-   * @param handler Optional callback function receiving the active `SSEStream`
+   * @param optionsOrHandler Optional SSE configuration or callback handler
+   * @param maybeHandler Callback handler when options object is provided
    * @returns Active `SSEStream` instance
    *
    * @example
-   * // Using callback handler:
-   * res.sse(async (sse) => {
-   *   sse.send({ event: 'message', data: 'hello' })
-   *   await sse.pipeFrom(openaiStream)
-   *   sse.close()
+   * ```ts
+   * // In route.ts
+   * export default controller({
+   *   events: route.get('/events', {
+   *     async handle({ res }) {
+   *       res.sse(async (sse) => {
+   *         sse.send({ event: 'ping', data: { time: Date.now() } })
+   *         await sse.pipeFrom(openAiStream)
+   *         sse.close()
+   *       })
+   *     }
+   *   })
    * })
-   *
-   * // Or assigning to variable:
-   * const sse = res.sse()
-   * sse.send({ event: 'connected', data: { time: Date.now() } })
+   * ```
    */
   sse(
     optionsOrHandler?: SSEOptions | ((sse: SSEStream) => void | Promise<void>),
@@ -622,7 +401,6 @@ export class ExisResponse<TResponse = any> {
         }
       }
 
-      // Flush headers immediately
       if (typeof this.raw.flushHeaders === 'function') {
         this.raw.flushHeaders()
       }
@@ -664,15 +442,16 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Transfer the file at the given `filePath` as an attachment.
+   * Transfers a file on disk as an attachment with automatic Content-Disposition and MIME lookup.
    *
-   * Optionally providing an alternate attachment `filename`,
-   * and optional `options`.
+   * @param filePath Absolute path to file on disk
+   * @param filename Optional override for downloaded filename
+   * @param options File stream options
    *
-   * @param {string} filePath
-   * @param {string} [filename]
-   * @param {unknown} [options]
-   * @public
+   * @example
+   * ```ts
+   * res.download('/data/reports/report.pdf', 'monthly-report.pdf')
+   * ```
    */
   download(filePath: string, filename?: string, options?: unknown): void {
     if (this.headersSent) return
@@ -705,20 +484,13 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set _Content-Type_ response header with `type` through `mime.lookup()`
-   * when it does not contain "/", or set the Content-Type to `type` otherwise.
+   * Sets Content-Type header using file extension or MIME type string.
    *
-   * Examples:
-   *
-   *     res.type('.html');
-   *     res.type('html');
-   *     res.type('json');
-   *     res.type('application/json');
-   *     res.type('png');
-   *
-   * @param {string} type
-   * @return {this}
-   * @public
+   * @example
+   * ```ts
+   * res.type('json') // sets 'application/json; charset=utf-8'
+   * res.type('png')  // sets 'image/png'
+   * ```
    */
   type(type: string): this {
     const mimeType = mime.contentType(type) || type
@@ -727,18 +499,7 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set Link header field with the given `links`.
-   *
-   * Examples:
-   *
-   *    res.links({
-   *      next: 'http://api.example.com/users?page=2',
-   *      last: 'http://api.example.com/users?page=5'
-   *    });
-   *
-   * @param {Record<string, string>} links
-   * @return {this}
-   * @public
+   * Sets Link header field with pagination or resource relations.
    */
   links(links: Record<string, string>): this {
     let linkHeader = this.getHeader('Link') || ''
@@ -754,12 +515,7 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Add `field` to Vary. If already present in the Vary set, then
-   * this call is simply ignored.
-   *
-   * @param {string} field
-   * @return {this}
-   * @public
+   * Adds a field to the Vary header if not already present.
    */
   vary(field: string): this {
     if (!field) return this
@@ -783,86 +539,48 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Set cookie `name` to `value`, with the given `options`.
+   * Sets a cookie with specified security options.
    *
-   * Options:
-   *    - `maxAge`   max-age in milliseconds, converted to `expires`
-   *    - `path`     cookie path, defaults to '/'
-   *    - `domain`   cookie domain
-   *    - `secure`   secure cookie
-   *    - `httpOnly` httponly cookie
-   *    - `sameSite` samesite cookie
+   * @param name Cookie name
+   * @param value Cookie value
+   * @param options Cookie options (httpOnly, secure, sameSite, maxAge, path, domain)
    *
-   * Examples:
-   *
-   *    res.cookie('rememberme', '1', { expires: new Date(Date.now() + 900000), httpOnly: true });
-   *    res.cookie('cart', '1234');
-   *
-   * @param {string} name
-   * @param {string} value
-   * @param {CookieOptions} options
-   * @return {this}
-   * @public
+   * @example
+   * ```ts
+   * res.cookie('session_token', token, {
+   *   httpOnly: true,
+   *   secure: true,
+   *   sameSite: 'lax',
+   *   maxAge: 86400000 // 1 day
+   * })
+   * ```
    */
   cookie(name: string, value: string, options: CookieOptions = {}): this {
-    const parts: string[] = [
-      `${encodeURIComponent(name)}=${encodeURIComponent(value)}`,
-    ]
-
-    if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`)
-    if (options.expires) parts.push(`Expires=${options.expires.toUTCString()}`)
-    if (options.path ?? true) parts.push(`Path=${options.path ?? '/'}`)
-    if (options.domain) parts.push(`Domain=${options.domain}`)
-    if (options.httpOnly) parts.push('HttpOnly')
-    if (options.secure) parts.push('Secure')
-
-    if (options.sameSite !== undefined && options.sameSite !== false) {
-      if (options.sameSite === true) {
-        parts.push('SameSite=Strict')
-      } else {
-        const str = String(options.sameSite).toLowerCase()
-        if (str === 'strict') parts.push('SameSite=Strict')
-        else if (str === 'lax') parts.push('SameSite=Lax')
-        else if (str === 'none') {
-          parts.push('SameSite=None')
-          if (!options.secure && !parts.includes('Secure')) {
-            parts.push('Secure')
-          }
-        }
-      }
-    }
-
-    if (options.partitioned) parts.push('Partitioned')
-    if (options.priority) {
-      const p = options.priority.toLowerCase()
-      if (p === 'low') parts.push('Priority=Low')
-      else if (p === 'medium') parts.push('Priority=Medium')
-      else if (p === 'high') parts.push('Priority=High')
-    }
-
-    this.append('Set-Cookie', parts.join('; '))
+    const serialized = serializeCookie(name, value, options)
+    this.append('Set-Cookie', serialized)
     if (process.env.NODE_ENV === 'development') {
-      this.append('X-Set-Cookie', parts.join('; '))
+      this.append('X-Set-Cookie', serialized)
     }
-
     return this
   }
 
   /**
-   * Clear cookie `name`.
+   * Clears a cookie by setting its expiration to the past.
    *
-   * @param {string} name
-   * @param {CookieOptions} [options]
-   * @return {this}
-   * @public
+   * @param name Cookie name
+   * @param options Cookie options (path, domain)
+   *
+   * @example
+   * ```ts
+   * res.clearCookie('session_token')
+   * ```
    */
   clearCookie(name: string, options: CookieOptions = {}): this {
-    const { maxAge: _, expires: __, ...rest } = options
-    return this.cookie(name, '', {
-      httpOnly: true,
-      ...rest,
-      expires: new Date(0),
-      maxAge: 0,
-    })
+    const serialized = serializeClearCookie(name, options)
+    this.append('Set-Cookie', serialized)
+    if (process.env.NODE_ENV === 'development') {
+      this.append('X-Set-Cookie', serialized)
+    }
+    return this
   }
 }

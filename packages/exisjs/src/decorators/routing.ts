@@ -43,37 +43,110 @@ export function createMethodDecorator(method: HttpMethod) {
 }
 
 /**
- * Marks a method as a GET route handler.
+ * Marks a controller method as an HTTP GET route handler.
  *
- * Example:
+ * @param path Optional route path relative to controller prefix
+ * @param schema Optional validation schema
  *
- *     @Get('/:id')
- *     getUser(@Param('id') id: string) { return { id }; }
- *
- * @param {string} [path] The route path
- * @param {RouteSchema} [schema] Optional validation schema
- * @public
+ * @example
+ * ```ts
+ * @Controller('/users')
+ * export class UserController {
+ *   @Get('/:id')
+ *   getUser(@Param('id') id: string) {
+ *     return { id }
+ *   }
+ * }
+ * ```
  */
 export const Get = createMethodDecorator('GET')
 
 /**
- * Marks a method as a POST route handler.
+ * Marks a controller method as an HTTP POST route handler.
  *
- * Example:
+ * @param path Optional route path relative to controller prefix
+ * @param schema Optional validation schema
  *
- *     @Post('/', { body: tex.object({ name: tex.string() }) })
- *     createUser(@Body() body: any) { return body; }
- *
- * @param {string} [path] The route path
- * @param {RouteSchema} [schema] Optional validation schema
- * @public
+ * @example
+ * ```ts
+ * @Controller('/users')
+ * export class UserController {
+ *   @Post('/')
+ *   createUser(@Body() body: CreateUserDto) {
+ *     return { created: body.name }
+ *   }
+ * }
+ * ```
  */
 export const Post = createMethodDecorator('POST')
+
+/**
+ * Marks a controller method as an HTTP PUT route handler.
+ *
+ * @param path Optional route path relative to controller prefix
+ * @param schema Optional validation schema
+ *
+ * @example
+ * ```ts
+ * @Controller('/users')
+ * export class UserController {
+ *   @Put('/:id')
+ *   updateUser(@Param('id') id: string, @Body() body: UpdateUserDto) {
+ *     return { updated: id }
+ *   }
+ * }
+ * ```
+ */
 export const Put = createMethodDecorator('PUT')
+
+/**
+ * Marks a controller method as an HTTP PATCH route handler.
+ *
+ * @param path Optional route path relative to controller prefix
+ * @param schema Optional validation schema
+ */
 export const Patch = createMethodDecorator('PATCH')
+
+/**
+ * Marks a controller method as an HTTP DELETE route handler.
+ *
+ * @param path Optional route path relative to controller prefix
+ * @param schema Optional validation schema
+ *
+ * @example
+ * ```ts
+ * @Controller('/users')
+ * export class UserController {
+ *   @Delete('/:id')
+ *   deleteUser(@Param('id') id: string) {
+ *     return { deleted: true }
+ *   }
+ * }
+ * ```
+ */
 export const Delete = createMethodDecorator('DELETE')
+
+/**
+ * Marks a controller method as an HTTP OPTIONS route handler.
+ */
 export const Options = createMethodDecorator('OPTIONS')
+
+/**
+ * Marks a controller method as an HTTP HEAD route handler.
+ */
 export const Head = createMethodDecorator('HEAD')
+
+/**
+ * Marks a controller method to handle any HTTP method (GET, POST, PUT, DELETE, PATCH, etc.).
+ */
 export const All = createMethodDecorator('ALL')
+
+/**
+ * Marks a controller method as an HTTP CONNECT route handler.
+ */
 export const Connect = createMethodDecorator('CONNECT')
+
+/**
+ * Marks a controller method as an HTTP TRACE route handler.
+ */
 export const Trace = createMethodDecorator('TRACE')

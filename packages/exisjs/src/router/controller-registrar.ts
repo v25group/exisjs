@@ -383,14 +383,24 @@ export class ControllerRegistrar {
               if (typeof filter === 'function' && filter.prototype?.catch) {
                 let filterInstance: any = this.app.container.resolve(filter)
                 if (!filterInstance) filterInstance = new filter()
-                await filterInstance.catch(err, { req, res })
+                await filterInstance.catch(err, { req, res, next })
                 handled = true
                 break
               } else if (
                 typeof filter === 'object' &&
                 typeof filter.catch === 'function'
               ) {
-                await filter.catch(err, { req, res })
+                await filter.catch(err, { req, res, next })
+                handled = true
+                break
+              } else if (typeof filter === 'function') {
+                if (filter.length >= 3) {
+                  await filter(err, req, res, next)
+                } else if (filter.length === 2) {
+                  await filter(err, { req, res, next })
+                } else {
+                  await filter(err)
+                }
                 handled = true
                 break
               }
@@ -474,6 +484,17 @@ export class ControllerRegistrar {
         }
 
         const extractedResponseSchema = routeMeta.responseSchema
+        const classOpenApi =
+          (ControllerClass as any)[Symbol.for('exisjs:openapi_class_meta')] ||
+          {}
+        const mergedTags = [
+          ...(classOpenApi.tags || []),
+          ...(routeMeta.tags || []),
+        ]
+        const mergedSecurity = [
+          ...(classOpenApi.security || []),
+          ...(routeMeta.security || []),
+        ]
 
         if (
           schema ||
@@ -482,7 +503,16 @@ export class ControllerRegistrar {
           extractedQuerySchema ||
           extractedParamsSchema ||
           extractedHeadersSchema ||
-          extractedResponseSchema
+          extractedResponseSchema ||
+          mergedTags.length > 0 ||
+          mergedSecurity.length > 0 ||
+          routeMeta.summary ||
+          routeMeta.description ||
+          routeMeta.operationId ||
+          routeMeta.deprecated !== undefined ||
+          routeMeta.responses ||
+          routeMeta.excludeFromDocs ||
+          classOpenApi.excludeFromDocs
         ) {
           schema = schema || {}
           if (finalHost) schema.host = finalHost
@@ -496,6 +526,24 @@ export class ControllerRegistrar {
             schema.headers = extractedHeadersSchema
           if (extractedResponseSchema && !schema.response)
             schema.response = extractedResponseSchema
+          if (mergedTags.length > 0 && !schema.tags) schema.tags = mergedTags
+          if (mergedSecurity.length > 0 && !schema.security)
+            schema.security = mergedSecurity
+          if (routeMeta.summary && !schema.summary)
+            schema.summary = routeMeta.summary
+          if (routeMeta.description && !schema.description)
+            schema.description = routeMeta.description
+          if (routeMeta.operationId && !schema.operationId)
+            schema.operationId = routeMeta.operationId
+          if (
+            routeMeta.deprecated !== undefined &&
+            schema.deprecated === undefined
+          )
+            schema.deprecated = routeMeta.deprecated
+          if (routeMeta.responses && !schema.responses)
+            schema.responses = routeMeta.responses
+          if (routeMeta.excludeFromDocs || classOpenApi.excludeFromDocs)
+            schema.excludeFromDocs = true
 
           ;(this.app.router as any)[method](
             fullPath,

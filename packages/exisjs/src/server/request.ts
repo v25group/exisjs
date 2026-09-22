@@ -2,6 +2,15 @@ import { IncomingMessage } from 'node:http'
 import type { Logger } from '../types'
 import type { ExisResponse } from './response'
 import { HttpError } from '../error/errors'
+import { parseJsonBody, stripPrototype, parseCookies } from '@exisjs/rs'
+import {
+  resolveIps,
+  resolveProtocol,
+  resolveHostname,
+  parseRawBody,
+  parseMultipartFormData,
+  streamMultipartUpload,
+} from './helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const accepts = require('accepts')
@@ -9,10 +18,6 @@ const accepts = require('accepts')
 const fresh = require('fresh')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const qs = require('fast-querystring')
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const busboy = require('busboy')
-
-import { parseJsonBody, stripPrototype, parseCookies } from '@exisjs/rs'
 
 export class ExisRequest<
   TBody = unknown,
@@ -52,6 +57,7 @@ export class ExisRequest<
   private _ip?: string
   private _protocol?: string
   private _hostname?: string
+  private _method?: string
 
   private _onClose = () => {
     if (!this.res.raw.writableEnded && !this.res.headersSent) {
@@ -139,8 +145,6 @@ export class ExisRequest<
     return this
   }
 
-  private _method?: string
-
   get method(): string {
     return this._method ?? this.raw.method ?? 'GET'
   }
@@ -196,90 +200,25 @@ export class ExisRequest<
     this._cookies = val
   }
 
-  /**
-   * When "trust proxy" is set, trusted proxy addresses + client.
-   *
-   * For example if the value were "client, proxy1, proxy2"
-   * you would receive the array `["client", "proxy1", "proxy2"]`
-   * where "proxy2" is the furthest down-stream and "proxy1" and
-   * "proxy2" were trusted.
-   *
-   * @return {string[]}
-   * @public
-   */
   get ips(): string[] {
     if (this._ips !== undefined) return this._ips
-    this._resolveIps()
-    return this._ips!
+    const res = resolveIps(this.raw, this.trustProxy)
+    this._ips = res.ips
+    this._ip = res.ip
+    return this._ips
   }
 
-  /**
-   * Return the remote address from the trusted proxy.
-   *
-   * The is the remote address on the socket unless
-   * "trust proxy" is set.
-   *
-   * @return {string}
-   * @public
-   */
   get ip(): string {
     if (this._ip !== undefined) return this._ip
-    this._resolveIps()
-    return this._ip!
-  }
-
-  private _normalizeIp(ip: string): string {
-    if (ip.startsWith('::ffff:')) {
-      return ip.substring(7)
-    }
-    if (ip === '::1') {
-      return '127.0.0.1'
-    }
-    return ip
-  }
-
-  private _resolveIps() {
-    const xForwardedFor = this.raw.headers['x-forwarded-for']
-    let ips: string[] = []
-    if (xForwardedFor) {
-      const raw = Array.isArray(xForwardedFor)
-        ? xForwardedFor.join(',')
-        : xForwardedFor
-      ips = raw.split(',').map((ip) => this._normalizeIp(ip.trim()))
-    }
-
-    const rawRemote = this.raw.socket?.remoteAddress ?? '127.0.0.1'
-    const remoteAddress = this._normalizeIp(rawRemote)
-
-    if (this.trustProxy) {
-      let trustedIps = ips
-      if (typeof this.trustProxy === 'number' && this.trustProxy > 0) {
-        trustedIps = ips.slice(-(this.trustProxy + 1))
-      }
-      this._ips = trustedIps
-      this._ip = trustedIps.length > 0 ? trustedIps[0] : remoteAddress
-    } else {
-      this._ips = []
-      this._ip = remoteAddress
-    }
+    const res = resolveIps(this.raw, this.trustProxy)
+    this._ips = res.ips
+    this._ip = res.ip
+    return this._ip
   }
 
   get protocol(): string {
     if (this._protocol !== undefined) return this._protocol
-    const connection = this.raw.socket as import('node:net').Socket & {
-      encrypted?: boolean
-    }
-    const isTls = connection?.encrypted || false
-    let protocol = isTls ? 'https' : 'http'
-
-    const xForwardedProto = this.raw.headers['x-forwarded-proto']
-    if (this.trustProxy && xForwardedProto) {
-      const rawProto = Array.isArray(xForwardedProto)
-        ? xForwardedProto.join(',')
-        : xForwardedProto
-      protocol = rawProto.split(',')[0].trim()
-    }
-    this._protocol = protocol
+    this._protocol = resolveProtocol(this.raw, this.trustProxy)
     return this._protocol
   }
 
@@ -287,159 +226,42 @@ export class ExisRequest<
     return this.protocol === 'https'
   }
 
-  /**
-   * Parse the "Host" header field to a hostname.
-   *
-   * When the "trust proxy" setting trusts the socket
-   * address, the "X-Forwarded-Host" header field will
-   * be trusted.
-   *
-   * @return {string}
-   * @public
-   */
   get hostname(): string {
     if (this._hostname !== undefined) return this._hostname
-    let host = this.raw.headers['x-forwarded-host']
-    if (!host || !this.trustProxy) {
-      host = this.raw.headers.host || ''
-    }
-    if (Array.isArray(host)) host = host[0]
-
-    // IPv6 can have colons, so look for port after bracket or last colon
-    const offset = host[0] === '[' ? host.indexOf(']') + 1 : 0
-    const index = host.indexOf(':', offset)
-    this._hostname = index !== -1 ? host.substring(0, index) : host
+    this._hostname = resolveHostname(this.raw, this.trustProxy)
     return this._hostname
   }
 
-  /**
-   * The original URL requested by the client.
-   *
-   * @return {string}
-   * @public
-   */
   get originalUrl(): string {
     return this._urlStr
   }
 
-  /**
-   * Return request header.
-   *
-   * The `Referrer` header field is special-cased,
-   * both `Referrer` and `Referer` are interchangeable.
-   *
-   * Examples:
-   *
-   *     req.get('Content-Type');
-   *     // => "text/plain"
-   *
-   *     req.get('content-type');
-   *     // => "text/plain"
-   *
-   *     req.get('Something');
-   *     // => undefined
-   *
-   * Aliased as `req.header()`.
-   *
-   * @param {string} header
-   * @return {string | undefined}
-   * @public
-   */
   get(header: string): string | undefined {
     const val = this.raw.headers[header.toLowerCase()]
     if (Array.isArray(val)) return val[0]
     return val
   }
 
-  /**
-   * Return request header.
-   *
-   * Alias for `req.get()`.
-   *
-   * @param {string} name
-   * @return {string | undefined}
-   * @public
-   */
   header(name: string): string | undefined {
     return this.get(name)
   }
 
-  /**
-   * Check if the incoming request contains the "Content-Type"
-   * header field, and it contains the given mime `type`.
-   *
-   * Examples:
-   *
-   *      // With Content-Type: text/html; charset=utf-8
-   *      req.is('html');
-   *      req.is('text/html');
-   *      req.is('text/*');
-   *      // => true
-   *
-   *      // When Content-Type is application/json
-   *      req.is('json');
-   *      req.is('application/json');
-   *      req.is('application/*');
-   *      // => true
-   *
-   *      req.is('html');
-   *      // => false
-   *
-   * @param {string} contentType
-   * @return {boolean}
-   * @public
-   */
   is(contentType: string): boolean {
     const header = this.get('content-type')
     if (!header) return false
     return header.includes(contentType)
   }
 
-  /**
-   * Check if the given `type(s)` is acceptable, returning
-   * the best match when true, otherwise `false`, in which
-   * case you should respond with 406 "Not Acceptable".
-   *
-   * Examples:
-   *
-   *     // Accept: text/html
-   *     req.accepts('html');
-   *     // => "html"
-   *
-   *     // Accept: text/*, application/json
-   *     req.accepts('html');
-   *     // => "html"
-   *
-   * @param {string[]} types
-   * @return {string | string[] | false}
-   * @public
-   */
   accepts(...types: string[]): string | string[] | false {
     const accept = accepts(this.raw)
     return accept.types(...types)
   }
 
-  /**
-   * Check if the given `lang`s are acceptable,
-   * otherwise you should respond with 406 "Not Acceptable".
-   *
-   * @param {string[]} languages
-   * @return {string | string[] | false}
-   * @public
-   */
   acceptsLanguages(...languages: string[]): string | string[] | false {
     const accept = accepts(this.raw)
     return accept.languages(...languages)
   }
 
-  /**
-   * Check if the request is fresh, aka
-   * Last-Modified or the ETag
-   * still match.
-   *
-   * @return {boolean}
-   * @public
-   */
   get fresh(): boolean {
     const method = this.method
     const s = this.res.statusCode
@@ -453,14 +275,6 @@ export class ExisRequest<
     return false
   }
 
-  /**
-   * Check if the request is stale, aka
-   * "Last-Modified" and / or the "ETag" for the
-   * resource has changed.
-   *
-   * @return {boolean}
-   * @public
-   */
   get stale(): boolean {
     return !this.fresh
   }
@@ -509,114 +323,13 @@ export class ExisRequest<
         )
       }
 
-      return new Promise((resolve, reject) => {
-        const fields: Record<string, string> = {}
-
-        try {
-          const bb = busboy({
-            headers: this.raw.headers,
-            limits: { fileSize: this.bodyLimit },
-          })
-
-          const cleanup = () => {
-            this.raw.removeListener('close', onRawClose)
-            this.raw.removeListener('aborted', onRawClose)
-          }
-
-          const onRawClose = () => {
-            const isComplete = Boolean(
-              (this.raw as any).complete || (this.raw as any).readableEnded
-            )
-            if (!isComplete) {
-              try {
-                ;(bb as any).destroy?.()
-              } catch {
-                /* noop */
-              }
-              cleanup()
-              reject(
-                HttpError.badRequest(
-                  'Client disconnected prematurely during multipart upload'
-                )
-              )
-            }
-          }
-
-          this.raw.once('close', onRawClose)
-          this.raw.once('aborted', onRawClose)
-
-          bb.on('field', (name: string, val: string) => {
-            fields[name] = val
-          })
-
-          bb.on(
-            'file',
-            (
-              name: string,
-              fileStream: import('node:stream').Readable,
-              info: any
-            ) => {
-              const chunks: Buffer[] = []
-              let size = 0
-              fileStream.on('data', (data: Buffer) => {
-                chunks.push(data)
-                size += data.length
-              })
-              fileStream.on('end', () => {
-                const data = Buffer.concat(chunks)
-                const filename = info.filename || 'unknown'
-
-                this.files.push({
-                  fieldname: name,
-                  filename: filename,
-                  mimetype: info.mimeType || 'application/octet-stream',
-                  data,
-                  size,
-                  saveToDisk: async (destDir: string) => {
-                    const fs = await import('node:fs/promises')
-                    const path = await import('node:path')
-
-                    // Create dir if not exists
-                    await fs.mkdir(destDir, { recursive: true })
-
-                    // Generate unique filename
-                    const ext = path.extname(filename)
-                    const uniqueSuffix =
-                      Date.now() + '-' + Math.round(Math.random() * 1e9)
-                    const finalName = `${name}-${uniqueSuffix}${ext}`
-                    const destPath = path.join(destDir, finalName)
-
-                    await fs.writeFile(destPath, data)
-                    return destPath
-                  },
-                })
-              })
-            }
-          )
-
-          bb.on('finish', () => {
-            cleanup()
-            this.body = fields as unknown as TBody
-            resolve({
-              fields,
-              files: this.files as unknown as Record<string, any>,
-            })
-          })
-
-          bb.on('error', (err: any) => {
-            cleanup()
-            reject(err)
-          })
-
-          this.raw.pipe(bb)
-        } catch (err: any) {
-          reject(
-            HttpError.badRequest(
-              err.message || 'Failed to parse multipart data'
-            )
-          )
-        }
-      })
+      const res = await parseMultipartFormData(
+        this.raw,
+        this.bodyLimit,
+        this.files
+      )
+      this.body = res.fields as unknown as TBody
+      return res
     }
 
     throw HttpError.badRequest('Unsupported form data type')
@@ -654,95 +367,15 @@ export class ExisRequest<
 
   private async _parseBody(): Promise<void> {
     const contentType = this.get('content-type') ?? ''
-    if (
-      ['GET', 'HEAD', 'OPTIONS'].includes(this.method) ||
-      contentType.includes('multipart/form-data')
-    ) {
-      return
+    const bodyStr = await parseRawBody(
+      this.raw,
+      this.bodyLimit,
+      contentType,
+      this.method
+    )
+    if (bodyStr !== undefined) {
+      this.rawBody = bodyStr
     }
-
-    if (typeof (this.raw as any).readBody === 'function') {
-      const buf = await (this.raw as any).readBody(this.bodyLimit)
-      if (buf) {
-        this.rawBody = buf.toString('utf8')
-      } else {
-        this.rawBody = ''
-      }
-      return
-    }
-
-    return new Promise((resolve, reject) => {
-      let settled = false
-
-      const chunks: Buffer[] = []
-      let size = 0
-
-      const onData = (chunk: Buffer) => {
-        if (settled) return
-        size += chunk.length
-        if (size > this.bodyLimit) {
-          this.raw.destroy?.()
-          done(
-            HttpError.payloadTooLarge(
-              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
-            )
-          )
-          return
-        }
-        chunks.push(chunk)
-      }
-
-      const onError = (err: any) => done(err)
-      const onAborted = () => done(new Error('Request aborted by client'))
-      const onClose = () => {
-        const isComplete = Boolean(
-          (this.raw as any).complete || (this.raw as any).readableEnded
-        )
-        if (!settled && !isComplete)
-          done(new Error('Request closed prematurely'))
-      }
-      const onEnd = () => {
-        if (settled) return
-        this.rawBody = Buffer.concat(chunks).toString('utf8')
-        done()
-      }
-
-      const cleanup = () => {
-        this.raw.removeListener('data', onData)
-        this.raw.removeListener('error', onError)
-        this.raw.removeListener('aborted', onAborted)
-        this.raw.removeListener('close', onClose)
-        this.raw.removeListener('end', onEnd)
-      }
-
-      const done = (err?: Error) => {
-        if (settled) return
-        settled = true
-        cleanup()
-
-        if (err) reject(err)
-        else resolve()
-      }
-
-      const contentLengthStr = this.get('content-length')
-      if (contentLengthStr) {
-        const contentLength = parseInt(contentLengthStr, 10)
-        if (!isNaN(contentLength) && contentLength > this.bodyLimit) {
-          done(
-            HttpError.payloadTooLarge(
-              `Request body exceeds limit of ${this.bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
-            )
-          )
-          return
-        }
-      }
-
-      this.raw.on('data', onData)
-      this.raw.on('error', onError)
-      this.raw.on('aborted', onAborted)
-      this.raw.on('close', onClose)
-      this.raw.on('end', onEnd)
-    })
   }
 
   async streamUpload(destDir: string): Promise<{
@@ -763,83 +396,8 @@ export class ExisRequest<
       throw HttpError.badRequest('Missing multipart boundary.')
     }
 
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    await fs.promises.mkdir(destDir, { recursive: true })
-
-    return new Promise((resolve, reject) => {
-      const fields: Record<string, string> = {}
-      const streamedFiles: {
-        fieldname: string
-        filename: string
-        mimetype: string
-        destPath: string
-        size: number
-      }[] = []
-
-      try {
-        const bb = busboy({ headers: this.raw.headers })
-
-        bb.on('field', (name: string, val: string) => {
-          fields[name] = val
-        })
-
-        bb.on(
-          'file',
-          (
-            name: string,
-            fileStream: import('node:stream').Readable,
-            info: any
-          ) => {
-            const filename = info.filename || 'unknown'
-            const ext = path.extname(filename)
-            const uniqueSuffix =
-              Date.now() + '-' + Math.round(Math.random() * 1e9)
-            const finalName = `${name}-${uniqueSuffix}${ext}`
-            const destPath = path.join(destDir, finalName)
-
-            const writeStream = fs.createWriteStream(destPath)
-            let size = 0
-
-            fileStream.on('data', (data: Buffer) => {
-              size += data.length
-            })
-
-            fileStream.pipe(writeStream)
-
-            fileStream.on('end', () => {
-              streamedFiles.push({
-                fieldname: name,
-                filename,
-                mimetype: info.mimeType || 'application/octet-stream',
-                destPath,
-                size,
-              })
-            })
-          }
-        )
-
-        bb.on('finish', () => {
-          this.body = stripPrototype(fields) as unknown as TBody
-          resolve({
-            fields: this.body as unknown as Record<string, string>,
-            files: streamedFiles,
-          })
-        })
-
-        bb.on('error', reject)
-
-        if (typeof this.raw.pipe === 'function') {
-          this.raw.pipe(bb)
-        } else {
-          this.raw.on('data', (chunk: any) => bb.write(chunk))
-          this.raw.on('end', () => bb.end())
-        }
-      } catch (err: any) {
-        reject(
-          HttpError.badRequest(err.message || 'Failed to stream multipart data')
-        )
-      }
-    })
+    const res = await streamMultipartUpload(this.raw, destDir)
+    this.body = res.fields as unknown as TBody
+    return res
   }
 }

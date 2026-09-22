@@ -14,11 +14,21 @@ import { logger } from '../logger'
 /**
  * Creates a strongly typed middleware that injects context into downstream routes or boundaries.
  *
+ * @template TContext The custom request context type produced by this middleware
+ * @param fn Middleware function receiving `(req, res, next)`
+ * @returns Strongly typed middleware handler
+ *
  * @example
+ * ```ts
+ * interface AuthContext {
+ *   user: { id: string; role: string }
+ * }
+ *
  * const authenticate = defineMiddleware<AuthContext>(async (req, res, next) => {
  *   req.user = { id: '123', role: 'admin' }
  *   next()
  * })
+ * ```
  */
 export function defineMiddleware<TContext = Record<string, any>>(
   fn: (
@@ -34,11 +44,22 @@ export function defineMiddleware<TContext = Record<string, any>>(
  * The execution context passed to every route handler.
  * It provides fully-typed, structured access to the request's properties and the ExisJS app.
  *
+ * @template B Parsed request body type
+ * @template Q Parsed query string type
+ * @template P Parsed route params type
+ * @template TContext Custom injected context type
+ *
  * @example
- * async handle(ctx) {
- *   const { body, query, req, res, app, file, fields } = ctx
- *   return { message: 'Hello World' }
- * }
+ * ```ts
+ * export default controller({
+ *   getUser: route.get('/:id', {
+ *     async handle({ params, req, res, resolve }) {
+ *       const userService = resolve(UserService)
+ *       return userService.findById(params.id)
+ *     }
+ *   })
+ * })
+ * ```
  */
 export type SuperContext<
   B = any,
@@ -60,23 +81,6 @@ export type SuperContext<
   fields?: Record<string, any>
   [key: string]: any
 } & TContext
-
-/**
- * Configuration options for an individual route.
- * You can define expected schemas (body, query, params, response),
- * apply route-specific middleware, and write your business logic in `handle`.
- *
- * @example
- * export default controller({
- *   createUser: route.post('/users', {
- *     body: tex.object({ email: tex.string(), password: tex.string() }),
- *     middleware: [rateLimiter],
- *     async handle({ body }) {
- *       return { token: '...' }
- *     }
- *   })
- * })
- */
 
 /**
  * Extracts route parameter names from a path string literal (e.g. '/users/:id/posts/:postId' -> { id: string; postId: string }).
@@ -135,11 +139,30 @@ export type RouteDefinition<
 }
 
 /**
- * Defines a new HTTP route with schema validation and a supercharged execution context.
+ * Declarative route builder with schema validation, typed parameters, and supercharged context.
  */
 export const route = {
   /**
-   * Defines a GET route.
+   * Defines an HTTP GET route definition.
+   *
+   * @param path The route URL path (e.g. `'/'` or `'/:id'`)
+   * @param config Route configuration with query/params schemas, middleware, and handler
+   * @returns Strongly typed `RouteDefinition`
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   * import { tex } from 'exisjs/validator'
+   *
+   * export default controller({
+   *   getUser: route.get('/:id', {
+   *     params: { id: tex.string() },
+   *     async handle({ params }) {
+   *       return { id: params.id, name: 'Alice' }
+   *     }
+   *   })
+   * })
+   * ```
    */
   get: <
     TPath extends string = string,
@@ -166,6 +189,32 @@ export const route = {
     return { method: 'get', path, ...config } as any
   },
 
+  /**
+   * Defines an HTTP POST route definition.
+   *
+   * @param path The route URL path (e.g. `'/'` or `'/submit'`)
+   * @param config Route configuration with body schema, middleware, and handler
+   * @returns Strongly typed `RouteDefinition`
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   * import { tex } from 'exisjs/validator'
+   *
+   * export default controller({
+   *   createUser: route.post('/', {
+   *     body: tex.object({
+   *       email: tex.email(),
+   *       password: tex.password({ min: 8 })
+   *     }),
+   *     async handle({ body, res }) {
+   *       res.status(201)
+   *       return { email: body.email, created: true }
+   *     }
+   *   })
+   * })
+   * ```
+   */
   post: <
     TPath extends string = string,
     B = unknown,
@@ -185,6 +234,28 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'post', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP PUT route definition.
+   *
+   * @param path The route URL path (e.g. `'/:id'`)
+   * @param config Route configuration with body/params schemas and handler
+   * @returns Strongly typed `RouteDefinition`
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   * import { tex } from 'exisjs/validator'
+   *
+   * export default controller({
+   *   updateUser: route.put('/:id', {
+   *     body: tex.object({ name: tex.string() }),
+   *     async handle({ params, body }) {
+   *       return { id: params.id, name: body.name }
+   *     }
+   *   })
+   * })
+   * ```
+   */
   put: <
     TPath extends string = string,
     B = unknown,
@@ -204,6 +275,26 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'put', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP DELETE route definition.
+   *
+   * @param path The route URL path (e.g. `'/:id'`)
+   * @param config Route configuration with params schema and handler
+   * @returns Strongly typed `RouteDefinition`
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   *
+   * export default controller({
+   *   deleteUser: route.delete('/:id', {
+   *     async handle({ params }) {
+   *       return { deleted: params.id }
+   *     }
+   *   })
+   * })
+   * ```
+   */
   delete: <
     TPath extends string = string,
     B = unknown,
@@ -223,6 +314,28 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'delete', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP PATCH route definition.
+   *
+   * @param path The route URL path (e.g. `'/:id'`)
+   * @param config Route configuration with partial body schema and handler
+   * @returns Strongly typed `RouteDefinition`
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   * import { tex } from 'exisjs/validator'
+   *
+   * export default controller({
+   *   patchUser: route.patch('/:id', {
+   *     body: tex.object({ status: tex.enum(['active', 'disabled']) }),
+   *     async handle({ params, body }) {
+   *       return { id: params.id, status: body.status }
+   *     }
+   *   })
+   * })
+   * ```
+   */
   patch: <
     TPath extends string = string,
     B = unknown,
@@ -242,6 +355,9 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'patch', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP OPTIONS route definition.
+   */
   options: <
     TPath extends string = string,
     B = unknown,
@@ -261,6 +377,9 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'options', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP HEAD route definition.
+   */
   head: <
     TPath extends string = string,
     B = unknown,
@@ -280,6 +399,9 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'head', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP CONNECT route definition.
+   */
   connect: <
     TPath extends string = string,
     B = unknown,
@@ -299,6 +421,9 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'connect', path, ...config }) as any,
 
+  /**
+   * Defines an HTTP TRACE route definition.
+   */
   trace: <
     TPath extends string = string,
     B = unknown,
@@ -318,6 +443,9 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'trace', path, ...config }) as any,
 
+  /**
+   * Defines a QUERY route definition.
+   */
   query: <
     TPath extends string = string,
     B = unknown,
@@ -337,6 +465,13 @@ export const route = {
   ): RouteDefinition<B, Q, P, TContext, TReturn> =>
     ({ method: 'query', path, ...config }) as any,
 
+  /**
+   * Defines a route matching any HTTP method (GET, POST, PUT, DELETE, PATCH, etc.).
+   *
+   * @param path The route URL path (e.g. `'*'` or `'/api/*'`)
+   * @param config Route configuration and handler
+   * @returns Strongly typed `RouteDefinition`
+   */
   all: <
     TPath extends string = string,
     B = unknown,
@@ -362,13 +497,21 @@ export const route = {
  * Any middleware or CORS settings defined here will automatically wrap all routes in the file.
  *
  * @example
+ * ```ts
+ * import { controller, route } from 'exisjs/router'
+ *
  * export default controller({
  *   cors: true,
  *   middleware: [authGuard],
- *   onError: (err, req, res) => { console.log(err) },
+ *   onError: (err, req, res) => { console.error(err) },
  *
- *   myRoute: route.get('/secret', { ... })
+ *   myRoute: route.get('/secret', {
+ *     async handle() {
+ *       return { secret: 'data' }
+ *     }
+ *   })
  * })
+ * ```
  */
 export interface ControllerConfig {
   cors?: any
@@ -381,18 +524,33 @@ export interface ControllerConfig {
 }
 
 /**
- * Creates a route controller. This elegantly binds multiple routes together,
- * sharing middleware and error handling, while drastically reducing boilerplate.
+ * Creates a route controller in a `route.ts` file. Binds multiple routes together, sharing middleware,
+ * lifecycle hooks, and error handling with zero boilerplate.
+ *
+ * @param config Controller configuration containing route definitions and shared settings
+ * @returns Fully compiled functional controller
  *
  * @example
+ * ```ts
+ * // src/http/users/route.ts
+ * import { controller, route } from 'exisjs/router'
+ * import { tex } from 'exisjs/validator'
+ *
  * export default controller({
  *   cors: true,
- *   getUsers: route.get('/', {
- *     handle({ req, res }) {
+ *   listUsers: route.get('/', {
+ *     async handle() {
  *       return { users: [] }
+ *     }
+ *   }),
+ *   createUser: route.post('/', {
+ *     body: tex.object({ name: tex.string() }),
+ *     async handle({ body }) {
+ *       return { created: body.name }
  *     }
  *   })
  * })
+ * ```
  */
 export function controller<T extends ControllerConfig>(
   config: T
@@ -404,15 +562,19 @@ export function controller<T extends ControllerConfig>(
 }
 
 /**
- * Creates a strongly-typed router and controller factory.
- * This is the recommended way to type your context globally across an app.
+ * Creates a strongly-typed router and controller factory with pre-bound context.
+ *
+ * @template TContext Global request context type for the router instance
+ * @returns Object with typed `route` and `controller` factories
  *
  * @example
+ * ```ts
  * interface MyContext {
- *   user: User;
- *   workspace: Workspace;
+ *   user: { id: string; role: string }
  * }
- * export const { route, controller } = createRouter<MyContext>();
+ *
+ * export const { route, controller } = createRouter<MyContext>()
+ * ```
  */
 export function createRouter<TContext = Record<string, any>>() {
   return {

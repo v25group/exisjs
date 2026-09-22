@@ -135,6 +135,7 @@ export interface RouteSchema<
   _TContext = Record<string, any>,
 > {
   response?: TResponse
+  responses?: Record<number | string, { description?: string; schema?: any }>
   body?: RouteValidator<TBody>
   query?: RouteValidator<TQuery>
   params?: RouteValidator<TParams>
@@ -147,6 +148,14 @@ export interface RouteSchema<
   filters?: any | any[]
   metadata?: Record<string, any>
   permissions?: string[]
+  summary?: string
+  description?: string
+  tags?: string[]
+  operationId?: string
+  deprecated?: boolean
+  security?: Record<string, string[]>[]
+  externalDocs?: { url: string; description?: string }
+  excludeFromDocs?: boolean
 }
 
 export type InferZod<S> = S extends { parse: (val: unknown) => infer U }

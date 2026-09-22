@@ -133,8 +133,30 @@ export type BoundaryAfterHandleHook<T = any, TContext = Record<string, any>> = (
 ) => void | any | Promise<void | any>
 
 /**
- * Defines a boundary that acts as folder-scoped config + request pipeline for
- * everything in this directory and subdirectories.
+ * Defines a boundary configuration that acts as a folder-scoped request pipeline
+ * for all routes in its directory and subdirectories.
+ *
+ * @param config Boundary options (middleware, guards, interceptors, CORS, hooks, exclusions)
+ * @returns Strongly typed `BoundaryConfig`
+ *
+ * @example
+ * ```ts
+ * // src/http/api/admin/boundary.ts
+ * export default defineBoundary({
+ *   guards: [AdminGuard],
+ *   cors: { origin: 'https://admin.example.com' },
+ *   beforeHandle(req, res) {
+ *     if (!req.user) {
+ *       res.status(401).json({ error: 'Unauthorized' })
+ *       return false // halts execution
+ *     }
+ *   },
+ *   afterHandle(req, res, data) {
+ *     // Audit logging / payload wrapping
+ *     return { data, timestamp: Date.now() }
+ *   }
+ * })
+ * ```
  */
 export function defineBoundary<TContext = Record<string, any>>(
   config: BoundaryConfig<TContext>

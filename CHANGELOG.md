@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.7`** | 2026-09-22 | Features & Architecture | Native Swagger/OpenAPI 3.1, subsystem modularization, comprehensive TSDoc | [**Read v0.7.7 Notes →**](./changelog/v0.7/v0.7.7.md) |
+| **`v0.7.6`** | 2026-09-21 | Stability, DX & Perf | Response toolkit, actionable error envelopes, single-line logger, `tex.env` | [**Read v0.7.6 Notes →**](./changelog/v0.7/v0.7.6.md) |
 | **`v0.7.5`** | 2026-09-19 | Resilience & DX | Error convention, boundary hooks, AbortSignal, CHIPS, instant shutdown | [**Read v0.7.5 Notes →**](./changelog/v0.7/v0.7.5.md) |
 | **`v0.7.4`** | 2026-09-11 | Features & Validations | Diagnostic table, declarative uploads, route timeouts, nested arrays | [**Read v0.7.4 Notes →**](./changelog/v0.7/v0.7.4.md) |
 | **`v0.7.3`** | 2026-09-09 | Features & Rust Perf | Native Rust Brotli/Gzip, realtime SSE streaming, `exis routes` & `doctor` CLI | [**Read v0.7.3 Notes →**](./changelog/v0.7/v0.7.3.md) |
@@ -20,30 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.5] - 2026-09-19
+## Current Release: [0.7.7] - 2026-09-22
 
-> For full technical details and code examples, see [**`changelog/v0.7/v0.7.5.md`**](./changelog/v0.7/v0.7.5.md).
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.7.md`**](./changelog/v0.7/v0.7.7.md).
 
 ### Added
-- **Centralized Exception Handler (`src/http/error.ts`)**: Auto-discovered by the framework without manual registration in `server.ts`. New scaffolding command `exis g error`.
-- **Boundary Lifecycle Hooks**: Granular `beforeHandle(req, res)` (route guarding) and `afterHandle(req, res, data)` (payload transformation / auditing) across functional and OOP paradigms.
-- **Request Cancellation & Modern Network Standards**:
-  - `req.signal`: Standard Web API `AbortSignal` triggered when the client disconnects or aborts the request.
-  - `req.ip` IPv6 Normalization: Automatically strips dual-stack `::ffff:` IPv4-mapped prefixes and normalizes `::1` to `127.0.0.1`.
-- **Modern Cookie Specifications**:
-  - Added Partitioned cookies (`CHIPS`) via `partitioned: true` for third-party iframe contexts.
-  - Added storage retention hints via `priority: 'low' | 'medium' | 'high'`.
-  - Automatically enforces `secure: true` whenever `sameSite: 'None'` is declared per RFC 6265bis.
-  - Scoped cookie deletion via `res.clearCookie(name, { path, domain })`.
-- **Safe Stream Resource Management (`res.sendStream`)**: Automatically destroys readable streams on client disconnect to eliminate socket and file descriptor leaks.
-- **Schema & Query String Coercion**:
-  - `tex.date({ coerce: true, minDate, maxDate })`: Parses ISO 8601 strings and UNIX timestamps into native JavaScript `Date` instances.
-  - `tex.array(schema, { coerce: true })`: Automatically coerces single strings and comma-separated query parameters (e.g. `?tags=node,rust`) into typed arrays.
-- **Rate-Limiting Standards**: Standard IETF draft headers (`RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`) and RFC 6585 `Retry-After` on HTTP 429.
-- **Server Graceful Teardown**: Instant termination of idle keep-alive sockets via `server.closeIdleConnections()`, cutting reload delay to < 10ms.
-- **CI/CD Build Resilience**: Added `--skip-env-check` and mock schema resolution for headless container production builds.
+- **Native Swagger & OpenAPI 3.1 Engine (`exisjs/swagger`)**: Auto-generated OpenAPI 3.1 specification at `/docs/json` and interactive documentation UIs (**Swagger UI** & **Scalar**) served at `/docs`.
+- **Dual-Paradigm Documentation Support**:
+  - Declarative route metadata (`summary`, `description`, `tags`, `responses`, `operationId`, `deprecated`) on functional `route.get('/...', { ... })` with automatic `TexEngine` and `tex.pagination()` reflection.
+  - Class-based decorators (`@ApiTags`, `@ApiOperation`, `@ApiResponse`, `@ApiBearerAuth`, `@ApiSecurity`, `@ApiExclude`, `@ApiProperty`).
+- **Comprehensive TSDoc & IDE Hover Intelligence**: Rich, copy-pasteable real-world examples strictly following canonical ExisJS patterns across all public APIs (`route.*`, `controller`, `defineBoundary`, `tex.*`, `res.*`, `req.*`, `cron.*`, `@Controller`, etc.).
+- **Official Documentation**: Comprehensive Swagger guide (`docs/content/swagger.mdx`), API Reference (`docs/reference/swagger.mdx`), and updated navigation sidebar (`web/components/docs/sidebar.tsx`).
+
+### Changed
+- **Architectural Modularization**: Refactored large monolithic modules into focused, maintainable sub-modules (~300 lines) under `src/router/scanner/`, `src/validator/`, and `src/server/helpers/`.
 
 ### Fixed
-- **Sanitizer & Validator Null Handling**: Prevented `TypeError: Cannot read properties of null (reading 'trim')` on nullable schemas and inner array items in both TypeScript and Rust engines.
-- **Dev Watcher Windows File Lock Crash**: Intercepted non-fatal `EBUSY`, `EPERM`, and `UNKNOWN` file lock exceptions on Chokidar watchers on Windows; expanded ignore rules for archives and temporary files.
-- **Root Tool Configuration Isolation**: Scoped `exis build` strictly to application source files, avoiding erroneous compilation of root tool configs like `drizzle.config.ts` or `vite.config.ts`.
+- **Dev Server Process Lifecycle**: Prevented false-positive `Process crashed with code 1` messages by marking intentional process terminations during hot reloads.
+- **Watcher Isolation**: Excluded `tests/`, `__tests__/`, and `*.test.ts` / `*.spec.ts` files from triggering dev server reloads.
+- **Interceptor Bypass for Specs**: Ensured OpenAPI JSON specification endpoints are served as raw JSON, bypassing global response interceptors.
+- **Cron Subsystem Signatures**: Restored multi-signature overloads for `app.cron.schedule()`, `app.cron.interval()`, `app.cron.timeout()`, `app.cron.has()`, and `CronJob.resume()`.
+

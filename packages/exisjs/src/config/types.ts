@@ -75,6 +75,10 @@ export interface HealthCheckConfig {
   checks?: (() => Promise<boolean>)[]
 }
 
+import type { SwaggerConfig } from '../swagger/types'
+
+export type { SwaggerConfig } from '../swagger/types'
+
 export interface ExisConfig {
   port?: number
   host?: string
@@ -83,6 +87,8 @@ export interface ExisConfig {
   telemetry?: TelemetryConfig | boolean
   metrics?: MetricsConfig | boolean
   healthcheck?: HealthCheckConfig | boolean
+  docs?: SwaggerConfig | boolean
+  swagger?: SwaggerConfig | boolean
   helmet?: HelmetConfig | boolean
   trustProxy?: boolean | number
   bodyLimit?: number // bytes, default 10mb

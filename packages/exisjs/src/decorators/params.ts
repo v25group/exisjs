@@ -6,6 +6,7 @@ import {
   ROUTE_METADATA_PROP,
 } from './constants'
 import { MetadataEngine } from './core/metadata'
+import { logger } from '../logger'
 
 export interface CustomParamExecutionContext {
   req: any
@@ -28,7 +29,10 @@ export type CustomParamFactory<TData = any, TResult = any> = (
 /**
  * Creates a custom route parameter decorator.
  *
- * Example:
+ * @param factory Function extracting custom data from request context
+ * @returns Parameter decorator
+ *
+ * @example
  * ```ts
  * export const CurrentUser = createParamDecorator(
  *   (data: string | undefined, ctx) => {
@@ -106,11 +110,37 @@ export function createParamDecorator(
   }
 }
 
-import { logger } from '../logger'
-
+/**
+ * Injects a route parameter from the URL path (e.g. `:id`).
+ *
+ * @param name Parameter name matching the route path placeholder
+ * @param pipes Optional validation pipes
+ *
+ * @example
+ * ```ts
+ * @Get('/:id')
+ * getUser(@Param('id') id: string) {
+ *   return { id }
+ * }
+ * ```
+ */
 export const Param = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('param', nameOrPipe, ...pipes)
 
+/**
+ * Injects the parsed request body into a controller method argument.
+ *
+ * @param nameOrPipe Optional body property key or validation pipe/schema
+ * @param pipes Optional transformation pipes
+ *
+ * @example
+ * ```ts
+ * @Post('/')
+ * createUser(@Body() body: CreateUserDto) {
+ *   return body
+ * }
+ * ```
+ */
 export const Body = (nameOrPipe?: string | any, ...pipes: any[]) => {
   if (nameOrPipe === undefined && pipes.length === 0) {
     logger.warn(
@@ -120,30 +150,96 @@ export const Body = (nameOrPipe?: string | any, ...pipes: any[]) => {
   return createParamDecorator('body', nameOrPipe, ...pipes)
 }
 
+/**
+ * Injects request headers or a specific header value.
+ *
+ * @param name Optional header name (case-insensitive)
+ *
+ * @example
+ * ```ts
+ * @Get('/')
+ * getInfo(@Headers('authorization') auth: string) {}
+ * ```
+ */
 export const Headers = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('header', nameOrPipe, ...pipes)
+
 export const HostParam = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('host', nameOrPipe, ...pipes)
+
+/**
+ * Injects the ExisJS request instance (`ExisRequest`).
+ */
 export const Req = () => createParamDecorator('req')
+
 export const Socket = () => createParamDecorator('socket')
 export const Stream = () => createParamDecorator('stream')
+
+/**
+ * Injects the active session object if session middleware is enabled.
+ */
 export const Session = () => createParamDecorator('session')
+
 export const Next = () => createParamDecorator('next')
+
+/**
+ * Injects the client's IP address.
+ */
 export const Ip = () => createParamDecorator('ip')
+
+/**
+ * Injects an uploaded file from multipart form data.
+ *
+ * @example
+ * ```ts
+ * @Post('/avatar')
+ * @Upload()
+ * uploadAvatar(@UploadedFile() file: ExisFile) {
+ *   return { filename: file.filename, size: file.size }
+ * }
+ * ```
+ */
 export const UploadedFile = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('uploadedFile', nameOrPipe, ...pipes)
+
+/**
+ * Injects all uploaded files from multipart form data.
+ */
 export const UploadedFiles = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('uploadedFiles', nameOrPipe, ...pipes)
+
+/**
+ * Injects all parsed request cookies as a key-value record.
+ */
 export const Cookies = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('cookies', nameOrPipe, ...pipes)
+
+/**
+ * Injects a specific cookie by name.
+ */
 export const Cookie = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('cookie', nameOrPipe, ...pipes)
+
+/**
+ * Injects custom execution state from AsyncLocalStorage context.
+ */
 export const State = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('state', nameOrPipe, ...pipes)
+
+/**
+ * Injects the ExisJS App application instance.
+ */
 export const AppCtx = () => createParamDecorator('app')
+
 export const Fields = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('fields', nameOrPipe, ...pipes)
 
+/**
+ * Injects the ExisJS response instance (`ExisResponse`).
+ * By default, injecting `@Res()` switches the handler into manual response mode unless `{ passthrough: true }` is specified.
+ *
+ * @param options Pass `{ passthrough: true }` to allow returning values from handler while retaining response object access
+ */
 export const Res = (options?: { passthrough?: boolean }): any => {
   return function (
     target: any,
@@ -162,7 +258,7 @@ export const Res = (options?: { passthrough?: boolean }): any => {
 /**
  * Injects a query parameter from the URL query string.
  *
- * Example:
+ * @example
  * ```ts
  * @Get('/search')
  * search(@QueryParam('q') q: string) { return { q }; }
@@ -171,6 +267,17 @@ export const Res = (options?: { passthrough?: boolean }): any => {
 export const QueryParam = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('query', nameOrPipe, ...pipes)
 
+/**
+ * Injects query parameters from the URL query string, or defines a QUERY HTTP route.
+ *
+ * @example
+ * ```ts
+ * @Get('/search')
+ * search(@Query('q') query: string) {
+ *   return { query }
+ * }
+ * ```
+ */
 export function Query(
   pathOrName?: string | any,
   schemaOrPipe?: RouteSchema<any, any, any, any> | any,

@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -60,6 +60,10 @@
     "./error": {
       "types": "./dist/error/index.d.ts",
       "default": "./dist/error/index.js"
+    },
+    "./cron": {
+      "types": "./dist/cron/index.d.ts",
+      "default": "./dist/cron/index.js"
     },
     "./plugin": {
       "types": "./dist/plugin/index.d.ts",

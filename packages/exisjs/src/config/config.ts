@@ -46,6 +46,16 @@ export const defaultConfig: ResolvedConfig = {
     path: '/_health',
     checks: [],
   },
+  docs: {
+    enabled: false,
+    path: '/docs',
+    specPath: '/docs/json',
+    title: 'ExisJS API Documentation',
+    version: '1.0.0',
+    description:
+      'Auto-generated API documentation with native schema validation',
+  },
+  swagger: undefined as any,
   cors: {
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
