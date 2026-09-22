@@ -32,27 +32,27 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.5',
+      exisjs: '^0.7.6',
     },
   }
 
   if (useTypeScript) {
     pkg.devDependencies = {
       '@types/node': '^20.0.0',
-      prettier: '^3.3.3',
-      typescript: '^5.5.0',
+      prettier: '^3.9.7',
+      typescript: '^5.9.3',
     }
   } else {
     pkg.devDependencies = {
-      prettier: '^3.3.3',
+      prettier: '^3.9.7',
     }
   }
 
   if (useEslint) {
     pkg.devDependencies = {
       ...(pkg.devDependencies || {}),
-      eslint: '^10.0.0',
-      '@eslint/js': '^10.0.0',
+      eslint: '^10.0.1',
+      '@eslint/js': '^10.0.1',
       'eslint-config-prettier': '^10.0.0',
     }
     if (useTypeScript) {
