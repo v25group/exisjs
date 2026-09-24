@@ -318,4 +318,58 @@ describe('Comprehensive OOP Decorators Suite', () => {
       expect(res.body).toEqual({ valid: true })
     })
   })
+
+  describe('Route Method Decorators with Raw TexEngine and RouteSchema', () => {
+    const userParamsSchema = tex.object({
+      id: tex.string(),
+    })
+    const createUserSchema = tex.object({
+      name: tex.string({ min: 2 }),
+    })
+
+    @Controller('/schema-test')
+    class SchemaTestController {
+      @Get('/:id', userParamsSchema)
+      getById(@Param('id') id: string) {
+        return { id }
+      }
+
+      @Post('/', createUserSchema)
+      create(@Body() body: any) {
+        return { name: body.name }
+      }
+
+      @Get('/wrapped/:id', { params: userParamsSchema })
+      getWrapped(@Param('id') id: string) {
+        return { wrappedId: id }
+      }
+    }
+
+    it('should register and execute routes with raw TexEngine and wrapped RouteSchema', async () => {
+      const app = new App()
+      app.registerControllers([SchemaTestController])
+
+      const res1 = await app.inject({
+        method: 'GET',
+        url: '/schema-test/123',
+      })
+      expect(res1.status).toBe(200)
+      expect(res1.body).toEqual({ id: '123' })
+
+      const res2 = await app.inject({
+        method: 'POST',
+        url: '/schema-test',
+        payload: { name: 'Alice' },
+      })
+      expect(res2.status).toBe(200)
+      expect(res2.body).toEqual({ name: 'Alice' })
+
+      const res3 = await app.inject({
+        method: 'GET',
+        url: '/schema-test/wrapped/456',
+      })
+      expect(res3.status).toBe(200)
+      expect(res3.body).toEqual({ wrappedId: '456' })
+    })
+  })
 })

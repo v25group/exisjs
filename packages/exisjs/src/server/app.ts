@@ -127,6 +127,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     this.cron = new CronManager(this)
 
     this.bootstrapper.onShutdown(() => this.cron.drain())
+    this.bootstrapper.onShutdown(() => this.container.destroyLifecycle())
   }
 
   private ensureLogger() {
@@ -671,6 +672,8 @@ export class App<TRoutes extends Record<string, any> = {}> {
     for (const injectable of INJECTABLE_REGISTRY) {
       this.container.provide(injectable, { useClass: injectable })
     }
+
+    await this.container.initLifecycle()
 
     this._routesMounted = true
 

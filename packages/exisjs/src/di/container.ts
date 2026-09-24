@@ -192,4 +192,36 @@ export class Container {
 
     return resolvedValue
   }
+
+  public async initLifecycle(): Promise<void> {
+    for (const [, instance] of this.singletonCache) {
+      if (instance && typeof instance === 'object') {
+        if (typeof instance.onInit === 'function') {
+          await instance.onInit()
+        }
+        if (typeof instance.onModuleInit === 'function') {
+          await instance.onModuleInit()
+        }
+        if (typeof instance.onApplicationBootstrap === 'function') {
+          await instance.onApplicationBootstrap()
+        }
+      }
+    }
+  }
+
+  public async destroyLifecycle(signal?: string): Promise<void> {
+    for (const [, instance] of this.singletonCache) {
+      if (instance && typeof instance === 'object') {
+        if (typeof instance.onDestroy === 'function') {
+          await instance.onDestroy()
+        }
+        if (typeof instance.onModuleDestroy === 'function') {
+          await instance.onModuleDestroy()
+        }
+        if (typeof instance.onApplicationShutdown === 'function') {
+          await instance.onApplicationShutdown(signal)
+        }
+      }
+    }
+  }
 }

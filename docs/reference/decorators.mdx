@@ -86,6 +86,10 @@ Parameter decorators automatically extract data from the incoming request and in
 ## 3. Middleware & Pipeline Decorators
 
 - `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
+- `@UseGuards(...guards)`: Dedicated decorator to apply guards to a class or method.
+- `@UseInterceptors(...interceptors)`: Dedicated decorator to apply interceptors to a class or method.
+- `@UseFilters(...filters)`: Dedicated decorator to apply exception filters to a class or method.
+- `@Catch(...exceptions)`: Class decorator for `ExceptionFilter` implementations declaring handled exception types.
 - `@Upload(fieldName, options?)` / `@UseUpload(...)`: Configures multipart file upload handling for a method, populating `@UploadedFile()` or `@UploadedFiles()`.
 - `@Timeout(ms: number | TimeoutOptions)`: Overrides the request timeout for a class or method (e.g. `@Timeout(120000)`). Passing `0` disables timeouts for long-running streaming or exports.
 - `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage. Works at class and method level.
@@ -98,13 +102,32 @@ Parameter decorators automatically extract data from the incoming request and in
 
 ---
 
-## 4. Response & Metadata Modifiers
+## 4. Security & Access Control Decorators
+
+- `@Permissions(...permissions: string[])`: Sets required permission keys for a controller or route method (automatically bypassed if `req.user.isSuperAdmin` is true).
+- `@Roles(...roles: string[])`: Sets required role names for a controller or route method.
+- `@Public()` / `@IsPublic()` / `@AllowAnonymous()`: Marks a controller or route as public, instructing global authentication guards to bypass credential checks.
+
+---
+
+## 5. Service Enhancements: Caching, Transactions & Profiling
+
+- `@Cacheable({ ttl?: number, key?: string | ((...args) => string) })`: Caches method return values in ExisJS's off-heap native memory LRU cache.
+- `@CacheEvict({ key: string | ((...args) => string) })`: Evicts cached entries matching the key when the method completes.
+- `@Transactional(options?)`: Automatically wraps service operations in an atomic database transaction.
+- `@Profile({ thresholdMs?: number, warnSlow?: boolean, log?: Function })`: Profiles method execution time with sub-millisecond precision.
+- `OnInit` (`onInit()`): Invoked when the application or service boots up.
+- `OnDestroy` (`onDestroy()`): Invoked when the application gracefully terminates.
+- `OnModuleInit`, `OnModuleDestroy`, `OnApplicationBootstrap`: Modular lifecycle hooks.
+
+---
+
+## 6. Response & Metadata Modifiers
 
 - `@HttpCode(code: number)`: Enforces a custom HTTP status code on success.
 - `@Header(name: string, value: string)`: Appends an HTTP header to the response.
 - `@Returns(schema)`: Attaches response schema for OpenAPI documentation.
 - `@Redirect(url: string, statusCode?: number)`: Redirects request to target URL.
-- `@Permissions(...permissions: string[])`: Sets required permissions on the route.
 - `@Hosts(...hosts: string[])`: Restricts routes to specific Host headers.
 - `@SetMetadata(key, value)`: Attaches arbitrary custom metadata to a class or handler method, retrievable via `Reflector`.
 - `Reflector`: Utility class to inspect metadata attached by `@SetMetadata`:
@@ -114,7 +137,7 @@ Parameter decorators automatically extract data from the incoming request and in
 
 ---
 
-## 5. Dependency Injection & Modules
+## 7. Dependency Injection & Modules
 
 - `@Module({ imports?, controllers?, providers?, exports? })`: OOP class decorator equivalent to `defineModule()` for structuring application modules.
 - `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container. Supports `{ scope: 'singleton' | 'request' | 'transient' }`.
@@ -125,7 +148,7 @@ Parameter decorators automatically extract data from the incoming request and in
 
 ---
 
-## 6. Cron & Task Scheduling
+## 8. Cron & Task Scheduling
 
 - `@Cron(schedule: string, options?: CronJobOptions)`: Schedules a class method as a recurring cron job on any `@Injectable()` service.
 - `@Interval(ms: number, options?: IntervalOptions)`: Schedules a class method to execute repeatedly every `ms` milliseconds.

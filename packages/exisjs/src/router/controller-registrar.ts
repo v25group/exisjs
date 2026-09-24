@@ -27,6 +27,10 @@ export class ControllerRegistrar {
     const LIFECYCLE_METADATA = Symbol.for('exisjs:lifecycle_metadata')
     const PARAM_METADATA = Symbol.for('exisjs:param_metadata')
     const PARAM_METADATA_PROP = Symbol.for('exisjs:param_metadata_prop')
+    const PERMISSIONS_METADATA = Symbol.for('exisjs:permissions')
+    const ROLES_METADATA = Symbol.for('exisjs:roles')
+    const IS_PUBLIC_METADATA = Symbol.for('exisjs:is_public')
+    const CATCH_EXCEPTIONS_METADATA = Symbol.for('exisjs:catch_exceptions')
 
     for (const ControllerClass of controllers) {
       const prefix = ControllerClass.prototype[CONTROLLER_PREFIX] || ''
@@ -66,10 +70,36 @@ export class ControllerRegistrar {
           }
 
           try {
-            // 0. Enforce Route Permissions (Role Authorization)
+            // 0. Enforce Route Security & Permissions (Role / Permissions / Public)
             const routeMetadata = routeMetadataMap[route.handlerName] || {}
-            const permissions = routeMetadata.permissions
-            if (permissions && permissions.length > 0) {
+            const isPublic =
+              routeMetadata.isPublic ||
+              ControllerClass.prototype[IS_PUBLIC_METADATA] ||
+              (ControllerClass.prototype[route.handlerName] &&
+                ControllerClass.prototype[route.handlerName][
+                  IS_PUBLIC_METADATA
+                ])
+            ;(req as any).isPublic = isPublic
+
+            const permissions = [
+              ...(ControllerClass.prototype[PERMISSIONS_METADATA] || []),
+              ...(routeMetadata.permissions || []),
+              ...(ControllerClass.prototype[route.handlerName]?.[
+                PERMISSIONS_METADATA
+              ] || []),
+            ]
+
+            const roles = [
+              ...(ControllerClass.prototype[ROLES_METADATA] || []),
+              ...(routeMetadata.roles || []),
+              ...(ControllerClass.prototype[route.handlerName]?.[
+                ROLES_METADATA
+              ] || []),
+            ]
+
+            const isSuperAdmin = Boolean(req.user?.isSuperAdmin)
+
+            if (!isSuperAdmin && permissions.length > 0) {
               const userPerms =
                 req.user?.permissions || (req.user?.role ? [req.user.role] : [])
               const hasPermission = permissions.some((p: string) =>
@@ -83,6 +113,27 @@ export class ControllerRegistrar {
                       code: 'FORBIDDEN',
                       message:
                         'Insufficient permissions to access this resource',
+                    },
+                  })
+                }
+                return
+              }
+            }
+
+            if (!isSuperAdmin && roles.length > 0) {
+              const userRoles = Array.isArray(req.user?.roles)
+                ? req.user.roles
+                : req.user?.role
+                  ? [req.user.role]
+                  : []
+              const hasRole = roles.some((r: string) => userRoles.includes(r))
+              if (!hasRole) {
+                if (res) {
+                  res.status(403).json({
+                    success: false,
+                    error: {
+                      code: 'FORBIDDEN',
+                      message: 'Insufficient role to access this resource',
                     },
                   })
                 }
@@ -169,7 +220,9 @@ export class ControllerRegistrar {
                         })
                       }
                     }
-                    rawArg = req.body
+                    rawArg = param.name
+                      ? (req.body as any)?.[param.name]
+                      : req.body
                     break
                   case 'param':
                     rawArg = param.name ? req.params[param.name] : req.params
@@ -380,24 +433,56 @@ export class ControllerRegistrar {
               ...(routeLifecycle.filters || []),
             ]
             for (const filter of filters) {
+              const handledExceptions =
+                (typeof filter === 'function' &&
+                  filter.prototype?.[CATCH_EXCEPTIONS_METADATA]) ||
+                (typeof filter === 'object' &&
+                  filter?.[CATCH_EXCEPTIONS_METADATA]) ||
+                []
+
+              if (handledExceptions.length > 0) {
+                const matches = handledExceptions.some((exClass: any) => {
+                  if (typeof exClass === 'function') {
+                    return (
+                      err instanceof exClass ||
+                      (err as any)?.name === exClass?.name ||
+                      (err as any)?.constructor?.name === exClass?.name
+                    )
+                  }
+                  return false
+                })
+                if (!matches) continue
+              }
+
+              const host = {
+                req,
+                res,
+                next,
+                switchToHttp: () => ({
+                  getRequest: () => req,
+                  getResponse: () => res,
+                  getNext: () => next,
+                }),
+              }
+
               if (typeof filter === 'function' && filter.prototype?.catch) {
                 let filterInstance: any = this.app.container.resolve(filter)
                 if (!filterInstance) filterInstance = new filter()
-                await filterInstance.catch(err, { req, res, next })
+                await filterInstance.catch(err, host)
                 handled = true
                 break
               } else if (
                 typeof filter === 'object' &&
                 typeof filter.catch === 'function'
               ) {
-                await filter.catch(err, { req, res, next })
+                await filter.catch(err, host)
                 handled = true
                 break
               } else if (typeof filter === 'function') {
                 if (filter.length >= 3) {
                   await filter(err, req, res, next)
                 } else if (filter.length === 2) {
-                  await filter(err, { req, res, next })
+                  await filter(err, host)
                 } else {
                   await filter(err)
                 }

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.9`** | 2026-09-24 | Feature & Architecture | Enterprise OOP upgrades (Security, Caching, Transactions, Profiling, Lifecycles, Filters), ESM alias fix | [**Read v0.7.9 Notes →**](./changelog/v0.7/v0.7.9.md) |
 | **`v0.7.8`** | 2026-09-22 | Patch & Export Fixes | Subpath export `exisjs/swagger`, root exports, canonical doc fixes | [**Read v0.7.8 Notes →**](./changelog/v0.7/v0.7.8.md) |
 | **`v0.7.7`** | 2026-09-22 | Features & Architecture | Native Swagger/OpenAPI 3.1, subsystem modularization, comprehensive TSDoc | [**Read v0.7.7 Notes →**](./changelog/v0.7/v0.7.7.md) |
 | **`v0.7.6`** | 2026-09-21 | Stability, DX & Perf | Response toolkit, actionable error envelopes, single-line logger, `tex.env` | [**Read v0.7.6 Notes →**](./changelog/v0.7/v0.7.6.md) |
@@ -23,15 +24,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.8] - 2026-09-22
+## Current Release: [0.7.9] - 2026-09-24
 
-> For full technical details and code examples, see [**`changelog/v0.7/v0.7.8.md`**](./changelog/v0.7/v0.7.8.md).
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.9.md`**](./changelog/v0.7/v0.7.9.md).
 
 ### Added
-- **Subpath Export (`exisjs/swagger`)**: Registered `./swagger` subpath export in `packages/exisjs/package.json` for dedicated module resolution of `swagger`, `docs`, `generateOpenApiSpec`, `renderDocumentationHtml`, and all OpenAPI decorators.
+- **Enterprise OOP Architecture Decorators**:
+  - Security & Authorization: `@Permissions()`, `@Roles()`, `@Public()` (`@IsPublic()`, `@AllowAnonymous()`) with automatic `isSuperAdmin` bypass.
+  - Service Lifecycle Hooks: `OnInit`, `OnDestroy`, `OnModuleInit`, `OnModuleDestroy`, `OnApplicationBootstrap`.
+  - Native Off-Heap Method Caching: `@Cacheable()` and `@CacheEvict()` powered by Rust `NativeMemoryCache`.
+  - Automated Transactions: `@Transactional()` supporting ExisJS DB, Prisma, Drizzle, TypeORM, Knex, and connection pools.
+  - Sub-Millisecond Profiling: `@Profile()` decorator with SLA threshold warnings.
+  - Declarative Exception Filtering: `@Catch(...exceptions)` and `@UseFilters()` with `ExceptionFilter` and `ArgumentsHost`.
+  - Dual Class/Type Exception Declarations: Subclassed `NotFoundException`, `UnauthorizedException`, `ForbiddenException`, `BadRequestException`, `ConflictException`, `PayloadTooLargeException`, `UnprocessableException`, `RateLimitException`, `InternalException`.
 
 ### Fixed
-- **Documentation Parity**: Corrected file path annotations and controller export syntaxes across `docs/content/swagger.mdx` and `docs/reference/swagger.mdx` to reflect standard ExisJS folder routing (`route.ts`).
-- **Template Dependency Update**: Bumped template generator dependency in `create-exisjs` to `exisjs: '^0.7.8'`.
+- **Route Method Schema Normalization**: Fixed `TS(2559)` by automatically normalizing raw `TexEngine`/Zod schemas and wrapped `{ body, query, params, headers }` objects in `@Get`, `@Post`, `@Put`, `@Patch`, `@Delete`, etc.
+- **Async Generator Type Safety**: Added explicit `Promise<T>` return types across all starter templates to prevent `TS(1064)`.
+- **Test Harness Types & Boot Memoization**: Enabled `createTestApp` and `createTestContext` to seamlessly accept `ExisConfig` and `ExisAppDefinition` without `TS(2345)`.
+- **Dev Watcher Lockfile Loop**: Enhanced `chokidar` in `exis dev` to ignore lockfiles, dotfiles, and build caches, eliminating restart loops during `npm install`.
+- **ESM Multiline Import Path Resolution**: Fixed regex in `resolve-aliases.ts` to correctly append `.js` extensions on multiline import and export statements during `exis build`.
+- **Scaffolding Template Alignment**: Standardized `exis.config.ts` generator template to export `const config: ExisConfig` and `export default config`.
+
 
 

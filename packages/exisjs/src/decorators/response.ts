@@ -90,27 +90,6 @@ export const Redirect = (url: string, statusCode = 302): any => {
   }
 }
 
-export const Permissions = (...permissions: string[]): any => {
-  return function (
-    target: any,
-    propertyKey?: string | symbol | any,
-    descriptor?: PropertyDescriptor | any
-  ) {
-    const isStandard = typeof propertyKey === 'object' && propertyKey !== null
-    if (propertyKey && !isStandard) {
-      const fn = descriptor?.value ?? target[propertyKey]
-      if (fn) {
-        fn[ROUTE_METADATA_PROP] = fn[ROUTE_METADATA_PROP] || {}
-        fn[ROUTE_METADATA_PROP].permissions = permissions
-        return
-      }
-    }
-    const proto = typeof target === 'function' ? target.prototype : target
-    proto[ROUTE_METADATA_PROP] = proto[ROUTE_METADATA_PROP] || {}
-    proto[ROUTE_METADATA_PROP].permissions = permissions
-  }
-}
-
 export const Hosts = (...hosts: string[]): any => {
   return function (
     target: any,

@@ -238,7 +238,7 @@ function resolveSpecifier(
  * - require('@/...')
  */
 const IMPORT_REGEX =
-  /(?:(?:import|export)\s+(?:(?:(?!\bfrom\b)[^\r\n;])*?\s+from\s+)?|(?:import|require)\s*\(\s*)(['"])([^'"]+)\1/g
+  /(?:(?:import|export)\s+(?:(?:(?!\bfrom\b)[^;])*?\s+from\s+)?|(?:import|require)\s*\(\s*)(['"])([^'"]+)\1/g
 
 /**
  * Rewrites all alias imports in a single file's content.

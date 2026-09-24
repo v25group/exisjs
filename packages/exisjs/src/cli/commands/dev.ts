@@ -335,7 +335,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   let pendingRestart = false
   let reloadDebounceTimer: NodeJS.Timeout | null = null
   const queuedChangedFiles = new Set<string>()
-  const RELOAD_DEBOUNCE_MS = 150
+  const RELOAD_DEBOUNCE_MS = 250
   const RELOAD_TIMEOUT_MS = 3000
 
   async function killChildGracefully(): Promise<void> {
@@ -524,11 +524,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         ignoreInitial: true,
         ignored: [
           // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])\../, // ignore dotfiles (.git, .vscode, .idea, etc.)
+          /(^|[\/\\])\.(?!env)/, // ignore dotfiles (.git, .vscode, .idea, etc.) except .env
           /node_modules/,
           /\.exis/,
           /dist/,
           /build/,
+          /\.turbo/,
+          /\.next/,
+          /\.cache/,
+          /(^|[/\\])(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i,
           // eslint-disable-next-line no-useless-escape
           /(^|[\/\\])(tests?|coverage|__tests__)/, // ignore test folders
           /\.(test|spec)\.[tj]sx?$/, // ignore test files
@@ -538,6 +542,10 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
           /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i, // media & binary docs
         ],
+        awaitWriteFinish: {
+          stabilityThreshold: 200,
+          pollInterval: 100,
+        },
       })
 
       watcher.on('error', (err: any) => {
@@ -556,9 +564,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
       watcher.on('all', async (eventName: string, file: string) => {
         if (
+          !file ||
+          /(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i.test(
+            file
+          ) ||
           /\.(test|spec)\.[tj]sx?$/i.test(file) ||
           // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])(tests?|coverage|__tests__)/i.test(file) ||
+          /(^|[\/\\])(tests?|coverage|__tests__|\.git|\.exis|node_modules|dist|build|\.turbo|\.next|\.cache)/i.test(
+            file
+          ) ||
           /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso|bak|tmp|temp|swp|swo|lock|pid|log|sqlite|sqlite3|db|png|jpe?g|gif|svg|ico|webp|pdf)$/i.test(
             file
           )

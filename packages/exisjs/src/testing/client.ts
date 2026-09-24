@@ -76,11 +76,17 @@ export class TestRequest {
 
   public async execute(): Promise<TestResponse> {
     if (!this._app) {
-      if ((this._appSource as any)._isExisAppDefinition) {
-        if (!this._appPromise) {
-          this._appPromise = (this._appSource as ExisAppDefinition).boot()
+      if (
+        (this._appSource as any)._isExisAppDefinition ||
+        (this._appSource as any).__isAppDefinition ||
+        typeof (this._appSource as any).boot === 'function'
+      ) {
+        if (!(this._appSource as any)._bootPromise) {
+          ;(this._appSource as any)._bootPromise = (
+            this._appSource as ExisAppDefinition
+          ).boot()
         }
-        this._app = await this._appPromise
+        this._app = await (this._appSource as any)._bootPromise
       } else {
         this._app = this._appSource as App
       }
@@ -89,7 +95,7 @@ export class TestRequest {
     const payload = this._body
 
     try {
-      const res = await this._app.inject({
+      const res = await this._app!.inject({
         method: this._method,
         url: this._path,
         headers: this._headers,
@@ -187,18 +193,32 @@ export interface TestApp {
   request(method: string, path: string): TestRequest
 }
 
-export function createTestApp(app: App | ExisAppDefinition): TestApp {
+export function createTestApp(app: App | ExisAppDefinition | any): TestApp {
+  let finalApp = app
+  if (
+    app &&
+    typeof app === 'object' &&
+    !(app instanceof App) &&
+    !(app as any).isApp &&
+    !(app as any)._isExisAppDefinition &&
+    !(app as any).__isAppDefinition &&
+    typeof (app as any).inject !== 'function' &&
+    typeof (app as any).boot !== 'function'
+  ) {
+    finalApp = new App(app)
+  }
+
   return {
-    get: (path) => new TestRequest(app, 'GET', path),
-    post: (path) => new TestRequest(app, 'POST', path),
-    put: (path) => new TestRequest(app, 'PUT', path),
-    patch: (path) => new TestRequest(app, 'PATCH', path),
-    delete: (path) => new TestRequest(app, 'DELETE', path),
-    options: (path) => new TestRequest(app, 'OPTIONS', path),
-    head: (path) => new TestRequest(app, 'HEAD', path),
-    query: (path) => new TestRequest(app, 'QUERY', path),
-    trace: (path) => new TestRequest(app, 'TRACE', path),
-    connect: (path) => new TestRequest(app, 'CONNECT', path),
-    request: (method, path) => new TestRequest(app, method, path),
+    get: (path) => new TestRequest(finalApp, 'GET', path),
+    post: (path) => new TestRequest(finalApp, 'POST', path),
+    put: (path) => new TestRequest(finalApp, 'PUT', path),
+    patch: (path) => new TestRequest(finalApp, 'PATCH', path),
+    delete: (path) => new TestRequest(finalApp, 'DELETE', path),
+    options: (path) => new TestRequest(finalApp, 'OPTIONS', path),
+    head: (path) => new TestRequest(finalApp, 'HEAD', path),
+    query: (path) => new TestRequest(finalApp, 'QUERY', path),
+    trace: (path) => new TestRequest(finalApp, 'TRACE', path),
+    connect: (path) => new TestRequest(finalApp, 'CONNECT', path),
+    request: (method, path) => new TestRequest(finalApp, method, path),
   }
 }

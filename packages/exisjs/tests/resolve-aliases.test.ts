@@ -133,4 +133,33 @@ describe('resolvePathAliases (ESM relative imports & aliases)', () => {
       cleanupTempDir(projectDir)
     }
   })
+
+  it('correctly rewrites multiline imports and exports across line breaks', async () => {
+    const outDir = path.join(tmpDir, 'dist-multiline')
+    fs.mkdirSync(outDir, { recursive: true })
+
+    writeTempFile(
+      tmpDir,
+      'dist-multiline/schema.js',
+      'export const loginSchema = {}; export const changePasswordSchema = {};'
+    )
+
+    const routeContent = `
+import {
+  loginSchema,
+  changePasswordSchema
+} from './schema';
+
+export {
+  loginSchema,
+  changePasswordSchema
+} from './schema';
+`
+    writeTempFile(tmpDir, 'dist-multiline/route.js', routeContent)
+
+    await resolvePathAliases(tmpDir, 'dist-multiline')
+
+    const result = fs.readFileSync(path.join(outDir, 'route.js'), 'utf8')
+    expect(result).toContain(`from './schema.js';`)
+  })
 })

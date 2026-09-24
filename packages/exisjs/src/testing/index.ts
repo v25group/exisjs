@@ -162,6 +162,19 @@ import { App } from '../server/app'
 export function createTestContext(appInput: any): TestApp {
   let app = appInput
 
+  // Handle plain ExisConfig or options object
+  if (
+    app &&
+    typeof app === 'object' &&
+    !(app instanceof App) &&
+    !(app as any).isApp &&
+    !(app as any).__isAppDefinition &&
+    typeof (app as any).inject !== 'function' &&
+    !app.prototype?.[Symbol.for('exisjs:server_config')]
+  ) {
+    app = new App(app)
+  }
+
   // Handle @Server decorated classes natively
   if (
     app &&

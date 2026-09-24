@@ -78,6 +78,54 @@ const app = getActiveApp()
 const usersService = app.container.resolve(UsersService)
 ```
 
+## Service Lifecycle Hooks
+
+ExisJS `@Injectable()` services can implement lifecycle interfaces. When the application starts up or shuts down gracefully, ExisJS automatically triggers these hooks on all managed singletons:
+
+```typescript filename="src/http/database/service.ts"
+import { Injectable, type OnInit, type OnDestroy } from 'exisjs/decorators'
+
+@Injectable()
+export class DatabaseService implements OnInit, OnDestroy {
+  async onInit(): Promise<void> {
+    // Invoked automatically during app startup (app.create / app.listen)
+    await this.connectPool()
+  }
+
+  async onDestroy(): Promise<void> {
+    // Invoked automatically during graceful termination (app.close / SIGINT / SIGTERM)
+    await this.drainPool()
+  }
+}
+```
+
+## Service Method Enhancements
+
+You can supercharge service methods with off-heap caching, automated transaction wrapping, and SLA performance profiling:
+
+```typescript filename="src/http/users/service.ts"
+import { Injectable, Cacheable, CacheEvict, Transactional, Profile } from 'exisjs/decorators'
+
+@Injectable()
+export class UsersService {
+  constructor(private db: DatabaseService) {}
+
+  // Caches return values off-heap in Rust LRU cache
+  @Cacheable({ ttl: 300, key: (id: string) => `user:${id}` })
+  @Profile({ thresholdMs: 100, warnSlow: true })
+  async findById(id: string) {
+    return this.db.query('SELECT * FROM users WHERE id = $1', [id])
+  }
+
+  // Runs in an atomic transaction; automatically rolls back on error
+  @Transactional()
+  @CacheEvict({ key: (id: string) => `user:${id}` })
+  async updateUser(id: string, data: any) {
+    return this.db.update('users', id, data)
+  }
+}
+```
+
 ## Custom Providers
 
 ExisJS's DI container is flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.

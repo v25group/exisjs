@@ -1,11 +1,82 @@
-import type { HttpMethod, RouteSchema } from '../types'
+import type { HttpMethod, RouteSchema, RouteValidator } from '../types'
 import { ROUTE_REGISTRY, ROUTE_META } from './constants'
 import { MetadataEngine } from './core/metadata'
 import { logger } from '../logger'
 
+export type MethodSchemaInput<
+  TBody = any,
+  TQuery = any,
+  TParams = any,
+  THeaders = any,
+> =
+  | RouteSchema<TBody, TQuery, TParams, THeaders>
+  | RouteValidator<any>
+  | { parse: (val: any) => any }
+  | { _parse?: any }
+  | { _def?: any }
+  | { transform: (val: any, meta?: any) => any }
+  | Record<string, any>
+
+export function normalizeRouteSchema(
+  method: HttpMethod,
+  path: string,
+  rawSchema?: MethodSchemaInput
+): RouteSchema<any, any, any, any> | undefined {
+  if (!rawSchema) return undefined
+
+  // Check if it's already an explicit RouteSchema wrapper object (and not a direct TexEngine / Zod schema)
+  if (
+    typeof rawSchema === 'object' &&
+    rawSchema !== null &&
+    !('parse' in rawSchema) &&
+    !('_parse' in rawSchema) &&
+    !('__isTex' in rawSchema) &&
+    ('body' in rawSchema ||
+      'query' in rawSchema ||
+      'params' in rawSchema ||
+      'headers' in rawSchema ||
+      'response' in rawSchema ||
+      'responses' in rawSchema ||
+      'timeout' in rawSchema ||
+      'timeoutMs' in rawSchema ||
+      'upload' in rawSchema ||
+      'cors' in rawSchema ||
+      'filters' in rawSchema ||
+      'summary' in rawSchema ||
+      'description' in rawSchema ||
+      'tags' in rawSchema)
+  ) {
+    return rawSchema as RouteSchema<any, any, any, any>
+  }
+
+  // If rawSchema is a direct validator (TexEngine, Zod, object/function with parse/transform):
+  if (
+    (typeof rawSchema === 'object' && rawSchema !== null) ||
+    typeof rawSchema === 'function'
+  ) {
+    if (['GET', 'DELETE', 'HEAD', 'OPTIONS'].includes(method)) {
+      if (path.includes(':') || path.includes('*')) {
+        return { params: rawSchema as any }
+      }
+      return { query: rawSchema as any }
+    }
+    if (['POST', 'PUT', 'PATCH'].includes(method)) {
+      return { body: rawSchema as any }
+    }
+    if (path.includes(':') || path.includes('*')) {
+      return { params: rawSchema as any }
+    }
+    return { query: rawSchema as any }
+  }
+
+  return rawSchema as RouteSchema<any, any, any, any>
+}
+
 export function createMethodDecorator(method: HttpMethod) {
-  return function (path = '', schema?: RouteSchema<any, any, any, any>): any {
-    if (method === 'GET' && schema?.body) {
+  return function (path = '', schema?: MethodSchemaInput): any {
+    const normalizedSchema = normalizeRouteSchema(method, path, schema)
+
+    if (method === 'GET' && normalizedSchema?.body) {
       logger.warn(
         `GET route '${path}' defines a body schema, but GET requests cannot have bodies.`
       )
@@ -25,7 +96,7 @@ export function createMethodDecorator(method: HttpMethod) {
         MetadataEngine.set(target, ROUTE_META, {
           method,
           path,
-          schema,
+          schema: normalizedSchema,
         })
       } else {
         // Legacy/Experimental Decorator fallback
@@ -34,7 +105,7 @@ export function createMethodDecorator(method: HttpMethod) {
         MetadataEngine.push(proto, ROUTE_REGISTRY, {
           method,
           path,
-          schema,
+          schema: normalizedSchema,
           handlerName: name,
         })
       }

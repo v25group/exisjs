@@ -354,7 +354,7 @@ function writeTemplates(
   write(
     dir,
     path.join('tests', `users.e2e-spec.${ext}`),
-    userTestTemplate(useTypeScript)
+    userTestTemplate(paradigm, useTypeScript)
   )
 
   // Common, DB, Jobs

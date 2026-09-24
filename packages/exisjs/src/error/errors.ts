@@ -166,18 +166,18 @@ export class GatewayTimeoutError extends HttpError {
 }
 
 // ─── Exception Aliases ────────────────────────────────────────────────────────
-export const HttpException = HttpError
-export const BadRequestException = BadRequestError
-export const UnauthorizedException = UnauthorizedError
-export const ForbiddenException = ForbiddenError
-export const NotFoundException = NotFoundError
-export const ConflictException = ConflictError
-export const PayloadTooLargeException = PayloadTooLargeError
-export const UnprocessableException = UnprocessableError
-export const RateLimitException = RateLimitError
-export const InternalException = InternalError
-export const ServiceUnavailableException = ServiceUnavailableError
-export const GatewayTimeoutException = GatewayTimeoutError
+export class HttpException extends HttpError {}
+export class BadRequestException extends BadRequestError {}
+export class UnauthorizedException extends UnauthorizedError {}
+export class ForbiddenException extends ForbiddenError {}
+export class NotFoundException extends NotFoundError {}
+export class ConflictException extends ConflictError {}
+export class PayloadTooLargeException extends PayloadTooLargeError {}
+export class UnprocessableException extends UnprocessableError {}
+export class RateLimitException extends RateLimitError {}
+export class InternalException extends InternalError {}
+export class ServiceUnavailableException extends ServiceUnavailableError {}
+export class GatewayTimeoutException extends GatewayTimeoutError {}
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 

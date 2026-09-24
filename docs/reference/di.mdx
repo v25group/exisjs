@@ -145,3 +145,29 @@ export default class UserController {
 }
 ```
 
+---
+
+## Lifecycle Hooks (`OnInit`, `OnDestroy`)
+
+Providers can implement lifecycle interfaces. When the application container initializes or gracefully closes, ExisJS automatically triggers these hooks:
+
+- **`OnInit` (`onInit()` / `onModuleInit()`)**: Executed when the container initializes during `app.create()` or `app.listen()`.
+- **`OnDestroy` (`onDestroy()` / `onModuleDestroy()`)**: Executed when the application receives a termination signal or `app.close()` is called.
+- **`OnApplicationBootstrap` (`onApplicationBootstrap()`)**: Executed after all modules are initialized and before the server begins listening for incoming requests.
+
+```typescript filename="src/http/database/service.ts"
+import { Injectable, type OnInit, type OnDestroy } from 'exisjs/decorators'
+
+@Injectable()
+export class DatabaseService implements OnInit, OnDestroy {
+  async onInit(): Promise<void> {
+    await this.pool.connect()
+  }
+
+  async onDestroy(): Promise<void> {
+    await this.pool.end()
+  }
+}
+```
+
+

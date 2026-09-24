@@ -6,7 +6,6 @@ import {
   ROUTE_METADATA_PROP,
 } from './constants'
 import { MetadataEngine } from './core/metadata'
-import { logger } from '../logger'
 
 export interface CustomParamExecutionContext {
   req: any
@@ -141,14 +140,8 @@ export const Param = (nameOrPipe?: string | any, ...pipes: any[]) =>
  * }
  * ```
  */
-export const Body = (nameOrPipe?: string | any, ...pipes: any[]) => {
-  if (nameOrPipe === undefined && pipes.length === 0) {
-    logger.warn(
-      `@Body() decorator used without a validation schema or pipe. It is highly recommended to validate incoming payloads.`
-    )
-  }
-  return createParamDecorator('body', nameOrPipe, ...pipes)
-}
+export const Body = (nameOrPipe?: string | any, ...pipes: any[]) =>
+  createParamDecorator('body', nameOrPipe, ...pipes)
 
 /**
  * Injects request headers or a specific header value.

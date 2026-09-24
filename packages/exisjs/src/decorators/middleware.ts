@@ -145,21 +145,42 @@ export function Use(...items: any[]): any {
 }
 
 /**
- * @deprecated Use `@Use(...guards)` instead.
+ * Applies guards to a Controller class or route method.
+ *
+ * @example
+ * ```ts
+ * @Controller('/admin')
+ * @UseGuards(AuthGuard, RoleGuard)
+ * export class AdminController {}
+ * ```
  */
 export function UseGuards(...guards: any[]): any {
   return Use(...guards)
 }
 
 /**
- * @deprecated Use `@Use(...interceptors)` instead.
+ * Applies interceptors to a Controller class or route method.
+ *
+ * @example
+ * ```ts
+ * @Controller('/users')
+ * @UseInterceptors(LoggingInterceptor)
+ * export class UsersController {}
+ * ```
  */
 export function UseInterceptors(...interceptors: any[]): any {
   return Use(...interceptors)
 }
 
 /**
- * @deprecated Use `@Use(...filters)` instead.
+ * Applies exception filters to a Controller class or route method.
+ *
+ * @example
+ * ```ts
+ * @Controller('/items')
+ * @UseFilters(HttpExceptionFilter)
+ * export class ItemsController {}
+ * ```
  */
 export function UseFilters(...filters: any[]): any {
   return Use(...filters)

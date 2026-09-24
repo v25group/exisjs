@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.8',
+      exisjs: '^0.7.9',
     },
   }
 
@@ -93,11 +93,10 @@ export function tsconfigTemplate(alias = '@/*'): string {
 }
 
 export function exisConfigTemplate(useTypeScript: boolean): string {
-  const typeHeader = useTypeScript
-    ? `import { defineConfig } from 'exisjs'\n\nexport default defineConfig({`
-    : `import { defineConfig } from 'exisjs'\n\nexport default defineConfig({`
+  if (useTypeScript) {
+    return `import type { ExisConfig } from 'exisjs/config'
 
-  return `${typeHeader}
+const config: ExisConfig = {
   port: Number(process.env.PORT) || 4000,
   host: '0.0.0.0',
 
@@ -107,19 +106,56 @@ export function exisConfigTemplate(useTypeScript: boolean): string {
   },
 
   logger: {
-    level: 'info',
+    level: 'debug',
     pretty: process.env.NODE_ENV !== 'production',
   },
 
-  helmet: { enabled: true },
+  queue: {
+    driver: 'memory',
+  },
 
-  // Set to true if you need to use getContext() globally in production
-  asyncContext: false,
+  helmet: { enabled: true },
+  asyncContext: true,
+  compression: true,
 
   test: {
-    include: ['tests/**/*.test.ts']
+    include: ['tests/**/*.test.ts'],
+  },
+}
+
+export default config
+`
   }
-})
+
+  return `/** @type {import('exisjs/config').ExisConfig} */
+const config = {
+  port: Number(process.env.PORT) || 4000,
+  host: '0.0.0.0',
+
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true,
+  },
+
+  logger: {
+    level: 'debug',
+    pretty: process.env.NODE_ENV !== 'production',
+  },
+
+  queue: {
+    driver: 'memory',
+  },
+
+  helmet: { enabled: true },
+  asyncContext: true,
+  compression: true,
+
+  test: {
+    include: ['tests/**/*.test.js'],
+  },
+}
+
+export default config
 `
 }
 
@@ -499,7 +535,9 @@ export function userServiceTemplate(
 ): string {
   const isOop = paradigm === 'oop'
   const tsType = useTypeScript ? ': CreateUserDto' : ''
-  const returnType = useTypeScript ? ': User' : ''
+  const returnType = useTypeScript ? ': Promise<User>' : ''
+  const arrayReturnType = useTypeScript ? ': Promise<User[]>' : ''
+  const nullableReturnType = useTypeScript ? ': Promise<User | null>' : ''
 
   if (isOop) {
     return `import { Injectable } from 'exisjs/decorators'
@@ -518,11 +556,11 @@ export class UserService {
     return newUser
   }
 
-  async findAll() {
+  async findAll()${arrayReturnType} {
     return this.users
   }
 
-  async findById(id: string) {
+  async findById(id: string)${nullableReturnType} {
     return this.users.find((u) => String(u.id) === id) || null
   }
 }
@@ -542,11 +580,11 @@ export async function createUser(userDto${tsType})${returnType} {
   return newUser
 }
 
-export async function getUsers() {
+export async function getUsers()${arrayReturnType} {
   return users
 }
 
-export async function getUserById(id: string) {
+export async function getUserById(id: string)${nullableReturnType} {
   return users.find((u) => String(u.id) === id) || null
 }
 `
@@ -615,12 +653,12 @@ export default class UsersController {
     return this.userService.findAll()
   }
 
-  @Get('/:id', userParamsSchema)
+  @Get('/:id', { params: userParamsSchema })
   async getUserById(@Param('id') id: string) {
     return this.userService.findById(id)
   }
 
-  @Post('/', createUserSchema)
+  @Post('/', { body: createUserSchema })
   async createUser(@Body() body${tsType}) {
     return this.userService.create(body)
   }
@@ -656,17 +694,39 @@ export default controller({
 `
 }
 
-export function userTestTemplate(_useTypeScript: boolean): string {
-  return `import { test, expect, createTestApp } from 'exisjs/testing'
-import config from '../exis.config'
+export function userTestTemplate(
+  paradigm: string,
+  _useTypeScript: boolean
+): string {
+  if (paradigm === 'oop') {
+    return `import { describe, it, expect, createTestContext } from 'exisjs/testing'
+import RootServer from '../src/http/server'
 
-test('Users API', async () => {
-  const app = createTestApp(config)
+describe('Users API', () => {
+  const api = createTestContext(RootServer)
 
-  const res = await app.get('/users')
+  it('should return 200 at /users', async () => {
+    const res = await api.get('/users')
 
-  expect(res.status).toBe(200)
-  expect(Array.isArray(res.body)).toBe(true)
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
+})
+`
+  }
+
+  return `import { describe, it, expect, createTestContext } from 'exisjs/testing'
+import server from '../src/http/server'
+
+describe('Users API', () => {
+  const api = createTestContext(server)
+
+  it('should return 200 at /users', async () => {
+    const res = await api.get('/users')
+
+    expect(res.status).toBe(200)
+    expect(Array.isArray(res.body)).toBe(true)
+  })
 })
 `
 }

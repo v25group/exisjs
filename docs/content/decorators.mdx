@@ -178,6 +178,10 @@ export default class CheckoutController {
 
 ### Available Lifecycle & Middleware Decorators
 - `@Use(...items)` — Unified decorator that attaches middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a class or method.
+- `@UseGuards(...guards)` — Explicit alias for `@Use` dedicated to route guards.
+- `@UseInterceptors(...interceptors)` — Explicit alias for `@Use` dedicated to interceptors.
+- `@UseFilters(...filters)` — Explicit alias for `@Use` dedicated to exception filters.
+- `@Catch(...exceptions)` — Declares exception classes handled by an Exception Filter.
 - `@Timeout(ms: number | TimeoutOptions)` — Overrides the request timeout for a class or method.
 - `@Idempotent(options?)` — Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
 - `@RateLimit(options?)` — Enforces request rate limits on a controller class or route method.
@@ -190,7 +194,88 @@ export default class CheckoutController {
 
 ---
 
-## 5. Response & Metadata Modifiers
+## 5. Security & Authorization Decorators
+
+Declare access control rules directly on controller classes and route methods:
+
+```typescript filename="src/http/roles/route.ts"
+import { Controller, Get, Post, Body, Use, Permissions, Roles, Public } from 'exisjs/decorators'
+import { AuthGuard } from '@/common/guards/auth.guard'
+
+@Controller('/roles')
+@Use(AuthGuard) // Enforced on all routes in this controller
+export default class RolesController {
+  @Get('/public')
+  @Public() // Bypasses auth guard for public inspection
+  async getPublicInfo() {
+    return { status: 'public' }
+  }
+
+  @Get('/')
+  @Roles('admin', 'manager') // Requires user to have admin or manager role
+  async getRoles() {
+    return { roles: [] }
+  }
+
+  @Post('/')
+  @Permissions('role:create', 'role:manage') // Granular permission check
+  async createRole(@Body() body: any) {
+    return { success: true }
+  }
+}
+```
+
+### Available Security Decorators
+- `@Permissions(...permissions: string[])` — Declares required permissions (auto-bypassed when `req.user.isSuperAdmin` is true).
+- `@Roles(...roles: string[])` — Declares required role names.
+- `@Public()` / `@IsPublic()` / `@AllowAnonymous()` — Marks an endpoint or controller as public, instructing global auth guards to skip credential verification.
+
+---
+
+## 6. Service Enhancements: Caching, Transactions & Profiling
+
+ExisJS provides high-performance method decorators for `@Injectable()` services:
+
+```typescript filename="src/http/orders/service.ts"
+import { Injectable, Cacheable, CacheEvict, Transactional, Profile, type OnInit, type OnDestroy } from 'exisjs/decorators'
+
+@Injectable()
+export class OrderService implements OnInit, OnDestroy {
+  async onInit() {
+    console.log('OrderService initialized')
+  }
+
+  async onDestroy() {
+    console.log('OrderService destroyed')
+  }
+
+  // Caches result in off-heap Rust cache for 300 seconds
+  @Cacheable({ ttl: 300, key: (id: string) => `order:${id}` })
+  @Profile({ thresholdMs: 50, warnSlow: true })
+  async getOrder(id: string) {
+    return this.db.query('SELECT * FROM orders WHERE id = $1', [id])
+  }
+
+  // Automatically runs in a database transaction and evicts cached entries
+  @Transactional()
+  @CacheEvict({ key: (id: string) => `order:${id}` })
+  async updateOrder(id: string, data: any) {
+    return this.db.update('orders', id, data)
+  }
+}
+```
+
+### Available Service Decorators & Lifecycle Interfaces
+- `@Cacheable({ ttl?: number, key?: string | ((...args) => string) })` — Caches method return values in off-heap memory.
+- `@CacheEvict({ key: string | ((...args) => string) })` — Evicts cached keys on mutation.
+- `@Transactional(options?)` — Wraps service operations in an atomic database transaction.
+- `@Profile({ thresholdMs?: number, warnSlow?: boolean, log?: Function })` — Measures method execution time with sub-millisecond precision.
+- `OnInit` (`onInit()`) & `OnDestroy` (`onDestroy()`) — Service startup and shutdown lifecycle hooks.
+- `OnModuleInit`, `OnModuleDestroy`, `OnApplicationBootstrap` — Module lifecycle hooks.
+
+---
+
+## 7. Response & Metadata Modifiers
 
 Modify HTTP response status codes, redirect clients, or set headers declaratively:
 
@@ -219,14 +304,13 @@ export default class ApiController {
 - `@Header(name: string, value: string)` — Injects a response header.
 - `@Returns(schema)` — Attaches response schema for OpenAPI/Swagger generation.
 - `@Redirect(url: string, statusCode?: number)` — Redirects the client.
-- `@Permissions(...permissions: string[])` — Attaches route permissions metadata.
 - `@Hosts(...hosts: string[])` — Restricts route/controller to specific Host headers.
 - `@SetMetadata(key, value)` — Attaches custom metadata to a class or method.
-- `Reflector` — Static utility to inspect metadata attached via `@SetMetadata` across classes and methods (`Reflector.get`, `Reflector.getAllAndOverride`, `Reflector.getAllAndMerge`).
+- `Reflector` — Static utility to inspect metadata attached via `@SetMetadata` across classes and methods.
 
 ---
 
-## 6. Dependency Injection & Modules
+## 8. Dependency Injection & Modules
 
 To mark a service class as an injectable provider for the IoC container, use the `@Injectable()` decorator. ExisJS supports `singleton` (default), `request`, and `transient` scopes:
 
@@ -281,3 +365,4 @@ import { UserService } from './service'
 })
 export class UsersModule {}
 ```
+
