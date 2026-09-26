@@ -146,6 +146,6 @@
     "mitata": "^1.0.34"
   },
   "optionalDependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.70.0"
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0"
   }
 }
