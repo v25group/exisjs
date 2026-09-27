@@ -83,8 +83,16 @@ Parameter decorators automatically extract data from the incoming request and in
 
 ---
 
-## 3. Middleware & Pipeline Decorators
+## 3. Transformation Pipes & Middleware Decorators
 
+- `@UsePipes(...pipes)`: Binds transformation and validation pipes to a controller class or route method.
+- **Built-in Pipes**:
+  - `ParseIntPipe`: Parses numeric strings to integers (`options?: { errorHttpStatusCode, exceptionFactory }`).
+  - `ParseFloatPipe`: Parses numeric float strings (`options?: { errorHttpStatusCode, exceptionFactory }`).
+  - `ParseBoolPipe`: Parses boolean strings (`'true'`, `'false'`, `1`, `0`).
+  - `ParseUUIDPipe`: Validates UUID format (`options?: { version: '3' | '4' | '5' | 'all' }`).
+  - `ParseArrayPipe`: Splits comma-separated strings and applies item-level transformation pipes.
+  - `ValidationPipe`: Validates DTO classes and schemas (`options?: { transform: boolean }`).
 - `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
 - `@UseGuards(...guards)`: Dedicated decorator to apply guards to a class or method.
 - `@UseInterceptors(...interceptors)`: Dedicated decorator to apply interceptors to a class or method.
@@ -139,10 +147,12 @@ Parameter decorators automatically extract data from the incoming request and in
 
 ## 7. Dependency Injection & Modules
 
+- `@Global()`: Marks a `@Module()` as global, automatically making its exported providers available across the entire application without explicit re-importing.
 - `@Module({ imports?, controllers?, providers?, exports? })`: OOP class decorator equivalent to `defineModule()` for structuring application modules.
 - `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container. Supports `{ scope: 'singleton' | 'request' | 'transient' }`.
-- `@Inject(token)`: Constructor parameter decorator from `exisjs/di` for injecting dependencies by class, string, or symbol token.
-- `@Optional()`: Constructor parameter decorator from `exisjs/di` resolving missing dependencies to `undefined` without throwing.
+- `@Inject(token)`: Constructor parameter and class property decorator from `exisjs/di` for injecting dependencies by class, string, or symbol token.
+- `@Optional()`: Parameter and property decorator from `exisjs/di` resolving missing dependencies to `undefined` without throwing.
+- `forwardRef(() => Target)`: Creates a lazy forward reference for resolving circular dependencies in constructor or property injection.
 - `@Boundary(config)`: Marks a class as a folder-scoped Boundary configuring CORS, headers, exclusions, and pipeline steps.
 - `@Server(config)`: Marks a class as a root server definition.
 
@@ -153,4 +163,5 @@ Parameter decorators automatically extract data from the incoming request and in
 - `@Cron(schedule: string, options?: CronJobOptions)`: Schedules a class method as a recurring cron job on any `@Injectable()` service.
 - `@Interval(ms: number, options?: IntervalOptions)`: Schedules a class method to execute repeatedly every `ms` milliseconds.
 - `@TimeoutTask(ms: number, options?: TimeoutOptions)` (alias `@ScheduledTimeout`): Schedules a class method to execute once after `ms` milliseconds following application bootstrap.
+
 

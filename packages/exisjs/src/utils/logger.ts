@@ -68,6 +68,8 @@ export function formatStatus(status: number): string {
   const text = `${status} ${phrase}`.trim()
   if (status === 101) return `\x1b[38;2;160;70;255m\x1b[1m${text}\x1b[0m`
   if (status < 300) return `\x1b[1;32m${text}\x1b[0m`
+  if (status === 304)
+    return `\x1b[38;2;100;200;230m${text}\x1b[0m \x1b[90m(cache)\x1b[0m`
   if (status < 400) return `\x1b[1;36m${text}\x1b[0m`
   if (status < 500) return `\x1b[1;33m${text}\x1b[0m`
   return `\x1b[1;31m${text}\x1b[0m`

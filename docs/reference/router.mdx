@@ -47,6 +47,81 @@ export default controller({
 - `onResponse` (`HookResponse`): A file-level response hook.
 - `[key: string]` (`RouteDefinition`): **Any other key** is treated as a route definition (e.g. `getUser: route.get(...)`). This is how you bind routes to the controller!
 
+### `controller.merge(...controllers)`
+
+Merges multiple functional controllers into a single unified controller definition. This enables splitting large `route.ts` files into modular, domain-specific controller pieces while exporting a single composite controller from the route file.
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
+
+// Sub-controller 1: credentials & sessions
+const authRoutes = controller({
+  login: route.post('/login', {
+    async handle({ body }) {
+      return { token: 'jwt-token' }
+    }
+  }),
+  logout: route.post('/logout', {
+    async handle() {
+      return { success: true }
+    }
+  })
+})
+
+// Sub-controller 2: OAuth integrations
+const oauthRoutes = controller({
+  google: route.get('/google', {
+    async handle() {
+      return { redirectUrl: 'https://accounts.google.com/o/oauth2/auth' }
+    }
+  })
+})
+
+// Export combined controller as default
+export default controller.merge(authRoutes, oauthRoutes)
+```
+
+### `controller.extend(base, overrides)`
+
+Inherits all route definitions, middlewares, filters, and configuration from a `base` controller and applies overrides or adds new route endpoints. This provides the functional equivalent of class-based controller inheritance for reusable CRUD templates.
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+
+// Reusable generic CRUD controller factory
+function createBaseCrud(resource: string) {
+  return controller({
+    list: route.get('/', {
+      async handle() {
+        return { resource, items: [] }
+      }
+    }),
+    getById: route.get('/:id', {
+      async handle({ params }) {
+        return { resource, id: params.id }
+      }
+    })
+  })
+}
+
+// Inherit base endpoints and add specialized or overridden routes
+export default controller.extend(createBaseCrud('products'), {
+  // Additional specialized route
+  featured: route.get('/featured', {
+    async handle() {
+      return { featured: ['Product 1', 'Product 2'] }
+    }
+  }),
+
+  // Override base endpoint
+  getById: route.get('/:id', {
+    async handle({ params }) {
+      return { customProduct: true, id: params.id }
+    }
+  })
+})
+```
+
 ---
 
 ## `route`

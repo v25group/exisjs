@@ -32,7 +32,7 @@ export const defaultConfig: ResolvedConfig = {
 
   http2: true,
   redirectHttp: false,
-  etag: true,
+  etag: false,
   telemetry: {
     enabled: false,
     exporter: 'console',

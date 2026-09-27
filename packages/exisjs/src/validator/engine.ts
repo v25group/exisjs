@@ -211,6 +211,50 @@ export class TexEngine<T = any> {
             }
           }
 
+          if (val instanceof TexType && val._raw.startsWith('number')) {
+            if (val._raw.includes('coerce') || (this as any)._isQueryOrParam) {
+              if (typeof data[key] === 'string' && data[key].trim() !== '') {
+                const n = Number(data[key])
+                if (!isNaN(n)) {
+                  data[key] = n
+                } else {
+                  throw new ValidatorError([
+                    {
+                      path: key,
+                      message: 'Must be a number',
+                      expected: 'number',
+                      received: formatReceivedValue(data[key]),
+                      code: 'INVALID_TYPE',
+                    },
+                  ])
+                }
+              }
+            }
+          }
+
+          if (val instanceof TexType && val._raw.startsWith('boolean')) {
+            if (val._raw.includes('coerce') || (this as any)._isQueryOrParam) {
+              if (typeof data[key] === 'string' && data[key].trim() !== '') {
+                const lower = data[key].toLowerCase().trim()
+                if (lower === 'true' || lower === '1') {
+                  data[key] = true
+                } else if (lower === 'false' || lower === '0') {
+                  data[key] = false
+                } else {
+                  throw new ValidatorError([
+                    {
+                      path: key,
+                      message: 'Must be a boolean',
+                      expected: 'boolean (true or false)',
+                      received: formatReceivedValue(data[key]),
+                      code: 'INVALID_TYPE',
+                    },
+                  ])
+                }
+              }
+            }
+          }
+
           if (
             val instanceof TexType &&
             val._raw.startsWith('array<') &&

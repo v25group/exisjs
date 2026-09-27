@@ -38,7 +38,29 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
     return validator.toOpenApi()
   }
 
+  // 1b. Built-in Transformation Pipes
+  const pipeName =
+    typeof validator === 'function'
+      ? validator.name
+      : validator?.constructor?.name
+  if (pipeName === 'ParseIntPipe') {
+    return { type: 'integer' }
+  }
+  if (pipeName === 'ParseFloatPipe') {
+    return { type: 'number', format: 'float' }
+  }
+  if (pipeName === 'ParseBoolPipe') {
+    return { type: 'boolean' }
+  }
+  if (pipeName === 'ParseUUIDPipe') {
+    return { type: 'string', format: 'uuid' }
+  }
+  if (pipeName === 'ParseArrayPipe') {
+    return { type: 'array', items: { type: 'string' } }
+  }
+
   // 2. Direct TexType
+
   if (
     validator.constructor &&
     validator.constructor.name === 'TexType' &&
@@ -115,24 +137,46 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
 /**
  * Extracts query parameters from route schema into OpenAPI parameter objects.
  */
-function extractQueryParameters(queryValidator: any): OpenApiParameter[] {
-  if (!queryValidator) return []
-  const schema = schemaToOpenApi(queryValidator)
-  if (schema.type !== 'object' || !schema.properties) return []
-
-  const requiredList: string[] = Array.isArray(schema.required)
-    ? schema.required
-    : []
-
-  return Object.entries(schema.properties).map(([name, propSchema]) => {
-    const isRequired = requiredList.includes(name)
-    return {
-      name,
-      in: 'query',
-      required: isRequired,
-      schema: propSchema as Record<string, any>,
+function extractQueryParameters(
+  queryValidator?: any,
+  paramMetadata?: any[]
+): OpenApiParameter[] {
+  const queryParams: OpenApiParameter[] = []
+  if (queryValidator) {
+    const schema = schemaToOpenApi(queryValidator)
+    if (schema.type === 'object' && schema.properties) {
+      const requiredList: string[] = Array.isArray(schema.required)
+        ? schema.required
+        : []
+      for (const [name, propSchema] of Object.entries(schema.properties)) {
+        queryParams.push({
+          name,
+          in: 'query',
+          required: requiredList.includes(name),
+          schema: propSchema as Record<string, any>,
+        })
+      }
     }
-  })
+  }
+
+  if (paramMetadata) {
+    for (const param of paramMetadata) {
+      if (param && param.type === 'query' && param.name) {
+        if (!queryParams.some((q) => q.name === param.name)) {
+          const pipe = param.pipes?.[0]
+          const schema = pipe ? schemaToOpenApi(pipe) : { type: 'string' }
+          queryParams.push({
+            name: param.name,
+            in: 'query',
+            required: false,
+            schema,
+          })
+        }
+      }
+    }
+  }
+
+  return queryParams
 }
 
 /**
@@ -140,7 +184,8 @@ function extractQueryParameters(queryValidator: any): OpenApiParameter[] {
  */
 function extractPathParameters(
   path: string,
-  paramsValidator?: any
+  paramsValidator?: any,
+  paramMetadata?: any[]
 ): OpenApiParameter[] {
   const matches =
     path.match(
@@ -155,7 +200,18 @@ function extractPathParameters(
     let name = m.replace(/[:[\]]/g, '').replace(/^\.\.\./, '')
     if (m === '*') name = 'wildcard'
 
-    const propSchema = properties[name] || { type: 'string' }
+    const matchingParam = paramMetadata?.find(
+      (p: any) => p && p.type === 'param' && (p.name === name || !p.name)
+    )
+    const matchingPipe = matchingParam?.pipes?.[0]
+    const pipeSchema = matchingPipe ? schemaToOpenApi(matchingPipe) : null
+
+    const propSchema =
+      properties[name] ||
+      pipeSchema ||
+      (schema && schema.type && schema.type !== 'object'
+        ? schema
+        : { type: 'string' })
     return {
       name,
       in: 'path',
@@ -236,8 +292,14 @@ export function generateOpenApiSpec(
     }
 
     // Parameters
-    const pathParams = extractPathParameters(route.path, schema?.params)
-    const queryParams = extractQueryParameters(schema?.query)
+    const paramMeta =
+      (schema as any)?.paramMetadata || (route as any).paramMetadata
+    const pathParams = extractPathParameters(
+      route.path,
+      schema?.params,
+      paramMeta
+    )
+    const queryParams = extractQueryParameters(schema?.query, paramMeta)
     const headerParams = extractHeaderParameters(schema?.headers)
     const allParameters: OpenApiParameter[] = [
       ...pathParams,

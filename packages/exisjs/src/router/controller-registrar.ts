@@ -1,3 +1,4 @@
+import { BadRequestException } from '../error'
 import type { App } from '../server/app'
 import { executionContext } from '../server/context'
 
@@ -31,6 +32,8 @@ export class ControllerRegistrar {
     const ROLES_METADATA = Symbol.for('exisjs:roles')
     const IS_PUBLIC_METADATA = Symbol.for('exisjs:is_public')
     const CATCH_EXCEPTIONS_METADATA = Symbol.for('exisjs:catch_exceptions')
+
+    const PIPES_METADATA = Symbol.for('exisjs:pipes')
 
     for (const ControllerClass of controllers) {
       const prefix = ControllerClass.prototype[CONTROLLER_PREFIX] || ''
@@ -147,6 +150,24 @@ export class ControllerRegistrar {
               ...(lifecycleMetadataMap._classGuards || []),
               ...(routeLifecycle.guards || []),
             ]
+
+            const executionCtx = Object.assign(Object.create(req), {
+              req,
+              res,
+              next,
+              app: this.app,
+              state:
+                executionContext.getStore()?.state || (req as any).state || {},
+              getClass: () => ControllerClass,
+              getHandler: () => ControllerClass.prototype[route.handlerName],
+              getType: () => (method === 'ws' ? 'ws' : 'http'),
+              switchToHttp: () => ({
+                getRequest: () => req,
+                getResponse: () => res,
+                getNext: () => next,
+              }),
+            })
+
             for (const guard of guards) {
               let allowed = false
               if (typeof guard === 'function') {
@@ -158,9 +179,9 @@ export class ControllerRegistrar {
                   if (!guardInstance) {
                     guardInstance = new (guard as any)()
                   }
-                  allowed = await guardInstance.canActivate(req)
+                  allowed = await guardInstance.canActivate(executionCtx)
                 } else {
-                  allowed = await guard(req)
+                  allowed = await guard(executionCtx)
                 }
               }
               if (!allowed) {
@@ -174,7 +195,24 @@ export class ControllerRegistrar {
               }
             }
 
-            // 2. Resolve parameters
+            // 2. Resolve parameters & pipes
+            const classPipes: any[] =
+              ControllerClass.prototype[PIPES_METADATA] || []
+            const methodPipes: any[] =
+              (ControllerClass.prototype[route.handlerName] &&
+                ControllerClass.prototype[route.handlerName][PIPES_METADATA]) ||
+              []
+            const combinedMethodPipes = [...classPipes, ...methodPipes]
+
+            const reflectedTypes: any[] =
+              (typeof (globalThis as any).Reflect?.getMetadata === 'function'
+                ? (globalThis as any).Reflect.getMetadata(
+                    'design:paramtypes',
+                    ControllerClass.prototype,
+                    route.handlerName
+                  )
+                : undefined) || []
+
             const paramMetadata =
               paramMetadataMap[route.handlerName] ||
               (ControllerClass.prototype[route.handlerName] &&
@@ -191,7 +229,8 @@ export class ControllerRegistrar {
                 args.push(req, res, next)
               }
             } else {
-              for (const param of paramMetadata) {
+              for (let i = 0; i < paramMetadata.length; i++) {
+                const param = paramMetadata[i]
                 if (!param) {
                   args.push(undefined)
                   continue
@@ -323,33 +362,80 @@ export class ControllerRegistrar {
                     rawArg = undefined
                 }
 
-                if (param.pipes && param.pipes.length > 0) {
-                  for (const pipe of param.pipes) {
+                const allPipes = [
+                  ...combinedMethodPipes,
+                  ...(param.pipes || []),
+                ]
+                if (allPipes.length > 0) {
+                  let metatype = param.metatype || reflectedTypes[i]
+                  for (const pipe of allPipes) {
+                    if (
+                      typeof pipe === 'function' &&
+                      pipe.prototype &&
+                      !pipe.prototype.transform &&
+                      typeof pipe.prototype.validate === 'function'
+                    ) {
+                      metatype = pipe
+                    }
+
+                    const argMetadata = {
+                      type: param.type,
+                      data: param.name,
+                      metatype,
+                    }
                     if (
                       typeof pipe === 'function' &&
                       pipe.prototype?.transform
                     ) {
                       let pipeInstance: any = this.app.container.resolve(pipe)
                       if (!pipeInstance) pipeInstance = new pipe()
-                      rawArg = await pipeInstance.transform(rawArg, {
-                        type: param.type,
-                        name: param.name,
-                      })
+                      rawArg = await pipeInstance.transform(rawArg, argMetadata)
                     } else if (
                       typeof pipe === 'object' &&
+                      pipe !== null &&
+                      typeof pipe.transform === 'function'
+                    ) {
+                      rawArg = await pipe.transform(rawArg, argMetadata)
+                    } else if (
+                      typeof pipe === 'object' &&
+                      pipe !== null &&
                       typeof pipe.parse === 'function'
                     ) {
                       rawArg = await pipe.parse(rawArg)
                     } else if (
-                      typeof pipe === 'object' &&
-                      typeof pipe.transform === 'function'
+                      typeof pipe === 'function' &&
+                      pipe.prototype &&
+                      typeof pipe.prototype.validate === 'function'
                     ) {
-                      rawArg = await pipe.transform(rawArg, {
-                        type: param.type,
-                        name: param.name,
-                      })
+                      // Validating DTO Class directly
+                      const instance = new pipe()
+                      Object.assign(instance, rawArg)
+                      const errors = await instance.validate()
+                      if (
+                        errors &&
+                        (Array.isArray(errors)
+                          ? errors.length > 0
+                          : Boolean(errors))
+                      ) {
+                        throw new BadRequestException('Validation Failed', {
+                          statusCode: 400,
+                          validationErrors: errors,
+                        })
+                      }
+                      rawArg = instance
                     } else if (typeof pipe === 'function') {
-                      rawArg = await pipe(rawArg)
+                      try {
+                        rawArg = await pipe(rawArg, argMetadata)
+                      } catch (err) {
+                        if (
+                          String(err).includes('cannot be invoked without') ||
+                          String(err).includes('Class constructor')
+                        ) {
+                          metatype = pipe
+                        } else {
+                          throw err
+                        }
+                      }
                     }
                   }
                 }
@@ -374,9 +460,11 @@ export class ControllerRegistrar {
                   if (!interceptorInstance) {
                     interceptorInstance = new (interceptor as any)()
                   }
-                  await interceptorInstance.intercept(req, res)
+                  await interceptorInstance.intercept(executionCtx, {
+                    handle: async () => instance[route.handlerName](...args),
+                  })
                 } else {
-                  await interceptor(req, res)
+                  await interceptor(executionCtx, res)
                 }
               }
             }
@@ -458,6 +546,8 @@ export class ControllerRegistrar {
                 req,
                 res,
                 next,
+                getClass: () => ControllerClass,
+                getHandler: () => ControllerClass.prototype[route.handlerName],
                 switchToHttp: () => ({
                   getRequest: () => req,
                   getResponse: () => res,
@@ -542,29 +632,36 @@ export class ControllerRegistrar {
 
         for (const param of paramMetadata) {
           if (!param) continue
-          if (param.type === 'body') {
-            const bodyPipe = param.pipes?.find(
-              (p: any) => p && typeof p.parse === 'function'
-            )
-            if (bodyPipe) extractedBodySchema = bodyPipe
+          const pipeOrSchema =
+            param.pipes?.find(
+              (p: any) =>
+                p &&
+                (typeof p.parse === 'function' ||
+                  typeof p.transform === 'function' ||
+                  typeof p === 'function')
+            ) || param.metatype
+
+          const isRealSchema =
+            pipeOrSchema &&
+            (typeof pipeOrSchema.parse === 'function' ||
+              typeof pipeOrSchema.toOpenApi === 'function' ||
+              pipeOrSchema._raw ||
+              pipeOrSchema._def ||
+              (pipeOrSchema &&
+                typeof pipeOrSchema === 'object' &&
+                'type' in pipeOrSchema))
+
+          if (param.type === 'body' && isRealSchema) {
+            extractedBodySchema = pipeOrSchema
           }
-          if (param.type === 'query') {
-            const queryPipe = param.pipes?.find(
-              (p: any) => p && typeof p.parse === 'function'
-            )
-            if (queryPipe) extractedQuerySchema = queryPipe
+          if (param.type === 'query' && isRealSchema) {
+            extractedQuerySchema = pipeOrSchema
           }
-          if (param.type === 'param') {
-            const paramPipe = param.pipes?.find(
-              (p: any) => p && typeof p.parse === 'function'
-            )
-            if (paramPipe) extractedParamsSchema = paramPipe
+          if (param.type === 'param' && isRealSchema) {
+            extractedParamsSchema = pipeOrSchema
           }
-          if (param.type === 'header') {
-            const headerPipe = param.pipes?.find(
-              (p: any) => p && typeof p.parse === 'function'
-            )
-            if (headerPipe) extractedHeadersSchema = headerPipe
+          if (param.type === 'header' && isRealSchema) {
+            extractedHeadersSchema = pipeOrSchema
           }
         }
 
@@ -581,68 +678,45 @@ export class ControllerRegistrar {
           ...(routeMeta.security || []),
         ]
 
-        if (
-          schema ||
-          finalHost ||
-          extractedBodySchema ||
-          extractedQuerySchema ||
-          extractedParamsSchema ||
-          extractedHeadersSchema ||
-          extractedResponseSchema ||
-          mergedTags.length > 0 ||
-          mergedSecurity.length > 0 ||
-          routeMeta.summary ||
-          routeMeta.description ||
-          routeMeta.operationId ||
-          routeMeta.deprecated !== undefined ||
-          routeMeta.responses ||
-          routeMeta.excludeFromDocs ||
-          classOpenApi.excludeFromDocs
-        ) {
-          schema = schema || {}
-          if (finalHost) schema.host = finalHost
-          if (extractedBodySchema && !schema.body)
-            schema.body = extractedBodySchema
-          if (extractedQuerySchema && !schema.query)
-            schema.query = extractedQuerySchema
-          if (extractedParamsSchema && !schema.params)
-            schema.params = extractedParamsSchema
-          if (extractedHeadersSchema && !schema.headers)
-            schema.headers = extractedHeadersSchema
-          if (extractedResponseSchema && !schema.response)
-            schema.response = extractedResponseSchema
-          if (mergedTags.length > 0 && !schema.tags) schema.tags = mergedTags
-          if (mergedSecurity.length > 0 && !schema.security)
-            schema.security = mergedSecurity
-          if (routeMeta.summary && !schema.summary)
-            schema.summary = routeMeta.summary
-          if (routeMeta.description && !schema.description)
-            schema.description = routeMeta.description
-          if (routeMeta.operationId && !schema.operationId)
-            schema.operationId = routeMeta.operationId
-          if (
-            routeMeta.deprecated !== undefined &&
-            schema.deprecated === undefined
-          )
-            schema.deprecated = routeMeta.deprecated
-          if (routeMeta.responses && !schema.responses)
-            schema.responses = routeMeta.responses
-          if (routeMeta.excludeFromDocs || classOpenApi.excludeFromDocs)
-            schema.excludeFromDocs = true
+        schema = schema || {}
+        schema.paramMetadata = paramMetadata
+        if (finalHost) schema.host = finalHost
 
-          ;(this.app.router as any)[method](
-            fullPath,
-            ...allMiddlewares,
-            schema,
-            finalHandler
-          )
-        } else {
-          ;(this.app.router as any)[method](
-            fullPath,
-            ...allMiddlewares,
-            finalHandler
-          )
-        }
+        if (extractedBodySchema && !schema.body)
+          schema.body = extractedBodySchema
+        if (extractedQuerySchema && !schema.query)
+          schema.query = extractedQuerySchema
+        if (extractedParamsSchema && !schema.params)
+          schema.params = extractedParamsSchema
+        if (extractedHeadersSchema && !schema.headers)
+          schema.headers = extractedHeadersSchema
+        if (extractedResponseSchema && !schema.response)
+          schema.response = extractedResponseSchema
+        if (mergedTags.length > 0 && !schema.tags) schema.tags = mergedTags
+        if (mergedSecurity.length > 0 && !schema.security)
+          schema.security = mergedSecurity
+        if (routeMeta.summary && !schema.summary)
+          schema.summary = routeMeta.summary
+        if (routeMeta.description && !schema.description)
+          schema.description = routeMeta.description
+        if (routeMeta.operationId && !schema.operationId)
+          schema.operationId = routeMeta.operationId
+        if (
+          routeMeta.deprecated !== undefined &&
+          schema.deprecated === undefined
+        )
+          schema.deprecated = routeMeta.deprecated
+        if (routeMeta.responses && !schema.responses)
+          schema.responses = routeMeta.responses
+        if (routeMeta.excludeFromDocs || classOpenApi.excludeFromDocs)
+          schema.excludeFromDocs = true
+
+        ;(this.app.router as any)[method](
+          fullPath,
+          ...allMiddlewares,
+          schema,
+          finalHandler
+        )
       }
     }
     return this.app

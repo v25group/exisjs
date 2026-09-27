@@ -84,6 +84,7 @@ export class HttpError extends Error {
         message: this.message,
         ...(this.details !== undefined && { details: this.details }),
       },
+      ...(this.details && typeof this.details === 'object' ? this.details : {}),
     }
   }
 }
@@ -561,11 +562,14 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       }))
 
       res.status(400).json({
+        success: false,
         statusCode: 400,
         error: 'Bad Request',
         message: message || 'Validation Error',
+        validationErrors: errorsMap,
         errors: errorsMap,
         details: responseDetails,
+        timestamp: new Date().toISOString(),
       })
       return
     }
@@ -574,10 +578,14 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     if (err instanceof SyntaxError && 'body' in err) {
       res.status(400).json({
         success: false,
+        statusCode: 400,
         error: {
           code: 'INVALID_JSON',
           message: 'Invalid JSON in request body',
         },
+        message: 'Invalid JSON in request body',
+        validationErrors: null,
+        timestamp: new Date().toISOString(),
       })
       return
     }
@@ -604,11 +612,15 @@ export function createErrorHandler(isDev = false): ErrorHandler {
 
     res.status(500).json({
       success: false,
+      statusCode: 500,
       error: {
         code: 'INTERNAL_ERROR',
         message: isDev ? err.message : 'An unexpected error occurred',
         ...(isDev && { stack: err.stack }),
       },
+      message: isDev ? err.message : 'An unexpected error occurred',
+      validationErrors: null,
+      timestamp: new Date().toISOString(),
     })
   }
 }

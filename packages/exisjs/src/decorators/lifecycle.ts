@@ -39,3 +39,42 @@ export interface OnApplicationBootstrap {
 export interface OnApplicationShutdown {
   onApplicationShutdown(signal?: string): void | Promise<void>
 }
+
+export interface HttpArgumentsHost {
+  getRequest<T = any>(): T
+  getResponse<T = any>(): T
+  getNext<T = any>(): T
+}
+
+export interface ArgumentsHost {
+  req: any
+  res: any
+  next: any
+  app?: any
+  state?: Record<string, any>
+  switchToHttp(): HttpArgumentsHost
+  getType?<TContext extends string = string>(): TContext
+}
+
+export interface ExecutionContext extends ArgumentsHost {
+  getClass<T = any>(): new (...args: any[]) => T
+  getHandler(): (...args: any[]) => any
+}
+
+export interface CanActivate {
+  canActivate(context: ExecutionContext | any): boolean | Promise<boolean>
+}
+
+export interface CallHandler<T = any> {
+  handle(): Promise<T>
+}
+
+export interface Interceptor<T = any, R = any> {
+  intercept(
+    context: ExecutionContext | any,
+    next?: CallHandler<T> | any
+  ): Promise<R> | R
+}
+
+export type ExisInterceptor = Interceptor
+export type NestInterceptor = Interceptor

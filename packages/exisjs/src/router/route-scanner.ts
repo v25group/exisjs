@@ -583,11 +583,11 @@ export class RouteScanner {
     }
   }
 
-  private compileFunctionalController(config: any): Router {
+  public compileFunctionalController(config: any): Router {
     return compileFunctionalController(config, this.app)
   }
 
-  private mountRouteWithSource(
+  public mountRouteWithSource(
     prefix: string,
     subRouter: Router,
     sourceFile: string,

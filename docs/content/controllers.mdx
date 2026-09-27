@@ -353,6 +353,236 @@ export default class UsersController {
 }
 ```
 
+## Controller Inheritance (Base & Abstract Controllers)
+
+ExisJS supports full OOP inheritance for controllers. You can create generic base or abstract CRUD controllers and inherit all route handlers, parameter decorators, middlewares, guards, interceptors, and filters down to subclasses:
+
+```typescript filename="src/http/base-crud.controller.ts"
+import { Get, Post, Delete, Param, Body } from 'exisjs/decorators'
+
+export abstract class BaseCrudController<T> {
+  protected abstract resourceName: string
+
+  @Get('/')
+  async findAll(): Promise<T[]> {
+    return []
+  }
+
+  @Get('/:id')
+  async findById(@Param('id') id: string): Promise<T> {
+    return { id, resource: this.resourceName } as any
+  }
+
+  @Delete('/:id')
+  async remove(@Param('id') id: string): Promise<{ deleted: boolean }> {
+    return { deleted: true }
+  }
+}
+```
+
+Subclasses inherit all parent endpoints and can add new routes or selectively override base methods:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body, Param } from 'exisjs/decorators'
+import { BaseCrudController } from '../base-crud.controller'
+
+export interface User {
+  id: string
+  name: string
+}
+
+@Controller('/users')
+export default class UsersController extends BaseCrudController<User> {
+  protected resourceName = 'users'
+
+  // Subclass defines additional route
+  @Post('/')
+  async create(@Body() user: User) {
+    return { created: true, user }
+  }
+
+  // Subclass can override inherited remove handler
+  override async remove(@Param('id') id: string) {
+    return { deleted: true, id, customAudit: true }
+  }
+}
+```
+
+### Functional Controller Inheritance (`controller.extend`)
+
+In the functional paradigm, inheritance is achieved via `controller.extend(base, overrides)`. This inherits all route handlers, lifecycle hooks, and middlewares from a base controller factory and allows overriding endpoints or adding new routes with full type inference:
+
+```typescript filename="src/http/products/route.ts"
+import { controller, route } from 'exisjs/router'
+
+// 1. Generic functional base CRUD controller
+function createBaseCrud(resourceName: string) {
+  return controller({
+    list: route.get('/', {
+      async handle() {
+        return { resource: resourceName, items: [] }
+      }
+    }),
+    getById: route.get('/:id', {
+      async handle({ params }) {
+        return { resource: resourceName, id: params.id }
+      }
+    }),
+    remove: route.delete('/:id', {
+      async handle({ params }) {
+        return { deleted: true, id: params.id }
+      }
+    })
+  })
+}
+
+// 2. Extend base controller with overrides and additional routes
+export default controller.extend(createBaseCrud('products'), {
+  // Additional specialized route
+  featured: route.get('/featured', {
+    async handle() {
+      return { featured: ['Product 1', 'Product 2'] }
+    }
+  }),
+
+  // Override base endpoint
+  getById: route.get('/:id', {
+    async handle({ params }) {
+      return { customProduct: true, id: params.id }
+    }
+  })
+})
+```
+
+## Functional Controller Composition (`controller.merge`)
+
+When a single `route.ts` manages a feature area with multiple concerns (for example, auth flows containing credentials, sessions, and OAuth), `controller.merge(...controllers)` allows splitting logic into modular controller objects and merging them into a single default export:
+
+```typescript filename="src/http/auth/route.ts"
+import { controller, route } from 'exisjs/router'
+
+// 1. Modular controller for password authentication
+const passwordAuth = controller({
+  login: route.post('/login', {
+    async handle({ body }) {
+      return { token: 'jwt-auth-token' }
+    }
+  }),
+  logout: route.post('/logout', {
+    async handle() {
+      return { success: true }
+    }
+  })
+})
+
+// 2. Modular controller for OAuth providers
+const oauthProviders = controller({
+  google: route.get('/google', {
+    async handle() {
+      return { redirectUrl: 'https://accounts.google.com/o/oauth2/auth' }
+    }
+  }),
+  github: route.get('/github', {
+    async handle() {
+      return { redirectUrl: 'https://github.com/login/oauth/authorize' }
+    }
+  })
+})
+
+// 3. Merge both into the single exported controller for this folder
+export default controller.merge(passwordAuth, oauthProviders)
+```
+
+## Built-in Transformation Pipes & `@UsePipes`
+
+Pipes transform and validate incoming request data before it reaches the route handler. ExisJS provides built-in pipes for common primitives:
+
+<div className="overflow-x-auto mb-6">
+  <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
+    <thead className="bg-muted/50 text-foreground">
+      <tr>
+        <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Pipe</th>
+        <th className="px-4 py-3 border-b border-border/50 font-semibold">Description</th>
+      </tr>
+    </thead>
+    <tbody className="divide-y divide-border/50">
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ParseIntPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Parses string/number parameter into integer or throws 400 Bad Request</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ParseFloatPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Parses parameter into floating-point number</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ParseBoolPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Parses boolean strings (<code>'true'</code>, <code>'false'</code>, <code>1</code>, <code>0</code>) into native booleans</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ParseUUIDPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Validates UUID format (v3, v4, v5, or all)</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ParseArrayPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Splits comma-separated strings into arrays and applies item pipes</td>
+      </tr>
+      <tr className="bg-background hover:bg-muted/30 transition-colors">
+        <td className="px-4 py-3 font-mono text-xs">ValidationPipe</td>
+        <td className="px-4 py-3 text-muted-foreground">Validates and transforms DTO classes or schema metatypes</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+```typescript filename="src/http/items/route.ts"
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  Body,
+  UsePipes,
+  ParseIntPipe,
+  ParseBoolPipe,
+  ParseUUIDPipe,
+  ParseArrayPipe,
+  ValidationPipe,
+} from 'exisjs/decorators'
+
+@Controller('/items')
+export default class ItemsController {
+  // 1. Parameter-level pipe
+  @Get('/:id')
+  async getItem(@Param('id', ParseIntPipe) id: number) {
+    return { id, isNumber: typeof id === 'number' }
+  }
+
+  // 2. Query boolean & array pipes
+  @Get('/')
+  async listItems(
+    @Query('active', ParseBoolPipe) active: boolean,
+    @Query('ids', new ParseArrayPipe({ items: ParseIntPipe })) ids: number[]
+  ) {
+    return { active, ids }
+  }
+
+  // 3. UUID validation pipe
+  @Get('/by-uuid/:uuid')
+  async getByUUID(@Param('uuid', ParseUUIDPipe) uuid: string) {
+    return { uuid }
+  }
+
+  // 4. Method-level or Class-level @UsePipes
+  @Post('/')
+  @UsePipes(new ValidationPipe({ transform: true }))
+  async createItem(@Body() body: any) {
+    return { created: true, body }
+  }
+}
+```
+
 <Info title="Tip: Safely Returning with @Res">
 In some frameworks, injecting the `@Res()` object disables auto-serialization, causing the request to hang if you forget to call `res.send()`. ExisJS handles this differently: if you return a value from your handler, ExisJS will still safely auto-serialize it to JSON even if you injected `@Res()` to set a custom header.
 </Info>
+

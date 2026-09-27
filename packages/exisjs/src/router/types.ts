@@ -106,9 +106,14 @@ export type HttpMethod =
   | 'QUERY'
   | 'ALL'
 
-export type RouteValidator<T> =
+export type RouteValidator<T = any> =
   | { parse: (val: unknown) => T; transform?: unknown }
   | { parse?: unknown; transform: (val: unknown, meta?: any) => Promise<T> | T }
+  | ((val: unknown) => T | Promise<T>)
+  | (T extends Record<string, any>
+      ? { [K in keyof T]?: any } | Record<string, any>
+      : Record<string, any>)
+  | any
 
 export interface RouteUploadOptions {
   field?: string

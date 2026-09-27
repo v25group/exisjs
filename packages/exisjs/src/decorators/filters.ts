@@ -1,16 +1,8 @@
 import { CATCH_EXCEPTIONS_METADATA } from './constants'
 import { MetadataEngine } from './core/metadata'
+import type { ArgumentsHost } from './lifecycle'
 
-export interface ArgumentsHost {
-  req: any
-  res: any
-  next: any
-  switchToHttp?: () => {
-    getRequest: () => any
-    getResponse: () => any
-    getNext: () => any
-  }
-}
+export type { ArgumentsHost }
 
 /**
  * Interface defining an Exception Filter.

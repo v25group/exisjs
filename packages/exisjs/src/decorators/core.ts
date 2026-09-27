@@ -59,20 +59,48 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
 
     MetadataEngine.init(proto, ROUTE_REGISTRY, [])
 
-    // Middlewares
-    const currentMiddlewares = MetadataEngine.get(proto, MIDDLEWARE_REGISTRY)
-    if (Array.isArray(currentMiddlewares)) {
-      MetadataEngine.set(proto, MIDDLEWARE_REGISTRY, {
-        _classMiddlewares: currentMiddlewares,
-      })
-    } else if (!currentMiddlewares || typeof currentMiddlewares !== 'object') {
-      MetadataEngine.set(proto, MIDDLEWARE_REGISTRY, { _classMiddlewares: [] })
-    } else if (!currentMiddlewares._classMiddlewares) {
-      currentMiddlewares._classMiddlewares = []
+    // Collect prototype inheritance chain (base classes first, derived class last)
+    const protoChain: any[] = []
+    let currProto = proto
+    while (currProto && currProto !== Object.prototype) {
+      protoChain.unshift(currProto)
+      currProto = Object.getPrototypeOf(currProto)
     }
 
-    const classLifecycle =
-      MetadataEngine.get(proto, LIFECYCLE_METADATA_PROP) || {}
+    // Accumulate class-level middlewares across the inheritance hierarchy
+    const combinedClassMiddlewares: any[] = []
+    const combinedClassGuards: any[] = []
+    const combinedClassInterceptors: any[] = []
+    const combinedClassFilters: any[] = []
+    let combinedClassRouteMetadata: Record<string, any> = {}
+
+    for (const p of protoChain) {
+      const middlewares = MetadataEngine.get(p, MIDDLEWARE_REGISTRY)
+      if (Array.isArray(middlewares)) {
+        combinedClassMiddlewares.push(...middlewares)
+      } else if (middlewares?._classMiddlewares) {
+        combinedClassMiddlewares.push(...middlewares._classMiddlewares)
+      }
+
+      const lifecycle = MetadataEngine.get(p, LIFECYCLE_METADATA_PROP) || {}
+      if (lifecycle._classGuards)
+        combinedClassGuards.push(...lifecycle._classGuards)
+      if (lifecycle._classInterceptors)
+        combinedClassInterceptors.push(...lifecycle._classInterceptors)
+      if (lifecycle._classFilters)
+        combinedClassFilters.push(...lifecycle._classFilters)
+
+      const classRouteMeta = MetadataEngine.get(p, ROUTE_METADATA_PROP) || {}
+      combinedClassRouteMetadata = {
+        ...combinedClassRouteMetadata,
+        ...classRouteMeta,
+      }
+    }
+
+    MetadataEngine.set(proto, MIDDLEWARE_REGISTRY, {
+      _classMiddlewares: combinedClassMiddlewares,
+    })
+
     MetadataEngine.init(proto, ROUTE_METADATA, {})
     MetadataEngine.init(proto, LIFECYCLE_METADATA, {})
     MetadataEngine.init(proto, PARAM_METADATA, {})
@@ -83,50 +111,115 @@ export function Controller(prefixOrOptions?: string | ControllerOptions): any {
     const lifecycleMetadataMap = MetadataEngine.get(proto, LIFECYCLE_METADATA)
     const paramMetadataMap = MetadataEngine.get(proto, PARAM_METADATA)
 
-    for (const key of Object.getOwnPropertyNames(proto)) {
-      const descriptor = Object.getOwnPropertyDescriptor(proto, key)
-      if (descriptor && typeof descriptor.value === 'function') {
-        const fn = descriptor.value
+    // Gather all unique property names across prototype chain
+    const allKeys = new Set<string>()
+    for (const p of protoChain) {
+      for (const key of Object.getOwnPropertyNames(p)) {
+        if (key !== 'constructor') {
+          allKeys.add(key)
+        }
+      }
+    }
 
-        const routeMeta = MetadataEngine.get(fn, ROUTE_META)
+    for (const key of allKeys) {
+      // Find the most derived implementation in the prototype chain
+      let targetFn: any = undefined
+      for (let i = protoChain.length - 1; i >= 0; i--) {
+        const desc = Object.getOwnPropertyDescriptor(protoChain[i], key)
+        if (desc && typeof desc.value === 'function') {
+          targetFn = desc.value
+          break
+        }
+      }
+
+      if (typeof targetFn === 'function') {
+        // Inspect ROUTE_META (check most derived first, then base classes)
+        let routeMeta: any = undefined
+        for (let i = protoChain.length - 1; i >= 0; i--) {
+          const fn = protoChain[i][key]
+          if (typeof fn === 'function') {
+            const meta = MetadataEngine.get(fn, ROUTE_META)
+            if (meta) {
+              routeMeta = meta
+              break
+            }
+          }
+        }
+
         if (routeMeta) {
-          routeRegistry.push({ ...routeMeta, handlerName: key })
+          const existingIdx = routeRegistry.findIndex(
+            (r: any) => r.handlerName === key
+          )
+          if (existingIdx !== -1) {
+            routeRegistry[existingIdx] = { ...routeMeta, handlerName: key }
+          } else {
+            routeRegistry.push({ ...routeMeta, handlerName: key })
+          }
         }
 
-        const methodMiddlewares = MetadataEngine.get(fn, METHOD_MIDDLEWARES)
-        if (methodMiddlewares) {
-          middlewareRegistry[key] = middlewareRegistry[key] || []
-          middlewareRegistry[key].push(...methodMiddlewares)
+        // Method middlewares inheritance
+        const methodMiddlewares: any[] = []
+        for (const p of protoChain) {
+          const fn = p[key]
+          if (typeof fn === 'function') {
+            const mm = MetadataEngine.get(fn, METHOD_MIDDLEWARES)
+            if (mm) methodMiddlewares.push(...mm)
+          }
+        }
+        if (methodMiddlewares.length > 0) {
+          middlewareRegistry[key] = methodMiddlewares
         }
 
-        const classRouteMetadata =
-          MetadataEngine.get(proto, ROUTE_METADATA_PROP) || {}
-        const routeMetadata = MetadataEngine.get(fn, ROUTE_METADATA_PROP) || {}
+        // Route metadata inheritance
+        let methodRouteMetadata: Record<string, any> = {}
+        for (const p of protoChain) {
+          const fn = p[key]
+          if (typeof fn === 'function') {
+            const rm = MetadataEngine.get(fn, ROUTE_METADATA_PROP)
+            if (rm) methodRouteMetadata = { ...methodRouteMetadata, ...rm }
+          }
+        }
         if (
-          Object.keys(classRouteMetadata).length > 0 ||
-          Object.keys(routeMetadata).length > 0
+          Object.keys(combinedClassRouteMetadata).length > 0 ||
+          Object.keys(methodRouteMetadata).length > 0
         ) {
-          routeMetadataMap[key] = { ...classRouteMetadata, ...routeMetadata }
+          routeMetadataMap[key] = {
+            ...combinedClassRouteMetadata,
+            ...methodRouteMetadata,
+          }
         }
 
-        const lifecycleMetadata =
-          MetadataEngine.get(fn, LIFECYCLE_METADATA_PROP) || {}
+        // Lifecycle metadata inheritance (guards, interceptors, filters)
+        const methodGuards: any[] = []
+        const methodInterceptors: any[] = []
+        const methodFilters: any[] = []
+        for (const p of protoChain) {
+          const fn = p[key]
+          if (typeof fn === 'function') {
+            const lm = MetadataEngine.get(fn, LIFECYCLE_METADATA_PROP)
+            if (lm?.guards) methodGuards.push(...lm.guards)
+            if (lm?.interceptors) methodInterceptors.push(...lm.interceptors)
+            if (lm?.filters) methodFilters.push(...lm.filters)
+          }
+        }
         lifecycleMetadataMap[key] = {
-          guards: [
-            ...(classLifecycle._classGuards || []),
-            ...(lifecycleMetadata.guards || []),
-          ],
-          interceptors: [
-            ...(classLifecycle._classInterceptors || []),
-            ...(lifecycleMetadata.interceptors || []),
-          ],
-          filters: [
-            ...(classLifecycle._classFilters || []),
-            ...(lifecycleMetadata.filters || []),
-          ],
+          guards: [...combinedClassGuards, ...methodGuards],
+          interceptors: [...combinedClassInterceptors, ...methodInterceptors],
+          filters: [...combinedClassFilters, ...methodFilters],
         }
 
-        const paramMetadata = MetadataEngine.get(fn, PARAM_METADATA_PROP)
+        // Parameter metadata inheritance
+        let paramMetadata: any = undefined
+        for (let i = protoChain.length - 1; i >= 0; i--) {
+          const fn = protoChain[i][key]
+          if (typeof fn === 'function') {
+            const pm = MetadataEngine.get(fn, PARAM_METADATA_PROP)
+            if (pm) {
+              paramMetadata = pm
+              break
+            }
+          }
+        }
         if (paramMetadata) {
           paramMetadataMap[key] = paramMetadata
         }
@@ -227,6 +320,29 @@ export function Module(options: ClassModuleOptions = {}): any {
     MetadataEngine.set(target, MODULE_METADATA, options)
     if (target.prototype) {
       MetadataEngine.set(target.prototype, MODULE_METADATA, options)
+    }
+  }
+}
+
+/**
+ * Marks a module as global, making its providers available everywhere without re-importing the module.
+ *
+ * @example
+ * ```ts
+ * @Global()
+ * @Module({
+ *   providers: [SharedService],
+ *   exports: [SharedService],
+ * })
+ * export class SharedModule {}
+ * ```
+ */
+export function Global(): any {
+  return function (target: any, _context?: ClassDecoratorContext) {
+    const GLOBAL_METADATA = Symbol.for('exisjs:global')
+    MetadataEngine.set(target, GLOBAL_METADATA, true)
+    if (target.prototype) {
+      MetadataEngine.set(target.prototype, GLOBAL_METADATA, true)
     }
   }
 }

@@ -14,8 +14,8 @@ ExisJS ships with a efficient, integrated validation library out of the box, exp
 The `tex` object provides factory functions for every common primitive and data structure:
 
 - `tex.string(options?)`: Validates a string (supports min, max, trim, sanitizers, masking, SQL injection prevention, defaults).
-- `tex.number(options?)`: Validates a numeric value (supports min, max, coercion, defaults).
-- `tex.boolean(options?)`: Validates a boolean value (supports coercion, defaults).
+- `tex.number(options?)`: Validates a numeric value. Automatically coerces numeric strings in query parameters (e.g., `?limit=100` $\to$ `100`) and supports `{ coerce: true, min, max, default }`.
+- `tex.boolean(options?)`: Validates a boolean value. Automatically coerces boolean strings in query parameters (e.g., `?active=true` $\to$ `true`, `"1"`/`"0"`, `"yes"`/`"no"`) and supports `{ coerce: true, default }`.
 - `tex.email(options?)`: Validates standard email formatting.
 - `tex.uuid(options?)`: Validates UUID v1 or v4 strings (`{ version: 1 | 4 }`).
 - `tex.cuid(options?)`: Validates CUID identifiers.

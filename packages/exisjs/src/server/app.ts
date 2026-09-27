@@ -449,10 +449,62 @@ export class App<TRoutes extends Record<string, any> = {}> {
     return this
   }
 
+  public getScanner(): RouteScanner {
+    return this.routeScanner
+  }
+
+  // ─── Functional Controllers Registration ──────────────────────────────────
+
+  public registerFunctionalController(
+    config: any,
+    basePath = '',
+    prefixMiddlewares: any[] = []
+  ): this {
+    const compiledRouter = this.routeScanner.compileFunctionalController(config)
+    this.routeScanner.mountRouteWithSource(
+      basePath,
+      compiledRouter,
+      'functional:controller',
+      prefixMiddlewares
+    )
+    return this
+  }
+
   // ─── Dependency Injection ───────────────────────────────────────────────────
 
   provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): this {
     this.container.provide(token, provider)
+
+    // Auto-schedule @Cron, @Interval, @TimeoutTask if present on provider class
+    const targetClass =
+      typeof token === 'function'
+        ? token
+        : typeof provider === 'function'
+          ? provider
+          : (provider as any)?.useClass
+    const CRON_REGISTRY = Symbol.for('exisjs:cron_jobs')
+    if (targetClass && targetClass.prototype?.[CRON_REGISTRY]) {
+      const decoratedJobs = targetClass.prototype[CRON_REGISTRY]
+      if (Array.isArray(decoratedJobs)) {
+        for (const jobMeta of decoratedJobs) {
+          const jobName =
+            jobMeta.options.name || `${targetClass.name}.${jobMeta.methodName}`
+          this.cron.schedule({
+            ...jobMeta.options,
+            name: jobName,
+            run: async () => {
+              let instance: any
+              try {
+                instance = this.resolve(targetClass)
+              } catch {
+                instance = this.container.instantiateClass(targetClass)
+              }
+              return instance[jobMeta.methodName]()
+            },
+          })
+        }
+      }
+    }
     return this
   }
 

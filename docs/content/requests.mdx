@@ -451,11 +451,17 @@ const language = req.acceptsLanguages('en', 'es', 'fr')
 
 ---
 
-## 7. Network Information & IPv6 Normalization
+## 7. Network Information & Reverse Proxy IP Resolution
 
-ExisJS handles trust-proxies and dual-stack IP networks automatically. If you are behind Cloudflare, Nginx, or an AWS Load Balancer, simply set `trustProxy: true` in your `exis()` config, and these properties will automatically resolve the true client IP from `X-Forwarded-For`.
+ExisJS handles reverse proxies, CDNs, and dual-stack IP networks automatically. When deployed behind Cloudflare, AWS ALB, NGINX, Render, or GCP, set `trustProxy: true` in your `exis.config.ts` or define `TRUST_PROXY=true` in your environment variables.
 
-- **`req.ip`**: The client's IP address. Automatically normalizes IPv6-mapped IPv4 dual-stack addresses (e.g., `::ffff:192.168.1.50` $\to$ `192.168.1.50`) and converts IPv6 loopback `::1` $\to$ `127.0.0.1` for consistent rate limiting and geo-IP lookups.
+When proxy trust is enabled, ExisJS evaluates industry-standard proxy and CDN headers in priority order:
+1. `CF-Connecting-IP` (Cloudflare)
+2. `True-Client-IP` (Akamai / Cloudflare Enterprise)
+3. `X-Real-IP` / `X-Client-IP` (NGINX / Reverse Proxies)
+4. `X-Forwarded-For` (Standard multi-hop proxy chains)
+
+- **`req.ip`**: The real client's IP address. Automatically strips proxy hops, normalizes IPv6-mapped IPv4 dual-stack addresses (e.g., `::ffff:192.168.1.50` $\to$ `192.168.1.50`), and converts IPv6 loopback `::1` $\to$ `127.0.0.1` for consistent rate limiting and geo-IP lookups.
 - **`req.ips`**: An array of IPs if multiple proxies were traversed, each normalized cleanly.
 - **`req.hostname`**: The resolved hostname (from `Host` or `X-Forwarded-Host`).
 - **`req.protocol`**: Returns `'http'` or `'https'`.

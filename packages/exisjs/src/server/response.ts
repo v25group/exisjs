@@ -228,17 +228,32 @@ export class ExisResponse<TResponse = any> {
     let payload: Buffer | string
     try {
       const useSerializer = this._serializer && this.statusCode < 400
-      payload = useSerializer ? this._serializer!(data) : nativeStringify(data)
-    } catch (err) {
-      if (this.req && this.req.log) {
-        this.req.log.error({ err }, '[ExisJS] Serialization error')
+      if (useSerializer) {
+        try {
+          payload = this._serializer!(data)
+        } catch {
+          payload = nativeStringify(data)
+        }
       } else {
-        logger.error({ err }, '[ExisJS] Serialization error')
+        payload = nativeStringify(data)
       }
-      this.statusCode = 500
-      this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
-      this.end('{"error":"Failed to serialize response"}')
-      return
+    } catch (err) {
+      try {
+        payload = nativeStringify(data)
+      } catch (innerErr) {
+        if (this.req && this.req.log) {
+          this.req.log.error(
+            { err: innerErr || err },
+            '[ExisJS] Serialization error'
+          )
+        } else {
+          logger.error({ err: innerErr || err }, '[ExisJS] Serialization error')
+        }
+        this.statusCode = 500
+        this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
+        this.end('{"error":"Failed to serialize response"}')
+        return
+      }
     }
 
     if (!this.raw.hasHeader('Content-Type')) {

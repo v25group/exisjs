@@ -76,7 +76,7 @@ export default exis({
 
 ```
 
-#### Class-Based (OOP) Paradigm (`@Module`)
+#### Class-Based (OOP) Paradigm (`@Module` & `@Global`)
 
 For applications following the OOP paradigm, you can define modules using the `@Module` class decorator:
 
@@ -95,22 +95,41 @@ import { DatabaseModule } from './database.module'
 export class AuthModule {}
 ```
 
-You can then register it into your server:
+#### Global Modules (`@Global`)
+
+If you have utility services, audit loggers, or database connections that should be globally available across all modules without having to list the module in every `imports: [...]` array, decorate the module with `@Global()`:
+
+```typescript filename="src/modules/core.module.ts"
+import { Global, Module } from 'exisjs/decorators'
+import { AuditService } from './audit.service'
+import { LoggerService } from './logger.service'
+
+@Global()
+@Module({
+  providers: [AuditService, LoggerService],
+  exports: [AuditService, LoggerService],
+})
+export class CoreModule {}
+```
+
+You can then register it into your server or root module once:
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
 import { AuthModule } from '../modules/auth.module'
+import { CoreModule } from '../modules/core.module'
 import type { App } from 'exisjs'
 
 @Server({
-  plugins: [AuthModule]
+  plugins: [CoreModule, AuthModule]
 })
 export default class RootServer {
   async onStart(app: App) {
-    console.log("Server with AuthModule booted")
+    console.log("Server with Global CoreModule and AuthModule booted")
   }
 }
 ```
+
 
 ---
 

@@ -101,10 +101,31 @@ export interface BaseRouteConfig<TContext = Record<string, any>> {
   middlewares?:
     | Handler<any, any, any, any, TContext>[]
     | Handler<any, any, any, any, TContext>
+  guards?: any | any[]
+  interceptors?: any | any[]
   filters?: any | any[]
+  pipes?: any | any[]
+  roles?: string | string[]
+  permissions?: string | string[]
+  public?: boolean
+  isPublic?: boolean
   host?: string | string[]
   timeoutMs?: number
   timeout?: number | { ms: number; statusCode?: number; message?: string }
+  redirect?: string | { url: string; statusCode?: number }
+  httpCode?: number
+  headers?: Record<string, string>
+  upload?: any
+  summary?: string
+  description?: string
+  tags?: string[]
+  operationId?: string
+  deprecated?: boolean
+  responses?: Record<number, any>
+  response?: any
+  returns?: any
+  security?: any[]
+  excludeFromDocs?: boolean
 }
 
 export type RouteConfig<
@@ -517,42 +538,26 @@ export interface ControllerConfig {
   cors?: any
   middleware?: Handler[] | Handler
   middlewares?: Handler[] | Handler
+  guards?: any | any[]
+  interceptors?: any | any[]
   filters?: any | any[]
+  pipes?: any | any[]
+  roles?: string | string[]
+  permissions?: string | string[]
+  public?: boolean
+  isPublic?: boolean
+  tags?: string[]
+  security?: any[]
+  excludeFromDocs?: boolean
   onError?: HookError
   onResponse?: HookResponse
   [key: string]: any
 }
 
 /**
- * Creates a route controller in a `route.ts` file. Binds multiple routes together, sharing middleware,
- * lifecycle hooks, and error handling with zero boilerplate.
- *
- * @param config Controller configuration containing route definitions and shared settings
- * @returns Fully compiled functional controller
- *
- * @example
- * ```ts
- * // src/http/users/route.ts
- * import { controller, route } from 'exisjs/router'
- * import { tex } from 'exisjs/validator'
- *
- * export default controller({
- *   cors: true,
- *   listUsers: route.get('/', {
- *     async handle() {
- *       return { users: [] }
- *     }
- *   }),
- *   createUser: route.post('/', {
- *     body: tex.object({ name: tex.string() }),
- *     async handle({ body }) {
- *       return { created: body.name }
- *     }
- *   })
- * })
- * ```
+ * @internal Creates a controller marker. Use `controller(...)` instead.
  */
-export function controller<T extends ControllerConfig>(
+function _defineController<T extends ControllerConfig>(
   config: T
 ): T & { __isController: true } {
   return Object.defineProperty(config, '__isController', {
@@ -560,6 +565,248 @@ export function controller<T extends ControllerConfig>(
     enumerable: false, // Hide from iteration
   }) as T & { __isController: true }
 }
+
+/**
+ * @internal Merges multiple controller configs. Use `controller.merge(...)` instead.
+ */
+function _mergeControllers(
+  ...controllers: ControllerConfig[]
+): ControllerConfig & { __isController: true } {
+  const merged: any = {
+    middlewares: [],
+    filters: [],
+    guards: [],
+    interceptors: [],
+    pipes: [],
+  }
+
+  for (const ctrl of controllers) {
+    if (!ctrl) continue
+    if (ctrl.cors !== undefined) merged.cors = ctrl.cors
+    if (ctrl.public !== undefined) merged.public = ctrl.public
+    if (ctrl.isPublic !== undefined) merged.isPublic = ctrl.isPublic
+    if (ctrl.tags) {
+      merged.tags = [...(merged.tags || []), ...ctrl.tags]
+    }
+    if (ctrl.roles) {
+      const r = Array.isArray(ctrl.roles) ? ctrl.roles : [ctrl.roles]
+      merged.roles = [...(merged.roles || []), ...r]
+    }
+    if (ctrl.permissions) {
+      const p = Array.isArray(ctrl.permissions)
+        ? ctrl.permissions
+        : [ctrl.permissions]
+      merged.permissions = [...(merged.permissions || []), ...p]
+    }
+    const m = ctrl.middleware || ctrl.middlewares
+    if (m) {
+      merged.middlewares.push(...(Array.isArray(m) ? m : [m]))
+    }
+    if (ctrl.filters) {
+      merged.filters.push(
+        ...(Array.isArray(ctrl.filters) ? ctrl.filters : [ctrl.filters])
+      )
+    }
+    if (ctrl.guards) {
+      merged.guards.push(
+        ...(Array.isArray(ctrl.guards) ? ctrl.guards : [ctrl.guards])
+      )
+    }
+    if (ctrl.interceptors) {
+      merged.interceptors.push(
+        ...(Array.isArray(ctrl.interceptors)
+          ? ctrl.interceptors
+          : [ctrl.interceptors])
+      )
+    }
+    if (ctrl.pipes) {
+      merged.pipes.push(
+        ...(Array.isArray(ctrl.pipes) ? ctrl.pipes : [ctrl.pipes])
+      )
+    }
+    if (ctrl.onError) merged.onError = ctrl.onError
+    if (ctrl.onResponse) merged.onResponse = ctrl.onResponse
+
+    for (const [key, val] of Object.entries(ctrl)) {
+      if (
+        [
+          'cors',
+          'middleware',
+          'middlewares',
+          'filters',
+          'guards',
+          'interceptors',
+          'pipes',
+          'roles',
+          'permissions',
+          'public',
+          'isPublic',
+          'tags',
+          'security',
+          'excludeFromDocs',
+          'onError',
+          'onResponse',
+          '__isController',
+        ].includes(key)
+      ) {
+        continue
+      }
+      merged[key] = val
+    }
+  }
+
+  return _defineController(merged)
+}
+
+/**
+ * @internal Extends a base controller with overrides. Use `controller.extend(...)` instead.
+ */
+function _extendController(
+  base: ControllerConfig,
+  overrides: ControllerConfig
+): ControllerConfig & { __isController: true } {
+  return _mergeControllers(base, overrides)
+}
+
+export interface ControllerFactory {
+  /**
+   * Creates a functional route controller. Binds routes together with shared middleware,
+   * guards, interceptors, pipes, and error handlers.
+   *
+   * @param config Controller configuration containing route definitions and shared settings
+   * @returns Fully compiled functional controller
+   *
+   * @example
+   * ```ts
+   * import { controller, route } from 'exisjs/router'
+   * import { tex } from 'exisjs/validator'
+   *
+   * export default controller({
+   *   cors: true,
+   *   tags: ['Users'],
+   *
+   *   list: route.get('/users', {
+   *     summary: 'Get all users',
+   *     async handle() {
+   *       return { users: ['Alice', 'Bob'] }
+   *     },
+   *   }),
+   *
+   *   create: route.post('/users', {
+   *     summary: 'Create a new user',
+   *     body: tex.object({
+   *       name: tex.string({ min: 2 }),
+   *       email: tex.email(),
+   *     }),
+   *     async handle({ body, res }) {
+   *       res.status(201)
+   *       return { created: true, user: body }
+   *     },
+   *   }),
+   * })
+   * ```
+   */
+  <T extends ControllerConfig>(config: T): T & { __isController: true }
+
+  /**
+   * Merges multiple functional controllers into one unified controller definition.
+   * Ideal for splitting large `route.ts` files into organized sub-modules.
+   *
+   * @param controllers Controller configurations to combine
+   * @returns Merged controller definition
+   *
+   * @example
+   * ```ts
+   * // src/http/auth/login.ts
+   * export const loginRoutes = controller({
+   *   login: route.post('/login', {
+   *     async handle({ body }) {
+   *       return { token: signJwt(body) }
+   *     },
+   *   }),
+   * })
+   *
+   * // src/http/auth/oauth.ts
+   * export const oauthRoutes = controller({
+   *   google: route.get('/google', {
+   *     async handle() {
+   *       return { redirect: googleAuthUrl }
+   *     },
+   *   }),
+   * })
+   *
+   * // src/http/auth/route.ts
+   * import { loginRoutes } from './login'
+   * import { oauthRoutes } from './oauth'
+   *
+   * export default controller.merge(loginRoutes, oauthRoutes)
+   * ```
+   */
+  merge(
+    ...controllers: ControllerConfig[]
+  ): ControllerConfig & { __isController: true }
+
+  /**
+   * Extends a base functional controller with additional or overridden routes.
+   * Perfect for reusable CRUD templates in folder-based routing.
+   *
+   * @param base Base controller to inherit from
+   * @param overrides Additional routes or route overrides
+   * @returns Extended controller definition
+   *
+   * @example
+   * ```ts
+   * // src/shared/crud.ts
+   * export function baseCrud(service: any) {
+   *   return controller({
+   *     list: route.get('/', {
+   *       async handle() {
+   *         return service.findAll()
+   *       },
+   *     }),
+   *     getById: route.get('/:id', {
+   *       async handle({ params }) {
+   *         return service.findById(params.id)
+   *       },
+   *     }),
+   *   })
+   * }
+   *
+   * // src/http/products/route.ts  (auto-mounted at /products)
+   * import { baseCrud } from '@/shared/crud'
+   * import { productsService } from '@/services/products'
+   *
+   * export default controller.extend(baseCrud(productsService), {
+   *   featured: route.get('/featured', {
+   *     async handle() {
+   *       return productsService.findFeatured()
+   *     },
+   *   }),
+   * })
+   * ```
+   */
+  extend(
+    base: ControllerConfig,
+    overrides: ControllerConfig
+  ): ControllerConfig & { __isController: true }
+}
+
+/**
+ * The primary controller utility for ExisJS functional routing.
+ *
+ * - **`controller({ ... })`** — Define a functional route controller
+ * - **`controller.merge(...)`** — Combine multiple controllers into one
+ * - **`controller.extend(base, overrides)`** — Inherit and override a base controller
+ */
+export const controller: ControllerFactory = Object.assign(
+  function <T extends ControllerConfig>(config: T) {
+    return _defineController(config)
+  },
+  {
+    merge: _mergeControllers,
+    extend: _extendController,
+  }
+)
 
 /**
  * Creates a strongly-typed router and controller factory with pre-bound context.

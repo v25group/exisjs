@@ -64,7 +64,9 @@ export default class UsersController {
 ```
 
 <Info title="Note on Dependency Injection">
-ExisJS utilizes a runtime container system. By default, ExisJS does not aggressively use `reflect-metadata` for automatic constructor injection (unlike NestJS) to maintain a minimal footprint. The `inject()` function is the primary and recommended way to resolve dependencies.
+ExisJS provides two elegant ways to inject dependencies:
+1. **Property-Level / Functional Injection**: Use `inject(UsersService)` for concise, boilerplate-free injection.
+2. **Constructor Injection**: In OOP controllers and services, ExisJS inspects TypeScript's emitted `design:paramtypes` and `INJECTABLE_REGISTRY` to automatically inject service instances into constructor parameters (`constructor(private usersService: UsersService)`) without requiring explicit `@Inject()` decorators on every parameter!
 </Info>
 
 ### Extended: Manual Resolution
@@ -182,20 +184,31 @@ import { UsersService } from './users/service'
 export default class RootServer {}
 ```
 
-### Constructor Injection (`@Inject` and `@Optional`)
+### Constructor & Property Injection (`@Inject`, `@Optional`, and `forwardRef`)
 
-In addition to property-level `inject()`, ExisJS provides full OOP constructor parameter injection with `@Inject(token)` and `@Optional()`:
+In addition to property-level `inject()`, ExisJS provides full OOP constructor and property field injection with `@Inject(token)`, `@Optional()`, and `forwardRef()`:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { Inject, Optional, forwardRef } from 'exisjs/di'
 import { UsersService } from './service'
+import { ConfigService } from '../config/service'
 
 @Controller('/users')
 export default class UsersController {
+  // 1. Property-level decorator injection
+  @Inject(ConfigService)
+  private config!: ConfigService
+
+  // 2. Optional token injection
+  @Inject('METRICS')
+  @Optional()
+  private metrics?: any
+
+  // 3. Constructor injection with forwardRef for circular dependencies
   constructor(
     private usersService: UsersService,
-    @Inject('DATABASE_URL') private dbUrl: string,
-    @Optional() @Inject('METRICS') private metrics?: any
+    @Inject(forwardRef(() => UsersService)) private circularRef: UsersService
   ) {}
 
   @Get('/:id')
@@ -204,6 +217,29 @@ export default class UsersController {
   }
 }
 ```
+
+### Forward References (`forwardRef`) & Circular Dependencies
+
+When two services mutually depend on each other (`ServiceA` requires `ServiceB` and `ServiceB` requires `ServiceA`), circular references normally lead to `ReferenceError` during module evaluation. ExisJS solves this using `forwardRef(() => Service)` alongside lazy ES6 proxy resolution:
+
+```typescript filename="src/services/order.service.ts"
+import { Injectable } from 'exisjs/decorators'
+import { Inject, forwardRef } from 'exisjs/di'
+import { InventoryService } from './inventory.service'
+
+@Injectable()
+export class OrderService {
+  constructor(
+    @Inject(forwardRef(() => InventoryService))
+    private inventory: InventoryService
+  ) {}
+
+  processOrder(id: string) {
+    return this.inventory.reserveStock(id)
+  }
+}
+```
+
 
 ## Injection Scopes
 

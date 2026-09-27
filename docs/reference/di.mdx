@@ -109,20 +109,39 @@ export default controller({
 > [!NOTE]
 > `inject()` relies on the active execution context. If you call `inject()` outside of an active HTTP request or application lifecycle hook (e.g., in a background `setInterval` without context), it will throw an error.
 
-### 2. Constructor Injection in Classes (OOP)
+### 2. Constructor & Property Injection in Classes (OOP)
 
-ExisJS supports full OOP constructor parameter injection. You can inject services directly via type annotation or specify tokens with `@Inject()`, and designate optional dependencies with `@Optional()`:
+ExisJS supports full OOP constructor parameter and property field injection with **automatic parameter type reflection**:
+- **Automatic Type Reflection**: If `emitDecoratorMetadata: true` is enabled in `tsconfig.json`, ExisJS inspects `design:paramtypes` and automatically maps constructor parameter classes directly to dependencies registered in `INJECTABLE_REGISTRY`. You do not need `@Inject()` on standard service classes!
+- **Property-Level `@Inject()`**: Inject dependencies directly onto class properties (`@Inject(Token) public service!: Service`) with automatic `design:type` reflection fallback.
+- **Token Injection (`@Inject(token)`)**: Use `@Inject('TOKEN')` when injecting custom strings, config objects, or symbols.
+- **Optional Dependencies (`@Optional()`)**: Mark dependencies that can safely resolve to `undefined` if not registered.
+- **Forward References (`forwardRef(() => Service)`)**: Resolve circular dependencies between services using lazy forward references and ES6 Proxy delegates.
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param, Inject, Optional } from 'exisjs/decorators'
+import { Controller, Get, Param } from 'exisjs/decorators'
+import { Inject, Optional, forwardRef } from 'exisjs/di'
 import { UserService } from './service'
+import { ConfigService } from '../config/service'
 
 @Controller('/users')
 export default class UserController {
+  // 1. Property-level injection
+  @Inject(ConfigService)
+  private config!: ConfigService
+
+  // 2. Optional property injection
+  @Inject('ANALYTICS')
+  @Optional()
+  private analytics?: any
+
   constructor(
+    // 3. Automatically resolved from INJECTABLE_REGISTRY via type reflection!
     private userService: UserService,
+    // 4. Explicit token injection
     @Inject('DATABASE_URL') private dbUrl: string,
-    @Optional() @Inject('ANALYTICS') private analytics?: any
+    // 5. Circular dependency resolution via forwardRef
+    @Inject(forwardRef(() => UserService)) private circularRef: UserService
   ) {}
 
   @Get('/:id')
@@ -132,18 +151,6 @@ export default class UserController {
 }
 ```
 
-You can also use property-level `inject()` inside your Controller methods:
-
-```typescript
-@Controller('/users')
-export default class UserController {
-  @Get('/')
-  async getUsers() {
-    const db = inject(Database)
-    return db.query('SELECT * FROM users')
-  }
-}
-```
 
 ---
 

@@ -1,3 +1,4 @@
+import type { ExecutionContext } from './lifecycle'
 import type { RouteSchema } from '../types'
 import {
   PARAM_METADATA_PROP,
@@ -7,22 +8,17 @@ import {
 } from './constants'
 import { MetadataEngine } from './core/metadata'
 
-export interface CustomParamExecutionContext {
+export interface CustomParamExecutionContext extends ExecutionContext {
   req: any
   res: any
   next: any
   app: any
   state: Record<string, any>
-  switchToHttp: () => {
-    getRequest: () => any
-    getResponse: () => any
-    getNext: () => any
-  }
 }
 
 export type CustomParamFactory<TData = any, TResult = any> = (
   data: TData,
-  ctx: CustomParamExecutionContext
+  ctx: ExecutionContext
 ) => TResult
 
 /**

@@ -575,17 +575,31 @@ export default class AuthController {
 
 ---
 
-## 6. ETags & Conditional Requests (304 Not Modified)
+## 6. Safe Response Serialization (BSON, Dates & Prototype Auto-Unwrapping)
 
-ExisJS features native, automatic ETag generation. 
+ExisJS includes a robust, zero-crash serialization engine that automatically prepares complex objects before sending them down the wire:
 
-If the client sends an `If-None-Match` header matching the ETag of the current response, ExisJS will immediately abort serialization and send a `304 Not Modified` header with an empty body, saving bandwidth and CPU cycles.
-
-*Note: ETag generation is disabled by default, but can be enabled globally in your `exis()` config, or manually per-route via `res.etagEnabled = true`.*
+- **Mongoose / ORM Documents**: Automatically unwraps documents by invoking `.toObject({ virtuals: true, getters: true })` or `.toJSON()`. You no longer need to call `.lean()` or sanitize documents manually.
+- **MongoDB BSON Types**: Automatically converts `ObjectId`, `Decimal128`, `Long`, and `Binary` buffers to their clean string / base64 representations.
+- **BigInt & Dates**: Converts native `BigInt` values to strings and `Date` instances to ISO 8601 strings.
+- **Maps & Sets**: Automatically converts `Map` to plain objects and `Set` to arrays.
+- **Circular Reference Guard**: Circular object references are safely detected and replaced with `'[Circular]'` rather than throwing fatal V8 JSON serialization exceptions.
+- **Enhanced Diagnostics**: If an unhandled serialization issue occurs, ExisJS logs the exact property path (e.g. `'recentTransactions[0].accountId'`) for immediate debugging clarity.
 
 ---
 
-## 7. Server-Sent Events (SSE) & AI Streaming
+## 7. ETags & Conditional Requests (304 Not Modified)
+
+ExisJS features native ETag generation.
+
+By default, ETags are disabled (`etag: false`) on dynamic REST API endpoints to minimize hashing CPU overhead and provide transparent logging timings. 
+
+When enabled globally (`etag: true` in `exis.config.ts`) or on a per-route basis (`res.etagEnabled = true`):
+- If the client sends an `If-None-Match` header matching the response ETag, ExisJS immediately sends `304 Not Modified` with an empty body, saving bandwidth.
+
+---
+
+## 8. Server-Sent Events (SSE) & AI Streaming
 
 ExisJS provides a first-class `res.sse()` method for real-time live events and AI chat completions (OpenAI, Anthropic, Ollama, LangChain).
 

@@ -179,18 +179,48 @@ export class TestRequest {
   }
 }
 
+export interface RequestOptions {
+  headers?: Record<string, string>
+  body?: unknown
+}
+
 export interface TestApp {
-  get(path: string): TestRequest
-  post(path: string): TestRequest
-  put(path: string): TestRequest
-  patch(path: string): TestRequest
-  delete(path: string): TestRequest
-  options(path: string): TestRequest
-  head(path: string): TestRequest
-  query(path: string): TestRequest
-  trace(path: string): TestRequest
-  connect(path: string): TestRequest
-  request(method: string, path: string): TestRequest
+  get(path: string, options?: RequestOptions): TestRequest
+  post(path: string, options?: RequestOptions | unknown): TestRequest
+  put(path: string, options?: RequestOptions | unknown): TestRequest
+  patch(path: string, options?: RequestOptions | unknown): TestRequest
+  delete(path: string, options?: RequestOptions): TestRequest
+  options(path: string, options?: RequestOptions): TestRequest
+  head(path: string, options?: RequestOptions): TestRequest
+  query(path: string, options?: RequestOptions): TestRequest
+  trace(path: string, options?: RequestOptions): TestRequest
+  connect(path: string, options?: RequestOptions): TestRequest
+  request(method: string, path: string, options?: RequestOptions): TestRequest
+}
+
+function applyRequestOptions(
+  req: TestRequest,
+  options?: RequestOptions | unknown
+): TestRequest {
+  if (!options) return req
+  if (
+    typeof options === 'object' &&
+    options !== null &&
+    ('headers' in options || 'body' in options)
+  ) {
+    const opt = options as RequestOptions
+    if (opt.headers) {
+      for (const [k, v] of Object.entries(opt.headers)) {
+        req.set(k, String(v))
+      }
+    }
+    if (opt.body !== undefined) {
+      req.send(opt.body)
+    }
+  } else {
+    req.send(options)
+  }
+  return req
 }
 
 export function createTestApp(app: App | ExisAppDefinition | any): TestApp {
@@ -209,16 +239,27 @@ export function createTestApp(app: App | ExisAppDefinition | any): TestApp {
   }
 
   return {
-    get: (path) => new TestRequest(finalApp, 'GET', path),
-    post: (path) => new TestRequest(finalApp, 'POST', path),
-    put: (path) => new TestRequest(finalApp, 'PUT', path),
-    patch: (path) => new TestRequest(finalApp, 'PATCH', path),
-    delete: (path) => new TestRequest(finalApp, 'DELETE', path),
-    options: (path) => new TestRequest(finalApp, 'OPTIONS', path),
-    head: (path) => new TestRequest(finalApp, 'HEAD', path),
-    query: (path) => new TestRequest(finalApp, 'QUERY', path),
-    trace: (path) => new TestRequest(finalApp, 'TRACE', path),
-    connect: (path) => new TestRequest(finalApp, 'CONNECT', path),
-    request: (method, path) => new TestRequest(finalApp, method, path),
+    get: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'GET', path), opts),
+    post: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'POST', path), opts),
+    put: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'PUT', path), opts),
+    patch: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'PATCH', path), opts),
+    delete: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'DELETE', path), opts),
+    options: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'OPTIONS', path), opts),
+    head: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'HEAD', path), opts),
+    query: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'QUERY', path), opts),
+    trace: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'TRACE', path), opts),
+    connect: (path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, 'CONNECT', path), opts),
+    request: (method, path, opts) =>
+      applyRequestOptions(new TestRequest(finalApp, method, path), opts),
   }
 }

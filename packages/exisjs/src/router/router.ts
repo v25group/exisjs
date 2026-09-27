@@ -162,6 +162,32 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       const queryValidator: any = schema.query
       actualHandlers.unshift(async (req, res, next) => {
         try {
+          if (
+            req.query &&
+            typeof req.query === 'object' &&
+            queryValidator.rawSchema
+          ) {
+            for (const [k, v] of Object.entries(queryValidator.rawSchema)) {
+              const raw = (v as any)?._raw || ''
+              if (
+                raw.startsWith('number') &&
+                typeof req.query[k] === 'string' &&
+                req.query[k].trim() !== ''
+              ) {
+                const n = Number(req.query[k])
+                if (!isNaN(n)) req.query[k] = n
+              } else if (
+                raw.startsWith('boolean') &&
+                typeof req.query[k] === 'string'
+              ) {
+                const lower = req.query[k].toLowerCase().trim()
+                if (lower === 'true' || lower === '1') req.query[k] = true
+                else if (lower === 'false' || lower === '0')
+                  req.query[k] = false
+              }
+            }
+          }
+
           let compiledQueryValidator: ((val: any) => any) | null = null
           if (this.validatorCompiler) {
             compiledQueryValidator = this.validatorCompiler({
@@ -210,6 +236,32 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       // So we push it (not unshift) to run after route matching populates params
       actualHandlers.unshift(async (req, res, next) => {
         try {
+          if (
+            req.params &&
+            typeof req.params === 'object' &&
+            paramsValidator.rawSchema
+          ) {
+            for (const [k, v] of Object.entries(paramsValidator.rawSchema)) {
+              const raw = (v as any)?._raw || ''
+              if (
+                raw.startsWith('number') &&
+                typeof req.params[k] === 'string' &&
+                req.params[k].trim() !== ''
+              ) {
+                const n = Number(req.params[k])
+                if (!isNaN(n)) req.params[k] = n
+              } else if (
+                raw.startsWith('boolean') &&
+                typeof req.params[k] === 'string'
+              ) {
+                const lower = req.params[k].toLowerCase().trim()
+                if (lower === 'true' || lower === '1') req.params[k] = true
+                else if (lower === 'false' || lower === '0')
+                  req.params[k] = false
+              }
+            }
+          }
+
           let compiledParamsValidator: ((val: any) => any) | null = null
           if (this.validatorCompiler) {
             compiledParamsValidator = this.validatorCompiler({

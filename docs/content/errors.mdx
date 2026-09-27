@@ -98,33 +98,40 @@ export const uploadMedia = (req, res) => {
 }
 ```
 
-### The Standardized Response
+### The Standardized Error Response Envelope
 
-When an `HttpError` is thrown, the client will automatically receive a structured JSON payload.
+When an `HttpError` is thrown or a validation failure occurs, the client automatically receives a standardized JSON payload with status codes, error descriptions, and ISO timestamps:
 
-```json filename="Response"
+```json filename="HTTP Error Response Envelope"
 {
   "success": false,
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "User not found"
-  }
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "User not found",
+  "validationErrors": null,
+  "timestamp": "2026-09-27T10:11:42.000Z"
 }
 ```
 
 ### Validation Error Responses & Diagnostic Visibility
 
-When schema validation fails (via `tex`, Zod, or Yup), ExisJS produces a typed `400 Bad Request` featuring a clean `errors: Record<string, string>` map for seamless frontend form field binding:
+When schema validation fails (via `tex`, Zod, or Yup), ExisJS produces a typed `400 Bad Request` containing both a concise `validationErrors` (and `errors`) map for seamless frontend form field binding:
 
 ```json filename="HTTP 400 Bad Request Response"
 {
+  "success": false,
   "statusCode": 400,
   "error": "Bad Request",
   "message": "Validation Error: email: Invalid email format, age: Field must be >= 18",
+  "validationErrors": {
+    "email": "Invalid email format",
+    "age": "Field must be >= 18"
+  },
   "errors": {
     "email": "Invalid email format",
     "age": "Field must be >= 18"
-  }
+  },
+  "timestamp": "2026-09-27T10:11:42.000Z"
 }
 ```
 

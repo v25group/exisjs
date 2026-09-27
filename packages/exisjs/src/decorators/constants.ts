@@ -25,6 +25,8 @@ export const PERMISSIONS_METADATA = Symbol.for('exisjs:permissions')
 export const ROLES_METADATA = Symbol.for('exisjs:roles')
 export const IS_PUBLIC_METADATA = Symbol.for('exisjs:is_public')
 export const CATCH_EXCEPTIONS_METADATA = Symbol.for('exisjs:catch_exceptions')
+export const PIPES_METADATA = Symbol.for('exisjs:pipes')
+export const GLOBAL_METADATA = Symbol.for('exisjs:global')
 
 export interface RouteMeta {
   method: HttpMethod

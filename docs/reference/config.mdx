@@ -103,14 +103,15 @@ Here is the full list of options supported natively by the ExisJS configuration 
 - **`host`** *(string)*: The host interface to bind to (default: `'0.0.0.0'`).
 - **`server`** *(`'node' | 'uws' | 'auto'`)*: ExisJS supports running on standard Node `http`, or incredibly fast C++ `uWebSockets.js` (`uws`). Default is `'auto'` (uses `uws` if installed, falls back to `node`).
 - **`workers`** *(number | `'safe'` | `'max'`)*: Number of Node.js Cluster workers to spawn. `'max'` uses all CPU cores. `'safe'` uses all cores minus 1 (to leave room for the OS).
-- **`trustProxy`** *(boolean)*: Enable if running behind a reverse proxy (like Nginx or AWS ALB) to trust the `X-Forwarded-For` headers.
+- **`trustProxy`** *(boolean | number)*: Enable if running behind reverse proxies or CDNs (Cloudflare, AWS ALB, NGINX, Render) to evaluate `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, and `X-Forwarded-For`. (Can also be enabled via `TRUST_PROXY=true`).
 
 ### Security & Middlewares
 - **`cors`** *(boolean | object)*: Enable and configure Cross-Origin Resource Sharing globally.
 - **`helmet`** *(boolean | object)*: Enable strict security headers. Enabled by default.
 - **`logger`** *(boolean | object)*: Configure the efficient Pino request logger.
 - **`compression`** *(boolean | object)*: Enable gzip/brotli response compression.
-- **`bodyLimit`** *(number)*: Maximum JSON/URL-encoded payload size in bytes (default: `1MB`).
+- **`etag`** *(boolean)*: Automatic ETag generation for HTTP conditional requests (default: `false` for dynamic API routes).
+- **`bodyLimit`** *(number)*: Maximum JSON/URL-encoded payload size in bytes (default: `10MB`).
 
 ### Extended Integrations
 - **`queue`**: Define your background queue driver (`memory` or `redis`) and configure `maxConcurrent` processing limits.
