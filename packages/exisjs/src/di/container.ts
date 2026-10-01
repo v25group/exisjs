@@ -19,8 +19,14 @@ export interface ClassProvider<T> extends BaseProvider {
   useClass: new (...args: any[]) => T
 }
 
+export type ClassConstructor<T = any> = new (...args: any[]) => T
+
 export type ProviderDefinition<T> =
-  ValueProvider<T> | FactoryProvider<T> | ClassProvider<T> | T
+  | ValueProvider<T>
+  | FactoryProvider<T>
+  | ClassProvider<T>
+  | ClassConstructor<T>
+  | T
 
 export const INJECT_METADATA = Symbol.for('exisjs:inject_tokens')
 export const PROPERTY_INJECT_METADATA = Symbol.for(

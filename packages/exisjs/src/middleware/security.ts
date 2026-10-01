@@ -613,3 +613,42 @@ export function blockSuspiciousProbes(
 }
 
 export const blockProbes = blockSuspiciousProbes
+
+// ─── Timing-Safe String / Buffer Comparison ──────────────────────────────────
+
+/**
+ * Compares two strings or Buffers in constant time to prevent side-channel timing attacks.
+ * Ideal for API keys, bearer tokens, HMAC signatures, and webhook secrets.
+ *
+ * @param a Known or received secret string/Buffer
+ * @param b Comparison secret string/Buffer
+ * @returns boolean `true` if identical, `false` otherwise
+ *
+ * @example
+ * ```ts
+ * import { timingSafeEqual } from 'exisjs/middleware'
+ *
+ * if (!timingSafeEqual(req.headers['x-api-key'], process.env.API_KEY)) {
+ *   throw new ForbiddenException('Invalid API Key')
+ * }
+ * ```
+ */
+export function timingSafeEqual(
+  a: string | Buffer | undefined | null,
+  b: string | Buffer | undefined | null
+): boolean {
+  if (a === undefined || a === null || b === undefined || b === null) {
+    return false
+  }
+
+  const bufA = typeof a === 'string' ? Buffer.from(a) : a
+  const bufB = typeof b === 'string' ? Buffer.from(b) : b
+
+  if (bufA.length !== bufB.length) {
+    // Constant time dummy comparison to prevent length-leak timing channel
+    crypto.timingSafeEqual(bufA, bufA)
+    return false
+  }
+
+  return crypto.timingSafeEqual(bufA, bufB)
+}

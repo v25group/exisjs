@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.10',
+      exisjs: '^0.7.11',
     },
   }
 
@@ -83,6 +83,7 @@ export function tsconfigTemplate(alias = '@/*'): string {
         paths: {
           [alias]: ['./src/*'],
         },
+        types: ['node'],
       },
       include: ['src/**/*.ts', 'tests/**/*.ts', 'exis.config.ts'],
       exclude: ['node_modules', '.exis', 'dist', 'build'],
@@ -495,17 +496,38 @@ export const db = {
 `
 }
 
-export function exampleJobTemplate(_useTypeScript: boolean): string {
-  return `// Example Background Worker Job
-// ExisJS will automatically mount this if enabled in exis.config.ts
+export function exampleCronTemplate(
+  paradigm: string,
+  _useTypeScript: boolean
+): string {
+  if (paradigm === 'oop') {
+    return `import { Injectable, Cron, CronExpression } from 'exisjs/decorators'
 
-export default {
-  name: 'daily-cleanup',
-  cron: '0 0 * * *', // Run at midnight
+@Injectable()
+export default class CleanupService {
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
+    name: 'daily-cleanup',
+    timezone: 'UTC',
+    preventOverlap: true,
+  })
   async handle() {
-    console.log('[Job] Running daily cleanup task...')
+    console.log('[Cron] Running daily cleanup task...')
   }
 }
+`
+  }
+
+  return `import { cron, CronExpression } from 'exisjs/cron'
+
+export default cron({
+  name: 'daily-cleanup',
+  schedule: CronExpression.EVERY_DAY_AT_MIDNIGHT,
+  timezone: 'UTC',
+  preventOverlap: true,
+  async run({ log }) {
+    log.info('Running daily cleanup task...')
+  },
+})
 `
 }
 

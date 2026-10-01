@@ -137,15 +137,61 @@ export function safeSanitize(
   }
 }
 
+function isFastSerializable(val: any): boolean {
+  if (val === null || val === undefined) return true
+  const type = typeof val
+  if (type === 'string' || type === 'number' || type === 'boolean') return true
+  if (type !== 'object') return false
+  if (val.constructor === Object) {
+    for (const k in val) {
+      const v = val[k]
+      if (v !== null && typeof v === 'object') {
+        if (v.constructor !== Object && v.constructor !== Array) return false
+      } else if (
+        typeof v === 'bigint' ||
+        typeof v === 'function' ||
+        typeof v === 'symbol'
+      ) {
+        return false
+      }
+    }
+    return true
+  }
+  if (Array.isArray(val)) {
+    for (const v of val) {
+      if (v !== null && typeof v === 'object') {
+        if (v.constructor !== Object && v.constructor !== Array) return false
+      } else if (
+        typeof v === 'bigint' ||
+        typeof v === 'function' ||
+        typeof v === 'symbol'
+      ) {
+        return false
+      }
+    }
+    return true
+  }
+  return false
+}
+
 export function nativeStringify(data: unknown): Buffer | string {
   if (data === null || data === undefined) {
     return 'null'
   }
 
   // Fast path for primitives
-  if (typeof data === 'string') return JSON.stringify(data)
-  if (typeof data === 'number' || typeof data === 'boolean') return String(data)
-  if (typeof data === 'bigint') return `"${data.toString()}"`
+  const type = typeof data
+  if (type === 'string') return JSON.stringify(data)
+  if (type === 'number' || type === 'boolean') return String(data)
+  if (type === 'bigint') return `"${data.toString()}"`
+
+  if (isFastSerializable(data)) {
+    try {
+      return JSON.stringify(data)
+    } catch {
+      // fallback on circular refs
+    }
+  }
 
   try {
     const sanitized = safeSanitize(data)

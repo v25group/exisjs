@@ -43,8 +43,25 @@ export class ExisRequest<
   public session?: Record<string, any> | any
   public requestId?: string
   public tenantId?: string
-  public signal!: AbortSignal
-  private _abortController!: AbortController
+  private _signal?: AbortSignal
+  private _abortController?: AbortController
+
+  public get signal(): AbortSignal {
+    if (!this._abortController) {
+      this._abortController = new AbortController()
+      this._signal = this._abortController.signal
+      if (typeof this.raw?.once === 'function') {
+        this.raw.once('close', this._onClose)
+      } else if (typeof this.raw?.on === 'function') {
+        this.raw.on('close', this._onClose)
+      }
+    }
+    return this._signal!
+  }
+
+  public set signal(val: AbortSignal) {
+    this._signal = val
+  }
 
   public _diCache = new Map<any, any>()
 
@@ -61,20 +78,22 @@ export class ExisRequest<
 
   private _onClose = () => {
     if (!this.res.raw.writableEnded && !this.res.headersSent) {
-      if (!this._abortController.signal.aborted) {
+      if (this._abortController && !this._abortController.signal.aborted) {
         this._abortController.abort()
       }
     }
   }
 
-  private _attachSignal() {
-    this._abortController = new AbortController()
-    this.signal = this._abortController.signal
-    this.raw.once('close', this._onClose)
-  }
-
   public cleanup(): void {
-    this.raw.removeListener('close', this._onClose)
+    if (this._abortController) {
+      if (typeof this.raw?.removeListener === 'function') {
+        this.raw.removeListener('close', this._onClose)
+      } else if (typeof this.raw?.off === 'function') {
+        this.raw.off('close', this._onClose)
+      }
+      this._abortController = undefined
+      this._signal = undefined
+    }
     this._diCache.clear()
     this.user = undefined as any
     this.session = undefined
@@ -103,7 +122,6 @@ export class ExisRequest<
   ) {
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
-    this._attachSignal()
   }
 
   public init(
@@ -117,7 +135,6 @@ export class ExisRequest<
     this.res = res
     this.trustProxy = trustProxy
     this.bodyLimit = bodyLimit
-    this._attachSignal()
 
     this.params = undefined as any
     this.body = undefined as any

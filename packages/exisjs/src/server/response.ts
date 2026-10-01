@@ -23,6 +23,7 @@ export class ExisResponse<TResponse = any> {
   public etagEnabled = false
   public _onFinish: (() => void)[] = []
   public _serializer?: (data: unknown) => string
+  public _onDone?: () => void
 
   constructor(public raw: ServerResponse) {}
 
@@ -32,6 +33,7 @@ export class ExisResponse<TResponse = any> {
     this.etagEnabled = false
     this._onFinish.length = 0
     this._serializer = undefined
+    this._onDone = undefined
     return this
   }
 
@@ -77,16 +79,18 @@ export class ExisResponse<TResponse = any> {
 
   end(data?: unknown) {
     if (this.raw.destroyed || (this.raw as any).writableEnded) return
-    if (this._onFinish.length > 0) {
-      this.raw.end(data, () => {
-        // eslint-disable-next-line @typescript-eslint/prefer-for-of
-        for (let i = 0; i < this._onFinish.length; i++) {
-          this._onFinish[i]()
-        }
-      })
-    } else {
-      this.raw.end(data)
+    const onEndCallback = () => {
+      // eslint-disable-next-line @typescript-eslint/prefer-for-of
+      for (let i = 0; i < this._onFinish.length; i++) {
+        this._onFinish[i]()
+      }
+      if (this._onDone) {
+        const cb = this._onDone
+        this._onDone = undefined
+        cb()
+      }
     }
+    this.raw.end(data, onEndCallback)
   }
 
   /**
@@ -206,8 +210,11 @@ export class ExisResponse<TResponse = any> {
       return
     }
 
-    if (isBuffer && !this.raw.hasHeader('Content-Length')) {
-      this.raw.setHeader('Content-Length', (body as Buffer).length)
+    if (!this.raw.hasHeader('Content-Length')) {
+      const len = isBuffer
+        ? (body as Buffer).length
+        : Buffer.byteLength(body as string)
+      this.raw.setHeader('Content-Length', len)
     }
     this.end(body)
   }
@@ -258,6 +265,13 @@ export class ExisResponse<TResponse = any> {
 
     if (!this.raw.hasHeader('Content-Type')) {
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
+    }
+
+    if (!this.raw.hasHeader('Content-Length')) {
+      const len = Buffer.isBuffer(payload)
+        ? payload.length
+        : Buffer.byteLength(payload)
+      this.raw.setHeader('Content-Length', len)
     }
 
     if (this.etagEnabled && !this.raw.hasHeader('ETag')) {

@@ -1,20 +1,23 @@
 # ExisJS Architectural Guidelines & Memory
 
-**CRITICAL**: You are working in the ExisJS Monorepo. ExisJS is an ultra-high performance web framework that blends TypeScript Developer Experience with a raw Rust (C++) Engine under the hood.
+**CRITICAL**: You are working in the ExisJS Monorepo. ExisJS is an opinionated, high-performance web framework for TypeScript backends powered by a native Rust engine (`@exisjs/rs`) under the hood for zero-allocation routing, memory caching, rate limiting, and input validation.
 
 Before modifying any code, you MUST understand this architecture.
 
 ## 1. The Monorepo Structure
-- `packages/exisjs`: The core TypeScript framework and developer-facing APIs.
-- `packages/rs`: The Rust native engine exposing bindings via N-API (`@exisjs/rs`).
-- `packages/create`: The CLI scaffolding tool for generating new ExisJS projects (`create-exis`). Stays in TS as it only runs once during project setup.
-- `packages/fetch`: A dedicated HTTP client. Stays in TS (wraps Undici/fetch).
-- `packages/telemetry`: The OpenTelemetry and Prometheus adapters. Stays in TS to preserve compatibility with the Node.js observability ecosystem.
+
+- `packages/exisjs`: The core TypeScript framework, HTTP pipeline, file-system router, and developer-facing APIs.
+- `packages/rs`: The Rust native engine exposing high-performance bindings via N-API (`@exisjs/rs`).
+- `packages/create`: The CLI scaffolding tool for generating new ExisJS projects (`create-exis`).
+- `packages/fetch`: A dedicated lightweight HTTP client (wraps Undici/fetch).
+- `packages/telemetry`: The OpenTelemetry and Prometheus adapters for Node.js observability.
 - **Rule**: Whenever you compile the Rust engine, ALWAYS run `cargo build` in `packages/rs` or `npm run build` from the workspace root.
 
 ## 2. The "Graceful Fallback" Pattern
-Every efficient system in ExisJS uses a strict "Fallback Pattern" to ensure the framework still works on obscure OS architectures where N-API binaries might fail to load.
-When writing TS classes, you MUST follow this structure:
+
+High-performance native subsystems in ExisJS use a strict "Fallback Pattern" to ensure the framework still operates seamlessly on obscure OS architectures where N-API binaries might fail to load.
+When writing TS classes that interface with `@exisjs/rs`, follow this structure:
+
 ```typescript
 export class ExampleService {
   private nativeEngine: any
@@ -33,70 +36,44 @@ export class ExampleService {
 }
 ```
 
-## 3. Directory & Subsystem Breakdown
+## 3. Core Framework Architecture (`packages/exisjs/src/*`)
 
-### `src/router` (Routing & Validation)
-- **Architecture**: Powered by `NativeRadixTree` in Rust (`packages/rs/src/core/radix.rs`).
-- **Validation**: Compatible with both Zod and the custom native `TexValidator` via "Duck Typing" (checking `if (typeof validator.parse === 'function')`). 
-- **Status**: 100% complete. Do not attempt to optimize this further.
+ExisJS maintains a clean, modular, and opinionated core:
 
-### `src/auth` (Authentication)
-- **`session.ts`**: Uses `NativeSessionStore` (HashMap + Mutex in C++). Thousands of sessions can be stored off-heap without triggering the V8 Garbage Collector.
-- **`jwt.ts`**: Handles JSON Web Tokens.
-- **`password.ts`**: Handles secure password hashing/verification.
-- **`oauth/`**: Native OAuth Provider System (Google, GitHub, Microsoft, Discord, Facebook, Custom) with PKCE and state validation built-in.
+- **`router/`**: High-performance routing engine powered by `NativeRadixTree` in Rust (`packages/rs/src/core/radix.rs`). Handles file-system scanning, route compilation, and method dispatching with zero runtime allocations.
+- **`decorators/` & `di/` & `module/`**: The Inversion of Control (IoC) Dependency Injection container. Supports constructor injection via TypeScript `design:paramtypes` reflection, field injection (`@Inject()`, `@Optional()`), circular dependency resolution (`forwardRef()`), and `@Global()` / `@Module()` scopes.
+- **`validator/` & `sanitize/`**: Integrated validation engine powered by `TexValidator` in Rust and TypeScript schema builder (`tex.*`). Handles parameter coercion, type assertions, and zero-crash sanitization (`safeSanitize` for BSON/Dates/ORM models).
+- **`middleware/`**: Built-in traffic control and security layers:
+  - `security.ts`: `helmet()` headers, `csrf()` (signed double-submit cookie), `hpp()`, `mongoSanitize()`, `blockSuspiciousProbes()`, `timingSafeEqual()`, and `timeout()`.
+  - `rate-limit.ts`: Native rate limiter backed by `@exisjs/rs`.
+  - `ip-filter.ts`: Fast bitwise CIDR IP blocking.
+  - `idempotency.ts`: Duplicate-request response caching via native LRU memory cache.
+  - `upload.ts`: File upload and streaming multipart form-data parser.
+- **`server/` & `response/`**: The core HTTP server abstraction (`ExisRequest`, `ExisResponse`), request context, and lifecycle hooks (`onStart`, `onStop`).
+- **`cron/`**: Built-in background task scheduler and cron engine (`cron()` helper & `@Cron()` decorator) with automatic drift correction and overlap prevention.
+- **`database/`**: Database lifecycle manager (`registerDatabase`), health check coordinator (`DatabaseManager`), Mongoose 8/9 interop, and universal transaction runner (`withTransaction`).
+- **`error/`**: Standardized HTTP exception hierarchy (`HttpError`, `BadRequestException`, `UnauthorizedException`, etc.) and JSON error envelopes.
+- **`logger/` & `utils/`**: Structured Pino-based logger with automatic credential redaction, time formatting, and `CircuitBreaker`.
+- **`swagger/`**: Automatic OpenAPI 3.1 schema and interactive documentation generator (`/docs`).
+- **`testing/`**: Integrated E2E testing context (`createTestApp`, `createTestContext`).
+- **`config/`**: Configuration parser (`defineConfig`) and type-safe environment validator (`tex.env`).
+- **`cli/`**: Developer CLI tool (`dev`, `build`, `start`, `routes`, `manifest`).
 
-### `src/middleware` (Traffic & Memory)
-- **`cache.ts`**: Uses `NativeMemoryCache`. An off-heap LRU cache dodging V8 memory limits.
-- **`idempotency.ts`**: Wraps the `NativeMemoryCache`. Intercepts massive JSON API responses and pushes them into C++ to prevent duplicate-request GC exhaustion.
-- **`rate-limit.ts`**: Uses `NativeRateLimiter`. Fixed window algorithm running natively.
-- **`ip-filter.ts`**: Uses `NativeIpFilter`. Compiles thousands of CIDR rules into 32-bit integers during startup for ~78x faster bitwise DDOS protection.
+## 4. Architectural Conventions & Rules
 
-### `src/queue` (Background Jobs)
-- **`MemoryDriver.ts`**: Uses `NativeMemoryQueue`.
-- **`RedisDriver.ts`**: **STRICT RULE**: Do NOT port this to Rust. Redis polling remains strictly in pure TypeScript per the creator's explicit architectural decision.
-
-### `src/threads` (Worker Threads)
-- **Architecture**: Uses Node.js `worker_threads` to spawn background tasks (`pool.ts`, `worker-runner.ts`).
-- **STRICT RULE**: Do NOT port this to Rust. User-defined background jobs are written in TS and must be executed by the V8 engine natively inside Node's worker threads.
-
-### `src/server` (Core HTTP)
-- **`request.ts`**: The core HTTP request wrapper. Heavy string parsing (JSON body parsing, Cookie parsing) is already delegated to `@exisjs/rs`.
-- **`ws-orchestrator.ts`**: Handles WebSocket upgrades and routes them through the NativeRadixTree.
-- **Status**: Stays in TS as structural boilerplate.
-
-### `src/observability` (Telemetry)
-- **`prometheus.ts`, `otel.ts`, `health.ts`**: Plug-and-play interfaces for external Node.js telemetry libraries (like `prom-client`). 
-- **Status**: Stays in TS. No memory state is held, so Rust offers no benefit.
-
-### 4. Comprehensive Framework Map (`packages/exisjs/src/*`)
-To ensure complete context of the framework, here is the full directory map and feature breakdown:
-- **`adapters/`**: Integrations with specific JS runtimes (Node, Bun, Cloudflare).
-- **`app/`**: Core application bootstrap, context lifecycle, and global state.
-- **`auth/`**: Authentication (Session via Rust, JWT, Password Hashing).
-- **`cache/`**: Caching Engine (LRU Cache via Rust, Redis, FileSystem).
-- **`cli/`**: The command-line interface logic for developers.
-- **`config/` & `env.ts`**: Parsing and validating environment variables and `exis.config.ts`.
-- **`cron/`**: Background task scheduler (Pure TS).
-- **`database/`**: Core Database Layer. Supports PostgreSQL, MySQL, SQLite, MongoDB natively with built-in Migrator and QueryBuilder.
-- **`dataloader/`**: GraphQL-style batching and caching to solve N+1 query problems.
-- **`decorators/` & `di/` & `module/`**: The Dependency Injection engine. Wires up `@Controller`, `@Injectable`, and Module resolution at startup.
-- **`error/`**: Global error handling and HTTP exceptions.
-- **`integrations/`**: Third-party framework bridges.
-- **`lib/`**: Bootstrap scripts like `start-server.ts` and `start-repl.ts`.
-- **`middleware/`**: Traffic control (IP Filter, Rate Limit, Idempotency) powered by Rust.
-- **`observability/`**: Telemetry adapters for OpenTelemetry and Prometheus.
-- **`plugin/`**: The plugin lifecycle manager for extending ExisJS.
-- **`queue/`**: Background jobs. `MemoryDriver` (Rust) and `RedisDriver` (TS).
-- **`response/` & `server/` & `router/`**: The core HTTP Web Server. Handles req/res mapping and Radix routing (Rust).
-- **`sanitize/` & `validator/`**: Data parsing and schema validation (Powered by TexValidator in Rust).
-- **`storage/`**: File uploads and disk/S3 storage interfaces.
-- **`swagger/`**: Auto-generation of OpenAPI specifications.
-- **`testing/`**: Utilities for unit testing ExisJS apps.
-- **`threads/`**: Node.js `worker_threads` for executing user-defined TS background jobs.
-- **`utils/`**: Shared utilities like `logger.ts` and `circuit-breaker.ts`.
-- **`websocket/`**: WebSockets implementation and connection pooling.
-
-## 5. Overall Philosophy
-- If an operation involves massive string manipulation, huge JSON objects, or caching thousands of items -> **Move to Rust off-heap**.
-- If an operation involves networking, structural HTTP boilerplate, developer tooling, or executing user-defined logic -> **Keep in TypeScript**.
+1. **Paradigms**: ExisJS supports two paradigms with 100% feature parity:
+   - **Functional**: `controller()`, `route.get()`, `cron()`, `defineBoundary()`, `inject()`.
+   - **Class-Based (OOP)**: `@Controller()`, `@Get()`, `@Cron()`, `@Boundary()`, `@Injectable()`.
+   - A single application must strictly choose one paradigm.
+2. **Auto-Discovery Folders**:
+   - `src/http/*`: Routes (`route.ts`), boundaries (`boundary.ts`), validation schemas (`schema.ts`), services (`service.ts`), and error handler (`error.ts`).
+   - `src/cron/*`: Dedicated scheduled cron tasks (e.g. `src/cron/cleanup.ts`).
+3. **Dedicated Convention Folders**:
+   - `src/database/`: Database client & lifecycle (`db.ts`), models (`models/`), repositories, and migrations.
+   - `src/common/`: Shared guards (`guards/`), interceptors, and filters.
+   - `src/config/`: Environment configuration (`env.ts`).
+4. **Clean Core Philosophy**:
+   - Keep the core framework lean, typed, and structured.
+   - External data stores, heavy queue drivers (like Redis), and specialized tools should remain pluggable and modular.
+   - Offload heavy operations (path matching, off-heap caching, CIDR IP filtering, body sanitization) to Rust via `@exisjs/rs`.
+   - Keep developer-facing orchestration, route execution, and HTTP interfaces in clean TypeScript.

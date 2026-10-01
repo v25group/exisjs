@@ -7,6 +7,10 @@ import { runHandlers } from '../router/router'
 import { notFound } from '../middleware/middleware'
 import type { Handler } from '../types'
 
+const noop = () => {
+  // no-op callback
+}
+
 export class RequestHandler {
   private _compiledPipeline?: Handler[]
   public static activeRequests = 0
@@ -58,11 +62,20 @@ export class RequestHandler {
   public getCompiledPipeline(): Handler[] {
     if (this._compiledPipeline) return this._compiledPipeline
     this.app.applyBuiltins()
-    this._compiledPipeline = [
-      ...this.app.globalMiddleware,
-      (req, res, next) => this.app.getRouter().handle(req, res, next),
-      notFound,
-    ]
+    if (this.app.globalMiddleware.length === 0) {
+      this._compiledPipeline = [
+        (req, res) =>
+          this.app.getRouter().handle(req, res, () => {
+            notFound(req, res, noop)
+          }),
+      ]
+    } else {
+      this._compiledPipeline = [
+        ...this.app.globalMiddleware,
+        (req, res, next) => this.app.getRouter().handle(req, res, next),
+        notFound,
+      ]
+    }
     return this._compiledPipeline
   }
 
@@ -195,15 +208,6 @@ export class RequestHandler {
 
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
     RequestHandler.activeRequests++
-    let decremented = false
-    const decrementActive = () => {
-      if (!decremented) {
-        decremented = true
-        if (RequestHandler.activeRequests > 0) {
-          RequestHandler.activeRequests--
-        }
-      }
-    }
 
     const res = this._acquireRes(rawRes)
     const req = this._acquireReq(
@@ -218,19 +222,33 @@ export class RequestHandler {
     req.log = this.app.log
 
     // Recycle objects back to pool and decrement active request counter when the response is fully done
-    rawRes.on('close', () => {
-      decrementActive()
+    let isDone = false
+    const onDone = () => {
+      if (isDone) return
+      isDone = true
+      if (RequestHandler.activeRequests > 0) {
+        RequestHandler.activeRequests--
+      }
       this._releaseReq(req)
       this._releaseRes(res)
-    })
-    rawRes.on('finish', decrementActive)
+    }
+
+    res._onDone = onDone
+
+    if (typeof rawRes.once === 'function') {
+      rawRes.once('close', onDone)
+    } else if (typeof rawRes.on === 'function') {
+      rawRes.on('close', onDone)
+    }
+
+    const pipeline = this._compiledPipeline || this.getCompiledPipeline()
 
     this._executeWithContext(req, res, () => {
       if (
         this.app.hooks.request.length === 0 &&
         this.app.hooks.response.length === 0
       ) {
-        runHandlers(this.getCompiledPipeline(), req, res, (err) => {
+        runHandlers(pipeline, req, res, (err) => {
           if (err) {
             this._runErrorHandlers(err, req, res).catch((e) => {
               this.app.log.error(

@@ -93,9 +93,43 @@ export class UwsIncomingMessage {
     return this._remoteAddress
   }
 
+  get destroyed(): boolean {
+    return this._aborted
+  }
+
   on(event: string, listener: (...args: any[]) => void): this {
     if (!this._listeners[event]) this._listeners[event] = []
     this._listeners[event].push(listener)
+    return this
+  }
+
+  once(event: string, listener: (...args: any[]) => void): this {
+    const wrapped = (...args: any[]) => {
+      this.removeListener(event, wrapped)
+      listener(...args)
+    }
+    return this.on(event, wrapped)
+  }
+
+  off(event: string, listener: (...args: any[]) => void): this {
+    return this.removeListener(event, listener)
+  }
+
+  removeListener(event: string, listener: (...args: any[]) => void): this {
+    const arr = this._listeners[event]
+    if (arr) {
+      const idx = arr.indexOf(listener)
+      if (idx !== -1) arr.splice(idx, 1)
+    }
+    return this
+  }
+
+  removeAllListeners(event?: string): this {
+    if (event) {
+      delete this._listeners[event]
+    } else {
+      this._listeners = {}
+    }
     return this
   }
 
@@ -123,7 +157,7 @@ export class UwsIncomingMessage {
     return this
   }
   destroy(): void {
-    // no-op
+    this._aborted = true
   }
 }
 
@@ -226,11 +260,69 @@ export class UwsServerResponse {
     if (callback) callback()
   }
 
-  // Minimal EventEmitter-like interface
+  get writableEnded(): boolean {
+    return this.headersSent || this._aborted
+  }
+
+  get destroyed(): boolean {
+    return this._aborted
+  }
+
+  getHeaders(): Record<string, string> {
+    return { ...this._headers }
+  }
+
+  getHeaderNames(): string[] {
+    return Object.keys(this._headers)
+  }
+
+  flushHeaders(): void {
+    // uWS flushes headers on write/end
+  }
+
+  writeHead(statusCode: number, headers?: Record<string, any>): this {
+    this.statusCode = statusCode
+    if (headers) {
+      for (const k in headers) {
+        this.setHeader(k, headers[k])
+      }
+    }
+    return this
+  }
 
   on(event: string, listener: (...args: any[]) => void): this {
     if (!this._listeners[event]) this._listeners[event] = []
     this._listeners[event].push(listener)
+    return this
+  }
+
+  once(event: string, listener: (...args: any[]) => void): this {
+    const wrapped = (...args: any[]) => {
+      this.removeListener(event, wrapped)
+      listener(...args)
+    }
+    return this.on(event, wrapped)
+  }
+
+  off(event: string, listener: (...args: any[]) => void): this {
+    return this.removeListener(event, listener)
+  }
+
+  removeListener(event: string, listener: (...args: any[]) => void): this {
+    const arr = this._listeners[event]
+    if (arr) {
+      const idx = arr.indexOf(listener)
+      if (idx !== -1) arr.splice(idx, 1)
+    }
+    return this
+  }
+
+  removeAllListeners(event?: string): this {
+    if (event) {
+      delete this._listeners[event]
+    } else {
+      this._listeners = {}
+    }
     return this
   }
 
@@ -279,17 +371,30 @@ export class UwsWebSocketShim {
 
   once(event: string, listener: (...args: any[]) => void): this {
     const wrapped = (...args: any[]) => {
-      this.off(event, wrapped)
+      this.removeListener(event, wrapped)
       listener(...args)
     }
     return this.on(event, wrapped)
   }
 
   off(event: string, listener: (...args: any[]) => void): this {
-    const listeners = this._listeners[event]
-    if (listeners) {
-      const idx = listeners.indexOf(listener)
-      if (idx !== -1) listeners.splice(idx, 1)
+    return this.removeListener(event, listener)
+  }
+
+  removeListener(event: string, listener: (...args: any[]) => void): this {
+    const arr = this._listeners[event]
+    if (arr) {
+      const idx = arr.indexOf(listener)
+      if (idx !== -1) arr.splice(idx, 1)
+    }
+    return this
+  }
+
+  removeAllListeners(event?: string): this {
+    if (event) {
+      delete this._listeners[event]
+    } else {
+      this._listeners = {}
     }
     return this
   }

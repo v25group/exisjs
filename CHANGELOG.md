@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.11`** | 2026-10-01 | Performance & DX | Static route fast path (>51k req/s), lazy AbortSignal, uWS adapter event parity, `timingSafeEqual`, configurable `dev` watcher, flexible `registerDatabase`, `create-exisjs` cron scaffolding | [**Read v0.7.11 Notes →**](./changelog/v0.7/v0.7.11.md) |
 | **`v0.7.10`** | 2026-09-27 | Feature & Resilience | Controller inheritance, property `@Inject`/`@Optional`, `forwardRef` circular DI, parameter transformation pipes, `@Global()` modules, DI parameter reflection, Mongoose/BSON safe serializer, query type coercion, error envelope standardization, CDN IP resolution | [**Read v0.7.10 Notes →**](./changelog/v0.7/v0.7.10.md) |
 | **`v0.7.9`** | 2026-09-24 | Feature & Architecture | Enterprise OOP upgrades (Security, Caching, Transactions, Profiling, Lifecycles, Filters), ESM alias fix | [**Read v0.7.9 Notes →**](./changelog/v0.7/v0.7.9.md) |
 | **`v0.7.8`** | 2026-09-22 | Patch & Export Fixes | Subpath export `exisjs/swagger`, root exports, canonical doc fixes | [**Read v0.7.8 Notes →**](./changelog/v0.7/v0.7.8.md) |
@@ -25,7 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.10] - 2026-09-27
+## Current Release: [0.7.11] - 2026-10-01
+
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.11.md`**](./changelog/v0.7/v0.7.11.md).
+
+### Added
+- **Static Route In-Memory Fast Path**: `NativeRadixTree` builds an exact static lookup map (`staticCache`) for parameterless routes, bypassing tree traversal and pushing server throughput over 51,000 req/sec.
+- **Zero-Allocation `AbortSignal` Lazy Instantiation**: `ExisRequest.prototype.signal` is now created only when accessed, reducing garbage collection overhead and event listeners on standard requests.
+- **High-Performance uWS Adapter Parity**: Full EventEmitter and lifecycle method parity on `UwsIncomingMessage`, `UwsServerResponse`, and `UwsWebSocketShim` (`.once()`, `.off()`, `.removeListener()`, `.removeAllListeners()`, `.destroyed`, `.writableEnded`, `.writeHead()`, `.getHeaders()`, `.getHeaderNames()`, `.flushHeaders()`).
+- **Timing-Safe String / Buffer Comparison (`timingSafeEqual`)**: Constant-time comparison in `exisjs/middleware` for API keys, tokens, and HMAC signatures with dummy comparisons preventing length-leak timing attacks.
+- **Configurable Dev Server Watcher**: Added `dev` options to `defineConfig` (`watch`, `ignored`, `usePolling`, `interval`, `binaryInterval`) for container, VM, and Windows file-watching workflows.
+- **Flexible Database Lifecycle Registration**: `registerDatabase` supports both `(options)` and `(app, options)` signatures.
+- **CLI Scaffolding Alignments (`create-exisjs`)**: Updated template generator for `src/cron/cleanup.ts` with `cron()` and `@Cron()` and bumped dependencies to `^0.7.11`.
+
+---
+
+## Previous Release: [0.7.10] - 2026-09-27
 
 > For full technical details and code examples, see [**`changelog/v0.7/v0.7.10.md`**](./changelog/v0.7/v0.7.10.md).
 

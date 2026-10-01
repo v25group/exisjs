@@ -42,10 +42,11 @@ export class DatabaseManager {
       try {
         await db.connect()
       } catch (err: any) {
-        throw new Error(
-          `[ExisJS Database] Failed to connect database "${name}": ${err.message}`,
-          { cause: err }
+        const error = new Error(
+          `[ExisJS Database] Failed to connect database "${name}": ${err.message}`
         )
+        ;(error as any).cause = err
+        throw error
       }
     }
   }
@@ -146,7 +147,12 @@ export class DatabaseManager {
 
 /**
  * Convenience helper to register database lifecycle hooks.
+ * Supports both `registerDatabase(options)` and `registerDatabase(app, options)`.
  */
-export function registerDatabase(db: DatabaseRegistration): void {
+export function registerDatabase(
+  appOrDb: any,
+  maybeDb?: DatabaseRegistration
+): void {
+  const db = maybeDb || appOrDb
   DatabaseManager.register(db)
 }

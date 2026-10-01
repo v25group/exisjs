@@ -75,11 +75,13 @@ We highly recommend using `v.env()` from `exisjs/validator` to strongly type and
 ```typescript filename="env.ts"
 import { tex } from 'exisjs/validator'
 
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
-  NODE_ENV: tex.string({ optional: true }),
-  MONGODB_URI: tex.string(),
-}).parse(process.env)
+export const env = tex
+  .object({
+    PORT: tex.number({ coerce: true, optional: true }),
+    NODE_ENV: tex.string({ optional: true }),
+    MONGODB_URI: tex.string(),
+  })
+  .parse(process.env)
 ```
 
 ```typescript filename="exis.config.ts"
@@ -167,6 +169,14 @@ Here is a full breakdown of the configuration schema:
 - `debugRouting` _(boolean)_: Enables detailed logging of the resolved route file and applied gateways for every incoming request.
 - `test` _(object)_: Configuration for the native test runner (`include`, `exclude`, `setupFiles`, `concurrency`, `coverage`).
 
+### Development Server & File Watcher (`dev`)
+
+- `dev.watch` _(string[])_: Custom paths or glob patterns to watch during development (defaults to `[cwd]`).
+- `dev.ignored` _((string | RegExp)[])_: Additional files or patterns to ignore during watch restarts.
+- `dev.usePolling` _(boolean)_: Enables filesystem polling for cross-platform/Windows NTFS reliability (defaults to `true` on Windows).
+- `dev.interval` _(number)_: Polling interval in milliseconds (default: `100`).
+- `dev.binaryInterval` _(number)_: Polling binary interval in milliseconds (default: `300`).
+
 ### Queues & Plugins
 
 - `queue` _(object)_: Configures the Global Job Queue driver (`memory` or `redis`) and backpressure settings.
@@ -242,6 +252,6 @@ export default exis({
   async onStop(app) {
     // Cleanly close database pools when SIGTERM or SIGINT is received
     await db.disconnect()
-  }
+  },
 })
 ```

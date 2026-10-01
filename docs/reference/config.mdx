@@ -1,6 +1,6 @@
 ---
-title: "Configuration"
-description: "API Reference for the global exis.config.ts file (`exisjs/config`)."
+title: 'Configuration'
+description: 'API Reference for the global exis.config.ts file (`exisjs/config`).'
 ---
 
 # Configuration (`exisjs/config`)
@@ -61,22 +61,22 @@ export default async (phase: string, { defaultConfig }) => {
 
   return defineConfig({
     port: Number(process.env.PORT) || 4000,
-    
+
     // Auto-spawn Worker threads based on CPU cores!
-    workers: isDev ? 1 : 'safe', 
-    
+    workers: isDev ? 1 : 'safe',
+
     // Globally configure native middleware
     cors: {
       origin: isDev ? '*' : 'https://myapp.com',
-      credentials: true
+      credentials: true,
     },
     helmet: { enabled: true },
     logger: isDev ? { level: 'debug', pretty: true } : false,
-    
+
     // Native plugin registration
     plugins: [
       // ... your plugins here
-    ]
+    ],
   })
 }
 ```
@@ -99,21 +99,31 @@ If you export a function from `exis.config.ts`, ExisJS will inject the current "
 Here is the full list of options supported natively by the ExisJS configuration engine:
 
 ### Server & Network
-- **`port`** *(number)*: The port the server listens on (default: `4000`).
-- **`host`** *(string)*: The host interface to bind to (default: `'0.0.0.0'`).
-- **`server`** *(`'node' | 'uws' | 'auto'`)*: ExisJS supports running on standard Node `http`, or incredibly fast C++ `uWebSockets.js` (`uws`). Default is `'auto'` (uses `uws` if installed, falls back to `node`).
-- **`workers`** *(number | `'safe'` | `'max'`)*: Number of Node.js Cluster workers to spawn. `'max'` uses all CPU cores. `'safe'` uses all cores minus 1 (to leave room for the OS).
-- **`trustProxy`** *(boolean | number)*: Enable if running behind reverse proxies or CDNs (Cloudflare, AWS ALB, NGINX, Render) to evaluate `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, and `X-Forwarded-For`. (Can also be enabled via `TRUST_PROXY=true`).
+
+- **`port`** _(number)_: The port the server listens on (default: `4000`).
+- **`host`** _(string)_: The host interface to bind to (default: `'0.0.0.0'`).
+- **`server`** _(`'node' | 'uws' | 'auto'`)_: ExisJS supports running on standard Node `http`, or incredibly fast C++ `uWebSockets.js` (`uws`). Default is `'auto'` (uses `uws` if installed, falls back to `node`).
+- **`workers`** _(number | `'safe'` | `'max'`)_: Number of Node.js Cluster workers to spawn. `'max'` uses all CPU cores. `'safe'` uses all cores minus 1 (to leave room for the OS).
+- **`trustProxy`** _(boolean | number)_: Enable if running behind reverse proxies or CDNs (Cloudflare, AWS ALB, NGINX, Render) to evaluate `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, and `X-Forwarded-For`. (Can also be enabled via `TRUST_PROXY=true`).
 
 ### Security & Middlewares
-- **`cors`** *(boolean | object)*: Enable and configure Cross-Origin Resource Sharing globally.
-- **`helmet`** *(boolean | object)*: Enable strict security headers. Enabled by default.
-- **`logger`** *(boolean | object)*: Configure the efficient Pino request logger.
-- **`compression`** *(boolean | object)*: Enable gzip/brotli response compression.
-- **`etag`** *(boolean)*: Automatic ETag generation for HTTP conditional requests (default: `false` for dynamic API routes).
-- **`bodyLimit`** *(number)*: Maximum JSON/URL-encoded payload size in bytes (default: `10MB`).
+
+- **`cors`** _(boolean | object)_: Enable and configure Cross-Origin Resource Sharing globally.
+- **`helmet`** _(boolean | object)_: Enable strict security headers. Enabled by default.
+- **`logger`** _(boolean | object)_: Configure the efficient Pino request logger.
+- **`compression`** _(boolean | object)_: Enable gzip/brotli response compression.
+- **`etag`** _(boolean)_: Automatic ETag generation for HTTP conditional requests (default: `false` for dynamic API routes).
+- **`bodyLimit`** _(number)_: Maximum JSON/URL-encoded payload size in bytes (default: `10MB`).
+
+### Development Server & File Watcher (`dev`)
+
+- **`dev.watch`** _(string[])_: Custom directories or files to watch during development (default: `[cwd]`).
+- **`dev.ignored`** _((string | RegExp)[])_: Additional files, extensions, or regex patterns to ignore during hot reload.
+- **`dev.usePolling`** _(boolean)_: Enables chokidar polling fallback (default: `true` on Windows).
+- **`dev.interval`** _(number)_: Polling file system interval in milliseconds (default: `100`).
 
 ### Extended Integrations
+
 - **`queue`**: Define your background queue driver (`memory` or `redis`) and configure `maxConcurrent` processing limits.
 - **`plugins`**: An array of `ExisPlugin` instances to register natively into the framework.
 - **`test`**: Configure testing environments (`include`, `exclude`, `setupFiles`, `coverage`).

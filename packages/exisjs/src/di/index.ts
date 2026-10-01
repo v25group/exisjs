@@ -13,5 +13,6 @@ export type {
   ValueProvider,
   FactoryProvider,
   ClassProvider,
+  ClassConstructor,
 } from './container'
 export { forwardRef, isForwardRef, type ForwardReference } from './forward-ref'

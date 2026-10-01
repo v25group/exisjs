@@ -123,6 +123,13 @@ export interface ExisConfig {
     maxQueue?: number
     [key: string]: any
   }
+  dev?: {
+    watch?: string[]
+    ignored?: (string | RegExp)[]
+    usePolling?: boolean
+    interval?: number
+    binaryInterval?: number
+  }
   plugins?: ExisPlugin[]
   test?: {
     include?: string[]

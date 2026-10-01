@@ -630,6 +630,7 @@ export class NativeRadixTree {
   private native: any = null
   private routes: Route[] = []
   private jsFallback: JSRadixTree | null = null
+  private staticCache = new Map<string, RouteMatch>()
   public hasHostRoutes = false
 
   constructor() {
@@ -655,6 +656,19 @@ export class NativeRadixTree {
         }
       }
       this.jsFallback.insert(method, path, route)
+    } else if (path.indexOf(':') === -1 && path.indexOf('*') === -1) {
+      const match: RouteMatch = { route, params: emptyParams }
+      if (method === 'ALL') {
+        this.staticCache.set('GET:' + path, match)
+        this.staticCache.set('POST:' + path, match)
+        this.staticCache.set('PUT:' + path, match)
+        this.staticCache.set('DELETE:' + path, match)
+        this.staticCache.set('PATCH:' + path, match)
+        this.staticCache.set('OPTIONS:' + path, match)
+        this.staticCache.set('HEAD:' + path, match)
+      } else {
+        this.staticCache.set(method + ':' + path, match)
+      }
     }
 
     const routeId = this.routes.length
@@ -670,6 +684,11 @@ export class NativeRadixTree {
   search(method: string, path: string, host?: string): RouteMatch | null {
     if (this.hasHostRoutes && host && this.jsFallback) {
       return this.jsFallback.search(method, path, host)
+    }
+
+    if (!host) {
+      const fastStatic = this.staticCache.get(method + ':' + path)
+      if (fastStatic) return fastStatic
     }
 
     if (this.native) {

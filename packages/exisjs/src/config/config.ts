@@ -15,12 +15,14 @@ export type ResolvedConfig = Omit<
   Required<ExisConfig>,
   | 'ssl'
   | 'queue'
+  | 'dev'
   | 'transformResponse'
   | 'blockProbes'
   | 'blockSuspiciousProbes'
 > & {
   ssl?: ExisConfig['ssl']
   queue?: ExisConfig['queue']
+  dev?: ExisConfig['dev']
   transformResponse?: ExisConfig['transformResponse']
   blockProbes?: ExisConfig['blockProbes']
   blockSuspiciousProbes?: ExisConfig['blockSuspiciousProbes']

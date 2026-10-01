@@ -519,9 +519,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (runner.needsManualWatch && !options._disableWatch) {
     const chokidar = await importChokidar()
     if (chokidar) {
-      watcher = chokidar.watch([cwd], {
+      const devConfig = userConfig.dev || {}
+      const watchPaths =
+        devConfig.watch && devConfig.watch.length > 0 ? devConfig.watch : [cwd]
+      const userIgnored = devConfig.ignored || []
+
+      watcher = chokidar.watch(watchPaths, {
         cwd,
         ignoreInitial: true,
+        usePolling: devConfig.usePolling ?? process.platform === 'win32',
+        interval: devConfig.interval ?? 100,
+        binaryInterval: devConfig.binaryInterval ?? 300,
         ignored: [
           // eslint-disable-next-line no-useless-escape
           /(^|[\/\\])\.(?!env)/, // ignore dotfiles (.git, .vscode, .idea, etc.) except .env
@@ -541,6 +549,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
           /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
           /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i, // media & binary docs
+          ...userIgnored,
         ],
         awaitWriteFinish: {
           stabilityThreshold: 200,

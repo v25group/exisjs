@@ -21,7 +21,7 @@ import {
   prettierignoreTemplate,
   commonAuthGuardTemplate,
   dbConnectionTemplate,
-  exampleJobTemplate,
+  exampleCronTemplate,
   userSchemaTemplate,
   userServiceTemplate,
   rootBoundaryTemplate,
@@ -357,7 +357,7 @@ function writeTemplates(
     userTestTemplate(paradigm, useTypeScript)
   )
 
-  // Common, DB, Jobs
+  // Common, DB, Cron
   write(
     dir,
     path.join(srcBase, 'common', 'guards', `auth.guard.${ext}`),
@@ -370,8 +370,8 @@ function writeTemplates(
   )
   write(
     dir,
-    path.join(srcBase, 'jobs', `cleanup.job.${ext}`),
-    exampleJobTemplate(useTypeScript)
+    path.join(srcBase, 'cron', `cleanup.${ext}`),
+    exampleCronTemplate(paradigm, useTypeScript)
   )
 
   // Tooling
