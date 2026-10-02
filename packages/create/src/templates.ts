@@ -39,12 +39,12 @@ export function packageJsonTemplate(
   if (useTypeScript) {
     pkg.devDependencies = {
       '@types/node': '^20.0.0',
-      prettier: '^3.9.7',
+      prettier: '^3.9.9',
       typescript: '^5.9.3',
     }
   } else {
     pkg.devDependencies = {
-      prettier: '^3.9.7',
+      prettier: '^3.9.9',
     }
   }
 
