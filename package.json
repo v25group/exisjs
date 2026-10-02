@@ -72,5 +72,8 @@
   "dependencies": {
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0",
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "hyperid": "^4.0.0"
   }
 }

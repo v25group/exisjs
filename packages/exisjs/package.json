@@ -97,7 +97,7 @@
     "build": "tsc",
     "postbuild": "node -e \"require('fs').cpSync('../../docs', './dist/docs', {recursive:true, force:true})\"",
     "dev": "tsc --watch",
-    "test": "cross-env NODE_ENV=test tsx --test --test-reporter=./src/testing/reporter.mts tests/**/*.test.ts"
+    "test": "cross-env NODE_ENV=test tsx --tsconfig ../../tsconfig.base.json --test --test-reporter=./src/testing/reporter.mts tests/**/*.test.ts"
   },
   "bin": {
     "exis": "bin/exis.js",
