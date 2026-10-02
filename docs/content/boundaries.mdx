@@ -159,9 +159,25 @@ src/http/
         └── route.ts  # Handled by both Root Boundary and Admin Boundary
 ```
 
-1. **Wrappers & Chain Steps**: Outer boundaries execute first. Root wrappers wrap nested wrappers, and root chain steps run before nested chain steps.
-2. **CORS & Headers**: Sub-boundaries inherit and merge or override parent headers and CORS policies.
-3. **Exclusions**: When a route matches an exclusion pattern (e.g. `/admin/health` in `exclude`), that boundary's chain steps and wrappers are bypassed for the request.
+1. **Wrappers & Chain Steps**: Outer boundaries execute first. Root wrappers wrap nested wrappers, and root chain steps run before nested chain steps top-down.
+2. **CORS Precedence & Inheritance**:
+   - **Innermost Boundary Wins**: If a nested boundary specifies `cors`, it overrides any CORS configuration set in parent boundaries or `exis.config.ts`.
+   - **Inheritance**: If a sub-boundary omits `cors`, it seamlessly inherits the parent boundary's CORS configuration (or global config).
+   - **Per-Route Overrides**: A `route.ts` handler can define its own `cors` setting to override boundary settings for that single endpoint.
+   - **Disabling CORS**: Setting `cors: false` on a boundary or route explicitly disables CORS headers and preflight handling for that sub-tree or route.
+3. **Headers Merging**: Headers are deep-merged from root to child. Child headers override parent headers if keys collide.
+4. **Exclusions**: When a route matches an exclusion pattern (e.g. `/admin/health` in `exclude`), that boundary's chain steps and wrappers are bypassed for the request.
+
+### CORS Resolution Hierarchy
+
+ExisJS resolves CORS in a 3-tier precedence order:
+
+| Level | Where to Define | Priority | Description |
+|---|---|---|---|
+| **Route** | `route.get('/', { cors: ... })` or `@Cors(...)` | 🥇 **Highest** | Specific to a single endpoint. Overrides boundary and global config. |
+| **Nested Boundary** | `src/http/admin/boundary.ts` | 🥈 **High** | Scoped to the subfolder tree. Overrides parent boundaries and global config. |
+| **Parent / Root Boundary** | `src/http/boundary.ts` | 🥉 **Medium** | Scoped to all API routes under the folder. Overrides global config. |
+| **Global Config** | `exis.config.ts` (`defineConfig({ cors })`) | **Base** | Fallback baseline for any route not covered by a boundary or route override. |
 
 ---
 

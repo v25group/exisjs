@@ -157,6 +157,8 @@ export function mountCronJobsFromEntries(
         for (const item of items) {
           if (!item || registeredCronEntities.has(item)) continue
 
+          const relFile = path.relative(process.cwd(), file).replace(/\\/g, '/')
+
           // 1. Functional Cron Definition
           if (item.__isExisCron) {
             registeredCronEntities.add(item)
@@ -167,7 +169,12 @@ export function mountCronJobsFromEntries(
               ...item.options,
               name: jobName,
             })
-            app.log.info({ file }, `Mounted cron job "${jobName}" from ${file}`)
+            const scheduleDisplay =
+              item.options.schedule ||
+              (item.options.interval ? `${item.options.interval}ms` : 'custom')
+            app.log.info(
+              `Mounted cron "${jobName}" (${scheduleDisplay}) -> ${relFile}`
+            )
             continue
           }
 
@@ -204,9 +211,13 @@ export function mountCronJobsFromEntries(
                   name: jobName,
                   run: (instance as any)[jobMeta.methodName].bind(instance),
                 })
+                const scheduleDisplay =
+                  jobMeta.options.schedule ||
+                  (jobMeta.options.interval
+                    ? `${jobMeta.options.interval}ms`
+                    : 'custom')
                 app.log.info(
-                  { file },
-                  `Mounted OOP cron job "${jobName}" from ${file}`
+                  `Mounted cron "${jobName}" (${scheduleDisplay}) -> ${relFile}`
                 )
               }
             }

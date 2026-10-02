@@ -32,6 +32,12 @@ export class ExisAppDefinition {
       await app.onStartHook(app)
     }
 
+    // Auto-connect any databases registered in onStartHook
+    const { DatabaseManager } = await import('../database/lifecycle')
+    if (DatabaseManager.size > 0) {
+      await DatabaseManager.connectAll()
+    }
+
     return app
   }
 }

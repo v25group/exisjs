@@ -364,34 +364,66 @@ describe('CLI Commands', () => {
       }
     })
 
-    it('attaches error handler and ignores archive/lock files in watcher', async () => {
+    it('attaches error handler and ignores archive/lock/runtime data files in watcher', async () => {
       const chokidar = await import('chokidar')
-      const ignored = [
-        /(^|[/\\])\../,
-        /node_modules/,
-        /\.exis/,
-        /dist/,
-        /build/,
-        /exis\.d\.ts$/,
-        /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i,
-        /\.(bak|tmp|temp|swp|swo|lock|pid)$/i,
-        /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i,
-        /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i,
-      ]
+      const { DEFAULT_WATCH_IGNORED, shouldReloadOnFile } =
+        await import('../src/cli/commands/dev')
 
-      // Test that archive regex matches archive paths
-      const isArchiveIgnored = (file: string) =>
-        ignored.some((pattern) => pattern.test(file))
-      expect(isArchiveIgnored('docs.rar')).toBe(true)
-      expect(isArchiveIgnored('archive.zip')).toBe(true)
-      expect(isArchiveIgnored('backup.tar.gz')).toBe(true)
-      expect(isArchiveIgnored('temp.tmp')).toBe(true)
-      expect(isArchiveIgnored('src/http/server.ts')).toBe(false)
+      // Test that archive and data regex matches ignored paths
+      const isIgnoredByRegex = (file: string) =>
+        DEFAULT_WATCH_IGNORED.some(
+          (pattern) => pattern instanceof RegExp && pattern.test(file)
+        )
+      expect(isIgnoredByRegex('docs.rar')).toBe(true)
+      expect(isIgnoredByRegex('archive.zip')).toBe(true)
+      expect(isIgnoredByRegex('backup.tar.gz')).toBe(true)
+      expect(isIgnoredByRegex('temp.tmp')).toBe(true)
+      expect(isIgnoredByRegex('downloads/data.csv')).toBe(true)
+      expect(isIgnoredByRegex('storage/export.xlsx')).toBe(true)
+      expect(isIgnoredByRegex('uploads/photo.png')).toBe(true)
+      expect(isIgnoredByRegex('README.md')).toBe(true)
+      expect(isIgnoredByRegex('src/http/server.ts')).toBe(false)
+
+      // Test shouldReloadOnFile strict scoping
+      expect(shouldReloadOnFile('src/http/users/route.ts')).toBe(true)
+      expect(shouldReloadOnFile('src/services/auth.service.ts')).toBe(true)
+      expect(shouldReloadOnFile('.env')).toBe(true)
+      expect(shouldReloadOnFile('.env.local')).toBe(true)
+      expect(shouldReloadOnFile('.env.production')).toBe(true)
+      expect(shouldReloadOnFile('exis.config.ts')).toBe(true)
+      expect(shouldReloadOnFile('tsconfig.json')).toBe(true)
+      expect(shouldReloadOnFile('package.json')).toBe(true)
+
+      // Non-source & runtime data files must NOT trigger reloads
+      expect(
+        shouldReloadOnFile(
+          'downloads\\EV_DMS_Sales_Orders_2026-10-02_day1_1790922917526.csv'
+        )
+      ).toBe(false)
+      expect(shouldReloadOnFile('downloads/sales.csv')).toBe(false)
+      expect(shouldReloadOnFile('storage/report.xlsx')).toBe(false)
+      expect(shouldReloadOnFile('uploads/avatar.png')).toBe(false)
+      expect(shouldReloadOnFile('logs/app.log')).toBe(false)
+      expect(shouldReloadOnFile('README.md')).toBe(false)
+      expect(shouldReloadOnFile('docs/REPORTS.md')).toBe(false)
+      expect(shouldReloadOnFile('.gitignore')).toBe(false)
+      expect(shouldReloadOnFile('package-lock.json')).toBe(false)
+      expect(shouldReloadOnFile('node_modules/foo/index.js')).toBe(false)
+      expect(shouldReloadOnFile('tests/e2e.test.ts')).toBe(false)
+      expect(shouldReloadOnFile('src/index.d.ts')).toBe(false)
+
+      // Custom ignored patterns & custom extensions
+      expect(
+        shouldReloadOnFile('src/http/server.ts', ['src/http/server.ts'])
+      ).toBe(false)
+      expect(shouldReloadOnFile('src/schema.graphql', [], ['.graphql'])).toBe(
+        true
+      )
 
       // Test watcher instance handles EBUSY without throwing uncaught exception
       const watcher = chokidar.watch(tmpDir, {
         ignoreInitial: true,
-        ignored,
+        ignored: DEFAULT_WATCH_IGNORED,
       })
 
       let errorCaught = false

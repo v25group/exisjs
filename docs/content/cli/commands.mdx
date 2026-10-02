@@ -158,6 +158,37 @@ $ npx exisjs test [files...] [options]
 
 ---
 
+### `exisjs run`
+
+Executes any standalone TypeScript script, migration runner, or external tool (e.g. `drizzle-kit`, `prisma`, `knex`) with ExisJS `.env` files automatically loaded into `process.env`.
+
+```bash
+$ npx exisjs run <scriptOrCmd> [args...] [options]
+$ npx exisjs exec <scriptOrCmd> [args...] [options]
+```
+
+**Options**
+
+| Option | Description |
+| :--- | :--- |
+| `-e, --env <file>` | Custom environment file to load. |
+| `-m, --mode <mode>` | Environment mode to load (e.g. `production`, `development`, `staging`). |
+
+**Examples**
+
+```bash
+# Run Drizzle migrations with auto-loaded .env database credentials
+$ npx exisjs run drizzle-kit push
+
+# Execute a TypeScript database seed script
+$ npx exisjs run src/database/seed.ts
+
+# Run with a custom environment file
+$ npx exisjs run scripts/report.ts --env .env.staging
+```
+
+---
+
 ### `exisjs repl`
 
 Starts an interactive Node.js REPL console loaded with your application context.

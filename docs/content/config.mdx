@@ -147,6 +147,7 @@ Here is a full breakdown of the configuration schema:
   - Regular expressions (e.g. `/localhost:\d+/`).
   - Arrays mixing strings and regexes (`['https://app.example.com', /https:\/\/.*\.domain\.com/']`).
   - Dynamic callbacks: `(origin, cb) => ...` or async functions: `async (origin) => boolean` for multi-tenant setups.
+  - **Precedence & Overrides**: Global CORS acts as the baseline default. It can be overridden at the directory level using `boundary.ts` (`defineBoundary({ cors })`), or at the individual endpoint level using `route.get('/', { cors })` / `@Cors()`. Setting `cors: false` at any level disables CORS for that scope.
 - `transformResponse` _(boolean | function)_: Automatically wraps all successful handler responses into a standardized envelope:
   - When `true`: `{ success: true, data: ..., timestamp: ... }` (matching `HttpError`'s `{ success: false, error: ... }`).
   - When a function: `(data, req, res) => ({ ... })` to provide your own custom envelope.
@@ -169,13 +170,23 @@ Here is a full breakdown of the configuration schema:
 - `debugRouting` _(boolean)_: Enables detailed logging of the resolved route file and applied gateways for every incoming request.
 - `test` _(object)_: Configuration for the native test runner (`include`, `exclude`, `setupFiles`, `concurrency`, `coverage`).
 
-### Development Server & File Watcher (`dev`)
+### Development Server & File Watcher (`watch` & `dev`)
 
-- `dev.watch` _(string[])_: Custom paths or glob patterns to watch during development (defaults to `[cwd]`).
-- `dev.ignored` _((string | RegExp)[])_: Additional files or patterns to ignore during watch restarts.
+ExisJS dev server (`exis dev`) features intelligent hot-reloading with strict extension filtering and automatic runtime artifact exclusion:
+
+- `watch.paths` / `dev.watch` _(string[])_: Custom paths to watch for hot reloads. Defaults to `['src', ...configFiles]` (or `[cwd]` if no `src` folder exists).
+- `watch.ignore` / `dev.ignored` _((string | RegExp)[])_: Additional files, directories, or regex patterns to ignore during watch restarts.
+- `watch.extensions` / `dev.extensions` _(string[])_: Explicit file extensions that trigger reloads (defaults to `['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']`).
+- `watch.debounceMs` / `dev.debounceMs` _(number)_: Debounce interval before restarting the server on file changes (default: `250ms`).
 - `dev.usePolling` _(boolean)_: Enables filesystem polling for cross-platform/Windows NTFS reliability (defaults to `true` on Windows).
 - `dev.interval` _(number)_: Polling interval in milliseconds (default: `100`).
 - `dev.binaryInterval` _(number)_: Polling binary interval in milliseconds (default: `300`).
+
+<Info title="Default Ignored Artifacts">
+By default, ExisJS automatically ignores non-source files and runtime artifact folders to prevent accidental server restarts:
+- **Folders**: `node_modules`, `.git`, `.exis`, `dist`, `build`, `out`, `.turbo`, `.next`, `.cache`, `downloads`, `storage`, `uploads`, `tmp`, `temp`, `logs`, `data`, `fixtures`, `reports`, `artifacts`, `public`, `tests`, `coverage`.
+- **Files**: `.csv`, `.xlsx`, `.pdf`, `.log`, `.sqlite`, `.db`, `.png`, `.jpg`, `.svg`, `.webp`, `.md`, `.txt`, `.zip`, `.tar.gz`, `package-lock.json`, `*.d.ts`.
+</Info>
 
 ### Queues & Plugins
 

@@ -79,6 +79,34 @@ import type { SwaggerConfig } from '../swagger/types'
 
 export type { SwaggerConfig } from '../swagger/types'
 
+export interface WatchConfig {
+  /** Directories or files to watch for hot reloads (e.g. ['src', '.env']) */
+  paths?: string[]
+  /** Additional files, directories, or regex patterns to ignore */
+  ignore?: (string | RegExp)[]
+  /** Explicit allowed file extensions that trigger reloads (defaults to ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']) */
+  extensions?: string[]
+  /** Debounce interval in milliseconds before reloading the server (default: 250ms) */
+  debounceMs?: number
+}
+
+export interface DevConfig {
+  /** Directories or files to watch during development */
+  watch?: string[]
+  /** Additional files, directories, or regex patterns to ignore */
+  ignored?: (string | RegExp)[]
+  /** Enables filesystem polling for cross-platform/Windows NTFS reliability */
+  usePolling?: boolean
+  /** Polling interval in milliseconds */
+  interval?: number
+  /** Polling binary interval in milliseconds */
+  binaryInterval?: number
+  /** Explicit allowed file extensions that trigger reloads */
+  extensions?: string[]
+  /** Debounce interval in milliseconds before reloading the server */
+  debounceMs?: number
+}
+
 export interface ExisConfig {
   port?: number
   host?: string
@@ -123,13 +151,8 @@ export interface ExisConfig {
     maxQueue?: number
     [key: string]: any
   }
-  dev?: {
-    watch?: string[]
-    ignored?: (string | RegExp)[]
-    usePolling?: boolean
-    interval?: number
-    binaryInterval?: number
-  }
+  watch?: WatchConfig
+  dev?: DevConfig
   plugins?: ExisPlugin[]
   test?: {
     include?: string[]

@@ -161,6 +161,17 @@ async function start() {
       if (typeof app.onStartHook === 'function') {
         await app.onStartHook(app)
       }
+
+      // Auto-connect any databases registered in onStartHook or plugins before listening
+      try {
+        const { DatabaseManager } = await import('../database/lifecycle')
+        if (DatabaseManager.size > 0) {
+          await DatabaseManager.connectAll()
+        }
+      } catch {
+        // ignore if database module unavailable
+      }
+
       await app.listen()
 
       // ─── Graceful Shutdown ───────────────────────────────────────────────────

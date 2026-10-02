@@ -11,15 +11,15 @@ ExisJS provides a unified, database-agnostic lifecycle and transaction layer. It
 
 ## 1. Lifecycle Management
 
-### `registerDatabase(app, options)`
+### `registerDatabase(app, options)` or `registerDatabase(options)`
 
-Registers a database connection into the application lifecycle. Automatically calls `connect()` during server boot and `disconnect()` during graceful shutdown (`SIGTERM`, `SIGINT`, or `app.close()`).
+Registers a database connection into the application lifecycle. Automatically coordinates `connect()` during server boot and `disconnect()` during graceful shutdown (`SIGTERM`, `SIGINT`, or `app.close()`).
 
-#### Options (`DatabaseRegistrationOptions`)
+#### Options (`DatabaseRegistration`)
 - `name` (`string`): Unique identifier for the database connection (e.g. `'postgres'`, `'mongodb'`).
-- `connect` (`() => Promise<void>`): Async callback to establish connection and connection pools.
-- `disconnect` (`() => Promise<void>`): Async callback to close connections gracefully.
-- `healthCheck` (`() => Promise<boolean>`): Optional health check callback returning `true` when healthy.
+- `connect` (`() => Promise<void> | void`): Async callback to establish connections and connection pools.
+- `disconnect` (`() => Promise<void> | void`): Async callback to close connections gracefully.
+- `isHealthy` / `healthCheck` (`() => Promise<boolean | DatabaseHealthInfo> | boolean | DatabaseHealthInfo`): Optional health check callback returning `true` / `false` or detailed health info (`{ status: 'connected' | 'disconnected' | 'error', latencyMs?, error?, details? }`).
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -56,7 +56,7 @@ Singleton registry managing all registered database adapters.
 - `DatabaseManager.register(options)`: Registers a database adapter.
 - `DatabaseManager.connectAll()`: Connects all registered databases concurrently.
 - `DatabaseManager.disconnectAll()`: Gracefully disconnects all databases concurrently.
-- `DatabaseManager.checkHealth()`: Runs health checks across all registered databases and returns `{ healthy: boolean, databases: Record<string, boolean> }`.
+- `DatabaseManager.checkHealth()`: Runs health checks across all registered databases and returns `{ healthy: boolean, databases: Record<string, DatabaseHealthInfo> }`.
 - `DatabaseManager.clear()`: Clears all registered database adapters (useful for test tear-downs).
 
 ```typescript filename="src/http/health/route.ts"

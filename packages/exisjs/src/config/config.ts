@@ -15,6 +15,7 @@ export type ResolvedConfig = Omit<
   Required<ExisConfig>,
   | 'ssl'
   | 'queue'
+  | 'watch'
   | 'dev'
   | 'transformResponse'
   | 'blockProbes'
@@ -22,6 +23,7 @@ export type ResolvedConfig = Omit<
 > & {
   ssl?: ExisConfig['ssl']
   queue?: ExisConfig['queue']
+  watch?: ExisConfig['watch']
   dev?: ExisConfig['dev']
   transformResponse?: ExisConfig['transformResponse']
   blockProbes?: ExisConfig['blockProbes']

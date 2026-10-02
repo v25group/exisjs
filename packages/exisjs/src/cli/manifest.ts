@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
+import * as fsSync from 'node:fs'
 import * as crypto from 'node:crypto'
 
 export async function atomicWriteFile(
@@ -158,9 +159,21 @@ export async function generateManifest(
   }
 
   // ─── 3. Scan Cron Job Files ─────────────────────────────────────────────────
-  const cronDirs = isDev
-    ? [path.join(cwd, 'src', 'cron')]
-    : [path.join(cwd, outDir, 'src', 'cron'), path.join(cwd, 'src', 'cron')]
+  let cronDirs: string[]
+  if (isDev) {
+    cronDirs = [path.join(cwd, 'src', 'cron'), path.join(cwd, 'cron')]
+  } else {
+    const prodCronDirs = [
+      path.join(cwd, outDir, 'src', 'cron'),
+      path.join(cwd, outDir, 'cron'),
+    ]
+    const existingProdDir = prodCronDirs.find((d) => fsSync.existsSync(d))
+    if (existingProdDir) {
+      cronDirs = [existingProdDir]
+    } else {
+      cronDirs = [path.join(cwd, 'src', 'cron'), path.join(cwd, 'cron')]
+    }
+  }
 
   const discoveredCronFiles: string[] = []
   for (const cDir of cronDirs) {

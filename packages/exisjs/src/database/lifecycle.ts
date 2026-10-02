@@ -15,6 +15,8 @@ export interface DatabaseRegistration {
   disconnect: () => Promise<void> | void
   isHealthy?: () =>
     Promise<boolean | DatabaseHealthInfo> | boolean | DatabaseHealthInfo
+  healthCheck?: () =>
+    Promise<boolean | DatabaseHealthInfo> | boolean | DatabaseHealthInfo
 }
 
 /**
@@ -23,24 +25,29 @@ export interface DatabaseRegistration {
  * (Mongoose, Prisma, Drizzle, PostgreSQL, MySQL, SQLite, Redis).
  */
 export class DatabaseManager {
-  private static databases = new Map<string, DatabaseRegistration>()
+  private static databases = new Map<
+    string,
+    DatabaseRegistration & { _connected?: boolean }
+  >()
   private static isShutdownHookRegistered = false
 
   /**
    * Registers a database connection lifecycle with the framework.
    */
   static register(db: DatabaseRegistration): void {
-    this.databases.set(db.name, db)
+    this.databases.set(db.name, { ...db, _connected: false })
     this.ensureShutdownHooks()
   }
 
   /**
-   * Connects all registered databases.
+   * Connects all registered databases that are not already connected.
    */
   static async connectAll(): Promise<void> {
     for (const [name, db] of this.databases) {
+      if (db._connected) continue
       try {
         await db.connect()
+        db._connected = true
       } catch (err: any) {
         const error = new Error(
           `[ExisJS Database] Failed to connect database "${name}": ${err.message}`
@@ -59,6 +66,7 @@ export class DatabaseManager {
       async (db) => {
         try {
           await db.disconnect()
+          db._connected = false
         } catch (err: any) {
           console.error(
             `[ExisJS Database] Error disconnecting "${db.name}":`,
@@ -83,12 +91,13 @@ export class DatabaseManager {
     for (const [name, db] of this.databases) {
       const start = Date.now()
       try {
-        if (!db.isHealthy) {
+        const healthFn = db.isHealthy || db.healthCheck
+        if (!healthFn) {
           results[name] = { name, status: 'connected', latencyMs: 0 }
           continue
         }
 
-        const healthRes = await db.isHealthy()
+        const healthRes = await healthFn()
         const latencyMs = Date.now() - start
 
         if (typeof healthRes === 'boolean') {
@@ -121,6 +130,13 @@ export class DatabaseManager {
       healthy: allHealthy,
       databases: results,
     }
+  }
+
+  /**
+   * Returns the number of registered databases.
+   */
+  static get size(): number {
+    return this.databases.size
   }
 
   /**

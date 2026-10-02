@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.12`** | 2026-10-02 | Alignment & Patch | Automatic boot database connection (`DatabaseManager.connectAll()`), health check dual callback (`isHealthy` & `healthCheck`), docs sync, template update | [**Read v0.7.12 Notes →**](./changelog/v0.7/v0.7.12.md) |
 | **`v0.7.11`** | 2026-10-01 | Performance & DX | Static route fast path (>51k req/s), lazy AbortSignal, uWS adapter event parity, `timingSafeEqual`, configurable `dev` watcher, flexible `registerDatabase`, `create-exisjs` cron scaffolding | [**Read v0.7.11 Notes →**](./changelog/v0.7/v0.7.11.md) |
 | **`v0.7.10`** | 2026-09-27 | Feature & Resilience | Controller inheritance, property `@Inject`/`@Optional`, `forwardRef` circular DI, parameter transformation pipes, `@Global()` modules, DI parameter reflection, Mongoose/BSON safe serializer, query type coercion, error envelope standardization, CDN IP resolution | [**Read v0.7.10 Notes →**](./changelog/v0.7/v0.7.10.md) |
 | **`v0.7.9`** | 2026-09-24 | Feature & Architecture | Enterprise OOP upgrades (Security, Caching, Transactions, Profiling, Lifecycles, Filters), ESM alias fix | [**Read v0.7.9 Notes →**](./changelog/v0.7/v0.7.9.md) |
@@ -26,7 +27,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.11] - 2026-10-01
+## Current Release: [0.7.12] - 2026-10-02
+
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.12.md`**](./changelog/v0.7/v0.7.12.md).
+
+### Added
+- **Automatic Database Boot Connection (`DatabaseManager.connectAll`)**: Registered databases (`registerDatabase`) are now automatically connected during startup across `app.create()`, `defineApp().boot()`, `start-server` (before listening), and `createTestApp` with internal connection state deduplication (`_connected`).
+- **Dual Callback Support for Database Health Checks (`isHealthy` & `healthCheck`)**: `DatabaseRegistration` and `DatabaseManager.checkHealth()` now support both `isHealthy` and `healthCheck` callback properties interchangeably.
+- **`exisjs routes` CLI Subprocess Module Resolution**: Dynamic route introspection now executes through a TypeScript-aware subprocess with `tsx` runner and path alias loader, resolving `file:///...` module import issues on Windows and TypeScript projects.
+- **New `exis run` (alias `exis exec`) CLI Command**: Automatically loads `.env`, `.env.local`, and mode files before running any TypeScript script or external tool (e.g. `exis run drizzle-kit push`, `exis run scripts/seed.ts`).
+- **Production Manifest Dedicated `src/cron/` Bundling**: `generateManifest` in `manifest.ts` now prioritizes the compiled `outDir` directory in production builds, eliminating duplicate source file references and resolving `BUILD_VALIDATION_FAILED` errors on projects with dedicated `src/cron/*` tasks.
+- **Standardized Cron Job Mounting Logs**: Replaced verbose multiline cron mounting logs with clean, single-line structured outputs including job name, schedule expression, and relative file path (`Mounted cron "<jobName>" (<schedule>) -> <relFile>`).
+- **Starter Scaffolding `tsconfig.json` Expansion**: Expanded `tsconfigTemplate` in `create-exisjs` to include `"types": ["node"]` and include root `'*.config.ts'`, `'*.config.js'`, and `'*.ts'` patterns, preventing `TS2580: Cannot find name 'process'` in standalone tools like `drizzle.config.ts`.
+- **Documentation & Type Synchronization**: Corrected `docs/reference/database.mdx` with exact signatures for `registerDatabase` and return types for `DatabaseManager.checkHealth()`.
+- **Scaffolding Dependency Updates**: Starter templates in `create-exisjs` now target `exisjs: '^0.7.12'`.
+
+---
+
+## Previous Release: [0.7.11] - 2026-10-01
 
 > For full technical details and code examples, see [**`changelog/v0.7/v0.7.11.md`**](./changelog/v0.7/v0.7.11.md).
 

@@ -12,8 +12,9 @@ const pkg = require('../../package.json')
 const program = new Command()
 
 program
-  .name('exis')
-  .description('The Exis JS CLI')
+  .name('exisjs')
+  .alias('exis')
+  .description('The ExisJS Framework CLI')
   .version(pkg.version, '-v, --version', 'Output the current version')
 
 // ─── dev ─────────────────────────────────────────────────────────────────────
@@ -140,6 +141,25 @@ program
     await testCommand({ ...options, files })
   })
 
+// ─── run / exec ───────────────────────────────────────────────────────────────
+
+program
+  .command('run <scriptOrCmd> [args...]')
+  .alias('exec')
+  .description(
+    'Execute a TypeScript/JavaScript script or CLI tool with ExisJS .env loaded'
+  )
+  .allowUnknownOption()
+  .option('-e, --env <file>', 'Custom env file to load')
+  .option(
+    '-m, --mode <mode>',
+    'Environment mode to load (e.g. production, development, staging)'
+  )
+  .action(async (scriptOrCmd, args, options) => {
+    const { runCommand } = await import('./commands/run')
+    await runCommand(scriptOrCmd, args, options)
+  })
+
 // ─── info ─────────────────────────────────────────────────────────────────────
 
 program
@@ -174,36 +194,43 @@ program
     await doctorCommand()
   })
 
-// ─── Default: show banner on bare `exis` ──────────────────────────────────────
+// ─── Default: show banner on bare `exisjs` / `exis` ─────────────────────────
 
 if (process.argv.length === 2) {
   banner()
   console.log(`${c.gray}  Usage:${c.reset}`)
-  console.log(`    ${c.cyan}exis dev${c.reset}              Start dev server`)
+  console.log(`    ${c.cyan}exisjs dev${c.reset}              Start dev server`)
   console.log(
-    `    ${c.cyan}exis build${c.reset}            Build for production`
+    `    ${c.cyan}exisjs build${c.reset}            Build for production`
   )
   console.log(
-    `    ${c.cyan}exis start${c.reset}            Start production server`
+    `    ${c.cyan}exisjs start${c.reset}            Start production server`
   )
   console.log(
-    `    ${c.cyan}exis routes${c.reset}           Inspect application routing table`
+    `    ${c.cyan}exisjs routes${c.reset}           Inspect application routing table`
   )
-  console.log(`    ${c.cyan}exis test${c.reset}             Run test suite`)
+  console.log(`    ${c.cyan}exisjs test${c.reset}             Run test suite`)
   console.log(
-    `    ${c.cyan}exis doctor${c.reset}           Run project health and environment diagnostics`
-  )
-  console.log(
-    `    ${c.cyan}exis info${c.reset}             Show environment info`
+    `    ${c.cyan}exisjs run <file>${c.reset}       Run script or tool with ExisJS .env loaded`
   )
   console.log(
-    `    ${c.cyan}exis init${c.reset}             Initialize a project in current directory`
+    `    ${c.cyan}exisjs doctor${c.reset}           Run project health and environment diagnostics`
   )
   console.log(
-    `    ${c.cyan}exis exports${c.reset}          List all available framework exports`
+    `    ${c.cyan}exisjs info${c.reset}             Show environment info`
   )
   console.log(
-    `    ${c.cyan}exis generate <type>${c.reset}  Scaffold a new feature`
+    `    ${c.cyan}exisjs init${c.reset}             Initialize a project in current directory`
+  )
+  console.log(
+    `    ${c.cyan}exisjs exports${c.reset}          List all available framework exports`
+  )
+  console.log(
+    `    ${c.cyan}exisjs generate <type>${c.reset}  Scaffold a new feature`
+  )
+  console.log()
+  console.log(
+    `${c.dim}  (Short alias '${c.cyan}exis${c.dim}' is also available)${c.reset}`
   )
   console.log()
   process.exit(0)

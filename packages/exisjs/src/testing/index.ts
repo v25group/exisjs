@@ -225,6 +225,15 @@ export function createTestContext(appInput: any): TestApp {
       await app.onStartHook(app)
     }
 
+    try {
+      const { DatabaseManager } = await import('../database/lifecycle')
+      if (DatabaseManager.size > 0) {
+        await DatabaseManager.connectAll()
+      }
+    } catch {
+      // ignore
+    }
+
     // Wait for Mongoose to finish connecting to prevent node:test race conditions
     // where tests finish faster than the DB connection, causing node:test to cancel them.
     try {

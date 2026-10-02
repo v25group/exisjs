@@ -9,6 +9,110 @@ import { getFormattedTime } from '../../utils/time'
 import { loadEnv } from '../../config/env'
 import { loadConfig } from '../../config/config'
 
+export const DEFAULT_WATCH_IGNORED: (string | RegExp)[] = [
+  // Dotfiles and dotfolders (.git, .vscode, .idea, etc.) except .env
+  /(^|[/\\])\.(?!env)/,
+  /(^|[/\\])node_modules([/\\]|$)/,
+  /(^|[/\\])\.exis([/\\]|$)/,
+  /(^|[/\\])dist([/\\]|$)/,
+  /(^|[/\\])build([/\\]|$)/,
+  /(^|[/\\])out([/\\]|$)/,
+  /(^|[/\\])\.turbo([/\\]|$)/,
+  /(^|[/\\])\.next([/\\]|$)/,
+  /(^|[/\\])\.cache([/\\]|$)/,
+  // Lock files
+  /(^|[/\\])(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i,
+  // Tests & Coverage
+  /(^|[/\\])(tests?|coverage|__tests__|\.nyc_output)([/\\]|$)/i,
+  /\.(test|spec)\.[tj]sx?$/i,
+  // Generated types
+  /exis\.d\.ts$/,
+  /\.d\.ts$/,
+  // Runtime data, storage, downloads, artifacts, uploads, logs, temp dirs
+  /(^|[/\\])(downloads|storage|uploads|tmp|temp|logs|data|fixtures|reports|artifacts|public)([/\\]|$)/i,
+  // Non-source & runtime artifact file extensions
+  /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
+  /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
+  /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
+  /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|ogg)$/i, // media files
+  /\.(pdf|docx?|xlsx?|pptx?|csv|tsv)$/i, // documents & spreadsheets
+  /\.(md|mdx|txt|rst|adoc)$/i, // markdown & plain text documentation
+]
+
+export const RELOADABLE_EXTENSIONS = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+])
+
+export const RELOADABLE_CONFIG_FILES = new Set([
+  'tsconfig.json',
+  'package.json',
+  'exis.config.ts',
+  'exis.config.js',
+  'exis.config.mjs',
+  'exis.config.cjs',
+])
+
+export function shouldReloadOnFile(
+  file: string,
+  userIgnored: (string | RegExp)[] = [],
+  customExtensions?: string[]
+): boolean {
+  if (!file) return false
+
+  const normalized = file.replace(/\\/g, '/')
+  const baseName = path.basename(normalized)
+  const ext = path.extname(normalized).toLowerCase()
+
+  // 1. Check user custom ignores
+  for (const pattern of userIgnored) {
+    if (typeof pattern === 'string') {
+      if (normalized.includes(pattern) || baseName === pattern) return false
+    } else if (pattern instanceof RegExp && pattern.test(normalized)) {
+      return false
+    }
+  }
+
+  // 2. Check default ignored patterns
+  for (const regex of DEFAULT_WATCH_IGNORED) {
+    if (typeof regex !== 'string' && regex.test(normalized)) return false
+  }
+
+  // 3. Environment files (.env, .env.local, .env.development, etc.)
+  if (baseName === '.env' || baseName.startsWith('.env.')) {
+    return true
+  }
+
+  // 4. Reloadable config files
+  if (RELOADABLE_CONFIG_FILES.has(baseName)) {
+    return true
+  }
+
+  // 5. Custom allowed extensions if specified by user
+  if (customExtensions && customExtensions.length > 0) {
+    const extSet = new Set(
+      customExtensions.map((e) =>
+        e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`
+      )
+    )
+    return extSet.has(ext)
+  }
+
+  // 6. Source file extensions
+  if (RELOADABLE_EXTENSIONS.has(ext)) {
+    // Avoid re-triggering for declaration files like index.d.ts
+    if (normalized.endsWith('.d.ts')) return false
+    return true
+  }
+
+  // Any other file (e.g. .csv, .xlsx, .md, .txt, .json data file) is ignored
+  return false
+}
+
 interface DevOptions {
   port?: string
   host?: string
@@ -335,7 +439,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   let pendingRestart = false
   let reloadDebounceTimer: NodeJS.Timeout | null = null
   const queuedChangedFiles = new Set<string>()
-  const RELOAD_DEBOUNCE_MS = 250
+  const watchConfig = (userConfig as any).watch || {}
+  const devConfig = userConfig.dev || {}
+  const userIgnored = [
+    ...(watchConfig.ignore || []),
+    ...(devConfig.ignored || []),
+  ]
+  const customExtensions = watchConfig.extensions || devConfig.extensions
+  const RELOAD_DEBOUNCE_MS =
+    watchConfig.debounceMs ?? devConfig.debounceMs ?? 250
   const RELOAD_TIMEOUT_MS = 3000
 
   async function killChildGracefully(): Promise<void> {
@@ -519,10 +631,39 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   if (runner.needsManualWatch && !options._disableWatch) {
     const chokidar = await importChokidar()
     if (chokidar) {
-      const devConfig = userConfig.dev || {}
-      const watchPaths =
-        devConfig.watch && devConfig.watch.length > 0 ? devConfig.watch : [cwd]
-      const userIgnored = devConfig.ignored || []
+      const configuredWatchPaths = watchConfig.paths || devConfig.watch || []
+
+      let watchPaths: string[]
+      if (configuredWatchPaths.length > 0) {
+        watchPaths = configuredWatchPaths
+      } else {
+        const srcExists = fs.existsSync(path.join(cwd, 'src'))
+        const httpExists = fs.existsSync(path.join(cwd, 'http'))
+        if (srcExists || httpExists) {
+          const candidates = [
+            srcExists ? 'src' : '',
+            httpExists ? 'http' : '',
+          ].filter(Boolean)
+          watchPaths = [
+            ...candidates.map((d) => path.join(cwd, d)),
+            ...[
+              'exis.config.ts',
+              'exis.config.js',
+              'exis.config.mjs',
+              'exis.config.cjs',
+              'tsconfig.json',
+              '.env',
+              '.env.local',
+              '.env.development',
+              'package.json',
+            ]
+              .map((f) => path.join(cwd, f))
+              .filter((f) => fs.existsSync(f)),
+          ]
+        } else {
+          watchPaths = [cwd]
+        }
+      }
 
       watcher = chokidar.watch(watchPaths, {
         cwd,
@@ -530,27 +671,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         usePolling: devConfig.usePolling ?? process.platform === 'win32',
         interval: devConfig.interval ?? 100,
         binaryInterval: devConfig.binaryInterval ?? 300,
-        ignored: [
-          // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])\.(?!env)/, // ignore dotfiles (.git, .vscode, .idea, etc.) except .env
-          /node_modules/,
-          /\.exis/,
-          /dist/,
-          /build/,
-          /\.turbo/,
-          /\.next/,
-          /\.cache/,
-          /(^|[/\\])(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i,
-          // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])(tests?|coverage|__tests__)/, // ignore test folders
-          /\.(test|spec)\.[tj]sx?$/, // ignore test files
-          /exis\.d\.ts$/,
-          /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
-          /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
-          /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
-          /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|pdf|docx?|xlsx?|pptx?)$/i, // media & binary docs
-          ...userIgnored,
-        ],
+        ignored: [...DEFAULT_WATCH_IGNORED, ...userIgnored],
         awaitWriteFinish: {
           stabilityThreshold: 200,
           pollInterval: 100,
@@ -571,21 +692,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         )
       })
 
-      watcher.on('all', async (eventName: string, file: string) => {
-        if (
-          !file ||
-          /(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i.test(
-            file
-          ) ||
-          /\.(test|spec)\.[tj]sx?$/i.test(file) ||
-          // eslint-disable-next-line no-useless-escape
-          /(^|[\/\\])(tests?|coverage|__tests__|\.git|\.exis|node_modules|dist|build|\.turbo|\.next|\.cache)/i.test(
-            file
-          ) ||
-          /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso|bak|tmp|temp|swp|swo|lock|pid|log|sqlite|sqlite3|db|png|jpe?g|gif|svg|ico|webp|pdf)$/i.test(
-            file
-          )
-        ) {
+      watcher.on('all', async (_eventName: string, file: string) => {
+        if (!shouldReloadOnFile(file, userIgnored, customExtensions)) {
           return
         }
         scheduleReload(file)

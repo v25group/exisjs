@@ -64,6 +64,43 @@ describe('Database Lifecycle & Manager', () => {
     expect(health.databases['db-down'].status).toBe('disconnected')
   })
 
+  it('supports healthCheck callback alias alongside isHealthy', async () => {
+    DatabaseManager.clear()
+
+    registerDatabase({
+      name: 'prisma-pg',
+      connect: () => {},
+      disconnect: () => {},
+      healthCheck: async () => true,
+    })
+
+    const health = await DatabaseManager.checkHealth()
+    expect(health.healthy).toBe(true)
+    expect(health.databases['prisma-pg'].status).toBe('connected')
+  })
+
+  it('automatically connects registered databases during defineApp boot sequence', async () => {
+    DatabaseManager.clear()
+    let autoConnected = false
+
+    const { defineApp } = await import('../src/server/define')
+    const testDef = defineApp({
+      onStart() {
+        registerDatabase({
+          name: 'auto-boot-db',
+          connect: async () => {
+            autoConnected = true
+          },
+          disconnect: async () => {},
+        })
+      },
+    })
+
+    const bootedApp = await testDef.boot()
+    expect(autoConnected).toBe(true)
+    await bootedApp.close()
+  })
+
   it('runs disconnectAll on all registered databases', async () => {
     DatabaseManager.clear()
     let disconnected = false

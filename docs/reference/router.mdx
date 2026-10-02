@@ -335,7 +335,50 @@ The response object supports universal streaming with backpressure management ac
 
 ---
 
-## 4. `AppRouter` Client Manifest Contract
+## 4. Boundaries & Folder-Scoped Pipelines (`boundary.ts`)
+
+ExisJS introduces **Boundaries** (`boundary.ts`) to manage folder-scoped middleware, CORS policies, security probes, guards, interceptors, and default headers without having to wire them manually across every route file.
+
+### How Boundaries Work
+
+Place a `boundary.ts` file in any route directory (e.g., `src/http/boundary.ts` or `src/http/api/v1/boundary.ts`):
+
+```typescript filename="src/http/api/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { authGuard } from '../../guards/auth'
+
+export default defineBoundary({
+  // Applied to all routes in src/http/api/* and subdirectories
+  cors: {
+    origin: 'https://app.example.com',
+    credentials: true,
+  },
+  guards: [authGuard],
+  headers: {
+    'X-API-Version': 'v1',
+  },
+  // Exclude public endpoints from this boundary's pipeline
+  exclude: ['/api/health', '/api/public/*'],
+})
+```
+
+### Cascading & Precedence Rules
+
+When route slices are nested in subdirectories (e.g. `src/http/boundary.ts` -> `src/http/api/boundary.ts` -> `src/http/api/users/route.ts`), ExisJS evaluates boundary configurations using the following rules:
+
+1. **Middlewares, Guards, Filters, & Interceptors (Cascading / Additive)**:
+   - Evaluated **top-down** from parent boundary -> child boundary -> route-level controller.
+2. **CORS Configuration (Innermost Precedence)**:
+   - **Route-Level `cors`** (in `route.ts` / `controller({ cors: ... })`) overrides any boundary CORS.
+   - **Child Boundary `cors`** (in `src/http/api/boundary.ts`) overrides parent boundary `cors` (in `src/http/boundary.ts`).
+   - **Parent Boundary `cors`** applies if no child boundary or route overrides it.
+   - **Global `app.options.cors`** acts as the root fallback.
+3. **Response Headers (Deep Merge with Child Precedence)**:
+   - Headers defined in child boundaries or route definitions overwrite identical header keys from parent boundaries.
+
+---
+
+## 5. `AppRouter` Client Manifest Contract
 
 ExisJS generates a compile-time route manifest in `.exis/types.d.ts` and `.exis/types/index.d.ts`:
 
@@ -343,5 +386,6 @@ ExisJS generates a compile-time route manifest in `.exis/types.d.ts` and `.exis/
 - `AppRouterTree`: Hierarchical dot-notation tree mapping nested folder paths (`users: { ':id': ... }`) for `@exisjs/fetch`'s `createClient<AppRouter>()`.
 - `AppRouter`: Combined intersection type `AppRouterPaths & AppRouterTree`.
 - `RouteDefinition.__type`: Phantom type property on every route definition preserving exact inferred return types, DTO schemas, and Drizzle/Prisma models.
+
 
 

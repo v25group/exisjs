@@ -537,6 +537,50 @@ export default controller({
 })
 ```
 
+### Route-Level CORS Overrides
+
+Routes can also override CORS policies defined in parent `boundary.ts` files or `exis.config.ts`. Route-level CORS has the **highest precedence** in the framework:
+
+#### Functional Paradigm
+```typescript filename="src/http/webhooks/stripe/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  // Open webhook endpoint to Stripe servers only, bypassing restrictive boundary CORS
+  webhook: route.post('/', {
+    cors: {
+      origin: 'https://hooks.stripe.com',
+      methods: ['POST'],
+    },
+    handle({ req }) {
+      return { received: true }
+    }
+  }),
+
+  // Disable CORS completely for internal endpoints
+  internalHealth: route.get('/health', {
+    cors: false,
+    handle() {
+      return { status: 'healthy' }
+    }
+  })
+})
+```
+
+#### Class-Based (OOP) Paradigm
+```typescript filename="src/http/webhooks/stripe/route.ts"
+import { Controller, Post, Cors } from 'exisjs/decorators'
+
+@Controller('/webhooks/stripe')
+export default class StripeWebhookController {
+  @Post('/')
+  @Cors({ origin: 'https://hooks.stripe.com', methods: ['POST'] })
+  handleWebhook() {
+    return { received: true }
+  }
+}
+```
+
 ### Query Pagination Schemas
 
 ExisJS provides the `tex.pagination()` primitive for declarative pagination, sorting, and ordering query parameters. String query parameters are automatically coerced into numbers:

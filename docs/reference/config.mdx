@@ -108,17 +108,19 @@ Here is the full list of options supported natively by the ExisJS configuration 
 
 ### Security & Middlewares
 
-- **`cors`** _(boolean | object)_: Enable and configure Cross-Origin Resource Sharing globally.
+- **`cors`** _(boolean | object)_: Enable and configure Cross-Origin Resource Sharing globally. Acts as the base configuration; can be overridden per directory via `boundary.ts` (`defineBoundary({ cors })`) or per endpoint via `route.ts` (`route.get({ cors })` / `@Cors()`).
 - **`helmet`** _(boolean | object)_: Enable strict security headers. Enabled by default.
 - **`logger`** _(boolean | object)_: Configure the efficient Pino request logger.
 - **`compression`** _(boolean | object)_: Enable gzip/brotli response compression.
 - **`etag`** _(boolean)_: Automatic ETag generation for HTTP conditional requests (default: `false` for dynamic API routes).
 - **`bodyLimit`** _(number)_: Maximum JSON/URL-encoded payload size in bytes (default: `10MB`).
 
-### Development Server & File Watcher (`dev`)
+### Development Server & File Watcher (`watch` & `dev`)
 
-- **`dev.watch`** _(string[])_: Custom directories or files to watch during development (default: `[cwd]`).
-- **`dev.ignored`** _((string | RegExp)[])_: Additional files, extensions, or regex patterns to ignore during hot reload.
+- **`watch.paths`** / **`dev.watch`** _(string[])_: Custom directories or files to watch during development (default: `['src', ...configFiles]`).
+- **`watch.ignore`** / **`dev.ignored`** _((string | RegExp)[])_: Additional files, extensions, or regex patterns to ignore during hot reload.
+- **`watch.extensions`** / **`dev.extensions`** _(string[])_: Explicit file extensions that trigger reloads (defaults to `['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']`).
+- **`watch.debounceMs`** / **`dev.debounceMs`** _(number)_: Debounce interval in ms before restarting the server (default: `250ms`).
 - **`dev.usePolling`** _(boolean)_: Enables chokidar polling fallback (default: `true` on Windows).
 - **`dev.interval`** _(number)_: Polling file system interval in milliseconds (default: `100`).
 

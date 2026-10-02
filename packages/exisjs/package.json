@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.11",
+  "version": "0.7.12",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -100,6 +100,7 @@
     "test": "cross-env NODE_ENV=test tsx --test --test-reporter=./src/testing/reporter.mts tests/**/*.test.ts"
   },
   "bin": {
+    "exis": "bin/exis.js",
     "exisjs": "bin/exis.js"
   },
   "license": "MIT",
