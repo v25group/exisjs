@@ -164,18 +164,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @exisjs/telemetry
-        run: |
-          VERSION=$(node -p "require('./packages/telemetry/package.json').version")
-          EXISTS=$(npm view @exisjs/telemetry@$VERSION version 2>/dev/null || echo "")
-          if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/telemetry --access public
-          else
-            echo "@exisjs/telemetry@$VERSION is already published. Skipping."
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Resolve Release Notes
         id: release_notes
         shell: bash
