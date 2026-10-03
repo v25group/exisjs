@@ -7,26 +7,34 @@ export interface BaseProvider {
   scope?: 'singleton' | 'request' | 'transient'
 }
 
-export interface ValueProvider<T> extends BaseProvider {
+export interface ValueProvider<T = any> extends BaseProvider {
+  provide?: ProviderToken<T>
   useValue: T
 }
 
-export interface FactoryProvider<T> extends BaseProvider {
-  useFactory: () => T | Promise<T>
+export interface FactoryProvider<T = any> extends BaseProvider {
+  provide?: ProviderToken<T>
+  useFactory: (...args: any[]) => T | Promise<T>
+  inject?: ProviderToken<any>[]
 }
 
-export interface ClassProvider<T> extends BaseProvider {
+export interface ClassProvider<T = any> extends BaseProvider {
+  provide?: ProviderToken<T>
   useClass: new (...args: any[]) => T
+}
+
+export interface ExistingProvider<T = any> extends BaseProvider {
+  provide?: ProviderToken<T>
+  useExisting: ProviderToken<T>
 }
 
 export type ClassConstructor<T = any> = new (...args: any[]) => T
 
-export type ProviderDefinition<T> =
-  | ValueProvider<T>
-  | FactoryProvider<T>
-  | ClassProvider<T>
-  | ClassConstructor<T>
-  | T
+export type CustomProvider<T = any> =
+  ValueProvider<T> | FactoryProvider<T> | ClassProvider<T> | ExistingProvider<T>
+
+export type ProviderDefinition<T = any> =
+  CustomProvider<T> | ClassConstructor<T> | T
 
 export const INJECT_METADATA = Symbol.for('exisjs:inject_tokens')
 export const PROPERTY_INJECT_METADATA = Symbol.for(
@@ -40,8 +48,29 @@ export class Container {
   private singletonCache = new Map<any, any>()
   private inFlight = new Set<any>()
 
-  provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): void {
-    const unwrappedToken = isForwardRef(token) ? token.forwardRef() : token
+  provide<T>(
+    tokenOrProvider: ProviderToken<T> | CustomProvider<T>,
+    provider?: ProviderDefinition<T>
+  ): void {
+    if (
+      provider === undefined &&
+      tokenOrProvider &&
+      typeof tokenOrProvider === 'object' &&
+      'provide' in tokenOrProvider
+    ) {
+      const customProv = tokenOrProvider as CustomProvider<T>
+      const rawToken = customProv.provide!
+      const unwrappedToken = isForwardRef(rawToken)
+        ? (rawToken as ForwardReference<T>).forwardRef()
+        : rawToken
+      this.providers.set(unwrappedToken, customProv)
+      this.singletonCache.delete(unwrappedToken)
+      return
+    }
+
+    const unwrappedToken = isForwardRef(tokenOrProvider)
+      ? (tokenOrProvider as ForwardReference<T>).forwardRef()
+      : tokenOrProvider
     this.providers.set(unwrappedToken, provider)
     this.singletonCache.delete(unwrappedToken)
   }
@@ -303,8 +332,20 @@ export class Container {
 
         if ('useValue' in provider) {
           resolvedValue = (provider as ValueProvider<T>).useValue
+        } else if ('useExisting' in provider) {
+          resolvedValue = this.resolve(
+            (provider as ExistingProvider<T>).useExisting,
+            requestCache
+          )
         } else if ('useFactory' in provider) {
-          resolvedValue = (provider as FactoryProvider<T>).useFactory()
+          const factoryProv = provider as FactoryProvider<T>
+          const injectTokens = Array.isArray(factoryProv.inject)
+            ? factoryProv.inject
+            : []
+          const injectedDeps = injectTokens.map((depToken) =>
+            this.resolve(depToken, requestCache)
+          )
+          resolvedValue = factoryProv.useFactory(...injectedDeps)
         } else if ('useClass' in provider) {
           resolvedValue = this.instantiateClass(
             (provider as ClassProvider<T>).useClass,

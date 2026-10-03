@@ -16,7 +16,11 @@ import type { ResolvedConfig } from '../config/config'
 import { createLogger, resolveLoggerConfig } from '../utils/logger'
 import { getLoggerInstance, isLoggerConfigured } from '../logger'
 import { Container } from '../di/container'
-import type { ProviderToken, ProviderDefinition } from '../di/container'
+import type {
+  ProviderToken,
+  ProviderDefinition,
+  CustomProvider,
+} from '../di/container'
 import { intercept } from '../middleware/interceptor'
 
 import type {
@@ -472,16 +476,42 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   // ─── Dependency Injection ───────────────────────────────────────────────────
 
-  provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): this {
-    this.container.provide(token, provider)
+  provide<T>(customProvider: CustomProvider<T>): this
+  provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): this
+  provide<T>(
+    tokenOrProvider: ProviderToken<T> | CustomProvider<T>,
+    provider?: ProviderDefinition<T>
+  ): this {
+    if (
+      provider === undefined &&
+      tokenOrProvider &&
+      typeof tokenOrProvider === 'object' &&
+      'provide' in tokenOrProvider
+    ) {
+      this.container.provide(tokenOrProvider as any)
+      const targetClass = (tokenOrProvider as any).useClass
+      if (targetClass) {
+        this._scheduleProviderCronJobs(targetClass)
+      }
+      return this
+    }
+
+    this.container.provide(tokenOrProvider as any, provider as any)
 
     // Auto-schedule @Cron, @Interval, @TimeoutTask if present on provider class
     const targetClass =
-      typeof token === 'function'
-        ? token
+      typeof tokenOrProvider === 'function'
+        ? tokenOrProvider
         : typeof provider === 'function'
           ? provider
           : (provider as any)?.useClass
+    if (targetClass) {
+      this._scheduleProviderCronJobs(targetClass)
+    }
+    return this
+  }
+
+  private _scheduleProviderCronJobs(targetClass: any): void {
     const CRON_REGISTRY = Symbol.for('exisjs:cron_jobs')
     if (targetClass && targetClass.prototype?.[CRON_REGISTRY]) {
       const decoratedJobs = targetClass.prototype[CRON_REGISTRY]
@@ -505,7 +535,6 @@ export class App<TRoutes extends Record<string, any> = {}> {
         }
       }
     }
-    return this
   }
 
   resolve<T>(token: ProviderToken<T>, requestCache?: Map<any, any>): T {
@@ -580,14 +609,16 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
     if (this.options.plugins) {
       for (const plugin of this.options.plugins) {
-        if (!this.hasPlugin(plugin.name)) {
+        const pluginName =
+          (plugin as any).name || (plugin as any).id || 'anonymous'
+        if (!this.hasPlugin(pluginName)) {
           // We can't await inside sync constructor easily, but plugins are usually sync in register.
           // For async plugins in config, they should be loaded before app starts.
           // App.register is async, so we'll push the promise and warn if it's not awaited
           this.register(plugin).catch((err) =>
             this.log.error(
-              { err, plugin: plugin.name },
-              `Failed to register plugin ${plugin.name} from config`
+              { err, plugin: pluginName },
+              `Failed to register plugin ${pluginName} from config`
             )
           )
         }

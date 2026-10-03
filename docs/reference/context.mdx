@@ -1,179 +1,270 @@
 ---
-title: "Context & Requests"
-description: "API Reference for ExisJS Context, Requests, and Async Hooks."
+title: "exisjs/context"
+description: "API Reference for ExisJS AsyncLocalStorage request context, getRequest, getResponse, getContext, setContext, and after() lifecycle callbacks."
+nextUrl: "/docs/reference/cron"
+nextTitle: "Cron Reference"
 ---
 
-# Context & Requests
+# `exisjs/context`
 
-ExisJS leverages Node.js `AsyncLocalStorage` to provide request-scoped state without needing to manually pass request objects down through your entire service layer. This enables globally accessible contextual data anywhere in your application lifecycle.
+The `exisjs/context` primitives are built on Node.js `AsyncLocalStorage` (`node:async_hooks`). They provide request-scoped contextual state across asynchronous call stacks without manual parameter passing through deep service, repository, or DataLoader layers.
 
 ---
 
-## Global Request & Response
+## Module Exports
 
-In deeply nested utilities (like DataLoaders or generic services), it is often cumbersome to pass the `req` object through every function call. ExisJS allows you to pull the active HTTP Request and Response objects directly from the asynchronous context.
+Context functions are accessible from `exisjs/router` and `exisjs/app`:
 
-### `getRequest()`
+```typescript
+import {
+  getContext,
+  setContext,
+  getRequest,
+  getResponse,
+  after,
+} from 'exisjs/router'
 
-Returns the active ExisJS `Request` object.
-
-```typescript filename="src/loaders/index.ts"
-import { defineLoaders, Dataloader } from 'exisjs/dataloader'
-import { getRequest } from 'exisjs/router'
-
-export const { loaderMiddleware, getLoaders } = defineLoaders({
-  user: () => new Dataloader(
-    async (keys: readonly string[]) => {
-      // Access the request deep inside the dataloader!
-      const req = getRequest()
-      console.log(`Batch fetching users for RequestId: ${req.requestId}`)
-      
-      return keys.map(key => db.users.find(key))
-    }
-  )
-})
-```
-
-### `getResponse()`
-
-Returns the active ExisJS `Response` object.
-
-```typescript filename="src/utils/auth.ts"
-import { getResponse } from 'exisjs/router'
-
-export function forceLogout() {
-  const res = getResponse()
-  res.clearCookie('session_id')
-}
-```
-
-### `getActiveApp()`
-
-Returns the active ExisJS `App` instance processing the request. This is useful for resolving dependencies or accessing the application logger from deep within a service.
-
-```typescript filename="src/services/billing.ts"
-import { getActiveApp } from 'exisjs/app'
-
-export function processRefund(transactionId: string) {
-  const app = getActiveApp()
-  const stripe = app.resolve('StripeClient')
-  
-  app.log.info(`Processing refund for ${transactionId}`)
-  return stripe.refunds.create({ charge: transactionId })
-}
+import { getActiveApp, getApp } from 'exisjs/app'
+import type { Request, Response } from 'exisjs/router'
 ```
 
 ---
 
-## Async Context API
-
-The core context API allows you to read and write arbitrary state associated with the current HTTP request. 
-
-### `setContext(key, value)`
-
-Sets a value in the current request's state object. This is typically used by middleware to attach parsed data, user sessions, or tenant IDs.
-
-```typescript filename="src/middleware/tenant.ts"
-import { setContext } from 'exisjs/router'
-
-export async function tenantMiddleware(req, res, next) {
-  const tenantId = req.headers['x-tenant-id']
-  
-  // Store the tenant ID in the async context
-  setContext('tenantId', tenantId)
-  next()
-}
-```
+## API Reference
 
 ### `getContext<T>()`
 
-Retrieves the current request's state object.
+Retrieves the mutable request state dictionary stored in the active asynchronous execution context.
 
-```typescript filename="src/services/database.ts"
+```typescript
+function getContext<T = Record<string, any>>(): T
+```
+
+#### Returns
+
+| Type | Description |
+| :--- | :--- |
+| `T` | The typed request state object attached to the current asynchronous execution context. |
+
+#### Throws
+
+Throws an `Error` if invoked outside of an active HTTP request lifecycle.
+
+#### Example
+
+```typescript filename="src/services/tenant.service.ts"
 import { getContext } from 'exisjs/router'
 
-function getTenantDatabase() {
-  // Retrieve the state set by the middleware!
-  const state = getContext<{ tenantId: string }>()
-  
-  return new DatabaseConnection({ schema: state.tenantId })
+interface TenantState {
+  tenantId: string
+  userId: string
+  roles: string[]
+}
+
+export function getCurrentTenant(): string {
+  const state = getContext<TenantState>()
+  return state.tenantId
 }
 ```
 
 ---
 
-## Background Tasks
+### `setContext(key, value)`
 
-### `after(callback)`
+Stores a key-value entry into the current request state dictionary.
 
-Queues a function to execute in the background **after** the response has been completely sent to the client. This is the perfect place to put non-blocking tasks like sending welcome emails, flushing analytics, or writing audit logs.
+```typescript
+function setContext(key: string, value: any): void
+```
 
-```typescript filename="src/http/users/route.ts"
-import { controller, route } from 'exisjs/router'
-import { after } from 'exisjs/router'
-import { tex } from 'exisjs/validator'
+#### Parameters
 
-export default controller({
-  createUser: route.post('/', {
-    body: tex.object({ email: tex.email() }),
-    async handle({ body }) {
-      
-      // Respond to the client immediately
-      after(async () => {
-        // This runs after the client has received the HTTP response
-        await emailService.sendWelcome(body.email)
-      })
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `key` | `string` | The state key identifier. |
+| `value` | `any` | The value to store in the context. |
 
-      return { success: true, email: body.email }
-    }
+#### Example
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { setContext } from 'exisjs/router'
+
+export default defineBoundary({
+  async handle({ req, next }) {
+    const tenantId = (req.headers['x-tenant-id'] as string) || 'default'
+    setContext('tenantId', tenantId)
+    return next()
+  },
+})
+```
+
+---
+
+### `getRequest()`
+
+Retrieves the active HTTP `Request` object from the asynchronous execution context.
+
+```typescript
+function getRequest(): Request
+```
+
+#### Returns
+
+| Type | Description |
+| :--- | :--- |
+| `Request` | The current request instance containing `headers`, `params`, `query`, `body`, `ip`, and contextual properties. |
+
+#### Example
+
+```typescript filename="src/loaders/user.loader.ts"
+import { Dataloader } from 'exisjs/dataloader'
+import { getRequest } from 'exisjs/router'
+
+export const userLoader = new Dataloader(async (userIds: readonly string[]) => {
+  const req = getRequest()
+  const traceId = req.headers['x-trace-id']
+
+  return db.users.findMany({
+    where: { id: { in: [...userIds] } },
+    metadata: { traceId },
   })
 })
 ```
 
-
-> [!NOTE]
-> Tasks queued with `after()` do not block the HTTP request. If the task throws an error, it will be logged by the application logger, but it will not crash the server or affect the already-completed client response.
-
 ---
 
-## Class-Based Context (OOP)
+### `getResponse()`
 
-If you are using the Object-Oriented paradigm, ExisJS provides dedicated decorators to inject the request and response directly into your controller methods. This removes the need to manually call `getRequest()` or `getResponse()` in the controller layer.
+Retrieves the active HTTP `Response` object from the asynchronous execution context.
 
-### `@Req()` & `@Res()`
+```typescript
+function getResponse(): Response
+```
 
-Inject the raw ExisJS request or response objects.
+#### Returns
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Req, Res } from 'exisjs/decorators'
-import type { Request, Response } from 'exisjs/router'
+| Type | Description |
+| :--- | :--- |
+| `Response` | The current response instance containing response headers, status codes, and streaming controls. |
 
-@Controller('/users')
-export default class UserController {
-  
-  @Get('/ip')
-  getIp(@Req() req: Request) {
-    return { ip: req.ip }
-  }
+#### Example
 
-  @Get('/logout')
-  logout(@Res() res: Response) {
-    res.clearCookie('session_id')
-    res.json({ success: true })
-  }
+```typescript filename="src/services/auth.service.ts"
+import { getResponse } from 'exisjs/router'
+
+export function clearAuthCookie(): void {
+  const res = getResponse()
+  res.clearCookie('access_token', {
+    path: '/',
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+  })
 }
 ```
 
-> [!TIP]
-> For deep services inside an OOP architecture, you can still seamlessly use `getContext()`, `getRequest()`, or `after()` from `exisjs/router` to access the async context without prop-drilling!
+---
+
+### `after(callback)`
+
+Registers an asynchronous callback to be executed in the background **after** the HTTP response has been sent to the client.
+
+```typescript
+function after(callback: () => void | Promise<void>): void
+```
+
+#### Parameters
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `callback` | `() => void \| Promise<void>` | Non-blocking function to execute after the response finishes. |
+
+#### Behavior
+
+- Callbacks run asynchronously without delaying the client's HTTP response.
+- If a callback rejects or throws an error, the error is caught and forwarded to the application logger (`logger.error`). It will not crash the Node.js process.
+- All queued callbacks are drained deterministically during request context cleanup.
+
+#### Example
+
+```typescript filename="src/http/orders/route.ts"
+import { controller, route } from 'exisjs/router'
+import { after } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
+import { sendOrderConfirmationEmail } from '../../services/mail'
+
+export default controller({
+  create: route.post('/', {
+    body: tex.object({
+      orderId: tex.string(),
+      email: tex.email(),
+    }),
+    async handle({ body }) {
+      const order = await db.orders.create({ data: body })
+
+      // Queue background job after client receives 201 response
+      after(async () => {
+        await sendOrderConfirmationEmail(order.id, body.email)
+      })
+
+      return { success: true, orderId: order.id }
+    },
+  }),
+})
+```
 
 ---
 
-## Context Isolation & Memory Leak Safety
+### `getActiveApp()` / `getApp()`
 
-In high-concurrency micro-benchmarks or long-lived streaming connections (SSE / WebSockets), holding references in `AsyncLocalStorage` without explicit teardown can lead to memory retention. ExisJS enforces a deterministic context cleanup lifecycle:
+Retrieves the active ExisJS `App` instance processing the current request lifecycle.
 
-1. **Deterministic Teardown (`cleanupContext`)**: When a response emits the `'finish'` or `'close'` event, ExisJS automatically executes all remaining `after()` callbacks, clears request-scoped dependency injection instances (`diCache`), purges the `state` dictionary, and unlinks circular references (`req = null!`, `res = null!`, `app = null!`).
-2. **`try / finally` Dispatch Boundary**: The router wraps every handler dispatch in a `try ... finally` boundary, guaranteeing that unhandled exceptions or rejected promises cannot leak state into subsequent async continuations.
-3. **Recycling Pool Memory Scrubbing**: When recycled `ExisRequest` and `ExisResponse` instances return to the internal object pool, their internal dependency injection caches and request metadata are scrubbed clean.
+```typescript
+function getActiveApp(): App
+function getApp(): App
+```
 
+#### Returns
+
+| Type | Description |
+| :--- | :--- |
+| `App` | The running application instance containing the DI container (`app.container`), logger (`app.log`), and configuration. |
+
+#### Example
+
+```typescript filename="src/services/audit.service.ts"
+import { getActiveApp } from 'exisjs/app'
+
+export function logAuditEvent(action: string, payload: Record<string, any>): void {
+  const app = getActiveApp()
+  app.log.info({ action, payload }, 'Audit event recorded')
+}
+```
+
+---
+
+## Lifecycle & Memory Safety
+
+ExisJS implements deterministic context lifecycle management to prevent memory retention in long-lived or high-concurrency environments:
+
+```
+Incoming Request
+      │
+      ▼
+ExecutionContext Initialized (AsyncLocalStorage.run)
+      │
+      ├─► Middleware & Boundaries (setContext)
+      ├─► Route Handler Execution (getRequest / getResponse / getContext)
+      ├─► Response Dispatched to Client
+      │
+      ▼
+cleanupContext Execution
+      ├─► Drain & execute all after() background callbacks
+      ├─► Clear request-scoped DI cache (diCache.clear())
+      ├─► Purge request state keys (delete state[key])
+      └─► Unlink circular references (req = null, res = null, app = null)
+```
+
+1. **Deterministic Teardown (`cleanupContext`)**: When a response emits the `'finish'` or `'close'` event, ExisJS executes all queued `after()` callbacks, empties the request-scoped dependency injection cache, and clears the context state.
+2. **Circular Reference Scrubbing**: Circular references between request, response, and app instances are set to `null` on cleanup to allow immediate V8 Garbage Collection.
+3. **Async Continuation Isolation**: Context state is isolated per request branch, preventing state leakage across concurrent HTTP requests.

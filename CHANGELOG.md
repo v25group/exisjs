@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.13`** | 2026-10-02 | Feature & Engine Upgrades | `tex.discriminatedUnion`, schema composition (`extend`, `merge`, `pick`, `omit`), field/schema `transform`, `tex.coerce` primitives, multi-validator OpenAPI 3.1 translation | [**Read v0.7.13 Notes →**](./changelog/v0.7/v0.7.13.md) |
 | **`v0.7.12`** | 2026-10-02 | Alignment & Patch | Automatic boot database connection (`DatabaseManager.connectAll()`), health check dual callback (`isHealthy` & `healthCheck`), docs sync, template update | [**Read v0.7.12 Notes →**](./changelog/v0.7/v0.7.12.md) |
 | **`v0.7.11`** | 2026-10-01 | Performance & DX | Static route fast path (>51k req/s), lazy AbortSignal, uWS adapter event parity, `timingSafeEqual`, configurable `dev` watcher, flexible `registerDatabase`, `create-exisjs` cron scaffolding | [**Read v0.7.11 Notes →**](./changelog/v0.7/v0.7.11.md) |
 | **`v0.7.10`** | 2026-09-27 | Feature & Resilience | Controller inheritance, property `@Inject`/`@Optional`, `forwardRef` circular DI, parameter transformation pipes, `@Global()` modules, DI parameter reflection, Mongoose/BSON safe serializer, query type coercion, error envelope standardization, CDN IP resolution | [**Read v0.7.10 Notes →**](./changelog/v0.7/v0.7.10.md) |
@@ -27,7 +28,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.12] - 2026-10-02
+## Current Release: [0.7.13] - 2026-10-02
+
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.13.md`**](./changelog/v0.7/v0.7.13.md).
+
+### Added
+- **`tex.discriminatedUnion` Polymorphic Schema Branching**: First-class polymorphic schema validation matching literal/enum discriminant tags across sync/async parsing with OpenAPI 3.1 `oneOf` and `discriminator` generation.
+- **`tex` Schema Composition (`extend`, `merge`, `pick`, `omit`)**: Added `.extend()`, `.merge()`, `.pick()`, and `.omit()` on `TexEngine` for clean modular schema building with full TypeScript inference.
+- **Field and Schema Data Transformations**: Added `TexType.prototype.transform(fn)` for post-validation field mappings and `TexEngine.prototype.transform(fn)` for schema output reshaping.
+- **Explicit Coercion Primitives (`tex.coerce.*`)**: Added `tex.coerce.number()`, `tex.coerce.boolean()`, `tex.coerce.date()`, and `tex.coerce.string()`.
+- **Universal Multi-Validator OpenAPI 3.1 Duck Typing**: `schemaToOpenApi()` seamlessly translates `TexEngine`, `TexType`, and external schema libraries like **Zod** (`ZodString`, `ZodNumber`, `ZodBoolean`, `ZodDate`, `ZodEnum`, `ZodLiteral`, `ZodArray`, `ZodOptional`, `ZodNullable`, `ZodUnion`, `ZodDiscriminatedUnion`, `ZodRecord`, `ZodEffects`, `ZodObject`), raw JSON Schema, and plain property maps with zero boilerplate.
+- **Field Documentation Metadata**: Added `.describe(description)` and `.example(value)` fluent methods on `TexType`.
+- **`@RawBody()` Controller Parameter & `req.buffer()`**: Added `@RawBody()` decorator for OOP controllers and `req.buffer()` on `ExisRequest` for high-throughput webhook payload streaming and verification.
+- **Dependency Injection Custom Providers & Contextual `inject()`**: First-class support for `useValue`, `useFactory` (with `inject` token dependencies), `useExisting` aliases, and `useClass` across `app.provide()`, `@Module()`, and `defineModule()`.
+
+### Fixed
+- **Controller Pipe Evaluation Precedence**: Fixed pipe resolution order in `controller-registrar.ts` so schema validation (`.parse()`) executes properly when passed to `@Body()`, `@Query()`, `@Param()`.
+- **Automatic Query/Param String Coercion**: Ensured string query/path parameters auto-coerce to primitives when schemas are attached as parameter pipes.
+- **TypeScript TS2300 Duplicate Identifier Fix**: Renamed internal example storage property in `TexType` to avoid collision with the fluent builder method `example()`.
+
+---
+
+## Previous Release: [0.7.12] - 2026-10-02
 
 > For full technical details and code examples, see [**`changelog/v0.7/v0.7.12.md`**](./changelog/v0.7/v0.7.12.md).
 

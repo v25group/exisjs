@@ -1,96 +1,268 @@
 ---
+title: 'Introduction'
+description: 'An overview of the ExisJS backend framework architecture, design philosophy, and core features.'
 nextUrl: '/docs/installation'
 nextTitle: 'Installation'
 ---
 
 # Introduction
 
-Exis (ExisJS) is a batteries-included backend framework for Node.js. It brings the file-based, convention-over-configuration developer experience of modern frontend meta-frameworks to backend API development: folders and files instead of manual wiring, with the essentials (routing, validation, queues, WebSockets, cron, DI) built in rather than assembled from a dozen separate packages.
+**ExisJS** is an opinionated web framework for building TypeScript backends on Node.js. It brings convention-over-configuration and automatic file-system routing to backend API development.
 
-Routing is handled by a radix-tree matcher, and the framework supports two ways to define the same routes: **Functional** (factory functions) and **Class-Based / OOP** (decorators, in the style of Angular/NestJS). Both compile to the same internal route representation, run through the same middleware pipeline, and can be mixed file-by-file in the same project. Pick whichever fits a given part of your codebase.
+Rather than manually assembling, wiring, and maintaining separate third-party libraries for routing, input validation, dependency injection, OpenAPI documentation, rate limiting, and background task scheduling, ExisJS provides a standard library integrated with a native Rust acceleration engine (`@exisjs/rs`).
 
-## Philosophy
+---
 
-Frontend frameworks like Next.js, Remix, and Nuxt improved developer productivity significantly through file-based routing and convention-over-configuration architecture. Good tools exist for Node.js backends too, but assembling them into a coherent application still typically means a lot of manual wiring and architectural boilerplate.
+## Why ExisJS?
 
-Exis aims to provide that out-of-the-box application architecture for backends: create a folder, get a route; create a `gateway.ts`, get folder-scoped middleware; import a module, get its providers registered. Job queues, WebSockets, cron scheduling, and schema validation are part of the standard library rather than bring-your-own dependencies. This means a new project starts with a coherent structure instead of a blank `index.js` and a pile of choices to make first.
+TypeScript backend development often faces two approaches:
 
-## Installation
+1. **Micro-frameworks (Express, Fastify)**: Require developers to manually select, wire, and maintain middleware packages for validation, OpenAPI schemas, dependency injection, and security headers. Over time, projects diverge in structure and maintenance overhead increases.
+2. **Heavy enterprise frameworks**: Introduce deep class hierarchies, verbose configuration modules, and steep learning curves.
 
-The fastest way to start is the Exis CLI, which scaffolds a new project directory with the core files and a conventional base structure already in place. This is the recommended path for first-time users.
+ExisJS combines convention-based file routing, built-in standard modules, and native Rust primitives with support for both functional and object-oriented paradigms.
 
-<div className="my-6 max-w-lg">
-  <CopyCommand command="npm create exisjs@latest my-backend" />
-</div>
+---
 
-<Hint>
-  The CLI walks you through initial project setup (TypeScript config, import
-  aliases, and package manager selection: it detects npm, yarn, pnpm, or bun
-  automatically). See [Installation](/docs/installation) for the full list of
-  prompts and options.
-</Hint>
+## Architectural Pillars
 
-## Quick Start
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             ExisJS Application                              │
+│         Functional Paradigm         │        Class-Based (OOP) Paradigm     │
+│   controller(), route.get(), tex    │   @Controller(), @Get(), @Injectable  │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                          TypeScript HTTP Pipeline                           │
+│  Request Context (ExisRequest/Response) · Hierarchical Boundaries · Swagger │
+│        Rate Limiting · Helmet Headers · CSRF · Idempotency · Telemetry      │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ (N-API Direct Bindings with Fallback)
+┌──────────────────────────────────────▼──────────────────────────────────────┐
+│                       Native Rust Engine (@exisjs/rs)                       │
+│    NativeRadixTree Routing  │  LRU Memory Cache  │  Fast CIDR IP Filtering  │
+│    TexValidator Accelerator │  Safe Sanitization Body Parser                │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-Both paradigms are shown throughout these docs side by side. Pick whichever you're using, or mix them across your project.
+### 1. File-System Native Routing
+The file-system routing engine scans the `src/http` directory and compiles route paths into a native Rust radix tree (`NativeRadixTree`). Path parameter extraction and endpoint dispatching execute through native N-API bindings.
 
-### Functional API
+### 2. Dual-Paradigm Parity
+ExisJS provides feature parity across both functional and object-oriented paradigms. Both compile down to the same runtime execution pipeline:
+- **Functional**: `controller()`, `route.get()`, `route.post()`, `defineBoundary()`, `inject()`.
+- **Class-Based (OOP)**: `@Controller()`, `@Get()`, `@Post()`, `@Boundary()`, `@Injectable()`.
+
+### 3. Integrated Schema Validation & OpenAPI 3.1
+The built-in `tex` schema builder provides runtime type validation, parameter coercion, and automated OpenAPI 3.1 schema generation. Every schema defined on a route automatically surfaces in the interactive Swagger UI (`/docs`) and exports types for compile-time frontend client generation.
+
+### 4. Hierarchical Security & Error Boundaries
+Directory-based `boundary.ts` files allow you to declare scoped authentication guards, rate limits, CORS configurations, and error handlers that cascade down folder trees without manual middleware repetition.
+
+### 5. Resilient Native Fallbacks
+All native Rust bindings (`@exisjs/rs`) include pure TypeScript fallback implementations. If native binaries cannot load on an unsupported architecture, ExisJS automatically runs its pure TypeScript fallback implementations.
+
+---
+
+## Feature Matrix
+
+| Feature Area | ExisJS Built-In Capability | Benefit |
+| :--- | :--- | :--- |
+| **Routing** | File-system route discovery (`src/http/**/route.ts`) | No manual router mounting or path strings |
+| **Validation** | `tex` Schema Validator (Rust accelerated) | Fast parsing, zero-crash sanitization, automatic OpenAPI types |
+| **Documentation** | Automatic Swagger / OpenAPI 3.1 at `/docs` | Self-updating interactive documentation with zero manual sync |
+| **Traffic Control** | Native Token Bucket Rate Limiting & CIDR Filtering | Fast DoS prevention and client throttling |
+| **Security** | Security headers (`helmet`), CSRF, HPP, Body Sanitization | Secure defaults without installing separate packages |
+| **Dependency Injection** | Type-safe IoC container with circular ref resolution | Clean service decoupling with `@Injectable()` and `inject()` |
+| **Background Tasks** | In-process cron scheduler with drift correction | Scheduled jobs without external cron infrastructure |
+| **Observability** | Native OpenTelemetry integration (`exisjs/telemetry`) | Standardized traces, metrics, and structured Pino logging |
+
+---
+
+## Quickstart Comparison
+
+ExisJS allows you to choose the paradigm that best matches your team's conventions.
+
+### Functional Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
+import { tex } from 'exisjs/validator'
 
+// 1. Define runtime validation schema
+const CreateUserSchema = tex.object({
+  name: tex.string().min(2),
+  email: tex.string().email(),
+  role: tex.enum(['admin', 'member']).default('member'),
+})
+
+// 2. Export functional controller
 export default controller({
-  getUsers: route.get('/', {
-    handle(req) {
-      // Return a realistic response structure
+  // GET /users
+  listUsers: route.get('/', {
+    summary: 'List all active users',
+    handle: async () => {
+      return [
+        { id: 1, name: 'Alice', role: 'admin' },
+        { id: 2, name: 'Bob', role: 'member' },
+      ]
+    },
+  }),
+
+  // POST /users
+  createUser: route.post('/', {
+    summary: 'Create a new user',
+    body: CreateUserSchema,
+    handle: async ({ body }) => {
       return {
-        data: [
-          { id: 1, name: 'Alice' },
-          { id: 2, name: 'Bob' },
-        ],
-        total: 2,
+        id: Date.now(),
+        name: body.name,
+        email: body.email,
+        role: body.role,
       }
     },
   }),
 })
 ```
 
-### Class-Based (OOP) API
+---
+
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs'
+import { Controller, Get, Post, Body, ApiOperation } from 'exisjs/decorators'
+import { tex } from 'exisjs/validator'
 
+// 1. Define runtime validation schema & inferred type
+const CreateUserSchema = tex.object({
+  name: tex.string().min(2),
+  email: tex.string().email(),
+  role: tex.enum(['admin', 'member']).default('member'),
+})
+
+type CreateUserDto = typeof CreateUserSchema.infer
+
+// 2. Export class controller
 @Controller()
 export default class UsersController {
   @Get('/')
-  getUsers(@Req() req: Request) {
-    // Return a realistic response structure
+  @ApiOperation({ summary: 'List all active users' })
+  async listUsers() {
+    return [
+      { id: 1, name: 'Alice', role: 'admin' },
+      { id: 2, name: 'Bob', role: 'member' },
+    ]
+  }
+
+  @Post('/')
+  @ApiOperation({ summary: 'Create a new user' })
+  async createUser(@Body(CreateUserSchema) body: CreateUserDto) {
     return {
-      data: [
-        { id: 1, name: 'Alice' },
-        { id: 2, name: 'Bob' },
-      ],
-      total: 2,
+      id: Date.now(),
+      name: body.name,
+      email: body.email,
+      role: body.role,
     }
   }
 }
 ```
 
-Save this as `src/http/users/route.ts`, run `exis dev`, and `GET /users` will return your mocked users list.
+---
 
-## Adding to an existing project
+## The Request Lifecycle
 
-You can also add Exis to an existing Node.js project instead of scaffolding a new one:
+Every HTTP request dispatched through ExisJS follows a predictable, high-performance execution lifecycle:
 
-<div className="my-6 max-w-lg">
-  <CopyCommand command="npm install exisjs" />
-</div>
+```
+Incoming Request
+      │
+      ▼
+1. Native Radix Path Match (@exisjs/rs)
+      │
+      ▼
+2. CIDR IP Filter & Rate Limit Check
+      │
+      ▼
+3. Root Boundary (Global Middleware & CORS)
+      │
+      ▼
+4. Nested Folder Boundaries (Scoped Guards & Interceptors)
+      │
+      ▼
+5. Request Body Parsing & TexValidation
+      │
+      ▼
+6. Controller Handler Execution (Functional or Class Method)
+      │
+      ▼
+7. Response Envelope / Stream Serialization
+      │
+      ▼
+Client Response
+```
 
-In this case you'll set up the project structure yourself: an `exis.config.ts` at the project root and a `src/http` directory for your routes. See [Structure](/docs/structure) for the conventions the framework expects.
+---
 
-## What's next
+## Getting Started
 
-- [Installation](/docs/installation): CLI setup and project scaffolding in detail.
-- [Structure](/docs/structure): the folder conventions Exis expects and why.
-- [Routing](/docs/routing): how file-based routing, dynamic segments, and gateways work together.
+### Option 1: Create a New Project (Recommended)
+
+Use the interactive scaffolding CLI to create a configured ExisJS project:
+
+```bash
+npm create exisjs@latest my-backend
+cd my-backend
+npm run dev
+```
+
+The CLI configures TypeScript, builds the initial directory structure, and starts the development server at `http://localhost:4000`.
+
+### Option 2: Add to an Existing Project
+
+Install the framework into an existing Node.js project:
+
+```bash
+npm install exisjs
+```
+
+Create an application configuration file:
+
+```typescript filename="exis.config.ts"
+import type { ExisConfig } from 'exisjs/config'
+
+const config: ExisConfig = {
+  port: Number(process.env.PORT) || 4000,
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  },
+}
+
+export default config
+```
+
+Add your first endpoint in `src/http/health/route.ts`:
+
+```typescript filename="src/http/health/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  check: route.get('/', {
+    summary: 'Health check endpoint',
+    handle: () => ({ status: 'ok', uptime: process.uptime() }),
+  }),
+})
+```
+
+---
+
+## Next Steps
+
+Explore the documentation to learn more about developing with ExisJS:
+
+- **[Installation Guide](/docs/installation)**: CLI flags, system prerequisites, and TypeScript setup.
+- **[Project Structure](/docs/structure)**: Directory layout and architectural conventions.
+- **[Routing & Endpoints](/docs/routing)**: Dynamic parameters, catch-alls, and nested route groups.
+- **[Validation Guide](/docs/validation)**: Complete schema reference, data coercion, and custom rules.
+- **[Boundaries & Middleware](/docs/boundaries)**: Hierarchical middleware cascading and error boundaries.

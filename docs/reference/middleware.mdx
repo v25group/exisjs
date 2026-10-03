@@ -1,241 +1,318 @@
 ---
-title: "Middleware"
-description: "API Reference for ExisJS built-in Middleware functions."
+title: "exisjs/middleware"
+description: "API Reference for ExisJS built-in middleware: Helmet, CORS, Rate Limiting, File Uploads, Idempotency, CIDR IP Filtering, Compression, and Security Controls."
+nextUrl: "/docs/reference/context"
+nextTitle: "Context Reference"
 ---
 
-# Middleware (`exisjs/middleware`)
+# `exisjs/middleware`
 
-ExisJS ships with an optimized suite of core middleware. Rather than relying on heavy external dependencies, ExisJS implements security and utility middleware directly.
-
-All middlewares can be applied globally in `server.ts`, folder-wide in `boundary.ts`, or locally on specific controllers/routes.
-
----
-
-## How to Apply Middleware
-
-ExisJS provides first-class support for both Object-Oriented and Functional middleware application.
-
-**Class-Based (OOP)**
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Use } from 'exisjs/decorators'
-import { ipFilter } from 'exisjs/middleware'
-
-@Controller('/users')
-@Use(ipFilter({ allow: ['192.168.1.0/24'] })) // Applies to entire controller
-export default class UserController {
-  @Get('/stats')
-  getStats() {
-    return { users: 100 }
-  }
-}
-```
-
-**Functional**
-```typescript filename="src/http/users/route.ts"
-import { controller, route } from 'exisjs/router'
-import { ipFilter } from 'exisjs/middleware'
-
-export default controller({
-  middleware: [ipFilter({ allow: ['192.168.1.0/24'] })],
-
-  getStats: route.get('/stats', {
-    async handle() {
-      return { users: 100 }
-    }
-  })
-})
-```
+The `exisjs/middleware` module provides the built-in HTTP middleware pipeline for ExisJS. It includes native Rust-accelerated traffic controls, multipart upload handlers, security header suites, and request context enhancers.
 
 ---
 
-## Middleware Context Inference
-
-### `defineMiddleware<TContext>(fn)`
-
-Creates a strongly-typed middleware function that attaches custom typed properties (like `user`, `session`, or `tenantId`) to `req`. Downstream route handlers (`route.get`, `route.post`, etc.) automatically inherit and infer this context with full IDE autocomplete and zero manual type casts.
+## Module Exports
 
 ```typescript
-import { controller, route, defineMiddleware } from 'exisjs/router'
+import {
+  // Core & Security
+  cors,
+  helmet,
+  csrf,
+  hpp,
+  mongoSanitize,
+  blockSuspiciousProbes,
+  timingSafeEqual,
+  timeout,
+  routeTimeout,
 
-interface AuthContext {
-  user: { id: string; role: 'admin' | 'user'; email: string }
-}
+  // Traffic & Reliability
+  rateLimit,
+  idempotent,
+  dedupe,
+  ipFilter,
+  backpressure,
+  compression,
 
-const auth = defineMiddleware<AuthContext>((req, res, next) => {
-  req.user = { id: 'u1', role: 'admin', email: 'alex@example.com' }
-  next()
-})
+  // Multipart File Uploads
+  fileUpload,
+  fromExpress,
 
-export default controller({
-  profile: route.get('/profile', {
-    middlewares: [auth],
-    handle({ req, res }) {
-      // req.user has full autocomplete and strict typing:
-      return res.json({ id: req.user.id, role: req.user.role })
-    }
-  })
-})
+  // Utilities & Observability
+  requestId,
+  requestLogger,
+  serveStatic,
+  validate,
+  conditionalGet,
+} from 'exisjs/middleware'
+
+import type {
+  CorsConfig,
+  RateLimitOptions,
+  IdempotencyOptions,
+  IpFilterOptions,
+  FileUploadOptions,
+  FileUploadLimits,
+  UploadedFile,
+  BlockProbesOptions,
+  TimeoutOptions,
+  CompressionOptions,
+} from 'exisjs/middleware'
 ```
 
 ---
 
-## Security Middleware
+## 1. Security & Header Middlewares
 
 ### `helmet(options?)`
-Sets 14+ strict security headers (HSTS, CSP, XSS Protection, No Sniff, Frameguard) to protect your application.
+
+Sets standard HTTP response headers for protection against XSS, clickjacking, MIME sniffing, and protocol downgrades.
 
 ```typescript
-import { helmet } from 'exisjs/middleware'
-
-app.use(helmet())
+function helmet(options?: HelmetOptions): Handler
 ```
 
-### `csrf(options)`
-Implements the Signed Double Submit Cookie pattern for Cross-Site Request Forgery (CSRF) protection.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `contentSecurityPolicy` | `boolean \| object` | `false` | Configures Content Security Policy (`Content-Security-Policy`). |
+| `xFrameOptions` | `'DENY' \| 'SAMEORIGIN'` | `'SAMEORIGIN'` | Protects against clickjacking. |
+| `hsts` | `boolean \| HstsOptions` | `true` (in prod) | Strict Transport Security configuration. |
+| `noSniff` | `boolean` | `true` | Sets `X-Content-Type-Options: nosniff`. |
+| `xssFilter` | `boolean` | `true` | Sets `X-XSS-Protection: 1; mode=block`. |
 
-### `timeout(options?)`
-Automatically times out requests that exceed the specified duration, returning a `503 Service Unavailable` response (or custom status code).
+---
 
-- **Default**: `60000` (60 seconds)
-- **Options**:
-  - `ms` (`number`): Timeout duration in milliseconds.
-  - `statusCode` (`number`): Status code to respond with (default: `503`).
-  - `message` (`string`): Error message returned to the client.
-  - `exclude` (`(string | RegExp)[]`): Array of route paths or regex patterns to exempt from timeout checks.
+### `cors(config?)`
+
+Manages Cross-Origin Resource Sharing headers, preflight `OPTIONS` responses, and allowed credentials.
 
 ```typescript
-import { timeout } from 'exisjs/middleware'
-
-app.use(timeout({
-  ms: 60000,
-  exclude: ['/webhooks/*', '/ai/stream'],
-}))
+function cors(config?: CorsConfig): Handler
 ```
 
-Handlers can dynamically alter the active timeout using `req.setTimeout(ms)` or `req.clearTimeout()`.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `origin` | `string \| RegExp \| string[] \| boolean \| CorsOriginFn` | `'*'` | Allowed origin(s) or dynamic resolver function. |
+| `methods` | `string[]` | `['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD']` | Allowed HTTP methods. |
+| `allowedHeaders` | `string[]` | `['Content-Type', 'Authorization', 'Accept', 'Origin', ...]` | Allowed request headers. |
+| `exposedHeaders` | `string[]` | `[]` | Headers exposed to client scripts. |
+| `credentials` | `boolean` | `false` | Sets `Access-Control-Allow-Credentials: true`. |
+| `maxAge` | `number` | `86400` | Preflight cache lifetime in seconds. |
 
-### `fileUpload(options?)`
-First-party multipart form data parsing and file upload middleware.
+---
 
-- **Methods**:
-  - `fileUpload.single(fieldName, options?)`: Parses a single file into `req.file`.
-  - `fileUpload.array(fieldName, maxCount?, options?)`: Parses multiple files with the same field into `req.files` (`UploadedFile[]`).
-  - `fileUpload.fields([{ name, maxCount }])`: Parses multiple distinct fields into `req.files` (`Record<string, UploadedFile[]>`).
-  - `fileUpload.any(options?)`: Accepts any uploaded files.
-  - `fileUpload.none(options?)`: Accepts only text fields; rejects file uploads.
-- **Options**:
-  - `dest` (`string`): Directory path to save uploaded files to disk automatically.
-  - `maxBytes` (`number`): Maximum file size in bytes (shorthand for `limits.fileSize`).
-  - `mimeTypes` (`string[]`): Array of permitted MIME types (e.g. `['image/png', 'image/jpeg']`).
-  - `limits` (`{ fileSize?: number; files?: number }`): Detailed size and count limits.
+### `csrf(options?)`
+
+Enforces Cross-Site Request Forgery protection using the Signed Double-Submit Cookie pattern.
 
 ```typescript
+function csrf(options?: CsrfOptions): Handler
+```
+
+---
+
+### `blockSuspiciousProbes(options?)`
+
+Detects and drops malicious vulnerability scanners probing for sensitive assets (`.env`, `.git`, `wp-login.php`) before they hit route logic or flood log streams.
+
+```typescript
+function blockSuspiciousProbes(options?: BlockProbesOptions): Handler
+```
+
+---
+
+### `hpp(options?)`
+
+Protects against HTTP Parameter Pollution by normalizing repeated query parameters.
+
+```typescript
+function hpp(options?: HppOptions): Handler
+```
+
+---
+
+### `mongoSanitize(options?)`
+
+Strips `$` and `.` prefixes from request parameters and body fields to mitigate NoSQL injection vectors.
+
+```typescript
+function mongoSanitize(options?: MongoSanitizeOptions): Handler
+```
+
+---
+
+## 2. Traffic, Rate Limiting & Reliability
+
+### `rateLimit(options?)`
+
+In-memory off-heap rate limiter backed by native Rust acceleration (`NativeRateLimiter`).
+
+```typescript
+function rateLimit(options?: RateLimitOptions): Handler
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `windowMs` | `number` | `60000` (1 min) | Time window in milliseconds. |
+| `max` | `number` | `100` | Maximum allowed requests within the time window. |
+| `keyGenerator` | `(req: Request) => string` | `req => req.ip` | Custom partition key generator. |
+| `message` | `string \| object` | `'Too many requests'` | Response payload on rate limit breach. |
+| `statusCode` | `number` | `429` | HTTP status code for throttled requests. |
+
+---
+
+### `timeout(options?)` & `routeTimeout(msOrOptions)`
+
+Terminates long-running requests that exceed the specified threshold, returning `503 Service Unavailable`.
+
+```typescript
+function timeout(options?: TimeoutOptions): Handler
+function routeTimeout(msOrOptions: number | TimeoutOptions): Handler
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `ms` | `number` | `60000` | Timeout threshold in milliseconds. |
+| `statusCode` | `number` | `503` | Response status code upon timeout. |
+| `message` | `string` | `'Service Unavailable'` | Error message sent to client. |
+| `exclude` | `(string \| RegExp)[]` | `[]` | Path patterns exempt from timeout rules. |
+
+---
+
+### `idempotent(options?)`
+
+Caches responses against the `Idempotency-Key` HTTP header in off-heap native memory to prevent duplicate mutations.
+
+```typescript
+function idempotent(options?: IdempotencyOptions): Handler
+```
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `ttlMs` | `number` | `86400000` (24h) | Cache entry time-to-live in milliseconds. |
+| `header` | `string` | `'idempotency-key'` | Target HTTP request header name. |
+
+---
+
+### `dedupe(options?)`
+
+Prevents identical concurrent in-flight requests from being computed more than once simultaneously.
+
+```typescript
+function dedupe(options?: DedupeOptions): Handler
+```
+
+---
+
+### `ipFilter(options)`
+
+Applies CIDR-compatible IP allow-lists or deny-lists to restrict access to trusted networks.
+
+```typescript
+function ipFilter(options: IpFilterOptions): Handler
+```
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `allow` | `string[]` | Array of permitted IP addresses or CIDR blocks (e.g. `['10.0.0.0/8', '192.168.1.5']`). |
+| `deny` | `string[]` | Array of blocked IP addresses or CIDR blocks. |
+
+---
+
+### `backpressure(options?)`
+
+Monitors Node.js Event Loop lag in real-time, returning `503` when lag exceeds safe thresholds.
+
+```typescript
+function backpressure(options?: BackpressureOptions): Handler
+```
+
+---
+
+### `compression(options?)`
+
+Applies Gzip, Deflate, or Brotli compression to response streams when requested by the client `Accept-Encoding` header.
+
+```typescript
+function compression(options?: CompressionOptions): Handler
+```
+
+---
+
+## 3. Multipart File Uploads
+
+### `fileUpload`
+
+Streaming multipart/form-data upload middleware providing single, array, and field configurations.
+
+```typescript
+// Single file upload
+fileUpload.single(fieldName: string, options?: FileUploadOptions): Handler
+
+// Multiple files under the same field name
+fileUpload.array(fieldName: string, maxCount?: number, options?: FileUploadOptions): Handler
+
+// Multiple distinct fields
+fileUpload.fields(fields: { name: string; maxCount?: number }[], options?: FileUploadOptions): Handler
+
+// Any files accepted
+fileUpload.any(options?: FileUploadOptions): Handler
+
+// Text fields only
+fileUpload.none(options?: FileUploadOptions): Handler
+```
+
+#### `FileUploadOptions`
+
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `dest` | `string` | Target directory on disk to stream uploaded files to. |
+| `maxBytes` | `number` | Maximum allowed individual file size in bytes. |
+| `mimeTypes` | `string[]` | Permitted MIME types (e.g. `['image/png', 'image/jpeg']`). |
+| `limits` | `FileUploadLimits` | Detailed limits (`fileSize`, `files`, `fieldSize`, `fields`). |
+
+#### Example
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
 import { fileUpload } from 'exisjs/middleware'
 
-app.post('/avatar', fileUpload.single('avatar', {
-  maxBytes: 5 * 1024 * 1024,
-  mimeTypes: ['image/*'],
-}), (req, res) => {
-  const file = req.file // UploadedFile { filename, originalname, mimetype, size, buffer }
-  res.json({ success: true, filename: file.filename })
+export default controller({
+  uploadAvatar: route.post('/avatar', {
+    middleware: [fileUpload.single('avatar', {
+      maxBytes: 5 * 1024 * 1024,
+      mimeTypes: ['image/png', 'image/jpeg'],
+    })],
+    async handle({ req }) {
+      const file = req.file // UploadedFile { filename, originalname, mimetype, size, buffer }
+      return { success: true, filename: file.filename }
+    },
+  }),
 })
 ```
 
+---
+
 ### `fromExpress(middleware)`
-Seamlessly adapts standard Express/Connect middleware (such as `multer`) to run within the ExisJS pipeline.
+
+Adapts standard Express/Connect middleware to run within the ExisJS pipeline.
 
 ```typescript
 import { fromExpress } from 'exisjs/middleware'
-import multer from 'multer'
+import morgan from 'morgan'
 
-const upload = multer({ dest: './uploads' })
-
-app.post('/upload', fromExpress(upload.single('file')), (req, res) => {
-  res.json({ file: (req.raw as any).file })
-})
+app.use(fromExpress(morgan('combined')))
 ```
-
-### `hpp()`
-HTTP Parameter Pollution protection.
-
-### `dbSanitize(options?)`
-Sanitizes query and body payloads from NoSQL injection attempts.
 
 ---
 
-## Traffic & Reliability Middleware
+## 4. Utility Middlewares
 
-### `rateLimit(options?)`
-High-performance rate limiter running in-memory and off-heap via Rust native bindings (`NativeRateLimiter`).
+| Middleware | Signature | Description |
+| :--- | :--- | :--- |
+| `requestId()` | `() => Handler` | Injects a unique `X-Request-Id` into request and response headers. |
+| `requestLogger(options?)` | `(options?: LoggerConfig) => Handler` | Formats and logs request completion timings and status codes. |
+| `serveStatic(root, options?)` | `(root: string, options?: StaticOptions) => Handler` | Serves static assets from disk with caching headers and streaming backpressure. |
+| `conditionalGet()` | `() => Handler` | Enables ETag validation and `304 Not Modified` responses. |
+| `validate(schema)` | `(schema: ValidateSchema) => Handler` | Validates request parameters against a `TexEngine` schema. |
 
-> [!NOTE]
-> Core rate limiting is scoped to in-memory native execution. Distributed multi-instance Redis rate limiting moves to `@exisjs/cache`.
-
-```typescript
-import { rateLimit } from 'exisjs/middleware'
-
-app.use(rateLimit({
-  windowMs: 60000,
-  max: 100
-}))
-```
-
-### `timeout(options?)`
-Terminates long-running requests that exceed the specified threshold, responding with `503 Service Unavailable` (or custom status). Defaults to 60,000ms.
-
-```typescript
-import { timeout } from 'exisjs/middleware'
-
-app.use(timeout({
-  ms: 60000,
-  statusCode: 504,
-  message: 'Gateway Timeout',
-  exclude: ['/webhooks/*', '/ai/stream'],
-}))
-```
-
-### `routeTimeout(msOrOptions)`
-Applies an endpoint-specific timeout. If a global timeout is already active, dynamically overrides the timer for this route. If no global timeout exists, initializes an isolated timeout timer. Passing `0` disables timeouts for streaming/exports.
-
-```typescript
-import { routeTimeout } from 'exisjs/middleware'
-
-app.post('/heavy-task', routeTimeout(120000), (req, res) => { ... })
-```
-
-### `idempotent(options?)`
-Caches responses based on the `Idempotency-Key` header into off-heap native memory to prevent duplicate mutations.
-
-```typescript
-import { idempotent } from 'exisjs/middleware'
-
-export const handlePayment = [
-  idempotent({ ttlMs: 86400000 }),
-  async (req, res) => { ... }
-]
-```
-
-### `dedupe(options?)`
-Prevents duplicate identical in-flight requests from being computed simultaneously.
-
-### `backpressure(options?)`
-Monitors the Node.js Event Loop delay in real-time, shedding load when overloaded.
-
-### `ipFilter(options)`
-Fast CIDR-based IP whitelist/blacklist filter.
-
----
-
-## Utility Middleware
-
-### `cors(options?)`
-Cross-Origin Resource Sharing handler supporting preflight, dynamic origin matching, and credential headers.
-
-### `requestId()`
-Injects a unique `X-Request-Id` into every incoming request and outgoing response header.
-
-### `requestLogger(options?)`
-High-performance request logger powered by Pino.
-
-### `serveStatic(root, options?)`
-Static file server supporting streaming and caching headers.

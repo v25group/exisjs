@@ -1,25 +1,66 @@
 ---
-title: "Database"
-description: "API Reference for ExisJS Database Lifecycle & Transactions (exisjs/database)."
+title: "exisjs/database"
+description: "API Reference for ExisJS database lifecycle management, health monitoring, universal transactions, and ORM interoperability."
+nextUrl: "/docs/reference/logger"
+nextTitle: "Logger Reference"
 ---
 
-# Database (`exisjs/database`)
+# `exisjs/database`
 
-ExisJS provides a unified, database-agnostic lifecycle and transaction layer. It enables automatic connection management, multi-database health checks, graceful zero-downtime teardowns, and ORM-agnostic transaction runners.
+The `exisjs/database` module provides a database-agnostic lifecycle coordinator, health probe runner, universal ACID transaction executor, and connection pool configuration utilities.
 
 ---
 
-## 1. Lifecycle Management
+## Module Exports
 
-### `registerDatabase(app, options)` or `registerDatabase(options)`
+```typescript
+import {
+  registerDatabase,
+  DatabaseManager,
+  withTransaction,
+  modernUpdateOptions,
+  mongoPoolOptions,
+} from 'exisjs/database'
 
-Registers a database connection into the application lifecycle. Automatically coordinates `connect()` during server boot and `disconnect()` during graceful shutdown (`SIGTERM`, `SIGINT`, or `app.close()`).
+import type {
+  DatabaseRegistration,
+  DatabaseHealthInfo,
+  DatabaseHealthStatus,
+  TransactionOptions,
+  ModernUpdateOptions,
+  MongoPoolConfig,
+} from 'exisjs/database'
+```
 
-#### Options (`DatabaseRegistration`)
-- `name` (`string`): Unique identifier for the database connection (e.g. `'postgres'`, `'mongodb'`).
-- `connect` (`() => Promise<void> | void`): Async callback to establish connections and connection pools.
-- `disconnect` (`() => Promise<void> | void`): Async callback to close connections gracefully.
-- `isHealthy` / `healthCheck` (`() => Promise<boolean | DatabaseHealthInfo> | boolean | DatabaseHealthInfo`): Optional health check callback returning `true` / `false` or detailed health info (`{ status: 'connected' | 'disconnected' | 'error', latencyMs?, error?, details? }`).
+---
+
+## 1. Lifecycle & Health Coordination
+
+### `registerDatabase(appOrOptions, maybeOptions?)`
+
+Registers a database client into the application lifecycle, executing `connect()` on server start and `disconnect()` during graceful teardown (`SIGTERM`, `SIGINT`, or `app.close()`).
+
+```typescript
+function registerDatabase(
+  app: App,
+  registration: DatabaseRegistration
+): void
+
+function registerDatabase(
+  registration: DatabaseRegistration
+): void
+```
+
+#### `DatabaseRegistration` Interface
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `name` | `string` | Unique identifier for the database connection (e.g. `'postgres'`, `'mongo'`). |
+| `connect` | `() => Promise<void> \| void` | Asynchronous callback establishing client connection pools. |
+| `disconnect` | `() => Promise<void> \| void` | Asynchronous callback to safely terminate open sockets and pools. |
+| `healthCheck` / `isHealthy` | `() => Promise<boolean \| DatabaseHealthInfo> \| boolean \| DatabaseHealthInfo` | Optional callback returning health status boolean or detailed metrics. |
+
+#### Example: Prisma Lifecycle Registration
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -31,7 +72,7 @@ const prisma = new PrismaClient()
 export default exis({
   async onStart(app) {
     registerDatabase(app, {
-      name: 'prisma-postgres',
+      name: 'postgres',
       connect: async () => {
         await prisma.$connect()
       },
@@ -43,7 +84,7 @@ export default exis({
         return true
       },
     })
-  }
+  },
 })
 ```
 
@@ -51,45 +92,69 @@ export default exis({
 
 ### `DatabaseManager`
 
-Singleton registry managing all registered database adapters.
+Static singleton registry coordinating all registered database adapters.
 
-- `DatabaseManager.register(options)`: Registers a database adapter.
-- `DatabaseManager.connectAll()`: Connects all registered databases concurrently.
-- `DatabaseManager.disconnectAll()`: Gracefully disconnects all databases concurrently.
-- `DatabaseManager.checkHealth()`: Runs health checks across all registered databases and returns `{ healthy: boolean, databases: Record<string, DatabaseHealthInfo> }`.
-- `DatabaseManager.clear()`: Clears all registered database adapters (useful for test tear-downs).
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `register(db)` | `(db: DatabaseRegistration) => void` | Adds a database adapter to the manager. |
+| `connectAll()` | `() => Promise<void>` | Connects all registered database instances concurrently. |
+| `disconnectAll()` | `() => Promise<void>` | Closes all database connections gracefully using `Promise.allSettled`. |
+| `checkHealth()` | `() => Promise<{ healthy: boolean; databases: Record<string, DatabaseHealthInfo> }>` | Executes health checks across all registered databases and aggregates results. |
+| `clear()` | `() => void` | Clears all registered database adapters (useful for test tear-downs). |
 
-```typescript filename="src/http/health/route.ts"
-import { controller, route } from 'exisjs/router'
-import { DatabaseManager } from 'exisjs/database'
+#### Health Output Structures
 
-export default controller({
-  check: route.get('/health', async () => {
-    const health = await DatabaseManager.checkHealth()
-    return {
-      status: health.healthy ? 'ok' : 'degraded',
-      databases: health.databases,
-    }
-  })
-})
+```typescript
+export type DatabaseHealthStatus =
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'error'
+
+export interface DatabaseHealthInfo {
+  name: string
+  status: DatabaseHealthStatus
+  latencyMs?: number
+  error?: string
+  details?: Record<string, any>
+}
 ```
 
 ---
 
 ## 2. Universal Transaction Runner
 
-### `withTransaction(client, callback)`
+### `withTransaction(clientOrConnection, callback, options?)`
 
-A duck-typed transaction runner that coordinates database transaction lifecycles, commits, rollbacks, and session cleanups. Compatible with **Mongoose**, **Prisma**, and **Drizzle**.
+Executes operations within an ACID transaction. Automatically detects whether the supplied client is **Prisma**, **Drizzle**, **Knex**, **MongoDB**, or **Mongoose**, committing on completion and rolling back when errors occur.
 
-```typescript filename="src/services/transfer.ts"
+```typescript
+function withTransaction<T>(
+  clientOrConnection: any,
+  callback: (sessionOrTx: any) => Promise<T>,
+  options?: TransactionOptions
+): Promise<T>
+```
+
+#### `TransactionOptions`
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `maxRetries` | `number` | Maximum retry attempts for transient transaction errors. |
+| `timeoutMs` | `number` | Transaction execution timeout threshold in milliseconds. |
+| `readPreference` | `string` | MongoDB read preference (e.g. `'primary'`). |
+| `readConcern` | `string \| { level: string }` | Isolation read concern level. |
+| `writeConcern` | `{ w: number \| string; j?: boolean; wtimeout?: number }` | Transaction write acknowledgment settings. |
+
+#### Example: Mongoose Transaction
+
+```typescript
 import { withTransaction } from 'exisjs/database'
 import mongoose from 'mongoose'
 import { Account } from '@/models/Account'
 
 export async function transferFunds(fromId: string, toId: string, amount: number) {
   return withTransaction(mongoose, async (session) => {
-    // Session is automatically attached to MongoDB queries
     const sender = await Account.findByIdAndUpdate(
       fromId,
       { $inc: { balance: -amount } },
@@ -97,7 +162,6 @@ export async function transferFunds(fromId: string, toId: string, amount: number
     )
 
     if (!sender || sender.balance < 0) {
-      // Throwing an error automatically aborts the transaction and rolls back
       throw new Error('Insufficient funds')
     }
 
@@ -112,41 +176,59 @@ export async function transferFunds(fromId: string, toId: string, amount: number
 }
 ```
 
-Works identically with Prisma:
+#### Example: Prisma Transaction
+
 ```typescript
 import { withTransaction } from 'exisjs/database'
 import { prisma } from '@/lib/prisma'
 
-const result = await withTransaction(prisma, async (tx) => {
-  return tx.user.create({ data: { name: 'Alice' } })
+const user = await withTransaction(prisma, async (tx) => {
+  return tx.user.create({
+    data: { email: 'user@example.com' },
+  })
 })
 ```
 
 ---
 
-## 3. Mongoose 8/9 Interop & Pooling
+## 3. Mongoose Utilities
 
 ### `modernUpdateOptions(options?)`
 
-Maps deprecated Mongoose options (such as `{ new: true }`) to standard modern options (`{ returnDocument: 'after' }`), eliminating console warnings when upgrading to Mongoose 8 and 9.
+Maps legacy Mongoose options (such as `{ new: true }`) to standard modern options (`{ returnDocument: 'after' }`) to eliminate deprecation warnings in Mongoose 8 and 9.
+
+```typescript
+function modernUpdateOptions<T extends ModernUpdateOptions>(
+  options?: T
+): T & { returnDocument?: 'before' | 'after' }
+```
 
 ```typescript
 import { modernUpdateOptions } from 'exisjs/database'
 
-// Passes { returnDocument: 'after' } warning-free
-User.findByIdAndUpdate(id, { $set: updateData }, modernUpdateOptions())
+User.findByIdAndUpdate(id, { $set: updateData }, modernUpdateOptions({ new: true }))
 ```
 
-### `mongoPoolOptions(customOptions?)`
+---
 
-Returns pre-configured, production-hardened MongoDB connection pool settings:
+### `mongoPoolOptions(overrides?)`
+
+Generates production-hardened connection pool configuration defaults for MongoDB drivers and Mongoose.
 
 ```typescript
-import { mongoPoolOptions } from 'exisjs/database'
-import mongoose from 'mongoose'
-
-await mongoose.connect(process.env.MONGODB_URI!, mongoPoolOptions({
-  maxPoolSize: 100,
-  minPoolSize: 10,
-}))
+function mongoPoolOptions(
+  overrides?: MongoPoolConfig
+): MongoPoolConfig
 ```
+
+#### `MongoPoolConfig` Defaults
+
+| Property | Default | Description |
+| :--- | :--- | :--- |
+| `maxPoolSize` | `50` | Maximum socket connections maintained in the pool. |
+| `minPoolSize` | `5` | Minimum idle connections kept alive. |
+| `serverSelectionTimeoutMS` | `5000` | Connection attempt timeout threshold in ms. |
+| `socketTimeoutMS` | `45000` | Inactive socket timeout threshold in ms. |
+| `heartbeatFrequencyMS` | `10000` | Health check probe interval in ms. |
+| `autoIndex` | `false` (in prod) | Disables automatic index builds at runtime in production. |
+

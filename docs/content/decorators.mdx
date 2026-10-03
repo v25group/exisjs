@@ -1,36 +1,70 @@
+---
+title: "Decorators"
+description: "Reference guide for Object-Oriented decorators in ExisJS covering controllers, routing, parameters, pipes, middleware, security, background tasks, caching, transactions, OpenAPI, and JavaScript helpers."
+nextUrl: "/docs/requests"
+nextTitle: "Requests"
+---
+
 # Decorators
 
-ExisJS provides standard ECMAScript decorators for developers who prefer the Object-Oriented Programming (OOP) paradigm.
+ExisJS provides ECMAScript and TypeScript decorators for building backend applications in the **Object-Oriented Programming (OOP)** paradigm.
 
-Because ExisJS does not rely on reflection libraries like `reflect-metadata`, these decorators are fast, lightweight, and memory-efficient.
+Decorators attach metadata to classes and methods using JavaScript `Symbol` keys. They do not depend on external reflection packages such as `reflect-metadata`.
 
-All decorators can be imported directly from `exisjs/decorators`.
+Import decorators directly from `exisjs/decorators`:
+
+```typescript
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  Headers,
+  Injectable,
+  Use,
+  UseGuards,
+  UsePipes,
+  ParseIntPipe,
+  Cron,
+  Interval,
+  Cacheable,
+  Transactional
+} from 'exisjs/decorators'
+```
 
 ---
 
 ## 1. Application & Boundary Decorators
 
-ExisJS allows you to configure your root application and directory-scoped boundaries using decorators.
-
-### `@Server(config)`
-Used in your entry point (e.g. `src/http/server.ts`) to configure plugins and root providers in an OOP style:
+### `@Server(options)`
+Configures root providers, plugins, cron schedules, and lifecycle hooks on an application entry class:
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
 import type { App } from 'exisjs'
 
 @Server({
-  providers: [['Logger', { useValue: console }]]
+  providers: [['LOGGER_TOKEN', { useValue: console }]],
+  plugins: []
 })
 export default class RootServer {
   async onStart(app: App) {
     console.log('Server started')
   }
+
+  async onClose(app: App) {
+    console.log('Server stopping')
+  }
 }
 ```
 
-### `@Boundary(config)`
-Used inside any folder (e.g. `src/http/admin/boundary.ts`) to configure folder-scoped CORS, headers, exclusions, and DI providers:
+### `@Boundary(options)`
+Configures directory-scoped middleware chains, CORS policies, response headers, and route exclusions inside `boundary.ts`:
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { Boundary } from 'exisjs/decorators'
@@ -38,20 +72,20 @@ import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
 import { UnauthorizedError } from 'exisjs/error'
 
 @Boundary({
-  cors: { origin: 'https://admin.yourdomain.com', credentials: true },
+  cors: { origin: 'https://admin.example.com', credentials: true },
   headers: { 'X-Admin-Api-Version': '2.0' },
-  exclude: ['/admin/health'],
+  exclude: ['/admin/health']
 })
 export default class AdminBoundary {
-  // Chain step auto-detected by (req, res, next) signature
-  requireAuth(req: Request, res: Response, next: Next) {
+  // Middleware handler identified by (req, res, next) signature
+  requireApiKey(req: Request, res: Response, next: Next) {
     if (!req.headers['x-api-key']) {
-      throw new UnauthorizedError('Missing API key')
+      throw new UnauthorizedError('Missing admin API key')
     }
     next()
   }
 
-  // Request wrapper auto-detected by handle(ctx, next)
+  // Request wrapper identified by handle(ctx, next) signature
   async handle(ctx: BoundaryContext, next: Next) {
     const start = Date.now()
     const result = await next()
@@ -63,9 +97,10 @@ export default class AdminBoundary {
 
 ---
 
-## 2. Controllers & Routing
+## 2. Controller & Routing Decorators
 
-To map a class to a route prefix, use the `@Controller()` decorator. HTTP method decorators then map class methods to specific endpoints.
+### `@Controller(prefixOrOptions)`
+Registers a class as a route controller. Accepts a string path prefix or a configuration object:
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Put, Patch, Delete } from 'exisjs/decorators'
@@ -80,7 +115,7 @@ export default class UsersController {
 
   @Get('/:id', UserParamsSchema)
   async getUser() {
-    return { id: 1 }
+    return { id: 1, name: 'Alice' }
   }
 
   @Post('/', CreateUserSchema)
@@ -89,155 +124,324 @@ export default class UsersController {
   }
 
   @Delete('/:id')
-  async deleteUser() {}
+  async deleteUser() {
+    return { deleted: true }
+  }
 }
 ```
 
-### Available Method Decorators
-- `@Get(path?, schema?)`
-- `@Post(path?, schema?)`
-- `@Put(path?, schema?)`
-- `@Patch(path?, schema?)`
-- `@Delete(path?, schema?)`
-- `@Options(path?, schema?)`
-- `@Head(path?, schema?)`
-- `@Connect(path?, schema?)`
-- `@Trace(path?, schema?)`
-- `@All(path?, schema?)`
+### Routing Methods Table
+
+| Decorator | HTTP Method | Arguments | Description |
+| :--- | :--- | :--- | :--- |
+| `@Get(path?, schema?)` | `GET` | `path?: string`, `schema?: RouteSchema` | Maps handler to GET requests. |
+| `@Post(path?, schema?)` | `POST` | `path?: string`, `schema?: RouteSchema` | Maps handler to POST requests. |
+| `@Put(path?, schema?)` | `PUT` | `path?: string`, `schema?: RouteSchema` | Maps handler to PUT requests. |
+| `@Patch(path?, schema?)` | `PATCH` | `path?: string`, `schema?: RouteSchema` | Maps handler to PATCH requests. |
+| `@Delete(path?, schema?)` | `DELETE` | `path?: string`, `schema?: RouteSchema` | Maps handler to DELETE requests. |
+| `@Options(path?, schema?)` | `OPTIONS` | `path?: string`, `schema?: RouteSchema` | Maps handler to OPTIONS requests. |
+| `@Head(path?, schema?)` | `HEAD` | `path?: string`, `schema?: RouteSchema` | Maps handler to HEAD requests. |
+| `@All(path?, schema?)` | Any Verb | `path?: string`, `schema?: RouteSchema` | Catches any HTTP verb matching the path. |
+| `@Connect(path?, schema?)` | `CONNECT` | `path?: string`, `schema?: RouteSchema` | Maps handler to CONNECT requests. |
+| `@Trace(path?, schema?)` | `TRACE` | `path?: string`, `schema?: RouteSchema` | Maps handler to TRACE requests. |
+| `@Query(path?, schema?)` | `QUERY` | `path?: string`, `schema?: RouteSchema` | Maps handler to RFC QUERY requests. |
 
 ---
 
-## 3. Request Parameters
+## 3. Parameter Decorators
 
-Parameter decorators extract request properties and inject them directly into your method parameters:
+Parameter decorators extract values from the incoming request and pass them into method arguments:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Post, Body, Param, Headers, Req, Res } from 'exisjs/decorators'
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Query,
+  Headers,
+  Req,
+  Res,
+  Ip,
+  Session,
+  UploadedFile
+} from 'exisjs/decorators'
+import type { Request, Response, ExisFile } from 'exisjs'
 
 @Controller('/users')
 export default class UsersController {
-  @Post('/:id')
-  async update(
+  @Post('/:id/avatar')
+  async uploadAvatar(
     @Param('id') id: string,
-    @Body() payload: any,
+    @Query('quality') quality: string,
+    @Body() metadata: any,
     @Headers('authorization') token: string,
-    @Req() req: any,
-    @Res() res: any
+    @UploadedFile() file: ExisFile,
+    @Ip() clientIp: string,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response
   ) {
-    return { success: true, id, payload }
+    return { id, quality, metadata, clientIp, file: file?.filename }
   }
 }
 ```
 
-### Available Parameter Decorators
-- `@Body(nameOrPipe?)` — Extracts `req.body` or runs through a validation schema/pipe.
-- `@Param(nameOrPipe?)` — Extracts a route path param (e.g. `:id`).
-- `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)` — Extracts a query parameter from the URL query string.
-- `@Headers(nameOrPipe?)` — Extracts a request header by name.
-- `@Cookies(nameOrPipe?)` / `@Cookie(nameOrPipe?)` — Injects incoming parsed cookies or a specific cookie value.
-- `@State(keyOrPipe?)` — Injects request state from execution context or middleware.
-- `@AppCtx()` — Injects the root ExisJS Application instance.
-- `@Fields(nameOrPipe?)` — Injects non-file multipart form fields.
-- `@UploadedFile(nameOrPipe?)` — Injects a single uploaded file.
-- `@UploadedFiles(nameOrPipe?)` — Injects multiple uploaded files.
-- `@HostParam(nameOrPipe?)` — Extracts a host subdomain parameter.
-- `@Req()` — Injects the raw request object.
-- `@Res(options?)` — Injects the response object (e.g. `{ passthrough: true }`).
-- `@Ip()` — Injects the client IP address.
-- `@Next()` — Injects the `next` function.
-- `createParamDecorator(factory)` — Creates custom reusable route parameter decorators:
-  ```typescript
-  export const CurrentUser = createParamDecorator((data: string | undefined, ctx) => {
-    return data ? ctx.req.user?.[data] : ctx.req.user
-  })
-  ```
+### Parameter Decorators Reference
+
+| Decorator | Injected Value | Example Usage |
+| :--- | :--- | :--- |
+| `@Body(fieldOrPipe?)` | Request body or specific property | `@Body() dto: CreateUserDto`, `@Body('email') email: string` |
+| `@Param(nameOrPipe?)` | Path parameter string | `@Param('id', ParseIntPipe) id: number` |
+| `@Query(nameOrPipe?)` / `@QueryParam(...)` | Parsed query parameter or query map | `@Query('search') search: string` |
+| `@Headers(nameOrPipe?)` | Request header value (case-insensitive) | `@Headers('x-api-key') apiKey: string` |
+| `@Cookies(nameOrPipe?)` / `@Cookie(...)` | Parsed cookie map or specific cookie string | `@Cookie('session_id') sessionId: string` |
+| `@Req()` | The incoming `ExisRequest` instance | `@Req() req: Request` |
+| `@Res(options?)` | The outgoing `ExisResponse` instance (`{ passthrough?: boolean }`) | `@Res({ passthrough: true }) res: Response` |
+| `@Ip()` | Client IP address string (reads `trustProxy` setting) | `@Ip() ip: string` |
+| `@Session()` | Active session state object | `@Session() session: any` |
+| `@Next()` | The `next()` pipeline callback | `@Next() next: Next` |
+| `@State(keyOrPipe?)` | Request context state | `@State('user') user: AuthUser` |
+| `@UploadedFile(nameOrPipe?)` | Single parsed file object | `@UploadedFile('avatar') file: ExisFile` |
+| `@UploadedFiles(nameOrPipe?)` | Array of parsed file objects | `@UploadedFiles('photos') files: ExisFile[]` |
+| `@Fields(nameOrPipe?)` | Non-file multipart form fields | `@Fields() fields: Record<string, any>` |
+| `@HostParam(nameOrPipe?)` | Subdomain or host parameter | `@HostParam('subdomain') domain: string` |
+| `@AppCtx()` | Root Application instance | `@AppCtx() app: App` |
+
+### Custom Parameter Decorators (`createParamDecorator`)
+
+```typescript
+import { createParamDecorator } from 'exisjs/decorators'
+
+export const CurrentUser = createParamDecorator((data: string | undefined, ctx) => {
+  return data ? ctx.req.user?.[data] : ctx.req.user
+})
+```
 
 ---
 
-## 4. Middleware & Pipeline Decorators
+## 4. Transformation & Validation Pipes
 
-You can bind middlewares, guards, interceptors, and exception filters to controllers or route methods using first-class decorators:
+Pipes transform parameter inputs or validate input types:
+
+```typescript filename="src/http/users/route.ts"
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  UsePipes,
+  ParseIntPipe,
+  ParseFloatPipe,
+  ParseBoolPipe,
+  ParseUUIDPipe,
+  ParseArrayPipe,
+  ValidationPipe
+} from 'exisjs/decorators'
+
+@Controller('/users')
+@UsePipes(new ValidationPipe({ transform: true }))
+export default class UsersController {
+  @Get('/:id')
+  async getUser(@Param('id', ParseIntPipe) id: number) {
+    return { id, isNumber: typeof id === 'number' }
+  }
+
+  @Get('/filter')
+  async filter(
+    @Query('page', ParseIntPipe) page: number,
+    @Query('active', ParseBoolPipe) active: boolean,
+    @Query('tags', new ParseArrayPipe({ separator: ',' })) tags: string[]
+  ) {
+    return { page, active, tags }
+  }
+
+  @Get('/uuid/:uuid')
+  async getByUuid(@Param('uuid', new ParseUUIDPipe({ version: '4' })) uuid: string) {
+    return { uuid }
+  }
+}
+```
+
+### Pipes Reference
+
+| Pipe Class | Description | Options |
+| :--- | :--- | :--- |
+| `ParseIntPipe` | Converts input string or number to integer using `Math.trunc` | `{ errorHttpStatusCode?: number, exceptionFactory?: (msg) => any }` |
+| `ParseFloatPipe` | Converts input string or number to floating point | `{ errorHttpStatusCode?: number, exceptionFactory?: (msg) => any }` |
+| `ParseBoolPipe` | Converts `'true'`, `'1'`, `true` to `true`, `'false'`, `'0'`, `false` to `false` | `{ errorHttpStatusCode?: number, exceptionFactory?: (msg) => any }` |
+| `ParseUUIDPipe` | Validates UUID strings | `{ version?: '3' \| '4' \| '5' \| 'all', errorHttpStatusCode?: number }` |
+| `ParseArrayPipe` | Parses comma-separated strings or arrays with sub-item transformation | `{ items?: any, separator?: string, optional?: boolean }` |
+| `ValidationPipe` | Validates DTO classes or schemas implementing `validate()` or Standard Schema | `{ transform?: boolean, whitelist?: boolean, errorHttpStatusCode?: number }` |
+| `@UsePipes(...pipes)` | Attaches one or more pipes to a controller class or method handler | Array of Pipe instances or Pipe classes |
+
+---
+
+## 5. Middleware, Guards & Lifecycle Pipeline Decorators
+
+Attach guards, interceptors, exception filters, timeouts, and traffic policies to classes or route methods:
 
 ```typescript filename="src/http/checkout/route.ts"
-import { Controller, Post, Use, Idempotent, RateLimit, Cors, Timeout } from 'exisjs/decorators'
-import { requireAuth } from '../../middleware/auth'
+import {
+  Controller,
+  Post,
+  UseGuards,
+  UseInterceptors,
+  UseFilters,
+  RateLimit,
+  Timeout,
+  Idempotent,
+  Cors,
+  Compress,
+  Dedupe,
+  IpFilter,
+  BlockProbes
+} from 'exisjs/decorators'
+import { AuthGuard } from '../../common/guards/auth.guard'
+import { LoggingInterceptor } from '../../common/interceptors/logging'
+import { HttpExceptionFilter } from '../../common/filters/http.filter'
 
 @Controller('/checkout')
-@Use(requireAuth) // Applies to all routes in this controller
-@Cors({ origin: 'https://app.yourdomain.com' })
-@RateLimit({ max: 10, windowMs: 60000 })
+@UseGuards(AuthGuard)
+@UseInterceptors(LoggingInterceptor)
+@UseFilters(HttpExceptionFilter)
+@Cors({ origin: 'https://pay.example.com', credentials: true })
+@RateLimit({ max: 20, windowMs: 60000 })
+@IpFilter({ allow: ['10.0.0.0/8', '127.0.0.1'] })
+@BlockProbes()
 export default class CheckoutController {
   @Post('/')
-  @Timeout(30000)
-  @Idempotent({ ttlMs: 86400000 }) // In-memory off-heap idempotency protection
+  @Timeout(15000)
+  @Idempotent({ ttlMs: 86400000 })
+  @Dedupe({ ttlMs: 5000 })
+  @Compress()
   async processPayment() {
-    return { success: true }
+    return { status: 'processed' }
   }
 }
 ```
 
-### Available Lifecycle & Middleware Decorators
-- `@Use(...items)` — Unified decorator that attaches middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a class or method.
-- `@UseGuards(...guards)` — Explicit alias for `@Use` dedicated to route guards.
-- `@UseInterceptors(...interceptors)` — Explicit alias for `@Use` dedicated to interceptors.
-- `@UseFilters(...filters)` — Explicit alias for `@Use` dedicated to exception filters.
-- `@Catch(...exceptions)` — Declares exception classes handled by an Exception Filter.
-- `@Timeout(ms: number | TimeoutOptions)` — Overrides the request timeout for a class or method.
-- `@Idempotent(options?)` — Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage.
-- `@RateLimit(options?)` — Enforces request rate limits on a controller class or route method.
-- `@Cors(options?)` — Configures Cross-Origin Resource Sharing rules on a controller class or route method.
-- `@IpFilter(options)` — Enforces IP/CIDR allowlist and denylist.
-- `@Compress()` — Enables automatic response compression (Gzip/Brotli).
-- `@Dedupe(options)` — Deduplicates concurrent identical requests sharing the same key.
-- `@UseUpload(options)` / `@Upload(options)` — Configures multipart file upload handling.
-- `@BlockProbes(options?)` — Intercepts scanner exploit probes (`.env`, `/.git`, `/.DS_Store`) and blackholes them without log noise.
+### Traffic & Middleware Decorators
+
+| Decorator | Scope | Description |
+| :--- | :--- | :--- |
+| `@Use(...items)` | Class / Method | Attaches middlewares, guards (`canActivate`), interceptors (`intercept`), or filters (`catch`). |
+| `@UseGuards(...guards)` | Class / Method | Attaches route guards implementing the `CanActivate` interface. |
+| `@UseInterceptors(...interceptors)` | Class / Method | Attaches request/response interceptors implementing `Interceptor`. |
+| `@UseFilters(...filters)` | Class / Method | Attaches exception filters implementing `ExceptionFilter`. |
+| `@Catch(...exceptions)` | Class | Declares the exception types handled by an `ExceptionFilter` class. |
+| `@Timeout(msOrOptions)` | Class / Method | Sets request execution timeout in milliseconds. |
+| `@Idempotent(options?)` | Method / Class | Caches responses matching the `Idempotency-Key` header in an LRU memory store. |
+| `@RateLimit(options?)` | Class / Method | Enforces rate limits using a token bucket algorithm. |
+| `@Cors(options?)` | Class / Method | Applies CORS headers to a specific controller or method. |
+| `@IpFilter(options)` | Class / Method | Restricts access using CIDR IP allowlists and denylists. |
+| `@Compress()` | Class / Method | Enables Gzip and Brotli response compression. |
+| `@Dedupe(options)` | Method / Class | Deduplicates parallel in-flight requests matching the same key. |
+| `@BlockProbes(options?)` / `@BlockSuspiciousProbes()` | Class / Method | Drops vulnerability scanner probes (`.env`, `wp-admin`, `/.git`). |
+| `@Upload(fieldNameOrOptions)` / `@UseUpload(options)` | Method / Parameter | Configures multipart file upload middleware. |
 
 ---
 
-## 5. Security & Authorization Decorators
+## 6. Security & RBAC Decorators
 
-Declare access control rules directly on controller classes and route methods:
+Declare role requirements, permission checks, and authentication bypasses:
 
-```typescript filename="src/http/roles/route.ts"
-import { Controller, Get, Post, Body, Use, Permissions, Roles, Public } from 'exisjs/decorators'
-import { AuthGuard } from '@/common/guards/auth.guard'
+```typescript filename="src/http/admin/roles/route.ts"
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Roles,
+  Permissions,
+  Public
+} from 'exisjs/decorators'
+import { AuthGuard } from '../../common/guards/auth.guard'
 
 @Controller('/roles')
-@Use(AuthGuard) // Enforced on all routes in this controller
+@UseGuards(AuthGuard)
 export default class RolesController {
   @Get('/public')
-  @Public() // Bypasses auth guard for public inspection
+  @Public() // Instructs AuthGuard to skip credential verification
   async getPublicInfo() {
-    return { status: 'public' }
+    return { status: 'open' }
   }
 
   @Get('/')
-  @Roles('admin', 'manager') // Requires user to have admin or manager role
-  async getRoles() {
-    return { roles: [] }
+  @Roles('admin', 'security_officer')
+  async listRoles() {
+    return { roles: ['admin', 'manager', 'viewer'] }
   }
 
   @Post('/')
-  @Permissions('role:create', 'role:manage') // Granular permission check
+  @Permissions('roles:create', 'roles:write')
   async createRole(@Body() body: any) {
-    return { success: true }
+    return { created: true }
   }
 }
 ```
 
-### Available Security Decorators
-- `@Permissions(...permissions: string[])` — Declares required permissions (auto-bypassed when `req.user.isSuperAdmin` is true).
-- `@Roles(...roles: string[])` — Declares required role names.
-- `@Public()` / `@IsPublic()` / `@AllowAnonymous()` — Marks an endpoint or controller as public, instructing global auth guards to skip credential verification.
+### Security Decorators Reference
+
+| Decorator | Target | Description |
+| :--- | :--- | :--- |
+| `@Roles(...roles: string[])` | Class / Method | Stores required role names in route metadata (`ROLES_METADATA`). |
+| `@Permissions(...perms: string[])` | Class / Method | Stores granular required permissions in route metadata (`PERMISSIONS_METADATA`). |
+| `@Public()` / `@IsPublic()` / `@AllowAnonymous()` | Class / Method | Marks route as unauthenticated. |
 
 ---
 
-## 6. Service Enhancements: Caching, Transactions & Profiling
+## 7. Cron & Scheduled Background Tasks
 
-ExisJS provides high-performance method decorators for `@Injectable()` services:
+Schedule recurring tasks directly on `@Injectable()` service classes:
+
+```typescript filename="src/http/cron/cleanup.service.ts"
+import { Injectable, Cron, Interval, TimeoutTask } from 'exisjs/decorators'
+
+@Injectable()
+export class CleanupService {
+  // Executes daily at midnight UTC with overlap protection
+  @Cron('0 0 * * *', { name: 'nightly-purge', timezone: 'UTC', preventOverlap: true })
+  async purgeOldSessions() {
+    console.log('Purging expired sessions')
+  }
+
+  // Executes every 60 seconds
+  @Interval(60_000, { name: 'health-heartbeat' })
+  async pingHeartbeat() {
+    console.log('Heartbeat ping')
+  }
+
+  // Executes once 5 seconds after server startup
+  @TimeoutTask(5_000, { name: 'cache-warmup' })
+  async warmupCaches() {
+    console.log('Caches warmed up')
+  }
+}
+```
+
+### Cron Decorators Table
+
+| Decorator | Schedule Parameter | Description |
+| :--- | :--- | :--- |
+| `@Cron(schedule, options?)` / `@Scheduled(...)` | 5-field cron expression string | Schedules a recurring cron task. |
+| `@Interval(ms, options?)` | Milliseconds interval | Runs repeatedly at the specified interval. |
+| `@TimeoutTask(ms, options?)` / `@ScheduledTimeout(...)` | Milliseconds delay | Runs once after a delay following server start. |
+
+---
+
+## 8. Service Enhancements: Caching, Transactions & Profiling
 
 ```typescript filename="src/http/orders/service.ts"
-import { Injectable, Cacheable, CacheEvict, Transactional, Profile, type OnInit, type OnDestroy } from 'exisjs/decorators'
+import {
+  Injectable,
+  Cacheable,
+  CacheEvict,
+  Transactional,
+  Profile,
+  type OnInit,
+  type OnDestroy
+} from 'exisjs/decorators'
 
 @Injectable()
 export class OrderService implements OnInit, OnDestroy {
@@ -249,14 +453,14 @@ export class OrderService implements OnInit, OnDestroy {
     console.log('OrderService destroyed')
   }
 
-  // Caches result in off-heap Rust cache for 300 seconds
+  // Caches result in memory for 300 seconds
   @Cacheable({ ttl: 300, key: (id: string) => `order:${id}` })
   @Profile({ thresholdMs: 50, warnSlow: true })
   async getOrder(id: string) {
     return this.db.query('SELECT * FROM orders WHERE id = $1', [id])
   }
 
-  // Automatically runs in a database transaction and evicts cached entries
+  // Executes inside a database transaction and evicts the cached key
   @Transactional()
   @CacheEvict({ key: (id: string) => `order:${id}` })
   async updateOrder(id: string, data: any) {
@@ -265,69 +469,129 @@ export class OrderService implements OnInit, OnDestroy {
 }
 ```
 
-### Available Service Decorators & Lifecycle Interfaces
-- `@Cacheable({ ttl?: number, key?: string | ((...args) => string) })` — Caches method return values in off-heap memory.
-- `@CacheEvict({ key: string | ((...args) => string) })` — Evicts cached keys on mutation.
-- `@Transactional(options?)` — Wraps service operations in an atomic database transaction.
-- `@Profile({ thresholdMs?: number, warnSlow?: boolean, log?: Function })` — Measures method execution time with sub-millisecond precision.
-- `OnInit` (`onInit()`) & `OnDestroy` (`onDestroy()`) — Service startup and shutdown lifecycle hooks.
-- `OnModuleInit`, `OnModuleDestroy`, `OnApplicationBootstrap` — Module lifecycle hooks.
+### Service & Lifecycle Reference
+
+| Decorator / Interface | Target | Description |
+| :--- | :--- | :--- |
+| `@Cacheable(options?)` | Method | Caches return value. Options: `{ ttl?: number, key?: string \| ((...args) => string) }`. |
+| `@CacheEvict(options)` | Method | Evicts cache keys on method completion. Options: `{ key: string \| ((...args) => string) }`. |
+| `@Transactional(options?)` | Method | Wraps execution in a database transaction (Prisma, Mongoose, Drizzle, SQL). |
+| `@Profile(options?)` | Method | Measures execution time using `performance.now()`. |
+| `OnInit` (`onInit()`) | Class Interface | Invoked once after service instantiation. |
+| `OnDestroy` (`onDestroy()`) | Class Interface | Invoked once during graceful shutdown. |
+| `OnModuleInit` / `OnModuleDestroy` | Class Interface | Invoked during parent module initialization and destruction. |
+| `OnApplicationBootstrap` | Class Interface | Invoked when all modules are initialized and server starts listening. |
+| `OnApplicationShutdown` | Class Interface | Invoked on `SIGTERM` or `SIGINT` signals. |
 
 ---
 
-## 7. Response & Metadata Modifiers
+## 9. Response, Header & OpenAPI Decorators
 
-Modify HTTP response status codes, redirect clients, or set headers declaratively:
+### Response & Host Modifiers
 
-```typescript filename="src/http/api/route.ts"
-import { Controller, Post, Get, HttpCode, Header, Redirect, SetMetadata, Reflector } from 'exisjs/decorators'
+```typescript filename="src/http/items/route.ts"
+import {
+  Controller,
+  Post,
+  Get,
+  HttpCode,
+  Header,
+  Redirect,
+  Hosts,
+  Returns
+} from 'exisjs/decorators'
+import { ItemResponseSchema } from './schema'
 
-@Controller('/api')
-@SetMetadata('roles', ['admin'])
-export default class ApiController {
-  @Post('/create')
-  @HttpCode(201) // Forces 201 Created
-  @Header('X-Custom-Version', '2.0')
-  @SetMetadata('permissions', ['write:api'])
+@Controller('/items')
+@Hosts('api.example.com', 'internal.example.com')
+export default class ItemsController {
+  @Post('/')
+  @HttpCode(201)
+  @Header('X-Resource-Version', '1.0')
+  @Returns(ItemResponseSchema)
   async create() {
-    return { success: true }
+    return { created: true }
   }
 
   @Get('/legacy')
-  @Redirect('/new-api', 301)
-  async legacy() {}
+  @Redirect('/items', 301)
+  async legacyRedirect() {}
 }
 ```
 
-### Available Response & Metadata Decorators
-- `@HttpCode(code: number)` — Sets the response HTTP status code.
-- `@Header(name: string, value: string)` — Injects a response header.
-- `@Returns(schema)` — Attaches response schema for OpenAPI/Swagger generation.
-- `@Redirect(url: string, statusCode?: number)` — Redirects the client.
-- `@Hosts(...hosts: string[])` — Restricts route/controller to specific Host headers.
-- `@SetMetadata(key, value)` — Attaches custom metadata to a class or method.
-- `Reflector` — Static utility to inspect metadata attached via `@SetMetadata` across classes and methods.
+### OpenAPI & Swagger Decorators
+
+All OpenAPI decorators are available from `exisjs/decorators`:
+
+```typescript filename="src/http/users/route.ts"
+import {
+  Controller,
+  Get,
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiSecurity,
+  ApiExclude,
+  ApiProperty
+} from 'exisjs/decorators'
+
+export class UserDto {
+  @ApiProperty({ description: 'User ID', example: 'usr_123', required: true })
+  id: string
+
+  @ApiProperty({ description: 'Full name', example: 'Alice Smith' })
+  name: string
+}
+
+@ApiTags('Users')
+@ApiBearerAuth()
+@Controller('/users')
+export default class UsersController {
+  @Get('/:id')
+  @ApiOperation({ summary: 'Get User By ID', description: 'Returns a user record' })
+  @ApiResponse({ status: 200, description: 'User retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async getUser() {
+    return { id: 'usr_123', name: 'Alice Smith' }
+  }
+
+  @Get('/internal/health')
+  @ApiExclude()
+  async health() {
+    return { ok: true }
+  }
+}
+```
+
+| Decorator | Scope | Description |
+| :--- | :--- | :--- |
+| `@ApiTags(...tags)` / `@Tags(...)` | Class / Method | Assigns OpenAPI documentation tags. |
+| `@ApiOperation(options)` / `@Operation(...)` | Method | Configures `summary`, `description`, `operationId`, `deprecated`, `externalDocs`. |
+| `@ApiResponse(options)` | Method | Defines status code documentation (`status`, `description`, `schema`). |
+| `@ApiBearerAuth(name?)` / `@BearerAuth(...)` | Class / Method | Marks route as requiring Bearer JWT authentication in OpenAPI output. |
+| `@ApiSecurity(name, scopes?)` | Class / Method | Declares custom security scheme requirement. |
+| `@ApiExclude()` | Class / Method | Hides route or controller from OpenAPI / Swagger output. |
+| `@ApiProperty(options)` | Property | Annotates class DTO properties with description, examples, types, and enums. |
 
 ---
 
-## 8. Dependency Injection & Modules
+## 10. Dependency Injection & Modules
 
-To mark a service class as an injectable provider for the IoC container, use the `@Injectable()` decorator. ExisJS supports `singleton` (default), `request`, and `transient` scopes:
+### `@Injectable(options?)`
 
 ```typescript filename="src/http/users/service.ts"
 import { Injectable } from 'exisjs/decorators'
 
-@Injectable({ scope: 'transient' })
+@Injectable({ scope: 'singleton' }) // 'singleton' | 'transient' | 'request'
 export class UserService {
-  async fetchUser(id: string) {
+  async findOne(id: string) {
     return { id, name: 'Alice' }
   }
 }
 ```
 
-### Constructor Parameter Injection (`@Inject` & `@Optional`)
-
-You can inject dependencies using tokens or classes, and mark optional dependencies with `@Optional()`:
+### `@Inject(token)` & `@Optional()`
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param } from 'exisjs/decorators'
@@ -344,25 +608,56 @@ export default class UsersController {
 
   @Get('/:id')
   async getUser(@Param('id') id: string) {
-    return this.userService.fetchUser(id)
+    return this.userService.findOne(id)
   }
 }
 ```
 
-### Application Modules (`@Module`)
-
-You can group controllers, providers, and imports into high-level OOP modules using `@Module`:
+### `@Module(options)` & `@Global()`
 
 ```typescript filename="src/http/users/users.module.ts"
-import { Module } from 'exisjs/module' // or 'exisjs/decorators'
+import { Module, Global } from 'exisjs/decorators'
 import UsersController from './route'
 import { UserService } from './service'
 
+@Global()
 @Module({
   controllers: [UsersController],
   providers: [UserService],
   exports: [UserService]
 })
 export class UsersModule {}
+```
+
+---
+
+## 11. JavaScript Runtime Utilities (`Decorate` & `BindParam`)
+
+For JavaScript projects without a build step or TypeScript compiler, use `Decorate` and `BindParam` to apply decorator metadata programmatically:
+
+```javascript filename="src/http/users/route.js"
+import { Decorate, BindParam, Controller, Get, Post, Body, Param } from 'exisjs/decorators'
+
+class UsersController {
+  list() {
+    return []
+  }
+
+  create(body) {
+    return { created: body.name }
+  }
+}
+
+export default Decorate(
+  UsersController,
+  [Controller('/users')],
+  {
+    list: [Get('/')],
+    create: [
+      Post('/'),
+      BindParam(0, Body()) // Injects @Body() into the first argument (index 0)
+    ]
+  }
+)
 ```
 

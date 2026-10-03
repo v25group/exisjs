@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.7.12",
+  "version": "0.7.13",
   "description": "efficient full-stack web framework for Node.js",
   "author": "V25 Group <support@v25group.com>",
   "keywords": [
@@ -88,6 +88,10 @@
     "./swagger": {
       "types": "./dist/swagger/index.d.ts",
       "default": "./dist/swagger/index.js"
+    },
+    "./telemetry": {
+      "types": "./dist/telemetry/index.d.ts",
+      "default": "./dist/telemetry/index.js"
     }
   },
   "files": [
@@ -110,7 +114,6 @@
   },
   "dependencies": {
     "@exisjs/rs": "*",
-    "@exisjs/telemetry": "^0.7.0",
     "accepts": "^1.3.8",
     "busboy": "^1.6.0",
     "chokidar": "^5.0.0",
@@ -142,6 +145,38 @@
     "find-my-way": "^9.9.0",
     "fs-extra": "^11.4.1",
     "mitata": "^1.0.34"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.80.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-node": {
+      "optional": true
+    },
+    "@opentelemetry/auto-instrumentations-node": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-http": {
+      "optional": true
+    },
+    "@opentelemetry/sdk-trace-node": {
+      "optional": true
+    },
+    "@opentelemetry/resources": {
+      "optional": true
+    },
+    "@opentelemetry/semantic-conventions": {
+      "optional": true
+    }
   },
   "optionalDependencies": {
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0"

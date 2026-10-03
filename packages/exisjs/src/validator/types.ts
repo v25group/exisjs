@@ -6,6 +6,7 @@ export interface TexBaseOptions {
   optional?: boolean
   nullable?: boolean
   nullish?: boolean
+  coerce?: boolean
 }
 
 export interface TexStringOptions extends TexBaseOptions {

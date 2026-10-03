@@ -145,16 +145,10 @@ async function start() {
         app.options.telemetry.enabled
       ) {
         try {
-          const telemetry = await import('@exisjs/telemetry')
-          telemetry.initTelemetry(app.options.telemetry)
+          const telemetry = await import('../telemetry/index.js')
+          await telemetry.initTelemetry(app.options.telemetry)
         } catch (err: any) {
-          if (err.code === 'ERR_MODULE_NOT_FOUND') {
-            console.warn(
-              '\x1b[33m[ExisJS] Warning: config.telemetry is enabled, but @exisjs/telemetry is not installed. Please run `npm install @exisjs/telemetry`.\x1b[0m'
-            )
-          } else {
-            console.error('[ExisJS] Failed to initialize telemetry:', err)
-          }
+          console.error('[ExisJS] Failed to initialize telemetry:', err)
         }
       }
 

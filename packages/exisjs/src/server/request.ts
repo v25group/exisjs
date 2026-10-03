@@ -38,6 +38,7 @@ export class ExisRequest<
   }
 
   public rawBody?: string
+  private _rawBuffer?: Buffer
   public user!: import('../types').ExisUser & Record<string, any>
   public log!: Logger
   public session?: Record<string, any> | any
@@ -300,6 +301,17 @@ export class ExisRequest<
     if (this.rawBody !== undefined) return this.rawBody
     await this._parseBody()
     return this.rawBody!
+  }
+
+  async buffer(): Promise<Buffer> {
+    if (this._rawBuffer !== undefined) return this._rawBuffer
+    if (this.rawBody !== undefined) {
+      this._rawBuffer = Buffer.from(this.rawBody, 'utf8')
+      return this._rawBuffer
+    }
+    await this._parseBody()
+    this._rawBuffer = Buffer.from(this.rawBody || '', 'utf8')
+    return this._rawBuffer
   }
 
   async json<T = unknown>(): Promise<T> {

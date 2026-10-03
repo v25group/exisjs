@@ -1,86 +1,88 @@
 ---
-nextUrl: "/docs/validation"
-nextTitle: "Validation"
+title: 'Boundaries & Middleware Cascading'
+description: 'Folder-scoped middleware cascading, security guards, CORS inheritance hierarchy, exclusion rules, and error handling with boundary.ts.'
+nextUrl: '/docs/validation'
+nextTitle: 'Validation & Schemas'
 ---
 
-# Boundaries (Config & Request Pipeline)
+# Boundaries & Middleware Cascading (`boundary.ts`)
 
-A `boundary.ts` acts as a folder-scoped configuration and request pipeline in your file-system routing architecture.
+A `boundary.ts` (or `<name>.boundary.ts`) file defines a folder-scoped request pipeline and configuration module in the ExisJS file-system routing hierarchy.
 
-Any `boundary.ts` applies to every route in its folder and all subfolders recursively. Instead of manually registering middleware chains or route guards, placing a `boundary.ts` configures **CORS**, **Headers**, **Excluded Paths**, **Dependency Injection**, and an **auto-detected request pipeline** cleanly scoped to that sub-tree.
+Any `boundary.ts` automatically applies to every route within its directory and all descendant subdirectories recursively, providing scoped **CORS policies**, **custom headers**, **security guards**, **lifecycle hooks**, **route exclusions**, and **dependency injection scoping**.
 
 ---
 
 ## Anatomy of a Boundary
 
-A `boundary.ts` has two distinct, independent parts:
+A `boundary.ts` consists of two distinct components:
 
-1. **Config** — pure data, declared via `defineBoundary()` (functional) or the `@Boundary()` class decorator (OOP). It configures CORS, headers, DI providers, timeout, and exclusion rules.
-2. **Pipeline** — real code, auto-detected by function signature. No manual pipeline registration is needed.
+1. **Configuration**: Pure declarative options declared via `defineBoundary()` (functional) or `@Boundary()` (OOP). It sets CORS, response headers, timeout limits, exclusion patterns, probe blackholing, and DI providers.
+2. **Pipeline Handlers**: Functions and lifecycle hooks that run before, during, or after request execution:
 
-| Signature | Detected as | Execution timing |
-|---|---|---|
-| `(req, res, next)` | Chain Step | Runs in file/declaration order, before the route |
-| `beforeHandle(req, res)` | Boundary Guard Hook | Immediately before the route handler. Short-circuits on `false` or when sending headers |
-| `afterHandle(req, res, data)` | Response Hook | Immediately after the route handler. Mutates returned payload or logs audit data |
-| `(ctx, next)` — default export (functional) or class method `handle(ctx, next)` (OOP) | Request Wrapper | Wraps around all chain steps and the nested route/boundary |
+| Handler Type | Signature | Description |
+| :--- | :--- | :--- |
+| **Chain Step** | `(req, res, next)` | Standard middleware step running in declaration order before route handlers |
+| **Guard Hook** | `beforeHandle(req, res)` | Runs immediately before route handler execution; aborts if returning `false` |
+| **Audit Hook** | `afterHandle(req, res, data)` | Runs immediately after route handler returns; can transform response data |
+| **Pipeline Wrapper** | `(ctx, next)` / `handle(ctx, next)` | Onion-style wrapper around all steps and downstream routes in the boundary |
 
 ---
 
 ## 1. Functional Paradigm
 
-In functional style, export `config = defineBoundary(...)`, export named middleware functions `(req, res, next)` for chain steps, and optionally provide a `default export` function `(ctx, next)` as an onion-style wrapper. You can also configure `beforeHandle` and `afterHandle` hooks directly inside `defineBoundary({ ... })`.
+Export `config = defineBoundary(...)`, named middleware functions `(req, res, next)`, and optionally a default export `(ctx, next)` as a request wrapper:
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
 import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
 import { UnauthorizedError } from 'exisjs/error'
 
-// 1. Configuration (CORS, Headers, Exclusions, Hooks, DI Providers)
+// 1. Declarative Boundary Configuration
 export const config = defineBoundary({
   cors: {
-    origin: ['https://admin.yourdomain.com'],
+    origin: ['https://admin.example.com'],
     credentials: true,
   },
   headers: {
-    'X-Admin-Api-Version': '2.0',
+    'X-Admin-Scope': 'active',
   },
   exclude: [
     '/admin/health',
-    { path: '/admin/public/*', method: 'GET' }
+    { path: '/admin/public/*', method: 'GET' },
   ],
 
-  // Pre-handler hook: Return false to reject with 403, or send custom response
+  // Pre-handler guard hook
   beforeHandle(req, res) {
     if (!req.headers['x-admin-token']) {
       res.status(401).json({ error: 'Missing admin access token' })
-      return false
+      return false // Aborts downstream execution
     }
   },
 
-  // Post-handler hook: Transform outgoing response payload or perform async audit
+  // Post-handler response transformation hook
   afterHandle(req, res, data) {
-    res.setHeader('X-Audited', 'true')
-    return { ...data, auditedAt: Date.now() }
+    res.setHeader('X-Audited-At', new Date().toISOString())
+    return { ...data, audited: true }
   },
 })
 
-// 2. Chain Step (auto-detected by (req, res, next) signature)
-export function requireAuth(req: Request, res: Response, next: Next) {
+// 2. Named Chain Step Middleware
+export function verifyApiKey(req: Request, res: Response, next: Next) {
   if (!req.headers['x-api-key']) {
-    throw new UnauthorizedError('Missing API key')
+    throw new UnauthorizedError('Missing required API key')
   }
   next()
 }
 
-// 3. Wrapper (auto-detected as default export with (ctx, next) signature)
+// 3. Pipeline Wrapper (Default Export)
 export default async function (ctx: BoundaryContext, next: Next) {
   const start = Date.now()
   try {
     const result = await next()
     const duration = Date.now() - start
     ctx.res.setHeader('X-Response-Time', `${duration}ms`)
-    return { success: true, data: result }
+    return result
   } catch (err: any) {
     return {
       success: false,
@@ -94,7 +96,7 @@ export default async function (ctx: BoundaryContext, next: Next) {
 
 ## 2. Class-Based (OOP) Paradigm
 
-In OOP style, decorate a class with `@Boundary(...)`. Named methods taking `(req, res, next)` are auto-detected as chain steps, `beforeHandle(req, res)` and `afterHandle(req, res, data)` act as lifecycle hooks, and a method named `handle(ctx, next)` serves as the request wrapper.
+Decorate a class with `@Boundary(...)`. Class methods taking `(req, res, next)` become chain steps, `beforeHandle` / `afterHandle` serve as lifecycle hooks, and a method named `handle(ctx, next)` acts as the pipeline wrapper:
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { Boundary } from 'exisjs/decorators'
@@ -103,11 +105,11 @@ import { UnauthorizedError } from 'exisjs/error'
 
 @Boundary({
   cors: {
-    origin: ['https://admin.yourdomain.com'],
+    origin: ['https://admin.example.com'],
     credentials: true,
   },
   headers: {
-    'X-Admin-Api-Version': '2.0',
+    'X-Admin-Scope': 'active',
   },
   exclude: ['/admin/health'],
 })
@@ -122,19 +124,19 @@ export default class AdminBoundary {
 
   // Post-handler hook
   afterHandle(req: Request, res: Response, data: any) {
-    res.setHeader('X-Audited', 'true')
-    return { ...data, auditedAt: Date.now() }
+    res.setHeader('X-Audited-At', new Date().toISOString())
+    return { ...data, audited: true }
   }
 
-  // Chain step
-  requireAuth(req: Request, res: Response, next: Next) {
+  // Named chain step
+  verifyApiKey(req: Request, res: Response, next: Next) {
     if (!req.headers['x-api-key']) {
-      throw new UnauthorizedError('Missing API key')
+      throw new UnauthorizedError('Missing required API key')
     }
     next()
   }
 
-  // Wrapper
+  // Pipeline wrapper
   async handle(ctx: BoundaryContext, next: Next) {
     const start = Date.now()
     const result = await next()
@@ -146,44 +148,110 @@ export default class AdminBoundary {
 
 ---
 
-## Cascading & Inheritance
+## Boundary Cascading & Execution Order
 
-Boundaries cascade down the directory tree. For instance:
+Boundaries cascade top-down through the folder structure:
 
 ```text
 src/http/
-├── boundary.ts       # Root Boundary (applies to /api/*)
+├── boundary.ts          # Root Boundary (applies to all routes)
 └── admin/
-    ├── boundary.ts   # Admin Boundary (applies to /api/admin/*)
+    ├── boundary.ts      # Admin Boundary (applies to /admin/*)
     └── users/
-        └── route.ts  # Handled by both Root Boundary and Admin Boundary
+        └── route.ts     # Handled by both Root Boundary and Admin Boundary
 ```
 
-1. **Wrappers & Chain Steps**: Outer boundaries execute first. Root wrappers wrap nested wrappers, and root chain steps run before nested chain steps top-down.
-2. **CORS Precedence & Inheritance**:
-   - **Innermost Boundary Wins**: If a nested boundary specifies `cors`, it overrides any CORS configuration set in parent boundaries or `exis.config.ts`.
-   - **Inheritance**: If a sub-boundary omits `cors`, it seamlessly inherits the parent boundary's CORS configuration (or global config).
-   - **Per-Route Overrides**: A `route.ts` handler can define its own `cors` setting to override boundary settings for that single endpoint.
-   - **Disabling CORS**: Setting `cors: false` on a boundary or route explicitly disables CORS headers and preflight handling for that sub-tree or route.
-3. **Headers Merging**: Headers are deep-merged from root to child. Child headers override parent headers if keys collide.
-4. **Exclusions**: When a route matches an exclusion pattern (e.g. `/admin/health` in `exclude`), that boundary's chain steps and wrappers are bypassed for the request.
+### Execution Order
 
-### CORS Resolution Hierarchy
-
-ExisJS resolves CORS in a 3-tier precedence order:
-
-| Level | Where to Define | Priority | Description |
-|---|---|---|---|
-| **Route** | `route.get('/', { cors: ... })` or `@Cors(...)` | 🥇 **Highest** | Specific to a single endpoint. Overrides boundary and global config. |
-| **Nested Boundary** | `src/http/admin/boundary.ts` | 🥈 **High** | Scoped to the subfolder tree. Overrides parent boundaries and global config. |
-| **Parent / Root Boundary** | `src/http/boundary.ts` | 🥉 **Medium** | Scoped to all API routes under the folder. Overrides global config. |
-| **Global Config** | `exis.config.ts` (`defineConfig({ cors })`) | **Base** | Fallback baseline for any route not covered by a boundary or route override. |
+1. **Wrappers**: Outer wrappers wrap inner wrappers (onion architecture).
+2. **Chain Steps**: Root chain steps run before nested boundary chain steps.
+3. **Guard Hooks (`beforeHandle`)**: Run immediately before the route handler, evaluated from root boundary down to the innermost boundary.
+4. **Response Hooks (`afterHandle`)**: Run in reverse order (innermost boundary up to root boundary).
 
 ---
 
-## Dependency Injection via Providers
+## CORS Inheritance & Precedence
 
-Boundaries also act as IoC module scopes. You can scope providers to a directory tree using `providers`:
+CORS configuration follows a 4-tier hierarchy:
+
+| Priority | Level | Where Defined | Description |
+| :---: | :--- | :--- | :--- |
+| 1 | **Route Override** | `route.get('/', { cors: ... })` or `@Cors(...)` | Specific to a single endpoint; overrides all boundaries and global configs |
+| 2 | **Innermost Boundary** | `src/http/admin/boundary.ts` | Scoped to subfolder tree; overrides parent boundaries |
+| 3 | **Parent / Root Boundary** | `src/http/boundary.ts` | Scoped to all routes in `src/http/`; overrides global defaults |
+| 4 | **Global Configuration** | `exis.config.ts` (`cors`) | Fallback baseline for endpoints without boundary or route CORS |
+
+> [!NOTE]
+> If a sub-boundary omits `cors`, it inherits the CORS settings of the nearest ancestor boundary (or `exis.config.ts`). Setting `cors: false` on a boundary explicitly disables CORS for that entire subtree.
+
+---
+
+## Headers Merging
+
+Response headers defined across boundaries are deep-merged from root to child. If header keys conflict, the innermost boundary value takes precedence:
+
+```typescript
+// src/http/boundary.ts (Root)
+export const config = defineBoundary({
+  headers: { 'X-Framework': 'ExisJS', 'X-Environment': 'production' },
+})
+
+// src/http/v2/boundary.ts (Nested)
+export const config = defineBoundary({
+  headers: { 'X-Api-Version': 'v2', 'X-Environment': 'v2-canary' },
+})
+
+// Endpoints under /v2 receive:
+// X-Framework: ExisJS
+// X-Api-Version: v2
+// X-Environment: v2-canary (overwritten by nested boundary)
+```
+
+---
+
+## Route Exclusion Rules
+
+To bypass boundary middleware for specific routes (e.g. public webhooks or health checks), add rules to `exclude`:
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+
+export const config = defineBoundary({
+  exclude: [
+    // 1. Exact path string
+    '/health',
+
+    // 2. Wildcard pattern matching any HTTP method
+    '/public/*',
+
+    // 3. Path with specific HTTP method restriction
+    { path: '/webhooks/stripe', method: 'POST' },
+    { path: '/docs/*', methods: ['GET', 'HEAD'] },
+  ],
+})
+```
+
+When an incoming request matches an exclusion rule, the boundary's chain steps and `beforeHandle` hooks are bypassed.
+
+---
+
+## Noise Suppression & Exploit Probe Blackholing
+
+ExisJS can automatically intercept and drop automated vulnerability scanner probes (e.g. `/.env`, `/.git`, `/.DS_Store`, `/wp-admin`) at the boundary level without flooding application logs:
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+
+export const config = defineBoundary({
+  blockSuspiciousProbes: true, // Blackholes malicious probe paths immediately
+})
+```
+
+---
+
+## Dependency Injection Scoping
+
+Boundaries can register scoped providers into the IoC container for all routes within their sub-tree:
 
 ```typescript filename="src/http/users/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
@@ -195,3 +263,12 @@ export const config = defineBoundary({
   ],
 })
 ```
+
+---
+
+## Next Steps
+
+- **[Validation Guide](/docs/validation)**: Building request schemas with `tex`.
+- **[Dependency Injection](/docs/providers)**: IoC containers, tokens, and provider lifecycles.
+- **[Routing](/docs/routing)**: File-system route parameters and handler definitions.
+- **[Controllers](/docs/controllers)**: Class-based routing and parameter decorators.

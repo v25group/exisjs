@@ -1,145 +1,279 @@
 ---
-title: "Testing"
-description: "Strict API Reference for all Testing utilities and mocking objects."
+title: "exisjs/testing"
+description: "API Reference for ExisJS testing framework: test runner, createTestApp, HTTP assertions, matchers (expect), mocks (ex), and unit mocks."
+nextUrl: "/docs/reference/plugin"
+nextTitle: "Plugin Reference"
 ---
 
-# Testing (`exisjs/testing`)
+# `exisjs/testing`
 
-This document provides the strict API signatures and TypeScript interfaces exported by the `exisjs/testing` module. For high-level testing guides, see the [Testing Guide](/docs/testing).
+The `exisjs/testing` module provides an integrated testing framework built on Node's native runner (`node:test`) and assertion engine (`node:assert`). It includes the `createTestApp` synthetic HTTP client, fluent `expect` assertions, Jest-compatible `ex` spies/mocks, and unit-level mock factories (`createMockRequest`, `createMockResponse`).
 
 ---
 
-## Native Node Runner Exports
-
-ExisJS fully re-exports the native `node:test` runner methods, ensuring maximum IDE compatibility while providing powerful internal enhancements (like `.each()`).
+## Module Exports
 
 ```typescript
-export function test(name: string, fn?: TestFunction): void
-export function test(name: string, options: TestOptions, fn?: TestFunction): void
+import {
+  // Test Runner & Lifecycle
+  test,
+  describe,
+  it,
+  before,
+  beforeAll,
+  after,
+  afterAll,
+  beforeEach,
+  afterEach,
+  registerCleanup,
 
-export function describe(name: string, fn?: TestFunction): void
-export function it(name: string, fn?: TestFunction): void
+  // Assertions & Matchers
+  expect,
 
-export function before(fn: HookFunction): void
-export function after(fn: HookFunction): void
-export function beforeEach(fn: HookFunction): void
-export function afterEach(fn: HookFunction): void
+  // Mocks, Spies & Timers
+  ex,
+  mock,
+
+  // HTTP Integration Testing Client
+  createTestApp,
+  TestRequest,
+
+  // Unit Mocking Helpers
+  createMockRequest,
+  createMockResponse,
+  createMockLogger,
+  createMockNext,
+  getResponseBody,
+  getResponseHeader,
+} from 'exisjs/testing'
+
+import type {
+  TestApp,
+  TestRequest,
+  TestResponse,
+  TestOptions,
+  TestContext,
+  TestFunction,
+  HookFunction,
+  MockRequestOptions,
+  MockResponse,
+} from 'exisjs/testing'
+```
+
+---
+
+## 1. Native Test Runner API
+
+ExisJS enhances the native Node test runner with Jest-like `.each()` parameterization and typed test hooks.
+
+```typescript
+// Test suites and cases
+describe(name: string, fn?: TestFunction): void
+test(name: string, fn?: TestFunction): void
+test(name: string, options: TestOptions, fn?: TestFunction): void
+it(name: string, fn?: TestFunction): void
+
+// Modifiers
+test.only(name: string, fn?: TestFunction): void
+test.skip(name: string, fn?: TestFunction): void
+test.todo(name: string, fn?: TestFunction): void
+
+// Lifecycle hooks
+before(fn: HookFunction): void
+beforeEach(fn: HookFunction): void
+after(fn: HookFunction): void
+afterEach(fn: HookFunction): void
 ```
 
 ### Parametrized Tests (`.each`)
-All test blocks (`test`, `describe`, `it`) support a Jest-like `.each()` signature.
 
 ```typescript
 test.each([
-  [1, 1, 2],
-  [2, 3, 5]
-])('adds %d and %d to equal %d', (a, b, expected) => {
-  assert.equal(a + b, expected)
+  [1, 2, 3],
+  [10, 20, 30],
+  [-5, 5, 0],
+])('calculates %d + %d = %d', (a, b, expected) => {
+  expect(a + b).toBe(expected)
 })
 ```
 
 ---
 
-## Context Management
+## 2. HTTP Integration Testing (`createTestApp`)
 
-### `createTestContext`
-Automatically handles booting an ExisJS `App`, processing its startup hooks, and safely closing all database and worker connections. Returns a `TestApp` client for performing HTTP requests.
+Instantiates an in-memory HTTP test client that dispatches synthetic requests into an ExisJS `App` instance without binding a network port.
 
 ```typescript
-function createTestContext(app: App | typeof Class): TestApp
+function createTestApp(app: App | ExisAppDefinition | ExisConfig): TestApp
 ```
 
-### `registerCleanup`
-Allows third-party plugins or custom test setups to register a global cleanup function that will be executed when the test runner terminates.
+### `TestApp` Interface
+
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `get` | `(path: string, options?: RequestOptions): TestRequest` | Initiates a synthetic `GET` request. |
+| `post` | `(path: string, options?: RequestOptions \| unknown): TestRequest` | Initiates a synthetic `POST` request. |
+| `put` | `(path: string, options?: RequestOptions \| unknown): TestRequest` | Initiates a synthetic `PUT` request. |
+| `patch` | `(path: string, options?: RequestOptions \| unknown): TestRequest` | Initiates a synthetic `PATCH` request. |
+| `delete` | `(path: string, options?: RequestOptions): TestRequest` | Initiates a synthetic `DELETE` request. |
+| `options` | `(path: string, options?: RequestOptions): TestRequest` | Initiates an `OPTIONS` preflight request. |
+| `head` | `(path: string, options?: RequestOptions): TestRequest` | Initiates a `HEAD` request. |
+| `request` | `(method: string, path: string, options?: RequestOptions): TestRequest` | Dispatches an arbitrary HTTP method request. |
+
+### `TestRequest` Builder
+
+Fluent request builder allowing header configuration, payload attachment, and response assertions:
 
 ```typescript
-function registerCleanup(fn: () => Promise<void> | void): void
-```
-
----
-
-## HTTP Client (TestApp & TestRequest)
-
-The `TestApp` interface provides a fluent API for making HTTP requests directly against your application without binding to a network port.
-
-### `TestApp`
-```typescript
-interface TestApp {
-  get(path: string): TestRequest
-  post(path: string): TestRequest
-  put(path: string): TestRequest
-  patch(path: string): TestRequest
-  delete(path: string): TestRequest
-  options(path: string): TestRequest
-  head(path: string): TestRequest
-  request(method: string, path: string): TestRequest
-}
-```
-
-### `TestRequest`
-Supports chaining headers, bodies, and assertions. Once `.execute()` is called (or awaited), it returns a `TestResponse`.
-
-```typescript
-class TestRequest {
+class TestRequest implements PromiseLike<TestResponse> {
   send(body: unknown): this
   set(header: string, value: string): this
-  
-  // Assertions
   expect(status: number): this
   expect(header: string, value: string | RegExp): this
   expect(body: unknown): this
-  
-  // Execution
   execute(): Promise<TestResponse>
-  then<T>(onfulfilled: (res: TestResponse) => T): Promise<T>
 }
 ```
 
-### `TestResponse`
-```typescript
-interface TestResponse {
-  status: number
-  headers: Record<string, string | string[] | undefined>
-  body: any      // The parsed JSON payload (if applicable)
-  text: string   // The raw string response
-}
+### `TestResponse` Interface
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `status` | `number` | HTTP status code returned by the route handler. |
+| `headers` | `http.IncomingHttpHeaders` | Dictionary of HTTP response headers. |
+| `body` | `any` | Parsed JSON response payload (or undefined if not JSON). |
+| `text` | `string` | Raw UTF-8 string content of the response payload. |
+
+### Integration Test Example
+
+```typescript filename="tests/users.test.ts"
+import { describe, it, expect, createTestApp } from 'exisjs/testing'
+import server from '../src/http/server'
+
+describe('Users API', () => {
+  const client = createTestApp(server)
+
+  it('creates and returns a user payload', async () => {
+    const res = await client
+      .post('/users', { name: 'Alice', email: 'alice@example.com' })
+      .set('Authorization', 'Bearer token_123')
+      .expect(201)
+      .expect('content-type', /application\/json/)
+
+    expect(res.body).toMatchObject({
+      success: true,
+      data: {
+        name: 'Alice',
+        email: 'alice@example.com',
+      },
+    })
+  })
+})
 ```
 
 ---
 
-## Mocks & Spies (`ex`)
+## 3. Assertion Engine (`expect`)
 
-The `ex` object provides a Jest-compatible API wrapper over the native `node:test` mocking utilities.
+The `expect(actual)` function returns a rich matcher engine with negative chaining via `.not`:
+
+### Equality & Truthiness
+
+| Matcher | Description |
+| :--- | :--- |
+| `toBe(value)` | Strict referential equality (`===`). |
+| `toEqual(value)` | Deep equality check across objects and arrays. |
+| `toStrictEqual(value)` | Deep strict equality checking prototypes and `undefined` keys. |
+| `toMatchObject(subset)` | Verifies that the target object contains the specified subset of properties. |
+| `toBeTruthy()` | Asserts truthy value. |
+| `toBeFalsy()` | Asserts falsy value. |
+| `toBeNull()` | Asserts `null`. |
+| `toBeUndefined()` | Asserts `undefined`. |
+| `toBeDefined()` | Asserts not `undefined`. |
+
+### Numeric Matchers
+
+| Matcher | Description |
+| :--- | :--- |
+| `toBeGreaterThan(n)` | Asserts `actual > n`. |
+| `toBeGreaterThanOrEqual(n)` | Asserts `actual >= n`. |
+| `toBeLessThan(n)` | Asserts `actual < n`. |
+| `toBeLessThanOrEqual(n)` | Asserts `actual <= n`. |
+| `toBeCloseTo(n, precision?)` | Asserts floating point approximation. |
+
+### Strings, Arrays & Errors
+
+| Matcher | Description |
+| :--- | :--- |
+| `toContain(item)` | Checks if a string contains a substring or array contains an element. |
+| `toMatch(regex)` | Asserts string matches regular expression. |
+| `toHaveLength(length)` | Asserts `.length` property matches. |
+| `toThrow(error?)` | Asserts that a function throws an error matching the predicate. |
+| `toBeInstanceOf(constructor)` | Asserts `actual instanceof constructor`. |
+
+### Mock Assertions
+
+| Matcher | Description |
+| :--- | :--- |
+| `toHaveBeenCalled()` | Asserts the mock was called at least once. |
+| `toHaveBeenCalledTimes(count)` | Asserts the mock was invoked an exact number of times. |
+| `toHaveBeenCalledWith(...args)` | Asserts the mock was called with matching arguments. |
+
+---
+
+## 4. Spies, Mocks & Timers (`ex`)
+
+Jest-compatible API wrapping Node's native mocking subsystem:
 
 ```typescript
-const ex = {
-  // Spies
-  fn: (impl?: Function) => MockFunction,
-  spyOn: (obj: any, methodName: string) => MockFunction,
-  
-  // Modules
-  mock: (specifier: string, factory?: () => any) => void,
-  
-  // Timers
-  setSystemTime: (time: number | Date) => void,
-  advanceTimersByTime: (ms: number) => void,
-  useFakeTimers: () => void,
-  useRealTimers: () => void,
-  
-  clearAllMocks: () => void
-}
+// Function & Method Spies
+const fn = ex.fn((x: number) => x * 2)
+const spy = ex.spyOn(userService, 'findById')
+
+// Mock Implementations
+fn.mockReturnValue(42)
+fn.mockResolvedValue({ id: '1' })
+fn.mockRejectedValue(new Error('Failed'))
+fn.mockImplementation((name) => `Hello ${name}`)
+fn.mockClear()
+fn.mockRestore()
+
+// Timer Manipulation
+ex.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+ex.advanceTimersByTime(5000)
+
+// Module Mocking
+ex.mock('./mail-client', () => ({
+  sendMail: ex.fn().mockResolvedValue(true),
+}))
 ```
 
-### `MockFunction` Extensions
-ExisJS extends the native `MockFunction` returned by `ex.fn()` and `ex.spyOn()` with Jest-like helpers:
+---
+
+## 5. Unit-Level Mocking Helpers
+
+For unit testing individual middleware, guards, or filters without booting an entire server:
 
 ```typescript
-interface MockFunction {
-  mockRestore(): void
-  mockImplementation(impl: Function): this
-  mockResolvedValue(val: any): this
-  mockReturnValue(val: any): this
-  mockRejectedValue(err: any): this
-  mockClear(): void
-}
+import {
+  createMockRequest,
+  createMockResponse,
+  createMockNext,
+  getResponseBody,
+  getResponseHeader,
+} from 'exisjs/testing'
+
+const req = createMockRequest({
+  method: 'POST',
+  url: '/api/v1/checkout',
+  headers: { 'x-tenant-id': 'tenant_123' },
+  body: { amount: 5000 },
+})
+
+const res = createMockResponse()
+const next = createMockNext()
+
+await authGuard(req, res, next)
+
+expect(next.called).toBe(true)
 ```

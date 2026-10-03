@@ -1,23 +1,143 @@
 ---
-title: "Error Handling"
-description: "API Reference for ExisJS built-in Error Handling (`exisjs/error`)."
+title: "exisjs/error"
+description: "API Reference for ExisJS HTTP error hierarchy, exception classes, factory methods, global error handlers, and developer overlay utilities."
+nextUrl: "/docs/reference/middleware"
+nextTitle: "Middleware Reference"
 ---
 
-# Error Handling (`exisjs/error`)
+# `exisjs/error`
 
-ExisJS provides a rich set of predefined, highly optimized HTTP Error classes and a global error handler that automatically intercepts errors, formats them into a standard JSON shape, and prevents sensitive stack traces from leaking into production.
+The `exisjs/error` module provides the standardized HTTP exception hierarchy, factory helpers, error file convention handlers, and terminal diagnostic formatters.
 
 ---
 
-## Standard Exceptions
+## Module Exports
 
-You can throw these predefined exceptions from anywhere in your application (Controllers, Gateways, Services, or Middlewares). ExisJS will automatically catch them and map them to the correct HTTP status code.
+```typescript
+import {
+  // Base & Error Classes
+  HttpError,
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  ConflictError,
+  PayloadTooLargeError,
+  UnprocessableError,
+  RateLimitError,
+  InternalError,
 
-### Using Factory Methods (Recommended)
+  // Exception Aliases
+  HttpException,
+  BadRequestException,
+  UnauthorizedException,
+  ForbiddenException,
+  NotFoundException,
+  ConflictException,
+  PayloadTooLargeException,
+  UnprocessableException,
+  RateLimitException,
+  InternalException,
 
-The base `HttpError` class provides static factory methods for every standard HTTP error, making it extremely clean to throw errors inline:
+  // Handlers & Pipeline
+  createErrorHandler,
+  asyncHandler,
 
-**Class-Based (OOP)**
+  // Error Diagnostic & Formatting Utilities
+  stripInternalStackFrames,
+  categorizeError,
+  generateErrorHint,
+  parseErrorLocation,
+  buildCodeFrame,
+  renderDevErrorToString,
+  formatDevError,
+  formatCliError,
+  devErrorResponse,
+} from 'exisjs/error'
+
+import type { ParsedError } from 'exisjs/error'
+```
+
+---
+
+## 1. `HttpError` Base Class
+
+All framework exceptions inherit from `HttpError`.
+
+```typescript
+export class HttpError extends Error {
+  public readonly statusCode: number
+  public readonly code: string
+  public readonly isOperational: boolean
+  public readonly details?: unknown
+
+  constructor(
+    message: string,
+    statusCode = 500,
+    code = 'INTERNAL_ERROR',
+    details?: unknown
+  )
+}
+```
+
+### Static Factory Methods
+
+| Factory Method | Status Code | Default Code | Default Message |
+| :--- | :--- | :--- | :--- |
+| `HttpError.badRequest(msg, details?)` | `400` | `'BAD_REQUEST'` | Required |
+| `HttpError.unauthorized(msg?)` | `401` | `'UNAUTHORIZED'` | `'Unauthorized'` |
+| `HttpError.forbidden(msg?)` | `403` | `'FORBIDDEN'` | `'Forbidden'` |
+| `HttpError.notFound(resource?)` | `404` | `'NOT_FOUND'` | `'Resource not found'` |
+| `HttpError.conflict(msg)` | `409` | `'CONFLICT'` | Required |
+| `HttpError.payloadTooLarge(msg?, details?)` | `413` | `'PAYLOAD_TOO_LARGE'` | `'Payload too large'` |
+| `HttpError.unprocessable(msg, details?)` | `422` | `'UNPROCESSABLE_ENTITY'` | Required |
+| `HttpError.tooManyRequests(msg?)` | `429` | `'TOO_MANY_REQUESTS'` | `'Too many requests'` |
+| `HttpError.internal(msg?)` | `500` | `'INTERNAL_ERROR'` | `'Internal server error'` |
+| `HttpError.serviceUnavailable(msg?)` | `503` | `'SERVICE_UNAVAILABLE'` | `'Service unavailable'` |
+
+---
+
+## 2. Exception Classes Catalog
+
+Each exception class can be instantiated directly with `new` and has an equivalent `*Exception` alias:
+
+| Error Class | Alias | Status Code | Default Code |
+| :--- | :--- | :--- | :--- |
+| `BadRequestError` | `BadRequestException` | `400` | `'BAD_REQUEST'` |
+| `UnauthorizedError` | `UnauthorizedException` | `401` | `'UNAUTHORIZED'` |
+| `ForbiddenError` | `ForbiddenException` | `403` | `'FORBIDDEN'` |
+| `NotFoundError` | `NotFoundException` | `404` | `'NOT_FOUND'` |
+| `ConflictError` | `ConflictException` | `409` | `'CONFLICT'` |
+| `PayloadTooLargeError` | `PayloadTooLargeException` | `413` | `'PAYLOAD_TOO_LARGE'` |
+| `UnprocessableError` | `UnprocessableException` | `422` | `'UNPROCESSABLE_ENTITY'` |
+| `RateLimitError` | `RateLimitException` | `429` | `'TOO_MANY_REQUESTS'` |
+| `InternalError` | `InternalException` | `500` | `'INTERNAL_ERROR'` |
+
+---
+
+## 3. Usage Examples
+
+### Functional Route Example
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { HttpError, NotFoundException } from 'exisjs/error'
+
+export default controller({
+  getById: route.get('/:id', {
+    async handle({ params }) {
+      const user = await findUser(params.id)
+      if (!user) {
+        throw new NotFoundException(`User with ID ${params.id} not found`)
+      }
+      return user
+    },
+  }),
+})
+```
+
+### Class-Based Controller Example
+
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param } from 'exisjs/decorators'
 import { HttpError } from 'exisjs/error'
@@ -25,107 +145,32 @@ import { HttpError } from 'exisjs/error'
 @Controller('/users')
 export default class UserController {
   @Get('/:id')
-  async getUser(@Param('id') id: string) {
-    const user = await db.users.find(id)
-    
-    if (!user) throw HttpError.notFound('User could not be found')
-    if (user.isBanned) throw HttpError.forbidden('User account is suspended')
-
+  async getById(@Param('id') id: string) {
+    const user = await findUser(id)
+    if (!user) {
+      throw HttpError.notFound('User')
+    }
     return user
   }
 }
 ```
 
-**Functional**
-```typescript filename="src/http/users/route.ts"
-import { controller, route } from 'exisjs/router'
-import { HttpError } from 'exisjs/error'
-
-export default controller({
-  getUser: route.get('/:id', {
-    async handle(ctx) {
-      const user = await db.users.find(ctx.params.id)
-      
-      if (!user) throw HttpError.notFound('User could not be found')
-      if (user.isBanned) throw HttpError.forbidden('User account is suspended')
-
-      return user
-    }
-  })
-})
-```
-
-### Supported Factory Methods
-- `HttpError.badRequest(msg, details?)` (400)
-- `HttpError.unauthorized(msg?)` (401)
-- `HttpError.forbidden(msg?)` (403)
-- `HttpError.notFound(resource?)` (404)
-- `HttpError.conflict(msg)` (409)
-- `HttpError.payloadTooLarge(msg?)` (413)
-- `HttpError.unprocessable(msg, details?)` (422)
-- `HttpError.tooManyRequests(msg?)` (429)
-- `HttpError.internal(msg?)` (500)
-- `HttpError.serviceUnavailable(msg?)` (503)
-
-### `HttpError` Properties
-
-If you catch an `HttpError` or intercept it, you have access to the following properties:
-- **`statusCode`** `(number)`: The HTTP status code.
-- **`code`** `(string)`: The unique uppercase error code (e.g., `'NOT_FOUND'`).
-- **`message`** `(string)`: The human-readable message.
-- **`details`** `(unknown)`: Optional metadata attached to the error.
-- **`isOperational`** `(boolean)`: Always `true` for `HttpError`s. Used by the global error handler to determine if an error was intentionally thrown vs an unexpected crash.
-- **`toJSON()`**: Serializes the error into the strictly typed ExisJS `{ success: false, error: ... }` response shape.
-
 ---
 
-## Direct Class Instantiation
+## 4. Custom Application Exceptions
 
-If you prefer class instantiation (common in NestJS workflows), you can directly instantiate the error classes or their `Exception` aliases.
-
-```typescript filename="src/services/auth.ts"
-import { UnauthorizedError, ConflictException, PayloadTooLargeError } from 'exisjs/error'
-
-export function verifyToken(token: string) {
-  if (!isValid(token)) {
-    throw new UnauthorizedError('Invalid or expired token')
-  }
-}
-
-export function createUser(email: string) {
-  if (db.exists(email)) {
-    throw new ConflictException('Email already exists')
-  }
-}
-```
-
-### Supported Classes
-- `BadRequestError` / `BadRequestException`
-- `UnauthorizedError` / `UnauthorizedException`
-- `ForbiddenError` / `ForbiddenException`
-- `NotFoundError` / `NotFoundException`
-- `ConflictError` / `ConflictException`
-- `PayloadTooLargeError` / `PayloadTooLargeException`
-- `UnprocessableError` / `UnprocessableException`
-- `RateLimitError` / `RateLimitException`
-- `InternalError` / `InternalException`
-
----
-
-## Custom Errors
-
-You can easily create your own custom domain errors by extending the base `HttpError` class.
+Custom domain exceptions can be constructed by extending `HttpError`:
 
 ```typescript filename="src/errors/payment.ts"
 import { HttpError } from 'exisjs/error'
 
-export class InsufficientFundsError extends HttpError {
-  constructor(currentBalance: number) {
+export class InsufficientBalanceError extends HttpError {
+  constructor(required: number, current: number) {
     super(
-      'Insufficient funds to complete this transaction',
-      402, // Payment Required
-      'INSUFFICIENT_FUNDS', // Custom Error Code
-      { currentBalance } // Extra details attached to the response
+      'Insufficient balance to complete transaction',
+      402,
+      'INSUFFICIENT_BALANCE',
+      { required, current }
     )
   }
 }
@@ -133,13 +178,12 @@ export class InsufficientFundsError extends HttpError {
 
 ---
 
-## Framework Exception File Convention (`src/http/error.ts`)
+## 5. Global Error Handling Convention (`src/http/error.ts`)
 
-ExisJS natively discovers and auto-mounts `src/http/error.ts` (or `src/http/*.error.ts`) during application bootstrap. It serves as the single source of truth for centralized exception filtering without requiring manual middleware registration in `server.ts`.
+ExisJS auto-discovers and mounts `src/http/error.ts` to centralize application error interceptors:
 
-### Handler Signatures
+### Functional Style
 
-**Functional (`export function onError`):**
 ```typescript filename="src/http/error.ts"
 import type { Request, Response } from 'exisjs'
 
@@ -148,15 +192,16 @@ export function onError(err: any, req: Request, res: Response): void | Promise<v
   res.status(status).json({
     success: false,
     error: {
-      code: err.code || 'ERROR',
-      message: err.message || 'Internal Server Error',
+      code: err.code || 'INTERNAL_ERROR',
+      message: err.message || 'An unexpected error occurred',
       path: req.path,
     },
   })
 }
 ```
 
-**Class-Based OOP (`export default class`):**
+### Class-Based Style
+
 ```typescript filename="src/http/error.ts"
 import type { Request, Response } from 'exisjs'
 
@@ -166,9 +211,8 @@ export default class GlobalErrorHandler {
     res.status(status).json({
       success: false,
       error: {
-        code: err.code || 'ERROR',
-        message: err.message || 'Internal Server Error',
-        path: req.path,
+        code: err.code || 'INTERNAL_ERROR',
+        message: err.message || 'An unexpected error occurred',
       },
     })
   }
@@ -177,84 +221,17 @@ export default class GlobalErrorHandler {
 
 ---
 
-## Global Error Handler
+## 6. Developer Overlay & Formatting Utilities
 
-ExisJS uses a highly sophisticated global error handler out of the box, generated via `createErrorHandler(isDev)`. 
+The module exports diagnostic utilities used for CLI logging, test assertions, and debugging:
 
-### Automatic Features:
-1. **JSON Standardization**: Automatically formats all errors into a strict `{ success: false, error: { code, message, details? } }` shape.
-2. **Third-Party Integrations**: Natively catches and normalizes schema validation errors from **Zod**, **Yup**, and the **ExisJS built-in validator**.
-3. **Syntax Guard**: Catches malformed JSON payloads (SyntaxErrors) in the request body gracefully.
-4. **Dev vs Prod Modes**: If `isDev` is true, unexpected internal errors (500) will attach stack traces to the response. In production, stack traces are completely stripped to prevent security leaks.
-5. **HTML Error Pages**: In Dev mode, if a request accepts `text/html`, the error handler renders a beautiful, stylized HTML error page displaying the stack trace directly in the browser.
-
-### Overriding the Global Handler
-
-If you need to intercept errors before they reach the client (e.g., to send them to Sentry or Datadog), you can provide a custom global error handler:
-
-```typescript filename="src/server.ts"
-import { exis } from 'exisjs'
-import { HttpError } from 'exisjs/error'
-
-const app = exis()
-
-app.use((err, req, res, next) => {
-  // Log unexpected errors to Sentry
-  if (!(err instanceof HttpError) || err.statusCode >= 500) {
-    Sentry.captureException(err)
-  }
-
-  // Pass it down to the default ExisJS error handler
-  next(err)
-})
-```
-
-### Express Compatibility (`asyncHandler`)
-
-ExisJS natively intercepts and handles Promise rejections at the core routing level. 
-
-Unlike Express, you do **not** need to wrap your routes in an `asyncHandler`. However, for strict compatibility with older Express middleware ecosystems, `exisjs/error` does export an `asyncHandler` wrapper. Note that using it in ExisJS is entirely redundant and merely adds unnecessary Promise allocations.
-
----
-
-## Developer Error Formatting & Overlay Utilities
-
-`exisjs/error` also exports powerful error diagnostic utilities that you can use in custom error handlers, CLI scripts, background workers, and testing:
-
-```typescript
-import {
-  formatDevError,
-  renderDevErrorToString,
-  categorizeError,
-  generateErrorHint,
-  buildCodeFrame,
-  stripInternalStackFrames,
-  devErrorResponse,
-  type ParsedError,
-} from 'exisjs/error'
-```
-
-### Utility Functions
-
-| Function | Signature | Description |
+| Utility Function | Signature | Description |
 | :--- | :--- | :--- |
-| `formatDevError` | `(err: Error, optionsOrFile?: string \| { routeFile?: string; title?: string }) => void` | Prints a formatted terminal error envelope with code frames and actionable hints |
-| `renderDevErrorToString` | `(err: Error, optionsOrFile?: ...) => string` | Returns the formatted terminal error envelope string |
-| `categorizeError` | `(err: Error) => string` | Intelligently classifies errors into domain categories (`Validation Schema Error`, `Environment Configuration Error`, etc.) |
-| `generateErrorHint` | `(err: Error) => string \| null` | Generates actionable hints for common coding mistakes |
-| `buildCodeFrame` | `(filePath: string, line: number, col?: number) => string` | Builds a source code snippet visualizer with gutter line numbers and caret indicator |
-| `stripInternalStackFrames` | `(stack?: string) => string[]` | Strips internal Node.js and framework runtime stack frames |
-| `devErrorResponse` | `(err: Error, routeFile?: string) => object` | Generates a structured developer error envelope payload for JSON API responses |
+| `formatDevError` | `(err: Error, options?: { routeFile?: string; title?: string }) => void` | Prints terminal error frame with code snippet and line pointers. |
+| `renderDevErrorToString` | `(err: Error, options?: { routeFile?: string; title?: string }) => string` | Returns the formatted terminal error box as an ANSI string. |
+| `categorizeError` | `(err: Error) => string` | Returns a human-readable category (e.g. `'Validation Error'`). |
+| `generateErrorHint` | `(err: Error) => string \| null` | Produces actionable remediation advice for recognized errors. |
+| `buildCodeFrame` | `(filePath: string, line: number, col?: number) => string` | Constructs visual code snippet frame around line and column coordinates. |
+| `stripInternalStackFrames` | `(stack?: string) => string[]` | Filters out Node.js internal and framework runtime stack frames. |
+| `devErrorResponse` | `(err: Error, routeFile?: string) => Record<string, any>` | Formats structured JSON error response for development clients. |
 
-### Example: Custom Worker or Script Error Handling
-
-```typescript filename="src/workers/import-csv.ts"
-import { formatDevError, categorizeError } from 'exisjs/error'
-
-try {
-  await processCsvImport(filePath)
-} catch (err: any) {
-  // Prints a clean code frame with line numbers and actionable hints directly in terminal
-  formatDevError(err, { routeFile: filePath, title: categorizeError(err) })
-}
-```

@@ -1,241 +1,264 @@
 ---
-nextUrl: "/docs"
-nextTitle: "Introduction"
+title: "CLI Commands"
+description: "Comprehensive command-line reference for all ExisJS development, build, diagnostic, and scaffolding commands."
+nextUrl: "/docs/reference/config"
+nextTitle: "Config Reference"
 ---
 
-# CLI Command Reference
+# CLI Commands
 
-### `exisjs dev`
-
-Starts the development server with live reload and automatic port collision avoidance.
-
-```bash
-$ npx exisjs dev [options]
-```
-
-**Options**
-
-| Option | Description |
-| :--- | :--- |
-| `-p, --port <port>` | Port to listen on (overrides `.env` and `exis.config.ts`). |
-| `-H, --host <host>` | Host to bind to (e.g. `0.0.0.0` or `localhost`). |
-| `-e, --entry <file>` | Custom entry file path (default: `src/http/server.ts`). |
-
-- **Automatic Port Collision Detection**: If the designated port is occupied, the CLI detects the conflict and increments to the next available port automatically.
-- **PID Lockfile**: Manages a `.exis/dev.pid` lockfile to prevent accidentally spawning duplicate dev servers in the same directory.
+The ExisJS CLI provides tools for local development, production compilation, scaffolding, testing, database scripting, and environment auditing.
 
 ---
 
-### `exisjs build`
+## `exisjs dev`
 
-Compiles TypeScript to production JavaScript and produces route manifests.
+Starts the development server with live file watching, TypeScript transpilation, and automatic port collision avoidance.
 
 ```bash
-$ npx exisjs build [options]
+npx exisjs dev [options]
 ```
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `-o, --out-dir <dir>` | Output directory (default: `.exis/server` or `dist`). |
-| `--no-clean` | Skip cleaning the output directory before compilation. |
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-p, --port <port>` | `number` | `3000` | Port to listen on (overrides `.env` and `exis.config.ts`). |
+| `-H, --host <host>` | `string` | `localhost` | Host address to bind to. |
+| `-e, --entry <file>` | `string` | `src/http/server.ts` | Custom entry file path to bootstrap the application. |
 
-- **Type-Check**: Runs the TypeScript compiler in check-only mode (`noEmit`) to verify strict typing before compiling.
-- **Fast Bundling**: Emits JavaScript via esbuild.
-- **Route Manifest**: Generates `.exis/routes-manifest.js` to enable O(1) route discovery at runtime without filesystem directory walks.
+### Behavior
+- **Port Collision Detection**: If the specified port is in use, the CLI automatically increments to the next open port.
+- **PID Lockfile**: Manages `.exis/dev.pid` to prevent duplicate dev server processes in the same workspace.
 
 ---
 
-### `exisjs start`
+## `exisjs build`
 
-Starts the compiled production server.
+Compiles the TypeScript application to production JavaScript, performs type-checking, and generates static route manifests.
 
 ```bash
-$ npx exisjs start [options]
+npx exisjs build [options]
 ```
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `-p, --port <port>` | Port to listen on. |
-| `-H, --host <host>` | Host to bind to. |
-| `-e, --entry <file>` | Custom compiled entry file path. |
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-o, --out-dir <dir>` | `string` | `.exis/server` | Output directory for compiled JavaScript assets. |
+| `--no-clean` | `boolean` | `false` | Skip cleaning the output directory prior to compilation. |
+| `--skip-env-check` | `boolean` | `false` | Skip build-time route and environment validation checks. |
+| `--dry-run` | `boolean` | `false` | Compile and bundle without halting on missing environment variables. |
+| `-m, --mode <mode>` | `string` | `production` | Environment mode to load (e.g. `production`, `staging`). |
+
+### Build Outputs
+- Compiles application source code into the specified `outDir`.
+- Emits pre-computed route manifests (`.exis/routes-manifest.js`) for O(1) route discovery at runtime.
+- Generates TypeScript environment definitions (`.exis/exis.d.ts`).
 
 ---
 
-### `exisjs generate`
+## `exisjs clean`
 
-Scaffolds framework components and files according to ExisJS core conventions.
+Removes temporary build artifacts, compiled files, and cached manifests.
 
 ```bash
-$ npx exisjs generate <type> <name> [options]
-$ npx exisjs g <type> <name> [options]
+npx exisjs clean [options]
+npx exisjs cl [options]
 ```
 
-**Arguments**
+### Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-a, --all` | `boolean` | `false` | In addition to `.exis/`, also remove the `dist/` directory. |
+
+---
+
+## `exisjs start`
+
+Starts the compiled production server from the build output directory.
+
+```bash
+npx exisjs start [options]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-p, --port <port>` | `number` | `3000` | Port to listen on. |
+| `-H, --host <host>` | `string` | `0.0.0.0` | Host address to bind to. |
+| `-e, --entry <file>` | `string` | `.exis/server/src/http/server.js` | Custom compiled entry file path. |
+
+---
+
+## `exisjs generate`
+
+Scaffolds framework components and files according to ExisJS file conventions.
+
+```bash
+npx exisjs generate <type> [name] [options]
+npx exisjs g <type> [name] [options]
+```
+
+### Arguments
 
 | Argument | Description |
 | :--- | :--- |
 | `<type>` | The schematic type to generate. |
-| `<name>` | The name of the feature / folder. |
+| `[name]` | The name of the feature or folder (required for all types except `error`). |
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `-n, --named` | Names generated files using the feature prefix (e.g. `<name>.route.ts`, `<name>.schema.ts`, `<name>.service.ts`). |
-| `--oop` | Generates using Class-Based (OOP) decorators instead of Functional syntax. |
-
-**Supported Schematics**
-
-| Schematic | Alias | Description | Output Path |
+| Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `crud` | `resource` | Full 4-file CRUD slice (`schema.ts`, `service.ts`, `route.ts`, and `model.ts` entity), 100% database-agnostic | `src/http/<name>/` & `src/models/` |
-| `model` | | Standalone database-agnostic TypeScript entity and input types | `src/models/<Name>.ts` |
-| `route` | `r`, `c`, `controller` | HTTP route file | `src/http/<name>/route.ts` |
-| `service` | `s` | Injectable service / business logic with pagination helpers | `src/http/<name>/service.ts` |
-| `schema` | `sc` | Validation schemas powered by `tex` (includes pagination) | `src/http/<name>/schema.ts` |
-| `boundary` | `b` | Folder-scoped configuration and request pipeline | `src/http/<name>/boundary.ts` |
-| `plugin` | `p` | Distributable plugin module | `src/plugins/<name>.ts` |
-| `middleware` | `m` | Standalone middleware handler | `src/middleware/<name>.ts` |
-| `test` | `t` | Native test suite | `tests/<name>.test.ts` |
+| `-n, --named` | `boolean` | `false` | Names generated files using the feature prefix (e.g. `user.route.ts`, `user.schema.ts`). |
+| `--oop` | `boolean` | `false` | Generates using Class-Based (OOP) decorators instead of Functional syntax. |
+
+### Supported Schematics
+
+| Schematic | Alias | Description | Output Location |
+| :--- | :--- | :--- | :--- |
+| `crud` | `resource` | Generates full 4-file CRUD slice (`schema`, `service`, `route`, `model`). | `src/http/<name>/` & `src/models/` |
+| `model` | | Standalone database-agnostic TypeScript entity interface. | `src/models/<Name>.ts` |
+| `route` | `r`, `c`, `controller` | HTTP route endpoint definition. | `src/http/<name>/route.ts` |
+| `service` | `s` | Injectable service with pagination utilities. | `src/http/<name>/service.ts` |
+| `schema` | `sc` | Validation schemas with `tex` validators and pagination DTOs. | `src/http/<name>/schema.ts` |
+| `boundary` | `b` | Folder-level boundary middleware configuration. | `src/http/<name>/boundary.ts` |
+| `cron` | `job` | Scheduled cron background task. | `src/cron/<name>.ts` |
+| `error` | `err` | Global error handler fallback. | `src/http/error.ts` |
+| `plugin` | `p` | Reusable ExisJS plugin module. | `src/plugins/<name>.ts` |
+| `middleware` | `m` | Standalone middleware handler function. | `src/middleware/<name>.ts` |
+| `test` | `t` | Integration test file using `node:test` and `exisjs/testing`. | `tests/<name>.test.ts` |
 
 ---
 
-### `exisjs routes`
+## `exisjs routes`
 
-Analyzes and prints the application routing table to the terminal in an interactive, formatted grid with method badges and dynamic parameter highlighting.
+Inspects and displays the complete application routing table in formatted tabular output or raw JSON.
 
 ```bash
-$ npx exisjs routes [options]
+npx exisjs routes [options]
 ```
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `-e, --entry <file>` | Custom entry file path to bootstrap the app from (default: `src/http/server.ts`). |
-| `-m, --method <method>` | Filter endpoints by HTTP method (e.g. `GET`, `POST`, `PUT`, `DELETE`). |
-| `-f, --filter <keyword>` | Filter endpoints matching path, method, or source file keyword. |
-| `--json` | Output the parsed routes and middleware metadata directly as structured JSON. |
-
-**Features**
-- **Method Badges**: Visually styled badges (`GET`, `POST`, `PUT`, `PATCH`, `DEL`, `ALL`).
-- **Parameter Highlighting**: Dynamically distinguishes path parameters (`:id`, `*slug`).
-- **Middleware Counting**: Displays total attached middleware / boundary steps.
-- **Source Resolution**: Displays relative file source path (e.g. `src/http/users/user.route.ts`).
-- **Summary Metrics**: Displays total endpoint counts and method breakdown.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-e, --entry <file>` | `string` | `src/http/server.ts` | Custom entry file path to discover routes from. |
+| `-m, --method <method>` | `string` | None | Filter endpoints by HTTP method (e.g. `GET`, `POST`). |
+| `-f, --filter <keyword>` | `string` | None | Filter endpoints by path, method, or source file keyword. |
+| `--json` | `boolean` | `false` | Output routes and middleware metadata in JSON format. |
 
 ---
 
-### `exisjs init`
+## `exisjs test`
 
-Initializes a new ExisJS project in the current directory using `create-exisjs`.
+Runs the test suite using the integrated Node.js test runner (`node:test`).
 
 ```bash
-$ npx exisjs init
+npx exisjs test [files...] [options]
 ```
+
+### Arguments & Options
+
+| Argument / Option | Type | Description |
+| :--- | :--- | :--- |
+| `[files...]` | `string[]` | Specific test files or glob patterns to run. |
+| `--watch` | `boolean` | Watch for file changes and re-execute tests automatically. |
+| `-u, --update` | `boolean` | Update snapshot assertions. |
+| `-e, --entry <file>` | `string` | Custom entry file path to bootstrap before test execution. |
 
 ---
 
-### `exisjs test`
+## `exisjs run`
 
-Runs the native Node.js test runner (`node:test`) across the project.
+Executes standalone scripts, migration utilities, or third-party CLI tools with ExisJS `.env` files automatically loaded into `process.env`.
 
 ```bash
-$ npx exisjs test [files...] [options]
+npx exisjs run <scriptOrCmd> [args...] [options]
+npx exisjs exec <scriptOrCmd> [args...] [options]
 ```
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `--watch` | Watch for file changes and re-run tests. |
-| `-u, --update` | Update test snapshots. |
-| `-e, --entry <file>` | Custom entry file path to bootstrap before running tests. |
+| Option | Type | Description |
+| :--- | :--- | :--- |
+| `-e, --env <file>` | `string` | Path to a specific environment file to load. |
+| `-m, --mode <mode>` | `string` | Environment mode to load (e.g. `production`, `staging`, `development`). |
 
----
-
-### `exisjs run`
-
-Executes any standalone TypeScript script, migration runner, or external tool (e.g. `drizzle-kit`, `prisma`, `knex`) with ExisJS `.env` files automatically loaded into `process.env`.
+### Examples
 
 ```bash
-$ npx exisjs run <scriptOrCmd> [args...] [options]
-$ npx exisjs exec <scriptOrCmd> [args...] [options]
-```
+# Execute a TypeScript seed script
+npx exisjs run src/database/seed.ts
 
-**Options**
-
-| Option | Description |
-| :--- | :--- |
-| `-e, --env <file>` | Custom environment file to load. |
-| `-m, --mode <mode>` | Environment mode to load (e.g. `production`, `development`, `staging`). |
-
-**Examples**
-
-```bash
-# Run Drizzle migrations with auto-loaded .env database credentials
-$ npx exisjs run drizzle-kit push
-
-# Execute a TypeScript database seed script
-$ npx exisjs run src/database/seed.ts
-
-# Run with a custom environment file
-$ npx exisjs run scripts/report.ts --env .env.staging
+# Run an external database CLI with ExisJS environment loaded
+npx exisjs run prisma migrate deploy
+npx exisjs run drizzle-kit push
 ```
 
 ---
 
-### `exisjs repl`
+## `exisjs console`
 
-Starts an interactive Node.js REPL console loaded with your application context.
+Starts an interactive Node.js REPL environment loaded with the application context.
 
 ```bash
-$ npx exisjs repl [options]
-$ npx exisjs console [options]
+npx exisjs console [options]
+npx exisjs repl [options]
 ```
 
-**Options**
+### Options
 
-| Option | Description |
-| :--- | :--- |
-| `-e, --entry <file>` | Custom entry file path to bootstrap the REPL context. |
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `-e, --entry <file>` | `string` | `src/http/server.ts` | Custom entry file to bootstrap REPL context. |
 
 ---
 
-### `exisjs exports`
+## `exisjs doctor`
 
-Lists all available framework exports and public subpaths exposed by `exisjs/*`.
+Runs an end-to-end diagnostic audit of the local project environment.
 
 ```bash
-$ npx exisjs exports
+npx exisjs doctor
+```
+
+### Diagnostic Checks
+- **Runtime Environment**: Validates Node.js version compatibility (Node.js 18+).
+- **Native Acceleration**: Checks whether `@exisjs/rs` compiled native binaries are active.
+- **Project Structure**: Verifies `package.json`, `tsconfig.json`, and application entry points.
+- **Route Integrity**: Audits `src/http/` directory for naming conventions and orphan files.
+
+---
+
+## `exisjs info`
+
+Prints runtime environment details, including ExisJS version, Node.js version, platform, and operating system architecture.
+
+```bash
+npx exisjs info
 ```
 
 ---
 
-### `exisjs info`
+## `exisjs exports`
 
-Displays runtime environment, Node.js version, platform, architecture, and ExisJS version.
+Lists all public subpath exports provided by the `exisjs` package.
 
 ```bash
-$ npx exisjs info
+npx exisjs exports
 ```
 
 ---
 
-### `exisjs doctor`
+## `exisjs init`
 
-Performs an end-to-end diagnostic audit of the local project environment, verifying Node.js version compatibility, native Rust hardware acceleration (`@exisjs/rs`), `tsconfig.json` strictness, entry-point resolution, route naming patterns, and file-system route counts.
+Initializes a new ExisJS project interactively in the current working directory.
 
 ```bash
-$ npx exisjs doctor
+npx exisjs init
 ```
 
-**Diagnostic Checks**
-- **Runtime**: Validates Node.js engine compatibility (v18+ recommended for N-API and worker thread pools).
-- **Native Engine**: Verifies `@exisjs/rs` compiled native binaries are active for hardware-accelerated radix tree traversal, off-heap caching, and native JSON serialization.
-- **Project Configuration**: Checks `package.json` root and `tsconfig.json` strict mode.
-- **Routes & Pipeline**: Confirms application entry point (`src/http/server.ts`), discovers active route slices, and flags non-standard or orphan file naming conventions.

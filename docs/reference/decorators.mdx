@@ -1,167 +1,285 @@
 ---
-title: "Decorators"
-description: "API Reference for ExisJS Class-Based Routing and Decorators."
+title: "exisjs/decorators"
+description: "API Reference for ExisJS Class-Based routing, controller decorators, parameter injectors, pipes, security guards, caching, and lifecycle hooks."
+nextUrl: "/docs/reference/database"
+nextTitle: "Database Reference"
 ---
 
-# Decorators (`exisjs/decorators`)
+# `exisjs/decorators`
 
-ExisJS provides a robust Object-Oriented Programming (OOP) paradigm via the `exisjs/decorators` module.
+The `exisjs/decorators` module provides TypeScript decorators for Class-Based OOP architecture. It covers routing controllers, HTTP method endpoints, parameter injection, validation pipes, traffic control, security guards, caching, and application lifecycle hooks.
 
-Unlike frameworks that depend on heavy reflection libraries, ExisJS decorators are built completely on standard ECMAScript decorators and **do not require `reflect-metadata`**.
+---
+
+## Module Exports Overview
+
+```typescript
+import {
+  // Routing & Controllers
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Options,
+  Head,
+  All,
+  Ws,
+  Sse,
+
+  // Parameter Injection
+  Body,
+  RawBody,
+  Param,
+  Query,
+  QueryParam,
+  Headers,
+  Req,
+  Res,
+  Next,
+  Ip,
+  Cookies,
+  Cookie,
+  State,
+  AppCtx,
+  Fields,
+  UploadedFile,
+  UploadedFiles,
+  createParamDecorator,
+
+  // Pipeline, Middleware & Security
+  Use,
+  UseGuards,
+  UseInterceptors,
+  UseFilters,
+  UsePipes,
+  Catch,
+  RateLimit,
+  Cors,
+  IpFilter,
+  Timeout,
+  Idempotent,
+  Dedupe,
+  BlockProbes,
+  Upload,
+  Roles,
+  Permissions,
+  Public,
+  IsPublic,
+  AllowAnonymous,
+
+  // Responses & Metadata
+  HttpCode,
+  Header,
+  Redirect,
+  Returns,
+  Hosts,
+  SetMetadata,
+  Reflector,
+
+  // IoC, Modules & Boundaries
+  Injectable,
+  Inject,
+  Optional,
+  Module,
+  Global,
+  Boundary,
+  Server,
+
+  // Caching, Transactions & Profiling
+  Cacheable,
+  CacheEvict,
+  Transactional,
+  Profile,
+
+  // Cron & Scheduling
+  Cron,
+  Interval,
+  TimeoutTask,
+} from 'exisjs/decorators'
+```
 
 ---
 
 ## 1. Controller & Routing
 
-### `@Controller(prefixOrOptions?)`
+### `@Controller(prefixOrOptions?, options?)`
 
-Marks a class as a Controller. All route handler methods within the class will be grouped under the specified prefix.
+Marks a class as an HTTP controller slice mounted at the specified route prefix.
 
-```typescript filename="src/http/users/route.ts"
-import { Controller } from 'exisjs/decorators'
-
-@Controller('/users')
-export default class UserController {
-  // ...
-}
+```typescript
+function Controller(
+  prefixOrOptions?: string | ControllerOptions,
+  options?: ControllerOptions
+): ClassDecorator
 ```
 
-### HTTP Methods
-Defines an HTTP route handler on a class method. You can optionally pass a schema to validate incoming requests.
+#### `ControllerOptions`
 
-- `@Get(path?, schema?)`
-- `@Post(path?, schema?)`
-- `@Put(path?, schema?)`
-- `@Patch(path?, schema?)`
-- `@Delete(path?, schema?)`
-- `@Options(path?, schema?)`
-- `@Head(path?, schema?)`
-- `@Connect(path?, schema?)`
-- `@Trace(path?, schema?)`
-- `@All(path?, schema?)`
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `prefix` | `string` | Base URL path for all routes in this controller class. |
+| `host` | `string \| string[]` | Subdomain or host restriction for this controller. |
+| `cors` | `boolean \| CorsConfig` | Controller-scoped CORS configuration. |
+| `tags` | `string[]` | OpenAPI / Swagger tags for documentation grouping. |
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Post } from 'exisjs/decorators'
-import { tex } from 'exisjs/validator'
+```typescript
+import { Controller, Get } from 'exisjs/decorators'
 
 @Controller('/users')
 export default class UserController {
-  @Get('/:id')
-  getUser() {
-    return { id: 1 }
-  }
-
-  @Post('/', { body: tex.object({ name: tex.string() }) })
-  createUser() {
-    return { success: true }
+  @Get('/')
+  async list() {
+    return { users: [] }
   }
 }
 ```
 
 ---
 
-## 2. Parameter Injection
+### HTTP Method Decorators
 
-Parameter decorators automatically extract data from the incoming request and inject them directly into your method arguments:
+Method decorators register class methods as HTTP route handlers and attach validation schemas.
 
-- `@Body(nameOrPipe?)`: Parses and injects the JSON request body (or passes it through a validator/pipe).
-- `@Param(nameOrPipe?)`: Injects a URL path parameter (e.g., `id` from `/:id`).
-- `@Headers(nameOrPipe?)`: Injects an HTTP header by name.
-- `@QueryParam(nameOrPipe?)` / `@Query(nameOrPipe?)`: Injects a URL query parameter (e.g., `?search=term`).
-- `@Cookies(nameOrPipe?)` / `@Cookie(nameOrPipe?)`: Injects incoming parsed cookies or a specific cookie value.
-- `@State(keyOrPipe?)`: Injects request state from execution context or middleware.
-- `@AppCtx()`: Injects the root ExisJS Application instance.
-- `@Fields(nameOrPipe?)`: Injects non-file multipart form fields.
-- `@UploadedFile()`: Injects the uploaded file (`req.file`) into the method argument.
-- `@UploadedFiles()`: Injects the uploaded files array or dictionary (`req.files`) into the method argument.
-- `@HostParam(nameOrPipe?)`: Injects a subdomain parameter.
-- `@Req()`: Injects the raw ExisJS Request object.
-- `@Res(options?)`: Injects the raw ExisJS Response object (`{ passthrough: true }`).
-- `@Ip()`: Injects the client's IP address.
-- `@Next()`: Injects the Next function.
-- `createParamDecorator(factory)`: Exports a factory to create custom parameter decorators (e.g. `@CurrentUser()`).
+| Decorator | HTTP Method | Signature |
+| :--- | :--- | :--- |
+| `@Get(path?, schema?)` | `GET` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Post(path?, schema?)` | `POST` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Put(path?, schema?)` | `PUT` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Patch(path?, schema?)` | `PATCH` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Delete(path?, schema?)` | `DELETE` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Options(path?, schema?)` | `OPTIONS` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Head(path?, schema?)` | `HEAD` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@All(path?, schema?)` | Any Method | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Sse(path?, schema?)` | SSE Stream | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+| `@Ws(path?, schema?)` | WebSocket | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
 
 ---
 
-## 3. Transformation Pipes & Middleware Decorators
+## 2. Parameter Injectors
 
-- `@UsePipes(...pipes)`: Binds transformation and validation pipes to a controller class or route method.
-- **Built-in Pipes**:
-  - `ParseIntPipe`: Parses numeric strings to integers (`options?: { errorHttpStatusCode, exceptionFactory }`).
-  - `ParseFloatPipe`: Parses numeric float strings (`options?: { errorHttpStatusCode, exceptionFactory }`).
-  - `ParseBoolPipe`: Parses boolean strings (`'true'`, `'false'`, `1`, `0`).
-  - `ParseUUIDPipe`: Validates UUID format (`options?: { version: '3' | '4' | '5' | 'all' }`).
-  - `ParseArrayPipe`: Splits comma-separated strings and applies item-level transformation pipes.
-  - `ValidationPipe`: Validates DTO classes and schemas (`options?: { transform: boolean }`).
-- `@Use(...middlewaresOrGuardsOrInterceptorsOrFilters)`: Unified decorator that binds middlewares, guards (`canActivate`), interceptors (`intercept`), or exception filters (`catch`) to a controller class or method.
-- `@UseGuards(...guards)`: Dedicated decorator to apply guards to a class or method.
-- `@UseInterceptors(...interceptors)`: Dedicated decorator to apply interceptors to a class or method.
-- `@UseFilters(...filters)`: Dedicated decorator to apply exception filters to a class or method.
-- `@Catch(...exceptions)`: Class decorator for `ExceptionFilter` implementations declaring handled exception types.
-- `@Upload(fieldName, options?)` / `@UseUpload(...)`: Configures multipart file upload handling for a method, populating `@UploadedFile()` or `@UploadedFiles()`.
-- `@Timeout(ms: number | TimeoutOptions)`: Overrides the request timeout for a class or method (e.g. `@Timeout(120000)`). Passing `0` disables timeouts for long-running streaming or exports.
-- `@Idempotent(options?)`: Caches responses based on the `Idempotency-Key` header using native in-memory off-heap storage. Works at class and method level.
-- `@RateLimit(options?)`: Enforces rate limits (e.g. `@RateLimit({ max: 100, windowMs: 60000 })`) at class or method level.
-- `@Cors(options?)`: Enforces Cross-Origin Resource Sharing rules at class or method level.
-- `@IpFilter(options)`: Enforces CIDR and IP allow/deny lists at class or method level.
-- `@Compress()`: Enables automatic Gzip and Brotli compression on responses.
-- `@Dedupe(options)`: Deduplicates concurrent identical requests sharing the same key.
-- `@BlockProbes(options?)`: Intercepts vulnerability scanner probes (`.env`, `/.git`, `/.DS_Store`) and blackholes them without triggering log noise.
+Parameter decorators extract and inject typed data directly into handler method arguments:
 
----
+| Decorator | Signature | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `@Body(property?, ...pipes)` | `(prop?: string, ...pipes: Pipe[])` | Injects parsed request body or subfield. | `@Body() dto: CreateUserDto` |
+| `@RawBody(encoding?)` | `(encoding?: 'string' \| 'utf8' \| { encoding: string })` | Injects unparsed raw `Buffer` or string. | `@RawBody() payload: Buffer` |
+| `@Param(key?, ...pipes)` | `(key?: string, ...pipes: Pipe[])` | Injects URL path parameter. | `@Param('id', ParseIntPipe) id: number` |
+| `@Query(key?, ...pipes)` | `(key?: string, ...pipes: Pipe[])` | Injects query string parameter or dictionary. | `@Query('page') page: number` |
+| `@Headers(name?, ...pipes)` | `(name?: string, ...pipes: Pipe[])` | Injects HTTP request header. | `@Headers('authorization') auth: string` |
+| `@Cookies(name?, ...pipes)` | `(name?: string, ...pipes: Pipe[])` | Injects parsed cookie value or record. | `@Cookies('session') sid: string` |
+| `@State(key?, ...pipes)` | `(key?: string, ...pipes: Pipe[])` | Injects request state dictionary or property. | `@State('user') user: User` |
+| `@UploadedFile(field?)` | `(field?: string)` | Injects single uploaded file object. | `@UploadedFile('avatar') file: ExisFile` |
+| `@UploadedFiles(field?)` | `(field?: string)` | Injects multiple uploaded files. | `@UploadedFiles('docs') files: ExisFile[]` |
+| `@Req()` | `()` | Injects underlying `ExisRequest`. | `@Req() req: Request` |
+| `@Res(options?)` | `(opts?: { passthrough?: boolean })` | Injects underlying `ExisResponse`. | `@Res() res: Response` |
+| `@Next()` | `()` | Injects pipeline `NextFunction`. | `@Next() next: NextFunction` |
+| `@Ip()` | `()` | Injects client IP address string. | `@Ip() ip: string` |
+| `@AppCtx()` | `()` | Injects root Exis application instance. | `@AppCtx() app: App` |
 
-## 4. Security & Access Control Decorators
+### `createParamDecorator(factory)`
 
-- `@Permissions(...permissions: string[])`: Sets required permission keys for a controller or route method (automatically bypassed if `req.user.isSuperAdmin` is true).
-- `@Roles(...roles: string[])`: Sets required role names for a controller or route method.
-- `@Public()` / `@IsPublic()` / `@AllowAnonymous()`: Marks a controller or route as public, instructing global authentication guards to bypass credential checks.
+Factory to create reusable custom parameter decorators:
 
----
+```typescript
+import { createParamDecorator } from 'exisjs/decorators'
 
-## 5. Service Enhancements: Caching, Transactions & Profiling
-
-- `@Cacheable({ ttl?: number, key?: string | ((...args) => string) })`: Caches method return values in ExisJS's off-heap native memory LRU cache.
-- `@CacheEvict({ key: string | ((...args) => string) })`: Evicts cached entries matching the key when the method completes.
-- `@Transactional(options?)`: Automatically wraps service operations in an atomic database transaction.
-- `@Profile({ thresholdMs?: number, warnSlow?: boolean, log?: Function })`: Profiles method execution time with sub-millisecond precision.
-- `OnInit` (`onInit()`): Invoked when the application or service boots up.
-- `OnDestroy` (`onDestroy()`): Invoked when the application gracefully terminates.
-- `OnModuleInit`, `OnModuleDestroy`, `OnApplicationBootstrap`: Modular lifecycle hooks.
+export const CurrentUser = createParamDecorator((data: string | undefined, ctx) => {
+  const req = ctx.req
+  return data ? req.user?.[data] : req.user
+})
+```
 
 ---
 
-## 6. Response & Metadata Modifiers
+## 3. Transformation & Validation Pipes
 
-- `@HttpCode(code: number)`: Enforces a custom HTTP status code on success.
-- `@Header(name: string, value: string)`: Appends an HTTP header to the response.
-- `@Returns(schema)`: Attaches response schema for OpenAPI documentation.
-- `@Redirect(url: string, statusCode?: number)`: Redirects request to target URL.
-- `@Hosts(...hosts: string[])`: Restricts routes to specific Host headers.
-- `@SetMetadata(key, value)`: Attaches arbitrary custom metadata to a class or handler method, retrievable via `Reflector`.
-- `Reflector`: Utility class to inspect metadata attached by `@SetMetadata`:
-  - `Reflector.get(key, target)`: Retrieves metadata for a specific target.
-  - `Reflector.getAllAndOverride(key, targets)`: Retrieves metadata, overriding higher-level targets with lower-level targets.
-  - `Reflector.getAllAndMerge(key, targets)`: Merges array/object metadata across multiple targets.
+| Pipe | Options Interface | Description |
+| :--- | :--- | :--- |
+| `ParseIntPipe` | `{ errorHttpStatusCode?: number }` | Parses string to integer, throwing 400 if invalid. |
+| `ParseFloatPipe` | `{ errorHttpStatusCode?: number }` | Parses string to floating point number. |
+| `ParseBoolPipe` | `{ errorHttpStatusCode?: number }` | Parses `"true"`, `"false"`, `1`, `0` to boolean. |
+| `ParseUUIDPipe` | `{ version?: '1' \| '4' \| 'all' }` | Validates UUID strings. |
+| `ParseArrayPipe` | `{ items?: Pipe, separator?: string }` | Splits comma-separated strings and applies item pipes. |
+| `ValidationPipe` | `{ transform?: boolean }` | Validates DTO classes using schema assertions. |
 
 ---
 
-## 7. Dependency Injection & Modules
+## 4. Pipeline & Middleware Decorators
 
-- `@Global()`: Marks a `@Module()` as global, automatically making its exported providers available across the entire application without explicit re-importing.
-- `@Module({ imports?, controllers?, providers?, exports? })`: OOP class decorator equivalent to `defineModule()` for structuring application modules.
-- `@Injectable(options?)`: Marks a service class as an IoC provider managed by the container. Supports `{ scope: 'singleton' | 'request' | 'transient' }`.
-- `@Inject(token)`: Constructor parameter and class property decorator from `exisjs/di` for injecting dependencies by class, string, or symbol token.
-- `@Optional()`: Parameter and property decorator from `exisjs/di` resolving missing dependencies to `undefined` without throwing.
-- `forwardRef(() => Target)`: Creates a lazy forward reference for resolving circular dependencies in constructor or property injection.
-- `@Boundary(config)`: Marks a class as a folder-scoped Boundary configuring CORS, headers, exclusions, and pipeline steps.
-- `@Server(config)`: Marks a class as a root server definition.
+| Decorator | Target | Options / Arguments | Description |
+| :--- | :--- | :--- | :--- |
+| `@Use(...items)` | Class / Method | `(Handler \| Guard \| Interceptor \| Filter)[]` | Attaches middlewares, guards, interceptors, or filters. |
+| `@UseGuards(...guards)` | Class / Method | `Guard[]` | Attaches authorization guards (`canActivate`). |
+| `@UseInterceptors(...interceptors)` | Class / Method | `Interceptor[]` | Attaches response/request interceptors (`intercept`). |
+| `@UseFilters(...filters)` | Class / Method | `Filter[]` | Attaches exception filters (`catch`). |
+| `@Catch(...exceptions)` | Class | `ErrorConstructor[]` | Declares exception types handled by an `ExceptionFilter`. |
+| `@Timeout(ms)` | Class / Method | `number \| TimeoutOptions` | Overrides request timeout threshold in ms (`0` to disable). |
+| `@RateLimit(options)` | Class / Method | `RateLimitOptions` | Enforces rate limits on endpoints. |
+| `@Cors(options)` | Class / Method | `CorsConfig \| boolean` | Enforces CORS configuration. |
+| `@IpFilter(options)` | Class / Method | `IpFilterOptions` | Enforces CIDR IP allow/deny lists. |
+| `@Idempotent(options?)` | Class / Method | `IdempotencyOptions` | Enables off-heap request caching via `Idempotency-Key`. |
+| `@Dedupe(options?)` | Class / Method | `DedupeOptions` | Deduplicates concurrent in-flight requests with identical keys. |
+| `@BlockProbes(options?)` | Class / Method | `BlockProbesOptions` | Blackholes malicious scanner probes (`.env`, `wp-admin`). |
+| `@Upload(field, options?)` | Method | `string, FileUploadOptions` | Configures multipart file upload streaming on the endpoint. |
 
 ---
 
-## 8. Cron & Task Scheduling
+## 5. Security & Access Control
 
-- `@Cron(schedule: string, options?: CronJobOptions)`: Schedules a class method as a recurring cron job on any `@Injectable()` service.
-- `@Interval(ms: number, options?: IntervalOptions)`: Schedules a class method to execute repeatedly every `ms` milliseconds.
-- `@TimeoutTask(ms: number, options?: TimeoutOptions)` (alias `@ScheduledTimeout`): Schedules a class method to execute once after `ms` milliseconds following application bootstrap.
+| Decorator | Target | Arguments | Description |
+| :--- | :--- | :--- | :--- |
+| `@Permissions(...permissions)` | Class / Method | `string[]` | Enforces required permission strings on the route. |
+| `@Roles(...roles)` | Class / Method | `string[]` | Enforces required user role strings on the route. |
+| `@Public()` / `@IsPublic()` | Class / Method | None | Bypasses global authentication guards. |
+
+---
+
+## 6. Response Modifiers & Metadata
+
+| Decorator | Target | Signature | Description |
+| :--- | :--- | :--- | :--- |
+| `@HttpCode(code)` | Method | `(code: number) => MethodDecorator` | Sets the default HTTP status code for successful responses. |
+| `@Header(name, value)` | Method | `(name: string, value: string) => MethodDecorator` | Injects a static HTTP response header. |
+| `@Redirect(url, status?)` | Method | `(url: string, status?: number) => MethodDecorator` | Redirects response to target URL. |
+| `@Returns(schema)` | Method | `(schema: any) => MethodDecorator` | Defines response schema for OpenAPI documentation. |
+| `@Hosts(...hosts)` | Class / Method | `(...hosts: string[]) => any` | Restricts route to specific host/subdomain headers. |
+| `@SetMetadata(key, value)` | Class / Method | `(key: string, value: any) => any` | Attaches custom metadata inspectable via `Reflector`. |
+
+---
+
+## 7. IoC, Dependency Injection & Modules
+
+| Decorator | Target | Options | Description |
+| :--- | :--- | :--- | :--- |
+| `@Injectable(options?)` | Class | `{ scope?: 'singleton' \| 'request' \| 'transient' }` | Marks a class as an IoC provider managed by the container. |
+| `@Inject(token)` | Constructor / Property | `ProviderToken<T>` | Injects dependency by class, token string, or symbol. |
+| `@Optional()` | Constructor / Property | None | Allows unresolved dependencies to return `undefined` instead of throwing. |
+| `@Module(metadata)` | Class | `ModuleMetadata` | Declares an application module (`imports`, `controllers`, `providers`, `exports`). |
+| `@Global()` | Class | None | Makes module exports globally available without explicit importing. |
+| `@Boundary(config)` | Class | `BoundaryConfig` | Declares a folder-scoped boundary class. |
+
+---
+
+## 8. Caching, Transactions & Profiling
+
+| Decorator | Target | Options | Description |
+| :--- | :--- | :--- | :--- |
+| `@Cacheable(options)` | Method | `{ ttl?: number, key?: string \| ((...args) => string) }` | Caches method return value in native off-heap LRU cache. |
+| `@CacheEvict(options)` | Method | `{ key: string \| ((...args) => string) }` | Evicts cached keys upon successful method execution. |
+| `@Transactional(options?)` | Method | `TransactionOptions` | Wraps database queries within an atomic transaction. |
+| `@Profile(options?)` | Method | `{ thresholdMs?: number, warnSlow?: boolean }` | Measures and logs method execution latency. |
+
+---
+
+## 9. Cron & Scheduling Decorators
+
+| Decorator | Target | Signature | Description |
+| :--- | :--- | :--- | :--- |
+| `@Cron(schedule, options?)` | Method | `(schedule: string, options?: CronOptions)` | Schedules method to run according to a standard 5-part cron expression. |
+| `@Interval(ms, options?)` | Method | `(ms: number, options?: IntervalOptions)` | Schedules method to execute repeatedly every `ms` milliseconds. |
+| `@TimeoutTask(ms, options?)` | Method | `(ms: number, options?: TimeoutOptions)` | Schedules method to execute once after `ms` milliseconds following boot. |
+
 
 

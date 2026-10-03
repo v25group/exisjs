@@ -1,37 +1,204 @@
 ---
-nextUrl: '/docs/structure'
-nextTitle: 'Project Structure'
+title: "Security and Traffic Control"
+description: "Configure HTTP security headers, CSRF double-submit cookies, CIDR IP filtering, rate limiting, and exploit probe protection in ExisJS."
+nextUrl: "/docs/middleware"
+nextTitle: "Middleware Pipeline"
 ---
 
-# Security & Edge Middleware
+# Security and Traffic Control
 
-ExisJS provides native, zero-dependency edge and request security middleware built directly into core.
+ExisJS includes built-in security and traffic control middlewares in `exisjs/middleware` and security decorators in `exisjs/decorators`. These components protect against common web vulnerabilities, brute-force requests, parameter pollution, and scanner abuse.
 
 ---
 
-## 1. Edge Security Middlewares
+## Security Middleware Reference
 
-The following security middlewares are available from `exisjs/middleware` and can be registered globally in `server.ts` or scoped to route trees via `boundary.ts`:
+The following security middlewares are exported from `exisjs/middleware` and can be registered globally in `server.ts`, in `exis.config.ts`, or scoped to route hierarchies in `boundary.ts`:
 
-- `helmet(options?)`: Sets 14+ secure HTTP headers (Strict-Transport-Security, X-Content-Type-Options: nosniff, X-Frame-Options: DENY, and CSP).
-- `csrf(options)`: Enforces the Signed Double Submit Cookie pattern to protect state-changing requests (POST, PUT, DELETE) from CSRF attacks.
-- `hpp()`: Protects against HTTP Parameter Pollution attacks by ensuring array query parameters/form fields are safely handled.
-- `mongoSanitize()`: Strips MongoDB operator keys (keys starting with `$` or containing `.`) from `req.body`, `req.query`, and `req.params`.
-- `dbSanitize(options?)`: Protects against NoSQL query operator injection (`$where` and other malicious keys) before reaching database layers.
-- `timeout(ms)`: Automatically terminates requests that exceed the specified timeout limit, returning a 503 response.
+| Middleware | Signature | Description |
+| :--- | :--- | :--- |
+| `helmet` | `helmet(options?)` | Sets secure HTTP headers (`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`, etc.). |
+| `csrf` | `csrf(options)` | Protects state-changing requests (`POST`, `PUT`, `DELETE`, `PATCH`) using the Signed Double-Submit Cookie pattern. |
+| `rateLimit` | `rateLimit(options?)` | Enforces request volume limits per IP or custom key, returning `429 Too Many Requests` with standard rate-limit headers. |
+| `ipFilter` | `ipFilter(options)` | Grants or restricts access based on client IP addresses and CIDR subnets. |
+| `idempotent` | `idempotent(options?)` | Caches mutation responses keyed by the `Idempotency-Key` header to prevent duplicate operations. |
+| `hpp` | `hpp()` | Protects against HTTP Parameter Pollution by normalizing repeated query parameters and form fields. |
+| `mongoSanitize` | `mongoSanitize()` | Strips MongoDB query operator keys (keys starting with `$` or containing `.`) from bodies, queries, and parameters. |
+| `timeout` | `timeout(ms \| options)` | Terminates requests exceeding a specified duration with an HTTP `503 Service Unavailable` response. |
+| `blockSuspiciousProbes` | `blockSuspiciousProbes(options?)` | Intercepts automated vulnerability scanners (probing for `.env`, `/.git`, WordPress files) and terminates them immediately. |
+| `timingSafeEqual` | `timingSafeEqual(a, b)` | Compares secrets, tokens, or hashes in constant time to prevent side-channel timing attacks. |
 
-> [!TIP]
-> Security middlewares like `hpp()`, `mongoSanitize()`, and `dbSanitize()` automatically synchronize with the request body parser. If registered globally before route handlers, they safely await the body and sanitize it deterministically without runtime crashes.
+---
+
+## 1. Security Headers (`helmet`)
+
+The `helmet` middleware sets secure response headers to harden the application against cross-site scripting (XSS), clickjacking, and content sniffing:
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
-import { helmet, csrf, timeout, hpp, mongoSanitize } from 'exisjs/middleware'
+import { helmet } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
-    app.use(helmet())
-    app.use(timeout(10000))
+    app.use(
+      helmet({
+        hsts: { maxAge: 31536000, includeSubDomains: true },
+        frameguard: { action: 'DENY' },
+        noSniff: true,
+        xssFilter: true,
+        contentSecurityPolicy: "default-src 'self'",
+      })
+    )
+  },
+})
+```
+
+---
+
+## 2. CSRF Protection (`csrf`)
+
+ExisJS implements the **Signed Double-Submit Cookie** pattern for CSRF defense:
+- On safe requests (`GET`, `HEAD`, `OPTIONS`), a cryptographically signed cookie is issued to the client.
+- On state-changing requests (`POST`, `PUT`, `DELETE`, `PATCH`), the client must supply the unsigned token in the `x-csrf-token` header.
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { csrf } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
+    app.use(
+      csrf({
+        secret: process.env.CSRNF_SECRET!, // Must be at least 32 characters
+        cookieName: 'csrf-token',
+        headerName: 'x-csrf-token',
+        cookieOptions: {
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'Lax',
+        },
+      })
+    )
+  },
+})
+```
+
+---
+
+## 3. Rate Limiting (`rateLimit`)
+
+Use `rateLimit` to prevent brute-force attacks and abuse by capping incoming requests over a sliding time window.
+
+```typescript filename="src/http/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { rateLimit } from 'exisjs/middleware'
+
+export const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again after a minute',
+  keyGenerator: (req) => req.ip,
+})
+
+export const config = defineBoundary({
+  middleware: [limiter],
+})
+```
+
+### Rate Limit Response Headers
+
+`rateLimit` attaches standard IETF and legacy rate-limiting headers to every response:
+
+| Header | Description | Example |
+| :--- | :--- | :--- |
+| `RateLimit-Limit` | Request quota allocated for the configured window. | `100` |
+| `RateLimit-Remaining` | Remaining requests permitted within the active window. | `42` |
+| `RateLimit-Reset` | Time in seconds until the current quota window resets. | `18` |
+| `Retry-After` | Included on `429 Too Many Requests` responses, indicating wait time. | `18` |
+| `X-RateLimit-*` | Legacy header equivalents provided for compatibility. | `X-RateLimit-Reset: 1727871234` |
+
+---
+
+## 4. IP Filtering and CIDR Subnet Control (`ipFilter`)
+
+Restrict access to specific IP addresses or CIDR ranges using `ipFilter`:
+
+```typescript filename="src/http/admin/boundary.ts"
+import { defineBoundary } from 'exisjs/router'
+import { ipFilter } from 'exisjs/middleware'
+
+export const adminIpGuard = ipFilter({
+  allow: [
+    '127.0.0.1',
+    '10.0.0.0/8', // Internal VPN subnet
+    '192.168.1.0/24',
+  ],
+  deny: [
+    '10.0.0.99', // Block specific compromised host
+  ],
+  message: 'Access Denied: IP address not authorized',
+  trustProxy: true,
+})
+
+export const config = defineBoundary({
+  middleware: [adminIpGuard],
+})
+```
+
+---
+
+## 5. Idempotency Support (`idempotent`)
+
+Prevent duplicate mutations (e.g. double-charging a credit card or duplicate database inserts) by caching responses associated with an `Idempotency-Key` header:
+
+```typescript filename="src/http/checkout/route.ts"
+import { controller, route } from 'exisjs/router'
+import { idempotent } from 'exisjs/middleware'
+
+export default controller({
+  charge: route.post('/', {
+    middleware: [
+      idempotent({
+        headerName: 'Idempotency-Key',
+        ttlMs: 24 * 60 * 60 * 1000, // Cache for 24 hours
+      }),
+    ],
+    async handle({ body, res }) {
+      const charge = await paymentService.createCharge(body)
+      res.status(201).json({ success: true, charge })
+    },
+  }),
+})
+```
+
+---
+
+## 6. Parameter Pollution and NoSQL Injection Protection
+
+### HTTP Parameter Pollution (`hpp`)
+
+Prevents parameter pollution attacks where query string or body keys are duplicated (e.g. `?role=user&role=admin`):
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { hpp } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
     app.use(hpp())
+  },
+})
+```
+
+### NoSQL Injection Sanitization (`mongoSanitize` / `dbSanitize`)
+
+Strips prohibited operator keys containing `$` or `.` from `req.body`, `req.query`, and `req.params`:
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { mongoSanitize } from 'exisjs/middleware'
+
+export default exis({
+  async onStart(app) {
     app.use(mongoSanitize())
   },
 })
@@ -39,71 +206,33 @@ export default exis({
 
 ---
 
-## 2. In-Memory Rate Limiting
+## 7. Request Timeout Control (`timeout`)
 
-The core `rateLimit` middleware provides high-performance in-memory and off-heap native rate limiting with standard HTTP response headers:
+Set maximum request duration thresholds to avoid hung connections:
 
-```typescript filename="src/http/boundary.ts"
-import { defineBoundary } from 'exisjs/router'
-import { rateLimit } from 'exisjs/middleware'
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { timeout } from 'exisjs/middleware'
 
-export const config = defineBoundary({})
-
-// Apply rate limiting chain step across the boundary
-export const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute window
-  max: 100, // 100 requests per window
-  message: 'Too many requests from this IP, please try again after a minute',
-  keyGenerator: (req) => req.ip, // Uses normalized IPv4/IPv6 client IP
+export default exis({
+  async onStart(app) {
+    app.use(
+      timeout({
+        ms: 30000, // 30 seconds
+        statusCode: 503,
+        message: 'Request timed out',
+        exclude: ['/upload', '/stream'],
+      })
+    )
+  },
 })
 ```
 
-### Standard Rate Limit Headers
-
-`rateLimit` automatically emits standard IETF draft and legacy rate-limiting headers on every response:
-
-| Header                | Description                                                                | Example                 |
-| :-------------------- | :------------------------------------------------------------------------- | :---------------------- |
-| `RateLimit-Limit`     | Maximum request quota for the configured window.                           | `100`                   |
-| `RateLimit-Remaining` | Remaining requests permitted within the current window.                    | `42`                    |
-| `RateLimit-Reset`     | Time remaining in seconds until the window quota resets.                   | `18`                    |
-| `Retry-After`         | Included on `429 Too Many Requests` (RFC 6585) indicating seconds to wait. | `18`                    |
-| `X-RateLimit-*`       | Legacy header equivalents for backwards compatibility.                     | `X-RateLimit-Reset: 18` |
-
-> [!NOTE]
-> The core `rateLimit` middleware runs using an in-memory native off-heap store. For distributed, multi-instance rate limiting backed by Redis, use `@exisjs/cache`.
-
 ---
 
-## 3. Role-Based Access Control (RBAC) Metadata
+## 8. Bot Probe Blackholing (`blockSuspiciousProbes`)
 
----
-
-## 4. Timing-Safe Operations & Authentication
-
-To prevent side-channel timing attacks when validating authentication tokens, API keys, HMAC signatures, or webhook secrets, ExisJS provides the `timingSafeEqual` helper:
-
-```typescript filename="src/http/common/guards/auth.guard.ts"
-import { timingSafeEqual } from 'exisjs/middleware'
-import { UnauthorizedException } from 'exisjs/error'
-
-export function apiKeyGuard(req: any) {
-  const apiKey = req.headers['x-api-key']
-  const secretKey = process.env.API_KEY
-
-  if (!timingSafeEqual(apiKey, secretKey)) {
-    throw new UnauthorizedException('Invalid API Key')
-  }
-}
-```
-
-`timingSafeEqual` executes in constant time regardless of string lengths or partial matching prefixes, neutralizing timing analysis exploits.
-
----
-
-## 5. Security Scanner Noise Suppression & Blackhole Handler
-
-ExisJS includes built-in protection against automated vulnerability bots scanning for `.env`, `/.git`, `/.DS_Store`, WordPress/PHP configs, and Java actuator dumps:
+Automated vulnerability bots frequently scan applications for sensitive files (`.env`, `/.git`, `wp-login.php`, `actuator/heapdump`). Use `blockSuspiciousProbes` to intercept and terminate these requests immediately without polluting production application logs:
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -111,13 +240,60 @@ import { blockSuspiciousProbes } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
-    // Intercepts scanner probes and blackholes them without triggering downstream error logs
     app.use(
       blockSuspiciousProbes({
-        blackhole: true, // Terminate immediately with 404/empty body
-        silent: true, // Suppress 404 noise from production logs
+        blackhole: true, // Terminates connection immediately with empty body
+        statusCode: 404,
+        silent: true, // Suppresses 404 noise from standard logger
+        patterns: [/^\/admin-backup/i],
       })
     )
   },
 })
+```
+
+---
+
+## 9. Timing-Safe Comparison (`timingSafeEqual`)
+
+Use `timingSafeEqual` from `exisjs/middleware` when validating API tokens, signatures, or webhook secrets to guard against timing attacks:
+
+```typescript filename="src/common/guards/api-key.guard.ts"
+import { timingSafeEqual } from 'exisjs/middleware'
+import { UnauthorizedException } from 'exisjs/error'
+
+export function apiKeyGuard(req: any) {
+  const providedKey = req.headers['x-api-key']
+  const expectedKey = process.env.API_KEY
+
+  if (!timingSafeEqual(providedKey, expectedKey)) {
+    throw new UnauthorizedException('Invalid API Key')
+  }
+}
+```
+
+---
+
+## 10. Role-Based Access Control (RBAC) Decorators
+
+ExisJS provides declarative security decorators in `exisjs/decorators` for class-based controllers:
+
+```typescript filename="src/http/users/controller.ts"
+import { Controller, Get, Post, Roles, Permissions, Public } from 'exisjs/decorators'
+
+@Controller('/users')
+@Roles('admin', 'manager')
+export class UsersController {
+  @Get('/')
+  @Permissions('users:read')
+  async listUsers() {
+    return []
+  }
+
+  @Post('/login')
+  @Public() // Bypasses authentication guards
+  async login() {
+    return { token: 'jwt' }
+  }
+}
 ```

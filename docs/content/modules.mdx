@@ -1,67 +1,98 @@
 ---
-nextUrl: "/docs/cache"
-nextTitle: "Caching"
+title: "Modules and Plugins"
+description: "Encapsulate domain services, sub-modules, controllers, and framework plugins across Functional and OOP architectures in ExisJS."
+nextUrl: "/docs/security"
+nextTitle: "Security & Auth"
 ---
 
-# Modules & Plugins
+# Modules and Plugins
 
-ExisJS provides a modular architecture. The framework is built on a Plugin Engine that allows you to encapsulate functionality, inject dependencies, and distribute reusable packages across your organization.
-
-ExisJS offers two distinct primitives for extension:
-1. **Modules (`defineModule`)**: Used for grouping domain-level business logic (e.g., `AuthModule`, `UsersModule`).
-2. **Plugins (`definePlugin`)**: Used for building framework-level extensions that often require configuration options (e.g., `StripePlugin({ apiKey })`).
+ExisJS provides modular architecture primitives to structure code into reusable, encapsulated domains. You can organize features using two approaches:
+1. **Domain Modules (`defineModule` / `@Module`)**: Group related providers, sub-modules, controllers, and lifecycle hooks into domain boundaries.
+2. **Framework Plugins (`definePlugin`)**: Build configurable, distributable extensions and third-party integrations with option passing.
 
 ---
 
-## 1. Domain Modules (`defineModule`)
+## Domain Modules Overview
 
-When building large-scale applications, you should avoid placing all your logic into a single file. Modules allow you to encapsulate related dependencies (Providers), sub-modules (Imports), and Routes into a single unit.
+Modules create logical boundaries around specific business domains (such as `AuthModule`, `UsersModule`, or `BillingModule`), managing their dependencies, routes, and lifecycles.
 
-### Defining a Module
+| Concept | Functional Paradigm | Class-Based (OOP) Paradigm |
+| :--- | :--- | :--- |
+| **Module Definition** | `defineModule({ name, imports, providers, routes, onStart, onClose })` | `@Module({ imports, controllers, providers, exports })` |
+| **Global Scope** | `app.register(module)` or `exis.config.ts` | `@Global()` decorator on `@Module()` class |
+| **Provider Encapsulation** | `providers: [[token, definition]]` | `providers: [Service, [token, definition], { provide, useValue }]` |
 
-Let's build an `AuthModule` that encapsulates an authentication provider:
+---
+
+## Functional Domain Modules (`defineModule`)
+
+In the functional paradigm, use `defineModule` from `exisjs/module` to declare encapsulated domain units.
+
+### 1. Defining a Functional Module
 
 ```typescript filename="src/modules/auth.module.ts"
 import { defineModule } from 'exisjs/module'
+import { DatabaseModule } from './database.module'
+import { AuthService } from '../services/auth.service'
 
 export const AuthModule = defineModule({
-  name: 'auth-module',
-  
-  // 1. Inject Dependencies
+  name: 'AuthModule',
+
+  // 1. Sub-modules required by this module
+  imports: [DatabaseModule],
+
+  // 2. Providers registered into the DI container
   providers: [
-    ['AuthService', { useClass: class AuthService { login() {} } }]
+    ['AuthService', { useClass: AuthService }],
   ],
 
-  // 2. Import other modules
-  imports: [
-    DatabaseModule
-  ],
-
-  // 3. Register lifecycle hooks
+  // 3. Optional lifecycle hooks
   async onStart(app) {
-    console.log("AuthModule has initialized")
-  }
+    console.log('[AuthModule] Initialized successfully')
+  },
+
+  async onClose(app) {
+    console.log('[AuthModule] Teardown complete')
+  },
 })
 ```
 
-### Registering Modules
+### 2. Registering Modules in Server Configuration
 
-Once your module is defined, you can register it globally. The recommended place to register core modules is inside your `exis.config.ts` file, ensuring they boot up synchronously before your server starts accepting traffic.
+You can register modules in `exis.config.ts` (using either `defineConfig` or typed `const config: ExisConfig`) or directly in `src/http/server.ts`:
+
+#### In `exis.config.ts`
 
 ```typescript filename="exis.config.ts"
-import { defineExisConfig } from 'exisjs/config'
+import { defineConfig } from 'exisjs/config'
 import { AuthModule } from './src/modules/auth.module'
 
-export default defineExisConfig({
+export default defineConfig({
+  port: 4000,
   plugins: [
-    AuthModule
-  ]
+    AuthModule,
+  ],
 })
 ```
 
-Alternatively, you can register it manually inside your `src/http/server.ts`:
+Alternatively, you can export a typed `ExisConfig` object directly:
 
-#### Functional Paradigm
+```typescript filename="exis.config.ts"
+import type { ExisConfig } from 'exisjs/config'
+import { AuthModule } from './src/modules/auth.module'
+
+const config: ExisConfig = {
+  port: 4000,
+  plugins: [
+    AuthModule,
+  ],
+}
+
+export default config
+```
+
+#### In `src/http/server.ts`
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -70,115 +101,142 @@ import { AuthModule } from '../modules/auth.module'
 export default exis({
   async onStart(app) {
     await app.register(AuthModule)
-  }
+  },
 })
 ```
 
-```
+---
 
-#### Class-Based (OOP) Paradigm (`@Module` & `@Global`)
+## Class-Based (OOP) Modules (`@Module` & `@Global`)
 
-For applications following the OOP paradigm, you can define modules using the `@Module` class decorator:
+In class-based architectures, import `Module` from `exisjs/module` (or `exisjs/decorators`) to configure imported modules, controllers, providers, and exported dependencies.
 
-```typescript filename="src/modules/auth.module.ts"
+### 1. Module Definition with Controllers and Providers
+
+```typescript filename="src/modules/users.module.ts"
 import { Module } from 'exisjs/module'
-import { AuthService } from './auth.service'
-import { AuthController } from './auth.controller'
+import { UsersController } from '../http/users/controller'
+import { UsersService } from '../services/users.service'
 import { DatabaseModule } from './database.module'
 
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthController],
-  providers: [AuthService],
-  exports: [AuthService]
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],
 })
-export class AuthModule {}
+export class UsersModule {}
 ```
 
-#### Global Modules (`@Global`)
+### 2. Global Modules (`@Global`)
 
-If you have utility services, audit loggers, or database connections that should be globally available across all modules without having to list the module in every `imports: [...]` array, decorate the module with `@Global()`:
+Utility providers, audit loggers, or database connections needed across all modules can be decorated with `@Global()`. Global modules make their exported providers available across the entire application without needing to be re-imported into every `@Module({ imports: [...] })` declaration:
 
 ```typescript filename="src/modules/core.module.ts"
-import { Global, Module } from 'exisjs/decorators'
-import { AuditService } from './audit.service'
-import { LoggerService } from './logger.service'
+import { Module } from 'exisjs/module'
+import { Global } from 'exisjs/decorators'
+import { LoggerService } from '../services/logger.service'
+import { AuditService } from '../services/audit.service'
 
 @Global()
 @Module({
-  providers: [AuditService, LoggerService],
-  exports: [AuditService, LoggerService],
+  providers: [LoggerService, AuditService],
+  exports: [LoggerService, AuditService],
 })
 export class CoreModule {}
 ```
 
-You can then register it into your server or root module once:
+### 3. Root Server Registration
+
+Register root modules and global modules using the `@Server` decorator in `src/http/server.ts`:
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
-import { AuthModule } from '../modules/auth.module'
 import { CoreModule } from '../modules/core.module'
-import type { App } from 'exisjs'
+import { UsersModule } from '../modules/users.module'
+import { AuthModule } from '../modules/auth.module'
 
 @Server({
-  plugins: [CoreModule, AuthModule]
+  plugins: [CoreModule, UsersModule, AuthModule],
 })
-export default class RootServer {
-  async onStart(app: App) {
-    console.log("Server with Global CoreModule and AuthModule booted")
-  }
-}
+export default class RootServer {}
 ```
-
 
 ---
 
-## 2. Framework Plugins (`definePlugin`)
+## Framework Plugins (`definePlugin`)
 
-While `defineModule` is great for internal business logic, `definePlugin` is designed for building distributable, third-party packages that require configuration options.
+When creating reusable plugins, libraries, or third-party integrations (e.g. Stripe, Redis, S3), use `definePlugin` from `exisjs/plugin`.
 
-When you use `definePlugin`, ExisJS returns a **Hybrid Object**. This means the plugin can be registered directly if it doesn't need options, or it can be called as a function if you need to pass a configuration object.
+`definePlugin` returns a hybrid object that can be passed directly to `app.register()` without arguments or invoked as a function to receive configuration parameters.
 
-### Building a Plugin
-
-Let's build a `StripePlugin` that requires an API key:
+### 1. Authoring a Configurable Plugin
 
 ```typescript filename="src/plugins/stripe.plugin.ts"
 import { definePlugin } from 'exisjs/plugin'
+import Stripe from 'stripe'
 
-interface StripeOptions {
+export interface StripePluginOptions {
   apiKey: string
+  apiVersion?: Stripe.LatestApiVersion
 }
 
-export const StripePlugin = definePlugin<StripeOptions>({
+export const StripePlugin = definePlugin<StripePluginOptions>({
   name: 'stripe-plugin',
-  
+
   async register(app, options) {
     if (!options?.apiKey) {
-      throw new Error("Stripe API Key is required")
+      throw new Error('[StripePlugin] "apiKey" is required')
     }
 
-    // Initialize Stripe client and inject it globally
-    const stripeClient = new Stripe(options.apiKey)
-    
-    app.provide('StripeClient', { useValue: stripeClient })
-  }
+    const client = new Stripe(options.apiKey, {
+      apiVersion: options.apiVersion || '2023-10-16',
+    })
+
+    // Register provider into the application container
+    app.provide('StripeClient', { useValue: client })
+  },
 })
 ```
 
-### Using the Plugin
+### 2. Registering Plugins with Configuration Options
 
-Because we used `definePlugin`, the framework allows us to pass configuration options directly:
+Pass the plugin with custom options into `exis.config.ts` (via `defineConfig` or `const config: ExisConfig`) or via `app.register()`:
 
 ```typescript filename="exis.config.ts"
-import { defineExisConfig } from 'exisjs/config'
+import { defineConfig } from 'exisjs/config'
 import { StripePlugin } from './src/plugins/stripe.plugin'
-import { env } from './src/env'
 
-export default defineExisConfig({
+export default defineConfig({
   plugins: [
-    // We call the plugin as a function to pass options
-    StripePlugin({ apiKey: env.STRIPE_SECRET_KEY })
-  ]
+    StripePlugin({
+      apiKey: process.env.STRIPE_SECRET_KEY!,
+    }),
+  ],
 })
 ```
+
+```typescript filename="src/http/server.ts"
+import { exis } from 'exisjs'
+import { StripePlugin } from '../plugins/stripe.plugin'
+
+export default exis({
+  async onStart(app) {
+    await app.register(
+      StripePlugin({ apiKey: process.env.STRIPE_SECRET_KEY! })
+    )
+  },
+})
+```
+
+---
+
+## Module and Plugin Lifecycle Hooks
+
+Both `defineModule` and `definePlugin` support application lifecycle coordination:
+
+| Hook | Invocation Phase | Typical Use Case |
+| :--- | :--- | :--- |
+| `register(app, options)` | Server initialization during `app.register()` | Registering DI providers, registering custom routes, configuring middleware. |
+| `onStart(app)` | Triggered after all plugins and routes are loaded, right before the server starts listening | Establishing persistent background connections, pre-warming caches. |
+| `onClose(app)` | Triggered upon graceful shutdown signals (`SIGINT`, `SIGTERM`) | Draining connection pools, flushing queues, terminating worker threads. |

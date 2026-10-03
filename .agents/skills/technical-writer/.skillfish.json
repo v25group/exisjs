@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "technical-writer",
+  "owner": "sjungling",
+  "repo": "claude-plugins",
+  "path": "plugins/technical-writer/skills/technical-writer",
+  "branch": "main",
+  "sha": "a70d2fad6aa6b87539bf6843406962956eecc169",
+  "source": "manual"
+}

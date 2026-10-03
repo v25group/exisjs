@@ -1,229 +1,315 @@
 ---
+title: 'Installation & Setup'
+description: 'System prerequisites, project scaffolding options with create-exisjs, manual setup, and TypeScript configuration.'
 nextUrl: '/docs/structure'
 nextTitle: 'Project Structure'
 ---
 
-# Getting Started
+# Installation & Setup
 
-In this guide, you'll learn the core fundamentals of ExisJS. To get familiar with the essential building blocks, we'll scaffold a new project, explore the file structure, and create our very first API server.
+This guide provides step-by-step instructions for creating a new ExisJS application with the `create-exisjs` scaffolding tool or installing the framework manually into an existing TypeScript project.
 
-<Info title="Language Support">
-  We recommend **TypeScript** for type-safety and automatic frontend client generation. However, ExisJS fully supports vanilla JavaScript as well. ExisJS leverages esbuild under the hood, meaning you do not need to manually run `tsc` to start your server.
-</Info>
+---
 
 ## Prerequisites
 
-Please make sure that **Node.js (version >= 20)** is installed on your operating system.
+Before starting, ensure your system satisfies the following requirements:
 
-## Setup
+- **Node.js**: `v20.0.0` or higher
+- **Package Manager**: `npm` (v10+), `pnpm` (v9+), `yarn` (v1.22+ or berry), or `bun` (v1.0+)
+- **Operating System**: macOS, Linux, or Windows (x64 and ARM64 architectures supported)
 
-Setting up a new project can be done using our CLI tool. Open your terminal and run the following command to scaffold a new ExisJS project:
+Verify your Node.js version by running:
 
-<div className="my-6 max-w-lg">
-  <CopyCommand command="npm create exisjs@latest my-backend" />
-</div>
+```bash
+node -v
+```
 
-You can also use your package manager of choice:
+---
+
+## Scaffolding a New Project
+
+The quickest way to start a new ExisJS project is with the official `create-exisjs` scaffolding tool.
+
+### Interactive Scaffolding
+
+Run the creation command using your preferred package manager:
 
 ```bash
 # npm
-$ npm create exisjs@latest my-backend
+npm create exisjs@latest my-api
 
 # pnpm
-$ pnpm create exisjs my-backend
+pnpm create exisjs my-api
 
 # yarn
-$ yarn create exisjs my-backend
+yarn create exisjs my-api
 
 # bun
-$ bun create exisjs my-backend
-
-# npx
-$ npx create-exisjs@latest my-backend
+bun create exisjs my-api
 ```
 
-The CLI will prompt you with a few simple questions to customize your project:
+The CLI prompts you with configuration options:
 
 ```text filename="Terminal"
-√ Would you like to use TypeScript? ... No / Yes
-√ Would you like to use ESLint? ... No / Yes
-√ Would you like your code inside a `src/` directory? ... No / Yes
-√ Would you like to customize the import alias (`@/*` by default)? ... No / Yes
-
-Creating a new Exis JS app in my-backend.
+? What is your project named? › my-api
+? Would you like to use TypeScript? › Yes / No
+? Would you like to use ESLint? › Yes / No
+? Which routing paradigm do you prefer? › Functional (Default) / Class-Based (OOP)
+? Would you like to customize the import alias (`@/*` by default)? › No / Yes
 ```
 
-The CLI will then create the `my-backend` directory, install all required dependencies, and populate the project with a conventional base structure.
+---
 
-## Core Files
+### Non-Interactive Command-Line Flags
 
-Once the installation is complete, your project directory will look something like this:
+For automated environments, Docker initialization, or CI/CD pipelines, you can pass command-line flags to skip interactive prompts:
 
-<div className="bg-muted/30 border border-border/50 rounded-md p-4 mb-6 font-mono text-sm">
-  <div className="flex gap-4 mb-2">
-    <span className="text-muted-foreground w-40 shrink-0">exis.config.ts</span>{' '}
-    <span>
-      The root configuration for your application (CORS, Logger, Port).
-    </span>
-  </div>
-  <div className="flex gap-4 mb-2">
-    <span className="text-muted-foreground w-40 shrink-0">src/env.ts</span>{' '}
-    <span>Environment variable validation and typing.</span>
-  </div>
-  <div className="flex gap-4 mb-2">
-    <span className="text-muted-foreground w-40 shrink-0">src/http/</span>{' '}
-    <span>The file-system routing directory.</span>
-  </div>
-  <div className="flex gap-4 mb-2 pl-4">
-    <span className="text-muted-foreground w-36 shrink-0">server.ts</span>{' '}
-    <span>The strict entry point of your application.</span>
-  </div>
-  <div className="flex gap-4 pl-4">
-    <span className="text-muted-foreground w-36 shrink-0">route.ts</span>{' '}
-    <span>A basic GET endpoint mapped to the root route.</span>
-  </div>
-</div>
-
-## Your First Server
-
-Let's look at the generated `src/http/server.ts`. This is the strict entry point of your application, where you can connect to databases and register global plugins.
-
-### Functional Server Setup
-
-```typescript filename="src/http/server.ts"
-import { exis } from 'exisjs'
-
-export default exis({
-  async onStart(app) {
-    // 1. Connect to your database
-    // await db.connect()
-    // 2. Register plugins
-    // app.plugin(authPlugin)
-    // The Exis CLI automatically boots the server and file-system routes
-  },
-
-  async onClose(app) {
-    // Gracefully close database connections here
-    // await db.disconnect()
-  },
-})
+```bash
+npx create-exisjs@latest my-api --ts --functional --eslint --yes
 ```
 
-### Class-Based (OOP) Server Setup
+#### Complete CLI Flag Reference
 
-```typescript filename="src/http/server.ts"
-import { Server } from 'exisjs/decorators'
-import type { App } from 'exisjs'
+| Flag | Description | Default |
+| :--- | :--- | :---: |
+| `--ts`, `--typescript` | Configure project with TypeScript | `true` |
+| `--js`, `--javascript` | Configure project with plain JavaScript | `false` |
+| `--functional` | Configure project using functional paradigm (`controller()`, `route.*`) | `true` |
+| `--oop` | Configure project using class-based decorator paradigm (`@Controller()`, `@Get()`) | `false` |
+| `--eslint` | Generate ESLint flat config with TypeScript rules | `true` |
+| `--no-eslint` | Skip ESLint setup | `false` |
+| `--skip-install` | Scaffold directory tree and templates without installing dependencies | `false` |
+| `--skip-git` | Skip automatic `git init` initialization | `false` |
+| `--yes`, `-y` | Accept default configuration non-interactively | `false` |
+| `--use-pnpm` | Force dependency installation via `pnpm` | Auto-detected |
+| `--use-bun` | Force dependency installation via `bun` | Auto-detected |
+| `--use-yarn` | Force dependency installation via `yarn` | Auto-detected |
+| `--use-npm` | Force dependency installation via `npm` | Auto-detected |
 
-@Server()
-export default class RootServer {
-  async onStart(app: App) {
-    // 1. Connect to your database
-    // await db.connect()
-    // 2. Register plugins
-    // app.plugin(authPlugin)
-    // The Exis CLI automatically boots the server and file-system routes
-  }
+---
 
-  async onClose(app: App) {
-    // Gracefully close database connections here
-    // await db.disconnect()
+## Generated Project Layout
+
+Once the scaffolding finishes, your project contains the standard ExisJS directory layout:
+
+```
+my-api/
+├── .agents/
+│   └── rules/
+│       └── AGENTS.md            # Architecture rules and agent guidelines
+├── src/
+│   ├── common/
+│   │   └── guards/
+│   │       └── auth.guard.ts    # Reusable route guards
+│   ├── config/
+│   │   └── env.ts               # Type-safe environment validation (tex.env)
+│   ├── cron/
+│   │   └── cleanup.ts           # Scheduled background tasks
+│   ├── database/
+│   │   └── db.ts                # Database lifecycle and connection
+│   └── http/
+│       ├── health/
+│       │   └── route.ts         # Health check endpoint (/health)
+│       ├── users/
+│       │   ├── route.ts         # User routes (/users)
+│       │   ├── schema.ts        # Input validation schemas (tex.*)
+│       │   └── service.ts       # Service layer logic
+│       ├── boundary.ts          # Root middleware, CORS & error boundary
+│       ├── route.ts             # Root route handler (/)
+│       └── server.ts            # Application lifecycle (onStart / onClose)
+├── tests/
+│   └── users.e2e-spec.ts        # End-to-end test suite
+├── .env                         # Environment variables
+├── .gitignore
+├── .prettierrc
+├── eslint.config.mjs            # ESLint configuration (when selected)
+├── exis.config.ts               # Framework configuration
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## Manual Installation
+
+To install ExisJS into an existing repository without scaffolding:
+
+### Step 1: Install Core Dependencies
+
+```bash
+npm install exisjs
+npm install -D typescript @types/node prettier
+```
+
+### Step 2: Configure `tsconfig.json`
+
+Create or update `tsconfig.json` to configure module resolution and metadata reflection:
+
+```json filename="tsconfig.json"
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": ["node"]
+  },
+  "include": [
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "*.config.ts",
+    "*.ts"
+  ],
+  "exclude": ["node_modules", ".exis", "dist", "build"]
+}
+```
+
+> [!NOTE]
+> `experimentalDecorators` and `emitDecoratorMetadata` are required when using the class-based (OOP) paradigm (`@Controller()`, `@Injectable()`).
+
+### Step 3: Create `exis.config.ts`
+
+Create an `exis.config.ts` file in the project root:
+
+```typescript filename="exis.config.ts"
+import type { ExisConfig } from 'exisjs/config'
+
+const config: ExisConfig = {
+  port: Number(process.env.PORT) || 4000,
+  host: '0.0.0.0',
+
+  cors: {
+    origin: process.env.CORS_ORIGIN || '*',
+    credentials: true,
+  },
+
+  logger: {
+    level: 'debug',
+    pretty: process.env.NODE_ENV !== 'production',
+  },
+
+  helmet: { enabled: true },
+  compression: true,
+}
+
+export default config
+```
+
+### Step 4: Configure NPM Scripts
+
+Add the standard ExisJS CLI commands to `package.json`:
+
+```json filename="package.json"
+{
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "routes": "exisjs routes",
+    "test": "exisjs test",
+    "doctor": "exisjs doctor"
   }
 }
 ```
 
-With ExisJS, the framework automatically handles booting up your server and loading your routes based on the file system. You don't need to manually call `app.listen()`!
+---
 
-## Your First Route
+## Verifying the Installation
 
-ExisJS uses **folder-based routing**. Your API structure maps directly to your folders in `src/http/`.
+### 1. Create a Health Check Endpoint
 
-ExisJS supports two primary styles of writing routes: **Functional** and **OOP (Class-based)**. You are free to use whichever paradigm fits your team best.
+Create `src/http/health/route.ts`:
 
-### Functional Routing
+#### Option A: Functional Route
 
-Functional routing provides a lean, inference-heavy developer experience similar to modern frontend frameworks. Let's declare our first route in `src/http/users/route.ts`:
-
-```typescript filename="src/http/users/route.ts"
+```typescript filename="src/http/health/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  getUsers: route.get('/', {
-    handle(req) {
-      // Return a realistic response structure
-      return { 
-        data: [
-          { id: 1, name: 'Alice' },
-          { id: 2, name: 'Bob' }
-        ],
-        total: 2 
-      }
-    },
+  check: route.get('/', {
+    summary: 'Service health check',
+    handle: () => ({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    }),
   }),
 })
 ```
 
-### OOP Routing
+#### Option B: Class-Based Route
 
-If you prefer a highly-structured architecture heavily inspired by Angular and NestJS, ExisJS natively provides robust class-based routing using Decorators:
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs'
+```typescript filename="src/http/health/route.ts"
+import { Controller, Get, ApiOperation } from 'exisjs/decorators'
 
 @Controller()
-export default class UsersController {
+export default class HealthController {
   @Get('/')
-  getUsers(@Req() req: Request) {
-    // Return a realistic response structure
-    return { 
-      data: [
-        { id: 1, name: 'Alice' },
-        { id: 2, name: 'Bob' }
-      ],
-      total: 2 
+  @ApiOperation({ summary: 'Service health check' })
+  check() {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
     }
   }
 }
 ```
 
-In both examples, because this file is named `route.ts` and is located in the `users` folder, it automatically responds to `GET /users` requests. Whatever you return is automatically serialized to JSON.
+### 2. Start the Development Server
 
-## Running the Application
+Execute the `dev` script:
 
-Your generated `package.json` comes pre-configured with the Exis CLI commands. Start the development server with hot-reload by running:
+```bash
+npm run dev
+```
 
-<div className="my-6 max-w-lg">
-  <CopyCommand command="npm run dev" />
-</div>
-
-You will see the server boot up in your terminal:
+Output:
 
 ```text filename="Terminal"
-6:18:28 pm [exis] starting development server (v0.1.0)...
+[exis] starting development server (v0.7.12)...
+EXIS ready in 125 ms
 
- EXIS v0.1.0 ready in 125 ms
-
- → Local:   http://localhost:4000/
- → Network: http://10.39.14.177:4000/
- → Environ: development
- → press h + enter to show help
+→ Local:   http://localhost:4000/
+→ Docs:    http://localhost:4000/docs
+→ Network: http://127.0.0.1:4000/
 ```
 
-Open your browser and navigate to [http://localhost:4000/](http://localhost:4000/) (or the port defined in your `.env`). You will see:
+### 3. Verify the Endpoint
 
-```json filename="Response"
+Send an HTTP GET request to verify the route:
+
+```bash
+curl http://localhost:4000/health
+```
+
+Expected JSON response:
+
+```json
 {
-  "data": [
-    {
-      "id": 1,
-      "name": "Alice"
-    },
-    {
-      "id": 2,
-      "name": "Bob"
-    }
-  ],
-  "total": 2
+  "status": "ok",
+  "timestamp": "2026-10-02T11:35:00.000Z"
 }
 ```
+
+Open `http://localhost:4000/docs` in your browser to inspect the interactive Swagger UI.
+
+---
+
+## Next Steps
+
+- **[Project Structure](/docs/structure)**: Review directory conventions for routes, boundaries, services, and database models.
+- **[Routing & Endpoints](/docs/routing)**: Learn how folders map to HTTP verbs, path params, and catch-all routes.
+- **[Validation](/docs/validation)**: Build typed schemas with `tex` for body, query, and header validation.
+- **[Configuration Reference](/docs/config)**: Complete reference of all options in `exis.config.ts`.

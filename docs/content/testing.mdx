@@ -1,139 +1,270 @@
 ---
-nextUrl: "/docs/adapters"
-nextTitle: "Adapters"
+title: "Testing"
+description: "End-to-end HTTP integration testing, mocking, and unit test runner in ExisJS using Node.js native test runner."
+nextUrl: "/docs/config"
+nextTitle: "Configuration"
 ---
 
 # Testing
 
-ExisJS was built with testing as a first-class citizen. Instead of forcing you to configure bulky external test runners like Jest or Vitest, ExisJS natively wraps the highly optimized, built-in **Node.js Test Runner** (`node:test`).
-
-This means you get highly optimized, integrated testing out-of-the-box.
+ExisJS provides an integrated testing suite built on top of the native **Node.js Test Runner** (`node:test`) and TypeScript execution environment (`tsx`). You can execute unit tests, mock dependencies, and perform full-pipeline HTTP integration testing with zero external test runners.
 
 ---
 
-## The Testing Module
+## The Testing Module (`exisjs/testing`)
 
-ExisJS exports everything you need for testing directly from `exisjs/testing`. This includes the test runner functions (`test`, `describe`, `it`, `before`), assertions (`assert`), and the powerful ExisJS `createTestContext`!
+The `exisjs/testing` module re-exports test runner primitives, assertions, mocking helpers, and the HTTP testing harness:
 
-### Creating a Test Context
+| Export | Source / Role | Description |
+| :--- | :--- | :--- |
+| `describe`, `test`, `it` | `node:test` | Test suite and test case definition functions with `.only`, `.skip`, `.todo`, and `.each`. |
+| `before`, `after`, `beforeEach`, `afterEach` | `node:test` | Lifecycle execution hooks. |
+| `expect` | ExisJS matcher engine | Jest-compatible fluent assertion matchers (`toBe`, `toEqual`, `toMatchObject`, `toThrow`, etc.). |
+| `createTestContext(app)` | ExisJS HTTP harness | Boots an Exis application instance, sets up lifecycle hooks, and returns a fluent `TestApp` client. |
+| `createTestApp(app)` | ExisJS HTTP harness | Wraps an existing `App` or `ExisAppDefinition` in a `TestApp` client without global test hooks. |
+| `createMockRequest(opts)` | ExisJS mock helper | Creates a synthetic `ExisRequest` for unit-testing controllers or middlewares. |
+| `createMockResponse()` | ExisJS mock helper | Creates a synthetic `ExisResponse` capturing status codes and output buffers. |
+| `ex` | ExisJS mocking suite | Mock functions (`ex.fn`), method spies (`ex.spyOn`), module mocks (`ex.mock`), and fake timers (`ex.useFakeTimers`). |
+| `registerCleanup(fn)` | ExisJS cleanup | Registers a teardown callback invoked after test context completion. |
 
-When testing an API, you want to boot the app, run HTTP requests against it, and then gracefully shut it down (closing database connections so the test runner doesn't hang). `createTestContext` does exactly this for you automatically! It seamlessly handles both functional `exis({ ... })` applications and Object-Oriented `@Server` decorated classes.
+---
+
+## Integration Testing with `createTestContext`
+
+`createTestContext` initializes your application definition, executes `onStart` hooks, establishes database connections (Mongoose, Prisma, or DatabaseManager), and tears down connections gracefully in `afterAll`.
+
+### Functional Paradigm Application Test
+
+Given a functional application defined in `src/http/server.ts`:
 
 ```typescript filename="tests/users.test.ts"
 import { describe, it, expect, createTestContext } from 'exisjs/testing'
-import app from '../src/http/server' // Import your Exis instance or @Server class
+import app from '../src/http/server'
 
-describe('Users API', () => {
-  // Automatically boots the app, runs `onStart`, and gracefully shuts down databases after tests!
+describe('Users API Integration', () => {
+  // Automatically boots the app and manages database lifecycle
   const api = createTestContext(app)
 
-  it('should create a new user', async () => {
-    // `api` exposes a fast, fluid HTTP client
+  it('should create a new user record', async () => {
     const res = await api
       .post('/users')
-      .send({ name: 'Alice', email: 'alice@example.com' })
-      .execute()
+      .set('authorization', 'Bearer test-token')
+      .send({
+        name: 'Jane Doe',
+        email: 'jane@example.com'
+      })
+      .expect(201)
 
-    // Integrated Jest-like expectations
-    expect(res.status).toBe(201)
-    expect(res.body.success).toBe(true)
-    expect(res.body.data.name).toBe('Alice')
+    expect(res.body).toMatchObject({
+      success: true,
+      data: {
+        id: expect.any(String),
+        name: 'Jane Doe',
+        email: 'jane@example.com'
+      }
+    })
   })
 
-  it('should return 400 on invalid input', async () => {
+  it('should return 400 when payload validation fails', async () => {
     const res = await api
       .post('/users')
-      .send({ name: 'Bob' }) // Missing email
-      .execute()
+      .send({ name: 'Jane Doe' }) // missing email
 
     expect(res.status).toBe(400)
     expect(res.body.success).toBe(false)
+    expect(res.body.error).toBe('Validation failed')
   })
 })
 ```
 
-### Running Tests
+### Class-Based (OOP) Application Test
 
-Because ExisJS wraps the native Node.js test runner in its powerful CLI, you can run all your tests simply using the standard Exis command!
+`createTestContext` natively supports `@Server` decorated entry classes:
 
-```bash
-npx exisjs test
+```typescript filename="tests/server.test.ts"
+import { describe, it, expect, createTestContext } from 'exisjs/testing'
+import ServerApp from '../src/http/server'
+
+describe('OOP Server API Integration', () => {
+  const api = createTestContext(ServerApp)
+
+  it('should retrieve status check', async () => {
+    const res = await api.get('/health').expect(200)
+
+    expect(res.body).toEqual({
+      status: 'ok',
+      uptime: expect.any(Number)
+    })
+  })
+})
 ```
 
-Or configure it in your `package.json`:
+---
 
-```json
+## Fluid Request Builder (`TestRequest`)
+
+The client returned by `createTestContext` and `createTestApp` provides request builder methods for standard HTTP verbs:
+
+```typescript
+const res = await api
+  .get(path)       // .post(path), .put(path), .patch(path), .delete(path), .head(path), .options(path)
+  .set('x-api-key', 'secret-key')
+  .send({ key: 'value' })
+  .expect(200)
+  .expect('content-type', /json/)
+  .execute()
+```
+
+### Response Object Properties
+
+The returned `TestResponse` contains:
+
+```typescript
+export interface TestResponse {
+  status: number                       // HTTP response status code (e.g. 200, 404)
+  headers: http.IncomingHttpHeaders     // Normalized response headers object
+  body: any                            // Parsed JSON payload or raw buffer/string
+  text: string                         // Raw response string representation
+}
+```
+
+---
+
+## Unit Testing Controllers & Middlewares
+
+For fast unit tests that do not require booting a full HTTP server pipeline, use `createMockRequest` and `createMockResponse`:
+
+```typescript filename="tests/unit/guard.test.ts"
+import { describe, it, expect } from 'exisjs/testing'
+import { createMockRequest, createMockResponse, createMockNext } from 'exisjs/testing'
+import { authGuard } from '../../src/common/guards/auth'
+
+describe('Auth Guard Unit Test', () => {
+  it('should reject requests missing Authorization header', async () => {
+    const req = createMockRequest({
+      method: 'GET',
+      url: '/protected',
+      headers: {}
+    })
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    await authGuard(req, res, next)
+
+    expect(res._statusCode).toBe(401)
+    expect(next.called).toBe(false)
+  })
+
+  it('should proceed when Authorization header is present', async () => {
+    const req = createMockRequest({
+      method: 'GET',
+      url: '/protected',
+      headers: {
+        authorization: 'Bearer valid-jwt-token'
+      }
+    })
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    await authGuard(req, res, next)
+
+    expect(next.called).toBe(true)
+  })
+})
+```
+
+---
+
+## Mocking & Spies (`ex`)
+
+ExisJS includes a built-in mocking engine via `ex`:
+
+```typescript filename="tests/service.test.ts"
+import { describe, it, expect, ex } from 'exisjs/testing'
+import { PaymentService } from '../src/http/billing/service'
+
+describe('PaymentService Unit Test', () => {
+  it('should record transactions through payment gateway', async () => {
+    const mockGateway = {
+      charge: ex.fn().mockResolvedValue({ id: 'tx_123', status: 'paid' })
+    }
+
+    const service = new PaymentService(mockGateway as any)
+    const result = await service.processOrder('order_456', 5000)
+
+    expect(mockGateway.charge).toHaveBeenCalledTimes(1)
+    expect(mockGateway.charge).toHaveBeenCalledWith(5000)
+    expect(result.id).toBe('tx_123')
+  })
+})
+```
+
+### Fake Timers
+
+```typescript
+import { describe, it, expect, ex } from 'exisjs/testing'
+
+describe('Timer operations', () => {
+  it('advances timer controlled tasks', () => {
+    ex.useFakeTimers()
+    const spy = ex.fn()
+
+    setTimeout(spy, 10_000)
+
+    ex.advanceTimersByTime(10_000)
+    expect(spy).toHaveBeenCalledTimes(1)
+
+    ex.useRealTimers()
+  })
+})
+```
+
+---
+
+## Running Tests via CLI
+
+Run your test suites with the built-in `exisjs test` command:
+
+```bash
+# Run all test files matching tests/**/*.test.ts or tests/**/*.spec.ts
+npx exisjs test
+
+# Run a specific test file
+npx exisjs test tests/users.test.ts
+
+# Run tests in watch mode
+npx exisjs test --watch
+
+# Run with test coverage
+npx exisjs test --coverage
+```
+
+### `package.json` Configuration
+
+Add the test command to your scripts:
+
+```json filename="package.json"
 {
   "scripts": {
-    "test": "exisjs test"
+    "test": "exisjs test",
+    "test:watch": "exisjs test --watch"
   }
 }
 ```
 
-The `exisjs test` command automatically bootstraps your environment, loads your environment variables (`.env`), registers TypeScript (`tsx`), and recursively finds and executes all test files matching standard testing conventions (`*.test.ts`, `*.spec.ts`, etc.) regardless of where they are placed.
+### Test Configuration Options (`exis.config.ts`)
 
-### Test Configuration
+You can customize test runner behaviors in `exis.config.ts`:
 
-ExisJS allows you to configure your testing environment directly. By default, it will use your project's TypeScript configuration, but you can override this by creating a specific `tsconfig.test.json` file in your project root. The test runner will automatically detect and prioritize it when running tests!
+```typescript filename="exis.config.ts"
+import { defineConfig } from 'exisjs/config'
 
----
-
-## Mocking (Dependency Injection)
-
-If you are using ExisJS's built-in **Dependency Injection (DI)** or **Gateways**, mocking is incredibly easy. You don't need magic `jest.mock()` intercepts. You can simply override the providers in your test!
-
-```typescript filename="tests/billing.test.ts"
-import { describe, it, expect, createTestContext } from 'exisjs/testing'
-import app from '../src/http/server'
-import { BillingGateway } from '../src/http/billing/gateway'
-
-describe('Billing API', () => {
-  
-  // Override the StripeService strictly for testing!
-  BillingGateway.overrideProvider('StripeService', {
-    charge: async (amount: number) => ({ success: true, transactionId: 'test_123' })
-  })
-
-  const api = createTestContext(app)
-
-  it('should process payment', async () => {
-    const res = await api
-      .post('/billing/charge')
-      .send({ amount: 500 })
-      .execute()
-
-    expect(res.status).toBe(200)
-    expect(res.body.transactionId).toBe('test_123')
-  })
-})
-```
-
----
-
-## Test Isolation
-
-One of the most common pitfalls when testing backend frameworks is **test bleed**—where the state from one test unexpectedly affects the next. ExisJS provides the tools to prevent this, but you must be intentional about state isolation.
-
-### 1. Dependency Injection Cleanup
-If you rely heavily on singletons in the ExisJS Dependency Injection container, you may want to reset the container's state between tests. 
-
-```typescript filename="tests/setup.ts"
-import { beforeEach } from 'exisjs/testing'
-import { getActiveApp } from 'exisjs/app'
-
-beforeEach(() => {
-  const app = getActiveApp()
-  if (app) {
-    app.container.clearCache() // Purges all instantiated singletons
+export default defineConfig({
+  test: {
+    include: ['tests/**/*.test.ts', 'src/**/*.spec.ts'],
+    concurrency: true,
+    coverage: false,
+    setupFiles: ['./tests/setup.ts']
   }
 })
 ```
-
-### 2. Zero-Config Singletons (Redis, Prisma, etc.)
-ExisJS provides zero-config integrations (`redis.ts`, `prisma.ts`, etc.) which act as **process-wide singletons**. 
-Because they use proxy-based caching at the module level, running multiple test suites concurrently in the same Node.js process means they will all share the **exact same database connections and state**. 
-
-If your tests write to the database or queue, ensure you either:
-1. Run your test runner in a mode that isolates processes per file.
-2. Manually clear database tables or flush Redis in a `beforeEach` block.
-3. Use database transactions that rollback after each test.

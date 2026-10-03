@@ -1,131 +1,333 @@
 ---
-title: 'Configuration'
-description: 'API Reference for the global exis.config.ts file (`exisjs/config`).'
+title: "exisjs/config"
+description: "API Reference for ExisJS global configuration (exis.config.ts), defineConfig helper, configuration phases, and environment loader utilities."
+nextUrl: "/docs/reference/router"
+nextTitle: "Router Reference"
 ---
 
-# Configuration (`exisjs/config`)
+# `exisjs/config`
 
-ExisJS is designed to be highly zero-config out of the box. However, for advanced tuning, security, and clustering, you can define an `exis.config.ts` file in the root of your project.
-
-This configuration file deeply integrates with the framework's core, managing everything from global middleware (like CORS and Helmet) to underlying Server backends and Worker Threads.
+The `exisjs/config` module exposes configuration types, Phase constants, the `defineConfig()` helper, and environment-loading utilities used by `exis.config.ts` and runtime server initializers.
 
 ---
 
-## 1. Standard Configuration
+## Module Exports
 
-For most applications, you can simply export a static configuration object typed with `ExisConfig`.
+```typescript
+import {
+  defineConfig,
+  mergeConfig,
+  loadConfig,
+  defaultConfig,
+  loadEnv,
+  processEnv,
+  resetEnv,
+  parseEnv,
+  PHASE_DEVELOPMENT_SERVER,
+  PHASE_PRODUCTION_BUILD,
+  PHASE_PRODUCTION_SERVER,
+  PHASE_TEST,
+} from 'exisjs/config'
 
-```typescript filename="exis.config.ts"
-import type { ExisConfig } from 'exisjs/config'
-
-const config: ExisConfig = {
-  port: Number(process.env.PORT) || 4000,
-  host: '0.0.0.0',
-
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true,
-  },
-
-  logger: {
-    level: 'debug',
-    pretty: process.env.NODE_ENV !== 'production',
-  },
-
-  queue: {
-    driver: 'memory',
-  },
-
-  helmet: { enabled: true },
-  compression: true,
-
-  test: {
-    include: ['tests/**/*.test.ts'],
-  },
-}
-
-export default config
+import type {
+  ExisConfig,
+  ResolvedConfig,
+  CorsConfig,
+  LoggerConfig,
+  HelmetConfig,
+  KeepAliveConfig,
+  TelemetryConfig,
+  MetricsConfig,
+  HealthCheckConfig,
+  SwaggerConfig,
+  WatchConfig,
+  DevConfig,
+} from 'exisjs/config'
 ```
 
 ---
 
-## 2. Advanced Configuration (Phases)
+## `defineConfig(config)`
 
-If you need dynamic configuration (such as spawning worker threads only in production or altering middleware depending on the environment), you can use `defineConfig()` and Phase execution.
+A type-helper function that returns the passed `ExisConfig` object without modifications, providing TypeScript autocompletion and validation in IDEs.
+
+```typescript
+function defineConfig(config: ExisConfig): ExisConfig
+```
+
+### Static Configuration Example
 
 ```typescript filename="exis.config.ts"
-import { defineConfig, PHASE_DEVELOPMENT_SERVER } from 'exisjs/config'
+import { defineConfig } from 'exisjs/config'
 
-export default async (phase: string, { defaultConfig }) => {
+export default defineConfig({
+  port: 4000,
+  host: '0.0.0.0',
+  cors: {
+    origin: ['https://example.com', 'https://admin.example.com'],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  },
+  helmet: {
+    enabled: true,
+    contentSecurityPolicy: true,
+    xFrameOptions: 'SAMEORIGIN',
+  },
+  logger: {
+    level: 'info',
+    pretty: false,
+    redact: ['req.headers.authorization', 'req.headers.cookie'],
+  },
+  cluster: {
+    workers: 'safe',
+  },
+  telemetry: {
+    enabled: true,
+    serviceName: 'order-service',
+    exporter: 'otlp',
+  },
+  healthcheck: {
+    enabled: true,
+    path: '/healthz',
+  },
+  docs: {
+    enabled: true,
+    path: '/api/docs',
+    title: 'Order Service API',
+    version: '1.0.0',
+  },
+})
+```
+
+---
+
+## Dynamic Phase-Based Configuration
+
+You can export an asynchronous function from `exis.config.ts`. ExisJS passes the active phase string as the first argument, allowing you to alter settings depending on whether the application is running in development, building for production, running in production, or executing tests.
+
+```typescript filename="exis.config.ts"
+import {
+  defineConfig,
+  PHASE_DEVELOPMENT_SERVER,
+  PHASE_PRODUCTION_BUILD,
+  PHASE_PRODUCTION_SERVER,
+  PHASE_TEST,
+} from 'exisjs/config'
+
+export default async function (phase: string, { defaultConfig }: { defaultConfig: any }) {
   const isDev = phase === PHASE_DEVELOPMENT_SERVER
+  const isTest = phase === PHASE_TEST
 
   return defineConfig({
-    port: Number(process.env.PORT) || 4000,
+    port: isTest ? 0 : Number(process.env.PORT) || 4000,
+    host: '0.0.0.0',
 
-    // Auto-spawn Worker threads based on CPU cores!
-    workers: isDev ? 1 : 'safe',
+    // Spawn 1 worker in dev, safe CPU count in production
+    cluster: {
+      workers: isDev || isTest ? 1 : 'safe',
+    },
 
-    // Globally configure native middleware
+    // Permissive CORS in local development, strict origins in production
     cors: {
-      origin: isDev ? '*' : 'https://myapp.com',
+      origin: isDev ? '*' : ['https://app.example.com'],
       credentials: true,
     },
-    helmet: { enabled: true },
-    logger: isDev ? { level: 'debug', pretty: true } : false,
 
-    // Native plugin registration
-    plugins: [
-      // ... your plugins here
-    ],
+    // Human-readable logs in development, JSON structured logs in production
+    logger: isDev
+      ? { level: 'debug', pretty: true }
+      : isTest
+        ? false
+        : { level: 'info', pretty: false },
+
+    // Enable API documentation in development only
+    docs: {
+      enabled: isDev,
+      path: '/docs',
+    },
   })
 }
 ```
 
----
+### Phase Constants
 
-## Configuration Phases
-
-If you export a function from `exis.config.ts`, ExisJS will inject the current "Phase" string as the first argument, allowing you to dynamically adjust settings based on whether you are running a dev server, running tests, or building for production.
-
-- `PHASE_DEVELOPMENT_SERVER`: Emitted during `exis dev`
-- `PHASE_PRODUCTION_BUILD`: Emitted during `exis build`
-- `PHASE_PRODUCTION_SERVER`: Emitted during `exis start`
-- `PHASE_TEST`: Emitted during test runs
+| Constant | Value | Triggered When |
+| :--- | :--- | :--- |
+| `PHASE_DEVELOPMENT_SERVER` | `'phase-development-server'` | Executing `npx exisjs dev` |
+| `PHASE_PRODUCTION_BUILD` | `'phase-production-build'` | Executing `npx exisjs build` |
+| `PHASE_PRODUCTION_SERVER` | `'phase-production-server'` | Executing `npx exisjs start` |
+| `PHASE_TEST` | `'phase-test'` | Executing `npx exisjs test` |
 
 ---
 
-## Configuration Options
+## `ExisConfig` Interface Reference
 
-Here is the full list of options supported natively by the ExisJS configuration engine:
+The root configuration schema accepted by `exis.config.ts`:
 
-### Server & Network
+### Network & Core Server Options
 
-- **`port`** _(number)_: The port the server listens on (default: `4000`).
-- **`host`** _(string)_: The host interface to bind to (default: `'0.0.0.0'`).
-- **`server`** _(`'node' | 'uws' | 'auto'`)_: ExisJS supports running on standard Node `http`, or incredibly fast C++ `uWebSockets.js` (`uws`). Default is `'auto'` (uses `uws` if installed, falls back to `node`).
-- **`workers`** _(number | `'safe'` | `'max'`)_: Number of Node.js Cluster workers to spawn. `'max'` uses all CPU cores. `'safe'` uses all cores minus 1 (to leave room for the OS).
-- **`trustProxy`** _(boolean | number)_: Enable if running behind reverse proxies or CDNs (Cloudflare, AWS ALB, NGINX, Render) to evaluate `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, and `X-Forwarded-For`. (Can also be enabled via `TRUST_PROXY=true`).
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `port` | `number` | `4000` | Port for the HTTP server to listen on. Can be overridden via CLI `-p`. |
+| `host` | `string` | `'0.0.0.0'` | Network interface binding. |
+| `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | HTTP server backend. Automatically selects Bun or Node when detected. |
+| `cluster` | `{ workers?: number \| 'auto' \| 'safe' \| 'max' }` | `{ workers: 1 }` | Multi-process worker clustering. `'safe'` uses available CPU cores minus 1; `'max'` uses all available cores. |
+| `trustProxy` | `boolean \| number` | `false` | Enables reverse-proxy IP headers (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`). |
+| `bodyLimit` | `number` | `10485760` (10MB) | Maximum payload size in bytes for JSON and URL-encoded request bodies. |
+| `compression` | `boolean` | `false` | Enables gzip and Brotli response compression. |
+| `etag` | `boolean` | `false` | Enables ETag computation for dynamic responses. |
+| `debugRouting` | `boolean` | `false` | Logs the matched file-system route file and applied boundaries for every request. |
+| `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
+| `transformResponse` | `boolean \| ((data: any, req: any, res: any) => any)` | `false` | Global transformation function to wrap route responses in a standardized envelope. |
 
 ### Security & Middlewares
 
-- **`cors`** _(boolean | object)_: Enable and configure Cross-Origin Resource Sharing globally. Acts as the base configuration; can be overridden per directory via `boundary.ts` (`defineBoundary({ cors })`) or per endpoint via `route.ts` (`route.get({ cors })` / `@Cors()`).
-- **`helmet`** _(boolean | object)_: Enable strict security headers. Enabled by default.
-- **`logger`** _(boolean | object)_: Configure the efficient Pino request logger.
-- **`compression`** _(boolean | object)_: Enable gzip/brotli response compression.
-- **`etag`** _(boolean)_: Automatic ETag generation for HTTP conditional requests (default: `false` for dynamic API routes).
-- **`bodyLimit`** _(number)_: Maximum JSON/URL-encoded payload size in bytes (default: `10MB`).
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `cors` | `boolean \| CorsConfig` | `{ origin: '*', methods: ['GET', 'POST', ...] }` | Cross-Origin Resource Sharing settings. Set to `false` to disable. |
+| `helmet` | `boolean \| HelmetConfig` | `{ enabled: true }` | Strict security response headers (CSP, X-Frame-Options, X-Content-Type-Options). |
+| `logger` | `boolean \| LoggerConfig` | `false` | Pino structured logger configuration with automatic credential redaction. |
+| `blockSuspiciousProbes` | `boolean \| BlockProbesOptions` | `false` | Automatically drops requests targeting known exploit paths (`.env`, `.git`, `wp-admin`). |
+| `keepAlive` | `boolean \| KeepAliveConfig` | `false` | HTTP keep-alive timeout and connection socket limits. |
 
-### Development Server & File Watcher (`watch` & `dev`)
+### Observability & Diagnostics
 
-- **`watch.paths`** / **`dev.watch`** _(string[])_: Custom directories or files to watch during development (default: `['src', ...configFiles]`).
-- **`watch.ignore`** / **`dev.ignored`** _((string | RegExp)[])_: Additional files, extensions, or regex patterns to ignore during hot reload.
-- **`watch.extensions`** / **`dev.extensions`** _(string[])_: Explicit file extensions that trigger reloads (defaults to `['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']`).
-- **`watch.debounceMs`** / **`dev.debounceMs`** _(number)_: Debounce interval in ms before restarting the server (default: `250ms`).
-- **`dev.usePolling`** _(boolean)_: Enables chokidar polling fallback (default: `true` on Windows).
-- **`dev.interval`** _(number)_: Polling file system interval in milliseconds (default: `100`).
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false, exporter: 'console' }` | OpenTelemetry tracing and span reporting (`'otlp'` or `'console'`). |
+| `metrics` | `boolean \| MetricsConfig` | `{ enabled: false, path: '/metrics' }` | Prometheus-compatible metrics endpoint. |
+| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false, path: '/_health' }` | Liveness and readiness health probe route. |
+| `docs` | `boolean \| SwaggerConfig` | `{ enabled: false, path: '/docs' }` | Interactive OpenAPI / Swagger UI documentation generation. |
 
-### Extended Integrations
+### Development & File Watching
 
-- **`queue`**: Define your background queue driver (`memory` or `redis`) and configure `maxConcurrent` processing limits.
-- **`plugins`**: An array of `ExisPlugin` instances to register natively into the framework.
-- **`test`**: Configure testing environments (`include`, `exclude`, `setupFiles`, `coverage`).
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `watch` | `WatchConfig` | `{ debounceMs: 250 }` | File watching paths, patterns, and debounce timings. |
+| `dev` | `DevConfig` | `{ usePolling: true }` | Development server settings, including chokidar polling interval for Windows environments. |
+| `plugins` | `ExisPlugin[]` | `[]` | Array of framework plugins to initialize during application bootstrap. |
+| `test` | `TestConfig` | `{ include: ['tests/**/*.test.ts'] }` | Test file matching patterns and setup file scripts. |
+
+---
+
+## Sub-Configuration Interfaces
+
+### `CorsConfig`
+
+```typescript
+export interface CorsConfig {
+  origin?: boolean | string | RegExp | (string | RegExp)[] | CorsOriginFn
+  methods?: string[]
+  allowedHeaders?: string[]
+  exposedHeaders?: string[]
+  credentials?: boolean
+  maxAge?: number
+  preflightContinue?: boolean
+}
+```
+
+### `LoggerConfig`
+
+```typescript
+export interface LoggerConfig {
+  level?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent'
+  pretty?: boolean
+  redact?: string[]
+}
+```
+
+### `HelmetConfig`
+
+```typescript
+export interface HelmetConfig {
+  enabled?: boolean
+  contentSecurityPolicy?: boolean
+  xFrameOptions?: 'DENY' | 'SAMEORIGIN'
+}
+```
+
+### `TelemetryConfig`
+
+```typescript
+export interface TelemetryConfig {
+  enabled: boolean
+  serviceName?: string
+  exporter?: 'otlp' | 'console'
+  endpoint?: string
+}
+```
+
+### `HealthCheckConfig`
+
+```typescript
+export interface HealthCheckConfig {
+  enabled: boolean
+  path?: string
+  checks?: (() => Promise<boolean>)[]
+}
+```
+
+### `SwaggerConfig`
+
+```typescript
+export interface SwaggerConfig {
+  enabled?: boolean
+  path?: string
+  specPath?: string
+  title?: string
+  version?: string
+  description?: string
+  scalar?: boolean
+}
+```
+
+### `WatchConfig` & `DevConfig`
+
+```typescript
+export interface WatchConfig {
+  paths?: string[]
+  ignore?: (string | RegExp)[]
+  extensions?: string[]
+  debounceMs?: number
+}
+
+export interface DevConfig {
+  watch?: string[]
+  ignored?: (string | RegExp)[]
+  usePolling?: boolean
+  interval?: number
+  binaryInterval?: number
+  extensions?: string[]
+  debounceMs?: number
+}
+```
+
+---
+
+## Environment Utility Functions
+
+The `exisjs/config` module also exports low-level environment-loading helpers used internally by the CLI:
+
+### `loadEnv(cwd?, mode?, override?)`
+
+Loads cascading `.env` files from `cwd` based on the specified execution mode (`development`, `production`, `test`).
+
+```typescript
+import { loadEnv } from 'exisjs/config'
+
+const envMap = loadEnv(process.cwd(), 'production')
+```
+
+### `parseEnv(source)`
+
+Parses raw `.env` string contents into a key-value record without mutating `process.env`.
+
+```typescript
+import { parseEnv } from 'exisjs/config'
+
+const parsed = parseEnv(`
+PORT=5000
+DATABASE_URL=postgres://user:pass@localhost:5432/db
+`)
+```
+

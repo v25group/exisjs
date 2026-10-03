@@ -218,11 +218,16 @@ export function createTestContext(appInput: any): TestApp {
   })
 
   before(async () => {
-    if (typeof app.create === 'function') {
-      await app.create()
-    }
-    if (typeof app.onStartHook === 'function') {
-      await app.onStartHook(app)
+    if (typeof (app as any).boot === 'function') {
+      const bootedApp = await (app as any).boot()
+      if (bootedApp) app = bootedApp
+    } else {
+      if (typeof app.create === 'function') {
+        await app.create()
+      }
+      if (typeof app.onStartHook === 'function') {
+        await app.onStartHook(app)
+      }
     }
 
     try {

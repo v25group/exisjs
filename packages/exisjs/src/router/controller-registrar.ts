@@ -263,6 +263,24 @@ export class ControllerRegistrar {
                       ? (req.body as any)?.[param.name]
                       : req.body
                     break
+                  case 'rawBody': {
+                    if (req.rawBody === undefined) {
+                      await req.text().catch(() => {
+                        /* noop */
+                      })
+                    }
+                    const isStringEncoding =
+                      param.name === 'string' ||
+                      param.name === 'utf8' ||
+                      param.name === 'utf-8' ||
+                      (typeof param.name === 'object' &&
+                        param.name !== null &&
+                        param.name.encoding === 'utf8')
+                    rawArg = isStringEncoding
+                      ? (req.rawBody ?? '')
+                      : Buffer.from(req.rawBody ?? '', 'utf8')
+                    break
+                  }
                   case 'param':
                     rawArg = param.name ? req.params[param.name] : req.params
                     break
@@ -393,15 +411,22 @@ export class ControllerRegistrar {
                     } else if (
                       typeof pipe === 'object' &&
                       pipe !== null &&
-                      typeof pipe.transform === 'function'
+                      typeof pipe.parse === 'function'
                     ) {
-                      rawArg = await pipe.transform(rawArg, argMetadata)
+                      // Set auto-coercion flag for query/param schemas
+                      if (
+                        (param.type === 'query' || param.type === 'param') &&
+                        !pipe._isQueryOrParam
+                      ) {
+                        pipe._isQueryOrParam = true
+                      }
+                      rawArg = await pipe.parse(rawArg)
                     } else if (
                       typeof pipe === 'object' &&
                       pipe !== null &&
-                      typeof pipe.parse === 'function'
+                      typeof pipe.transform === 'function'
                     ) {
-                      rawArg = await pipe.parse(rawArg)
+                      rawArg = await pipe.transform(rawArg, argMetadata)
                     } else if (
                       typeof pipe === 'function' &&
                       pipe.prototype &&

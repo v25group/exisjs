@@ -6,11 +6,10 @@ Before modifying any code, you MUST understand this architecture.
 
 ## 1. The Monorepo Structure
 
-- `packages/exisjs`: The core TypeScript framework, HTTP pipeline, file-system router, and developer-facing APIs.
+- `packages/exisjs`: The core TypeScript framework, HTTP pipeline, file-system router, developer-facing APIs, and built-in OpenTelemetry integration (`exisjs/telemetry`).
 - `packages/rs`: The Rust native engine exposing high-performance bindings via N-API (`@exisjs/rs`).
 - `packages/create`: The CLI scaffolding tool for generating new ExisJS projects (`create-exis`).
 - `packages/fetch`: A dedicated lightweight HTTP client (wraps Undici/fetch).
-- `packages/telemetry`: The OpenTelemetry and Prometheus adapters for Node.js observability.
 - **Rule**: Whenever you compile the Rust engine, ALWAYS run `cargo build` in `packages/rs` or `npm run build` from the workspace root.
 
 ## 2. The "Graceful Fallback" Pattern

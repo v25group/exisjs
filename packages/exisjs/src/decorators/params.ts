@@ -140,6 +140,29 @@ export const Body = (nameOrPipe?: string | any, ...pipes: any[]) =>
   createParamDecorator('body', nameOrPipe, ...pipes)
 
 /**
+ * Injects the unparsed raw request body as a Buffer or string.
+ * Essential for webhooks (Stripe, GitHub, Shopify, etc.) that verify cryptographic HMAC signatures.
+ *
+ * @param optionsOrPipe Optional configuration: pass `'string'`, `'utf8'`, `{ encoding: 'utf8' }` to receive a string, or omit for a Buffer
+ * @param pipes Optional transformation pipes
+ *
+ * @example
+ * ```ts
+ * @Post('/webhook')
+ * handleWebhook(
+ *   @RawBody() rawBuffer: Buffer,
+ *   @Headers('stripe-signature') sig: string
+ * ) {
+ *   stripe.webhooks.constructEvent(rawBuffer, sig, secret);
+ * }
+ * ```
+ */
+export const RawBody = (
+  optionsOrPipe?: string | { encoding?: BufferEncoding } | any,
+  ...pipes: any[]
+) => createParamDecorator('rawBody', optionsOrPipe, ...pipes)
+
+/**
  * Injects request headers or a specific header value.
  *
  * @param name Optional header name (case-insensitive)

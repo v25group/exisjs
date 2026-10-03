@@ -82,6 +82,15 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
     else if (base.startsWith('array<'))
       typeObj = { type: 'array', items: { type: 'string' } }
 
+    if (validator.description) typeObj.description = validator.description
+    const ex =
+      validator.exampleValue !== undefined
+        ? validator.exampleValue
+        : typeof validator.example !== 'function'
+          ? validator.example
+          : undefined
+    if (ex !== undefined) typeObj.example = ex
+
     return isOptional ? { ...typeObj, nullable: true } : typeObj
   }
 
@@ -89,14 +98,101 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
   if (typeof validator._def === 'object') {
     const def = validator._def
     const typeName = def.typeName || ''
-    if (typeName === 'ZodString') return { type: 'string' }
-    if (typeName === 'ZodNumber') return { type: 'number' }
-    if (typeName === 'ZodBoolean') return { type: 'boolean' }
+    const description = validator.description || def.description
+
+    if (typeName === 'ZodString') {
+      const result: Record<string, any> = { type: 'string' }
+      const min =
+        def.minLength?.value ??
+        def.checks?.find((c: any) => c.kind === 'min')?.value
+      const max =
+        def.maxLength?.value ??
+        def.checks?.find((c: any) => c.kind === 'max')?.value
+      if (min !== undefined) result.minLength = min
+      if (max !== undefined) result.maxLength = max
+      if (def.checks?.some((c: any) => c.kind === 'email'))
+        result.format = 'email'
+      if (def.checks?.some((c: any) => c.kind === 'uuid'))
+        result.format = 'uuid'
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodNumber') {
+      const result: Record<string, any> = { type: 'number' }
+      const min =
+        def.minimum ?? def.checks?.find((c: any) => c.kind === 'min')?.value
+      const max =
+        def.maximum ?? def.checks?.find((c: any) => c.kind === 'max')?.value
+      if (min !== undefined) result.minimum = min
+      if (max !== undefined) result.maximum = max
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodBoolean') {
+      const result: Record<string, any> = { type: 'boolean' }
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodDate') {
+      const result: Record<string, any> = {
+        type: 'string',
+        format: 'date-time',
+      }
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodEnum' && Array.isArray(def.values)) {
+      const result: Record<string, any> = { type: 'string', enum: def.values }
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodLiteral') {
+      const val = def.value
+      const result: Record<string, any> = {
+        type:
+          typeof val === 'number'
+            ? 'number'
+            : typeof val === 'boolean'
+              ? 'boolean'
+              : 'string',
+        enum: [val],
+      }
+      if (description) result.description = description
+      return result
+    }
     if (typeName === 'ZodArray') {
-      return {
+      const result: Record<string, any> = {
         type: 'array',
         items: schemaToOpenApi(def.type),
       }
+      if (description) result.description = description
+      return result
+    }
+    if (typeName === 'ZodOptional' || typeName === 'ZodNullable') {
+      const inner = schemaToOpenApi(def.innerType)
+      return { ...inner, nullable: true }
+    }
+    if (typeName === 'ZodUnion' && Array.isArray(def.options)) {
+      return {
+        oneOf: def.options.map((opt: any) => schemaToOpenApi(opt)),
+      }
+    }
+    if (typeName === 'ZodDiscriminatedUnion' && Array.isArray(def.options)) {
+      return {
+        oneOf: def.options.map((opt: any) => schemaToOpenApi(opt)),
+        discriminator: {
+          propertyName: def.discriminator,
+        },
+      }
+    }
+    if (typeName === 'ZodRecord') {
+      return {
+        type: 'object',
+        additionalProperties: schemaToOpenApi(def.valueType),
+      }
+    }
+    if (typeName === 'ZodEffects') {
+      return schemaToOpenApi(def.schema)
     }
     if (typeName === 'ZodObject' && typeof def.shape === 'function') {
       const shape = def.shape()
@@ -111,16 +207,18 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
           required.push(key)
         }
       }
-      return {
+      const objResult: Record<string, any> = {
         type: 'object',
         properties,
         ...(required.length > 0 ? { required } : {}),
       }
+      if (description) objResult.description = description
+      return objResult
     }
   }
 
-  // 4. If plain object representation
-  if (typeof validator === 'object') {
+  // 4. If plain object representation / JSON Schema or raw shape map
+  if (typeof validator === 'object' && validator !== null) {
     if (
       validator.type &&
       (validator.properties ||
@@ -128,6 +226,25 @@ export function schemaToOpenApi(validator: any): Record<string, any> {
         typeof validator.type === 'string')
     ) {
       return validator
+    }
+    // If raw map of field definitions: { id: tex.number(), name: tex.string() }
+    const keys = Object.keys(validator)
+    if (keys.length > 0 && typeof validator[keys[0]] === 'object') {
+      const properties: Record<string, any> = {}
+      const required: string[] = []
+      for (const [k, v] of Object.entries(validator)) {
+        properties[k] = schemaToOpenApi(v)
+        const isOpt =
+          (v as any)?._raw?.includes('?') ||
+          (v as any)?._raw?.includes('optional') ||
+          (v as any)?._isOptional
+        if (!isOpt) required.push(k)
+      }
+      return {
+        type: 'object',
+        properties,
+        ...(required.length > 0 ? { required } : {}),
+      }
     }
   }
 

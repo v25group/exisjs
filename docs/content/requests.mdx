@@ -1,595 +1,275 @@
 ---
-nextUrl: "/docs/responses"
-nextTitle: "Responses"
+title: 'Request Object (ExisRequest)'
+description: 'API reference and usage guide for ExisRequest: parameters, query strings, headers, body parsing, multipart uploads, IP resolution, and abort signals.'
+nextUrl: '/docs/responses'
+nextTitle: 'Response Helpers & Streaming'
 ---
 
-# Requests
+# Request Object (`ExisRequest`)
 
-ExisJS wraps the native Node.js `IncomingMessage` object into an `ExisRequest` instance. It abstracts away the complexities of stream parsing, multipart form processing, and header normalization, giving you a typed interface.
+ExisJS wraps the standard Node.js `IncomingMessage` in an `ExisRequest` instance. It provides parsed properties, lazy body decoding, multipart upload helpers, IP resolution behind reverse proxies, and integration with the Web standard `AbortSignal`.
 
 ---
 
-## 1. Body, Query, and Params
+## Core Request Properties
 
-The most common request properties are automatically parsed and strongly typed (especially when using the [Schema Validation](/docs/middleware#8-schema-validation) middleware).
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `req.params` | `TParams` | Dynamic route parameters extracted from URL segments (e.g. `/:id`) |
+| `req.query` | `TQuery` | Parsed URL query parameters (e.g. `?page=1&limit=20`) |
+| `req.body` | `TBody` | Parsed request body payload (JSON, URL-encoded, or multipart fields) |
+| `req.headers` | `IncomingHttpHeaders` | Incoming HTTP headers map (case-insensitive keys) |
+| `req.cookies` | `Record<string, string>` | Parsed request cookies dictionary |
+| `req.file` | `ExisFile` | First uploaded file from multipart form data |
+| `req.files` | `ExisFile[]` | All uploaded files from multipart form data |
+| `req.ip` | `string` | Resolved client IP address (evaluates trusted proxy headers) |
+| `req.ips` | `string[]` | Array of IP addresses when traversed through proxy hops |
+| `req.hostname` | `string` | Resolved hostname (from `Host` or `X-Forwarded-Host`) |
+| `req.protocol` | `'http' \| 'https'` | Request protocol |
+| `req.secure` | `boolean` | `true` when request is over HTTPS (`req.protocol === 'https'`) |
+| `req.method` | `string` | HTTP method verb (`GET`, `POST`, `PUT`, etc.) |
+| `req.path` | `string` | Normalized pathname without query parameters |
+| `req.originalUrl` | `string` | Raw URL string including query parameters |
+| `req.signal` | `AbortSignal` | Standard `AbortSignal` triggered when client cancels connection |
+| `req.fresh` | `boolean` | `true` if client cache matches current `ETag` or `Last-Modified` |
+| `req.stale` | `boolean` | Inverse of `req.fresh` |
+| `req.user` | `ExisUser` | Authenticated user identity attached by auth guards |
+| `req.session` | `Record<string, any>` | Session data store when session middleware is enabled |
+| `req.log` | `Logger` | Request-scoped Pino logger with trace metadata |
+| `req.requestId` | `string` | Unique request identifier header |
+| `req.raw` | `IncomingMessage` | Underlying Node.js `IncomingMessage` stream |
 
-- **`req.body`**: The parsed body of the request (JSON, URL-encoded, or Multipart).
-- **`req.query`**: An object containing the URL query string parameters (e.g., `?id=123`).
-- **`req.params`**: An object containing route parameters (e.g., `/:id`).
+---
 
-#### Functional Paradigm
+## Accessing Request Data
 
-```typescript filename="src/http/route.ts"
+### In Functional Routes
+
+In functional route handlers, `req` is available directly on the handler context alongside destructured convenience properties (`body`, `query`, `params`, `headers`):
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+
 export default controller({
-  updateUser: route.post('/users/:id', {
-    handle(req, res) {
-      const id = req.params.id          // "123"
-      const force = req.query.force     // "true"
-      const payload = req.body          // { email: "alice@exisjs.com" }
-    }
-  })
+  updateUser: route.put('/:id', {
+    handle: async ({ params, query, body, req }) => {
+      const id = params.id
+      const force = query.force === 'true'
+      const clientIp = req.ip
+
+      return { id, force, clientIp, updated: body }
+    },
+  }),
 })
 ```
 
-#### Class-Based (OOP) Paradigm
+### In Class-Based (OOP) Controllers
 
-```typescript filename="src/http/route.ts"
-import { Controller, Post, Param, Query, Body } from 'exisjs/decorators'
+In OOP controllers, access `req` using the `@Req()` decorator or extract specific properties using `@Param()`, `@Query()`, `@Body()`, and `@Headers()`:
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Put, Param, Query, Body, Req } from 'exisjs/decorators'
+import type { Request } from 'exisjs/router'
 
 @Controller()
 export default class UsersController {
-  @Post('/users/:id')
+  @Put('/:id')
   async updateUser(
     @Param('id') id: string,
     @Query('force') force: string,
-    @Body() payload: any
+    @Body() body: any,
+    @Req() req: Request
   ) {
-    // Variables are automatically injected
+    const clientIp = req.ip
+    return { id, force: force === 'true', clientIp, updated: body }
   }
 }
 ```
 
 ---
 
-## 2. On-Demand Parsing
+## On-Demand Body Parsing & Raw Streams
 
-To maximize performance, ExisJS does not parse the request body immediately for every route. If you aren't using the Validation middleware, you can manually trigger parsing on-demand.
-
-#### Functional Paradigm
+When dealing with webhooks (e.g. Stripe, GitHub), HMAC signature verification, or custom binary payloads, you can access the unparsed stream directly:
 
 ```typescript
-export default controller({
-  processData: route.post('/process', {
-    async handle(req, res) {
-      // Parses application/json
-      const data = await req.json<{ key: string }>()
-      
-      // Parses raw text (text/plain)
-      const text = await req.text()
-    }
-  })
-})
+// 1. Read raw binary Buffer (ideal for webhook signature verification)
+const rawBuffer = await req.buffer()
+
+// 2. Read raw UTF-8 string
+const rawText = await req.text()
+
+// 3. Parse JSON body on demand
+const data = await req.json<{ username: string }>()
+
+// 4. Parse multipart/form-data or x-www-form-urlencoded
+const { fields, files } = await req.formData()
 ```
 
-#### Class-Based (OOP) Paradigm
+### Webhooks with `@RawBody()` (Class Controllers)
 
-```typescript filename="src/http/route.ts"
-import { Controller, Post, Req } from 'exisjs/decorators'
+In class-based controllers, use the `@RawBody()` parameter decorator to inject the raw `Buffer` or decoded string directly:
 
-@Controller()
-export default class ProcessController {
-  @Post('/process')
-  async processData(@Req() req: any) {
-    // Parses application/json
-    const data = await req.json<{ key: string }>()
-    
-    // Parses raw text (text/plain)
-    const text = await req.text()
-  }
-}
-```
+```typescript filename="src/http/webhooks/route.ts"
+import { Controller, Post, RawBody, Headers } from 'exisjs/decorators'
 
----
-
-## 3. File Uploads & Multipart Form Data
-
-Handling `multipart/form-data` in Node.js can be difficult. ExisJS provides multiple robust, high-performance approaches:
-
-### A. Declarative Route Uploads (Recommended)
-
-You can declare file upload requirements directly inside your route schema or decorators. ExisJS automatically executes the multipart parser, validates MIME types, enforces byte caps, and populates `req.file` or `req.files` along with non-file fields in `req.body`:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/upload/route.ts"
-import { controller, route } from 'exisjs/router'
-import { tex } from 'exisjs/validator'
-
-export default controller({
-  uploadPhoto: route.post('/', {
-    upload: {
-      field: 'photo',
-      maxBytes: 10 * 1024 * 1024, // 10MB limit
-      mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-    },
-    body: tex.object({
-      title: tex.string({ min: 1 }),
-    }),
-    handle({ req }) {
-      const file = req.file! // Typed UploadedFile
-      console.log(`Uploaded ${file.originalname} (${file.size} bytes)`)
-
-      return {
-        success: true,
-        filename: file.filename,
-        mimetype: file.mimetype,
-        title: req.body.title,
-      }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/upload/route.ts"
-import { Controller, Post, UseUpload, UploadedFile, Body } from 'exisjs/decorators'
-import { tex } from 'exisjs/validator'
-import type { UploadedFile as IUploadedFile } from 'exisjs/router'
-
-const TitleSchema = tex.object({
-  title: tex.string({ min: 1 }),
-})
-
-@Controller('/upload')
-export default class UploadController {
-  @Post('/')
-  @UseUpload({
-    field: 'photo',
-    maxBytes: 10 * 1024 * 1024,
-    mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-  })
-  async uploadPhoto(
-    @UploadedFile() file: IUploadedFile,
-    @Body(TitleSchema) body: { title: string }
+@Controller('/webhooks')
+export default class WebhookController {
+  @Post('/stripe')
+  async handleStripe(
+    @RawBody() payload: Buffer,
+    @Headers('stripe-signature') sig: string
   ) {
-    console.log(`Uploaded ${file.originalname} (${file.size} bytes)`)
-
-    return {
-      success: true,
-      filename: file.filename,
-      mimetype: file.mimetype,
-      title: body.title,
-    }
-  }
-}
-```
-
-### B. First-Party `fileUpload` Middleware
-
-ExisJS exports a dedicated `fileUpload` middleware from `exisjs/middleware` supporting single, multiple, and multi-field uploads:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/documents/route.ts"
-import { controller, route } from 'exisjs/router'
-import { fileUpload } from 'exisjs/middleware'
-
-export default controller({
-  // Single file upload
-  single: route.post('/single', 
-    fileUpload.single('document', {
-      maxBytes: 15 * 1024 * 1024, // 15MB
-      dest: './uploads/docs',
-    }),
-    ({ req }) => {
-      return { file: req.file }
-    }
-  ),
-
-  // Multiple files with the same field name
-  gallery: route.post('/gallery',
-    fileUpload.array('photos', 5, {
-      mimeTypes: ['image/*'],
-    }),
-    ({ req }) => {
-      const files = req.files // UploadedFile[]
-      return { count: files?.length }
-    }
-  ),
-
-  // Multiple distinct fields
-  profile: route.post('/profile',
-    fileUpload.fields([
-      { name: 'avatar', maxCount: 1 },
-      { name: 'cover', maxCount: 1 },
-    ]),
-    ({ req }) => {
-      // req.files is a dictionary Record<string, UploadedFile[]>
-      return { files: req.files }
-    }
-  ),
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/documents/route.ts"
-import { Controller, Post, Use, UploadedFile, UploadedFiles } from 'exisjs/decorators'
-import { fileUpload } from 'exisjs/middleware'
-import type { UploadedFile as IUploadedFile } from 'exisjs/router'
-
-@Controller('/documents')
-export default class DocumentsController {
-  // Single file upload
-  @Post('/single')
-  @Use(fileUpload.single('document', { maxBytes: 15 * 1024 * 1024, dest: './uploads/docs' }))
-  async uploadSingle(@UploadedFile() file: IUploadedFile) {
-    return { file }
-  }
-
-  // Multiple files with the same field name
-  @Post('/gallery')
-  @Use(fileUpload.array('photos', 5, { mimeTypes: ['image/*'] }))
-  async uploadGallery(@UploadedFiles() files: IUploadedFile[]) {
-    return { count: files.length, files }
-  }
-
-  // Multiple distinct fields
-  @Post('/profile')
-  @Use(fileUpload.fields([{ name: 'avatar', maxCount: 1 }, { name: 'cover', maxCount: 1 }]))
-  async uploadProfile(@UploadedFiles() files: Record<string, IUploadedFile[]>) {
-    return { files }
-  }
-}
-```
-
-### C. Integrating Express/Connect Middleware (e.g. Multer)
-
-If your enterprise project relies on existing Express middleware like **Multer** (for custom storage engines, S3 direct-to-cloud streams, or specialized filters), ExisJS provides the `fromExpress()` bridge:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/legacy/route.ts"
-import { controller, route } from 'exisjs/router'
-import { fromExpress } from 'exisjs/middleware'
-import multer from 'multer'
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-})
-
-export default controller({
-  upload: route.post('/', 
-    fromExpress(upload.single('file')),
-    ({ req }) => {
-      // Access multer's req.file or req.body seamlessly
-      const file = (req.raw as any).file || req.file
-      return { success: true, originalname: file?.originalname }
-    }
-  )
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/legacy/route.ts"
-import { Controller, Post, Use, Req } from 'exisjs/decorators'
-import { fromExpress } from 'exisjs/middleware'
-import type { Request } from 'exisjs/router'
-import multer from 'multer'
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-})
-
-@Controller('/legacy')
-export default class LegacyUploadController {
-  @Post('/upload')
-  @Use(fromExpress(upload.single('file')))
-  async upload(@Req() req: Request) {
-    const file = (req.raw as any).file || req.file
-    return { success: true, originalname: file?.originalname }
-  }
-}
-```
-
-### D. Manual `req.formData()` & Streaming Uploads
-
-For manual control over incoming multipart streams without route middleware:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/upload/route.ts"
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  uploadAvatar: route.post('/avatar', {
-    async handle({ req }) {
-      // Parse on-demand
-      const { fields, files } = await req.formData()
-      const uploadedFile = files['profile_pic']
-      
-      if (uploadedFile) {
-        // Save to disk safely with automated collision-free naming
-        const savedPath = await uploadedFile.saveToDisk('./uploads/avatars')
-        return { success: true, path: savedPath }
-      }
-      
-      return { success: false, error: 'No file uploaded' }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/upload/route.ts"
-import { Controller, Post, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs/router'
-
-@Controller('/upload')
-export default class ManualUploadController {
-  @Post('/avatar')
-  async uploadAvatar(@Req() req: Request) {
-    const { fields, files } = await req.formData()
-    const uploadedFile = files['profile_pic']
-
-    if (uploadedFile) {
-      const savedPath = await uploadedFile.saveToDisk('./uploads/avatars')
-      return { success: true, path: savedPath }
-    }
-
-    return { success: false, error: 'No file uploaded' }
+    return stripe.webhooks.constructEvent(payload, sig, process.env.STRIPE_SECRET!)
   }
 }
 ```
 
 ---
 
-## 4. Body Size Limits & HTTP 413
+## Headers & Content Negotiation
 
-ExisJS comes pre-configured with a generous **10MB default body limit** (`10485760` bytes) across JSON, form-data, and raw payloads, preventing premature drops during photo or document uploads.
+ExisJS provides helper methods for header inspection and RFC content negotiation:
 
-If a client sends a payload exceeding the configured threshold, ExisJS halts parsing immediately and responds with `413 Payload Too Large`:
+```typescript
+// Case-insensitive header retrieval
+const auth = req.get('Authorization') // or req.header('authorization')
 
-```json
-{
-  "statusCode": 413,
-  "error": "Payload Too Large",
-  "message": "Request payload exceeded size limit of 10485760 bytes. Increase server.bodyLimit in exis.config.ts to allow larger payloads."
+// Check Content-Type
+if (req.is('json')) {
+  // Content-Type contains application/json
 }
+
+// Content negotiation - returns best supported match
+const format = req.accepts('json', 'html', 'text')
+const language = req.acceptsLanguages('en', 'es', 'de')
 ```
 
-To configure custom limits globally across your app, update `exis.config.ts`:
+---
+
+## Proxy & IP Address Resolution
+
+When running behind reverse proxies, load balancers, or CDNs (such as AWS ALB, Cloudflare, NGINX, or Render), configure `trustProxy` in `exis.config.ts`:
 
 ```typescript filename="exis.config.ts"
-export default {
-  server: {
-    // Set custom maximum payload limit in bytes (e.g. 50MB)
-    bodyLimit: 50 * 1024 * 1024,
-  }
+import type { ExisConfig } from 'exisjs/config'
+
+const config: ExisConfig = {
+  trustProxy: true, // Evaluates CF-Connecting-IP, X-Real-IP, and X-Forwarded-For
 }
+
+export default config
 ```
+
+When enabled:
+- `req.ip` automatically resolves the client IP, normalizes IPv6 loopback (`::1` $\to$ `127.0.0.1`), and strips IPv4-mapped IPv6 prefixes (`::ffff:192.168.1.1` $\to$ `192.168.1.1`).
+- `req.ips` provides the complete upstream proxy chain.
+- `req.protocol` resolves to `'https'` when `X-Forwarded-Proto: https` is present.
 
 ---
 
-## 5. Dynamic Request Timeouts
+## Connection Cancellation & `req.signal`
 
-ExisJS ships with a **60-second default request timeout** in its `timeout()` middleware, offering ample headroom for slow network clients and third-party cloud operations (Cloudinary, AWS S3, OpenAI, Stripe).
+ExisJS links `req.signal` to the lifecycle of the incoming HTTP connection. If a client closes their browser, navigates away, or aborts an HTTP request, `req.signal` fires an abort event.
 
-### Dynamic In-Handler Control
-
-Handlers can dynamically extend or cancel the active timeout on the fly using `req.setTimeout()` and `req.clearTimeout()`, or declaratively via `@Timeout(ms)`:
-
-#### Functional Paradigm
-
-```typescript filename="src/http/ai/route.ts"
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  generateVideo: route.post('/', {
-    timeoutMs: 180000, // 1. Declarative 3-minute timeout for this endpoint
-    async handle({ req }) {
-      // 2. Or dynamically adjust timeout during processing
-      req.setTimeout(240000)
-
-      try {
-        const result = await longRunningAiTask()
-        return { success: true, result }
-      } finally {
-        req.clearTimeout()
-      }
-    }
-  })
-})
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/ai/route.ts"
-import { Controller, Post, Timeout, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs/router'
-
-@Controller('/ai')
-export default class AiTaskController {
-  @Post('/generate-video')
-  @Timeout(180000) // 1. Declarative 3-minute timeout
-  async generateVideo(@Req() req: Request) {
-    // 2. Or dynamically adjust on the fly
-    req.setTimeout(240000)
-
-    try {
-      const result = await longRunningAiTask()
-      return { success: true, result }
-    } finally {
-      req.clearTimeout()
-    }
-  }
-}
-```
-
----
-
-## 6. HTTP Headers & Content Negotiation
-
-```typescript
-// Get a specific header (case-insensitive)
-const authHeader = req.get('Authorization')
-// or
-const authHeader = req.header('authorization')
-
-// Check the Content-Type
-if (req.is('application/json')) { ... }
-
-// Content Negotiation (returns the best match)
-const format = req.accepts('html', 'json', 'text')
-const language = req.acceptsLanguages('en', 'es', 'fr')
-```
-
----
-
-## 7. Network Information & Reverse Proxy IP Resolution
-
-ExisJS handles reverse proxies, CDNs, and dual-stack IP networks automatically. When deployed behind Cloudflare, AWS ALB, NGINX, Render, or GCP, set `trustProxy: true` in your `exis.config.ts` or define `TRUST_PROXY=true` in your environment variables.
-
-When proxy trust is enabled, ExisJS evaluates industry-standard proxy and CDN headers in priority order:
-1. `CF-Connecting-IP` (Cloudflare)
-2. `True-Client-IP` (Akamai / Cloudflare Enterprise)
-3. `X-Real-IP` / `X-Client-IP` (NGINX / Reverse Proxies)
-4. `X-Forwarded-For` (Standard multi-hop proxy chains)
-
-- **`req.ip`**: The real client's IP address. Automatically strips proxy hops, normalizes IPv6-mapped IPv4 dual-stack addresses (e.g., `::ffff:192.168.1.50` $\to$ `192.168.1.50`), and converts IPv6 loopback `::1` $\to$ `127.0.0.1` for consistent rate limiting and geo-IP lookups.
-- **`req.ips`**: An array of IPs if multiple proxies were traversed, each normalized cleanly.
-- **`req.hostname`**: The resolved hostname (from `Host` or `X-Forwarded-Host`).
-- **`req.protocol`**: Returns `'http'` or `'https'`.
-- **`req.secure`**: A boolean (true if `req.protocol === 'https'`).
-
----
-
-## 8. Request Cancellation & Abort Signals (`req.signal`)
-
-ExisJS provides a first-class standard Web API `req.signal: AbortSignal` tied directly to the underlying HTTP connection lifecycle. 
-
-When a client closes their browser tab, cancels a download, or aborts an HTTP request, `req.signal` immediately triggers an `abort` event. You can pass `req.signal` directly to ORMs, database drivers, and HTTP clients to cancel expensive in-flight operations and eliminate wasted server resources.
-
-#### Functional Paradigm
+Pass `req.signal` to downstream database queries or outgoing HTTP calls to avoid running orphaned operations:
 
 ```typescript filename="src/http/reports/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  heavyReport: route.get('/', {
-    async handle({ req }) {
-      // 1. Pass req.signal to fetch() — if the client leaves, fetch aborts immediately
-      const upstream = await fetch('https://api.external.com/data', {
-        signal: req.signal
+  exportReport: route.get('/', {
+    handle: async ({ req }) => {
+      // 1. Pass signal to fetch calls
+      const upstream = await fetch('https://analytics.internal/data', {
+        signal: req.signal,
       })
-      const payload = await upstream.json()
+      const data = await upstream.json()
 
-      // 2. Pass req.signal to your database queries (Prisma, Drizzle, pg, etc.)
-      const results = await db.query(sql`SELECT * FROM heavy_analytics`, {
-        signal: req.signal
+      // 2. Pass signal to database queries
+      const report = await db.query('SELECT * FROM large_dataset', {
+        signal: req.signal,
       })
 
-      return { payload, results }
-    }
-  })
+      return { data, report }
+    },
+  }),
 })
-```
-
-#### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/reports/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs/router'
-
-@Controller('/reports')
-export default class ReportsController {
-  @Get('/')
-  async heavyReport(@Req() req: Request) {
-    // 1. Pass req.signal to fetch()
-    const upstream = await fetch('https://api.external.com/data', {
-      signal: req.signal,
-    })
-    const payload = await upstream.json()
-
-    // 2. Pass req.signal to your database queries
-    const results = await db.query(sql`SELECT * FROM heavy_analytics`, {
-      signal: req.signal,
-    })
-
-    return { payload, results }
-  }
-}
 ```
 
 ---
 
-## 9. Context & Metadata
+## Request Timeouts
 
-As your request moves through ExisJS Middlewares, various properties are attached to `req` for your convenience:
-
-- **`req.log`**: A request-scoped instance of the Pino logger (via `requestLogger`).
-- **`req.requestId`**: The unique Trace ID (via `requestId`).
-- **`req.user`**: The authenticated user payload (via `JWT` auth middleware).
-- **`req.session`**: The stateful session object (via `session` middleware).
-- **`req.fresh`**: Returns `true` if the client's cache is still valid (ETag match), meaning you can send a 304 response.
-
-### Inline Context Typing (Per-Route)
-
-If you don't want to create a globally typed router with `createRouter`, ExisJS natively types `req.user` as `any` by default so you never get annoying compiler errors (e.g. `req.user.userId` just works!). 
-
-However, if you want **strict** type safety on a specific route without global configuration, you can pass your custom context directly to the route's 4th generic parameter:
+Dynamic timeout controls allow extending or resetting execution limits for long-running batch operations:
 
 ```typescript
-import { route } from "exisjs/router";
+// Set active request timeout to 3 minutes
+req.setTimeout(180000)
 
-export default route.get<any, any, any, { user: { userId: string } }>("/", {
-  async handle({ req }) {
-    // Typed. No "as any" needed.
-    const id = req.user.userId; 
-  }
+// Clear the active timeout
+req.clearTimeout()
+```
+
+---
+
+## Custom Context Typing (`TContext`)
+
+Middlewares can attach custom data to the request. You can strongly type this context either per-route or globally:
+
+### Per-Route Generic Context
+
+```typescript filename="src/http/admin/route.ts"
+import { controller, route } from 'exisjs/router'
+
+interface AdminContext {
+  adminUser: { id: string; role: 'superadmin' | 'moderator' }
+}
+
+export default controller({
+  dashboard: route.get<unknown, Record<string, string>, Record<string, string>, AdminContext>('/', {
+    handle: async ({ adminUser, req }) => {
+      return { activeAdmin: adminUser.id }
+    },
+  }),
 })
 ```
 
-### Strongly-Typed Context & Native Destructuring (App-Wide)
+### App-Wide Context with `createRouter`
 
-To provide a better developer experience, ExisJS allows you to define a **custom typed context** for your application. This completely eliminates the need for global `.d.ts` augmentations and `as any` casts.
-
-To do this, create a custom router factory (e.g., `src/http/router.ts`) and define the exact shape of your application's context (like the user object, workspace, tenant ID, etc).
+Define a typed router factory to eliminate type assertions across your entire project:
 
 ```typescript filename="src/http/router.ts"
-import { createRouter } from "exisjs/router";
+import { createRouter } from 'exisjs/router'
 
-// 1. Define everything your middlewares will attach to the request
-interface AppContext {
-  user: { id: string; role: string };
-  workspace: string;
+export interface AppContext {
+  user: { id: string; email: string }
+  tenantId: string
 }
 
-// 2. Export a custom typed route and controller
-export const { route, controller } = createRouter<AppContext>();
+export const { route, controller } = createRouter<AppContext>()
 ```
 
-Now, instead of importing from `exisjs/router`, import from your **local** router. Your handlers can natively destructure your custom properties.
+Use your local router in route files to automatically infer injected context:
 
-```typescript filename="src/http/users/route.ts"
-import { route, controller } from "../../router.ts";
+```typescript filename="src/http/profile/route.ts"
+import { controller, route } from '../router'
 
 export default controller({
-  getProfile: route.get("/", {
-    async handle({ user, workspace }) {
-      // Strongly typed. 
-      // No more `req.user`, no more `as any`.
-      console.log(user.role, workspace);
-    }
-  })
-});
+  getProfile: route.get('/', {
+    handle: async ({ user, tenantId }) => {
+      // user and tenantId are strongly typed without casting
+      return { user, tenantId }
+    },
+  }),
+})
 ```
 
-<Warning>
-**Important Middleware Rule:** In order for destructuring to work (e.g. `handle({ user })`), the `user` property MUST be populated **before** the handler executes. This means you must populate it inside a `middleware` instead of calling an inline function inside the handler.
-</Warning>
+---
+
+## Next Steps
+
+- **[Response Helpers & Streaming](/docs/responses)**: Formatting JSON envelopes, custom headers, cookies, and SSE.
+- **[Validation Guide](/docs/validation)**: Building validation schemas with `tex`.
+- **[Controllers](/docs/controllers)**: Parameter decorators and class-based controllers.
+- **[Boundaries](/docs/boundaries)**: Attaching authentication context via middleware cascades.

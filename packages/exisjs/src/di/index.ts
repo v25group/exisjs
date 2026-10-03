@@ -10,9 +10,11 @@ export { Inject, Optional } from './decorators'
 export type {
   ProviderToken,
   ProviderDefinition,
+  CustomProvider,
   ValueProvider,
   FactoryProvider,
   ClassProvider,
+  ExistingProvider,
   ClassConstructor,
 } from './container'
 export { forwardRef, isForwardRef, type ForwardReference } from './forward-ref'

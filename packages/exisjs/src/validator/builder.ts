@@ -25,7 +25,7 @@ import type {
   TexPasswordOptions,
   TexDateOptions,
 } from './types'
-import { TexEngine } from './engine'
+import { TexEngine, TexDiscriminatedUnionEngine } from './engine'
 
 /**
  * Ultra-high performance declarative schema builder powered by the native Rust validator.
@@ -49,6 +49,7 @@ export class TexBuilder {
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
+    if (opts?.coerce) base += ' | coerce'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
     if (opts?.trim) base += ' | trim'
@@ -419,6 +420,46 @@ export class TexBuilder {
     return new TexType(base) as unknown as TexFile<
       O['optional'] extends true ? true : false
     >
+  }
+
+  /**
+   * Defines a discriminated union schema matching one of multiple object variants by a discriminator property.
+   *
+   * @param discriminator Property name identifying the variant (e.g. `'type'` or `'kind'`)
+   * @param variants Array of candidate TexEngine or object schemas
+   * @returns Strongly typed `TexDiscriminatedUnionEngine`
+   *
+   * @example
+   * ```ts
+   * const ActionSchema = tex.discriminatedUnion('type', [
+   *   tex.object({ type: tex.literal('create'), name: tex.string() }),
+   *   tex.object({ type: tex.literal('delete'), id: tex.number() })
+   * ])
+   * ```
+   */
+  discriminatedUnion<
+    Discriminator extends string,
+    Variants extends (TexEngine<any> | Record<string, any>)[],
+  >(
+    discriminator: Discriminator,
+    variants: Variants
+  ): TexDiscriminatedUnionEngine<Discriminator, Variants> {
+    return new TexDiscriminatedUnionEngine(discriminator, variants)
+  }
+
+  /**
+   * Coercion primitives namespace for query parameters, headers, and form-data.
+   */
+  get coerce() {
+    return {
+      number: (opts?: TexNumberOptions) =>
+        this.number({ ...opts, coerce: true }),
+      boolean: (opts?: TexBooleanOptions) =>
+        this.boolean({ ...opts, coerce: true }),
+      date: (opts?: TexDateOptions) => this.date({ ...opts, coerce: true }),
+      string: (opts?: TexStringOptions) =>
+        this.string({ ...opts, coerce: true }),
+    }
   }
 
   /**

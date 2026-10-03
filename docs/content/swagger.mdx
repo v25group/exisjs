@@ -1,47 +1,51 @@
 ---
-nextUrl: "/docs/reference/swagger"
-nextTitle: "Swagger API Reference"
+title: "OpenAPI and Swagger Documentation"
+description: "Automatically generate OpenAPI 3.1 specifications and host interactive Swagger UI and Scalar documentation in ExisJS."
+nextUrl: "/docs/testing"
+nextTitle: "Testing Framework"
 ---
 
-# Swagger & OpenAPI 3.1 Documentation
+# OpenAPI & Swagger Documentation
 
-ExisJS comes with a native, built-in **Swagger & OpenAPI 3.1** documentation engine. It automatically discovers all registered routes, introspects **Tex** and **Zod** validation schemas, and serves interactive API documentation at `/docs`.
+ExisJS includes a native **OpenAPI 3.1** documentation engine. It automatically introspects registered routes, parses `tex` and Zod validation schemas, and serves interactive documentation UIs alongside raw JSON specifications.
 
 ---
 
-## Quick Start
+## Enabling Documentation
 
-Enable Swagger documentation in your `exis.config.ts`:
+Configure documentation in `exis.config.ts` using `defineConfig`:
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
 
 export default defineConfig({
   docs: {
-    enabled: true,              // Mounts UI at /docs and spec at /docs/json
+    enabled: true,              // Mounts interactive UI and spec endpoint
+    path: '/docs',              // Base path for UI (default: '/docs')
+    specPath: '/docs/json',     // OpenAPI 3.1 JSON endpoint (default: '/docs/json')
     title: 'Store API Documentation',
     version: '1.0.0',
-    description: 'Auto-generated API documentation with native schema validation',
+    description: 'REST API reference with native schema introspection',
     ui: 'swagger-ui',          // 'swagger-ui' | 'scalar'
   }
 })
 ```
 
-Once enabled:
-* Visit `http://localhost:3000/docs` to view the interactive documentation UI.
-* Visit `http://localhost:3000/docs/json` (or `/docs/openapi.json`) for the raw OpenAPI 3.1 specification.
+When enabled:
+- **Interactive UI**: Navigate to `http://localhost:3000/docs` in your browser.
+- **OpenAPI 3.1 Spec**: Access the JSON schema at `http://localhost:3000/docs/json` (or `/docs/openapi.json`).
 
 ---
 
 ## Interactive Documentation UIs
 
-ExisJS supports two built-in UI renderers:
+ExisJS supports two documentation renderers:
 
 ### 1. Swagger UI (`ui: 'swagger-ui'`, default)
-The industry-standard interactive Swagger explorer featuring **Try it out**, live request execution, and parameter inspection.
+The standard interactive OpenAPI explorer featuring live request execution (**Try it out**), parameter testing, and schema validation previews.
 
 ### 2. Scalar API Reference (`ui: 'scalar'`)
-A modern, high-performance, dark-mode-first API reference documentation viewer with integrated code snippets and fast search.
+A modern, dark-mode-first API reference viewer featuring integrated multi-language code snippets, instant search, and response previews.
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
@@ -49,16 +53,16 @@ import { defineConfig } from 'exisjs/config'
 export default defineConfig({
   docs: {
     enabled: true,
-    ui: 'scalar', // Switches UI to modern Scalar
+    ui: 'scalar', // Use Scalar instead of Swagger UI
   }
 })
 ```
 
 ---
 
-## Documenting Functional Routes
+## 1. Functional Paradigm (`route.*`)
 
-In ExisJS folder-based routing, each endpoint folder contains a `route.ts` file that exports a default `controller({ ... })`. You can add OpenAPI metadata directly to each route definition:
+In functional file-system routing, specify documentation metadata directly inside `route.get()`, `route.post()`, and other method definitions. Schema properties (`query`, `params`, `headers`, `body`) defined using `tex` are automatically converted to OpenAPI 3.1 parameter and request body schemas.
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -72,25 +76,30 @@ export default controller({
     query: tex.pagination({ defaultLimit: 25, maxLimit: 100 }),
     responses: {
       200: {
-        description: 'Paginated user list',
+        description: 'Paginated user collection',
         schema: tex.object({
-          data: tex.array(tex.object({ id: tex.uuid(), name: tex.string() })),
+          data: tex.array(
+            tex.object({
+              id: tex.uuid(),
+              name: tex.string(),
+              email: tex.email(),
+            })
+          ),
           total: tex.number(),
+          skip: tex.number(),
+          limit: tex.number(),
         }),
       },
-      400: { description: 'Invalid query parameters' },
+      400: { description: 'Invalid query pagination parameters' },
     },
     async handle({ query }) {
       const { skip, limit } = getPaginationSkip(query)
-      return {
-        data: [
-          { id: '550e8400-e29b-41d4-a716-446655440000', name: 'Alice' },
-          { id: '550e8400-e29b-41d4-a716-446655440001', name: 'Bob' },
-        ],
-        total: 2,
-        skip,
-        limit,
-      }
+      const [data, total] = await Promise.all([
+        db.users.findMany({ skip, take: limit }),
+        db.users.count(),
+      ])
+
+      return { data, total, skip, limit }
     },
   }),
 
@@ -100,26 +109,29 @@ export default controller({
     body: tex.object({
       name: tex.string({ min: 2 }),
       email: tex.email(),
+      role: tex.enum(['admin', 'member', 'guest']).optional(),
     }),
     responses: {
       201: { description: 'User successfully created' },
-      400: { description: 'Validation error' },
+      400: { description: 'Validation failure' },
     },
     async handle({ body }) {
-      return { id: '550e8400-e29b-41d4-a716-446655440002', ...body }
+      return await db.users.create(body)
     },
   }),
 
   getById: route.get('/:id', {
-    summary: 'Get user by UUID',
+    summary: 'Get user details by ID',
     tags: ['Users'],
-    params: tex.object({ id: tex.uuid() }),
+    params: tex.object({
+      id: tex.uuid(),
+    }),
     responses: {
       200: { description: 'User details found' },
       404: { description: 'User not found' },
     },
     async handle({ params }) {
-      return { id: params.id, name: 'Alice' }
+      return await db.users.findById(params.id)
     },
   }),
 })
@@ -127,9 +139,9 @@ export default controller({
 
 ---
 
-## Documenting Class-Based Controllers (OOP)
+## 2. Class-Based (OOP) Paradigm (`@Api*` Decorators)
 
-For class-based controllers in `route.ts`, use OpenAPI decorators from `exisjs/swagger` alongside standard routing decorators:
+In class-based controllers in `route.ts`, annotate classes and route methods with documentation decorators from `exisjs/swagger`:
 
 ```typescript filename="src/http/products/route.ts"
 import { Controller, Get, Post, Body, Param, Query } from 'exisjs/decorators'
@@ -148,21 +160,22 @@ export default class ProductsController {
   @Get('/')
   @ApiOperation({
     summary: 'List products',
-    description: 'Fetches paginated list of catalog products',
+    description: 'Fetches paginated catalog items',
   })
-  @ApiResponse({ status: 200, description: 'List of products' })
+  @ApiResponse({ status: 200, description: 'List of catalog products' })
   async list(@Query('page') page: number = 1) {
     return [
-      { id: 1, name: 'Mechanical Keyboard', price: 99 },
-      { id: 2, name: 'Ergonomic Mouse', price: 49 },
+      { id: 'prod_1', name: 'Mechanical Keyboard', price: 99 },
+      { id: 'prod_2', name: 'Ergonomic Mouse', price: 49 },
     ]
   }
 
   @Post('/')
   @ApiOperation({ summary: 'Create new product' })
-  @ApiResponse({ status: 201, description: 'Product created' })
+  @ApiResponse({ status: 201, description: 'Product created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid product payload' })
   async create(@Body() dto: { name: string; price: number }) {
-    return { id: 3, ...dto }
+    return { id: 'prod_3', ...dto }
   }
 
   @Get('/:id')
@@ -174,18 +187,30 @@ export default class ProductsController {
   }
 
   @Get('/internal/metrics')
-  @ApiExclude() // Excluded from Swagger documentation
-  async metrics() {
+  @ApiExclude() // Excluded from generated Swagger documentation
+  async getInternalMetrics() {
     return { uptime: process.uptime() }
   }
 }
 ```
 
+### Decorator Reference
+
+| Decorator | Target | Description |
+| :--- | :--- | :--- |
+| `@ApiTags(...tags)` | Class / Method | Groups operations under specified tag sections in the documentation UI. |
+| `@ApiOperation(options)` | Method | Specifies `summary`, `description`, `operationId`, and `deprecated` status. |
+| `@ApiResponse(options)` | Method | Documents response status codes, descriptions, and schemas. |
+| `@ApiBearerAuth(name?)` | Class / Method | Applies Bearer JWT authentication requirement to the endpoint. |
+| `@ApiSecurity(name, scopes?)` | Class / Method | Applies a custom security scheme requirement to the endpoint. |
+| `@ApiExclude()` | Class / Method | Excludes the controller or endpoint from generated documentation. |
+| `@ApiProperty(options)` | Class Property | Annotates DTO class properties with description, examples, and enums. |
+
 ---
 
-## Cascading Boundary Metadata
+## Boundary Cascading Documentation (`boundary.ts`)
 
-Cascading boundaries (`boundary.ts`) can assign shared tags, descriptions, or security requirements to all nested routes in the directory:
+Boundaries (`boundary.ts`) apply shared tags or security requirements to all nested routes within a directory hierarchy:
 
 ```typescript filename="src/http/admin/boundary.ts"
 import { defineBoundary } from 'exisjs/router'
@@ -198,9 +223,96 @@ export const config = defineBoundary({
 
 ---
 
-## Security Schemes & Authentication
+## Schema Introspection & Multi-Validator Support
 
-Define reusable security schemes (such as Bearer JWT, API Keys, or OAuth2) in `exis.config.ts`:
+The OpenAPI generator inspects route validation schemas and automatically translates them into OpenAPI 3.1 JSON Schemas.
+
+### 1. Native `tex` Schemas
+
+All `tex` primitives, options, and metadata methods translate into OpenAPI properties:
+
+```typescript filename="src/http/users/schema.ts"
+import { tex } from 'exisjs/validator'
+
+export const UserRegistrationSchema = tex.object({
+  username: tex.string({ min: 3, max: 30 })
+    .describe('Unique alphanumeric handle')
+    .example('alex_dev'),
+  email: tex.email()
+    .describe('Primary contact email address')
+    .example('alex@example.com'),
+  age: tex.number({ min: 18 })
+    .describe('User age in years')
+    .example(25),
+  role: tex.enum(['admin', 'member', 'guest'] as const)
+    .describe('Assigned account authorization level')
+    .example('member'),
+})
+```
+
+#### Discriminated Unions in OpenAPI
+
+When using `tex.discriminatedUnion()`, the generator generates an OpenAPI `oneOf` schema along with the `discriminator` mapping:
+
+```typescript filename="src/http/events/schema.ts"
+export const PaymentEvent = tex.discriminatedUnion('method', [
+  tex.object({ method: tex.literal('card'), cardNumber: tex.creditCard() }),
+  tex.object({ method: tex.literal('crypto'), walletAddress: tex.string() }),
+])
+```
+
+Translates to OpenAPI 3.1:
+
+```json
+{
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": { "method": { "type": "string", "enum": ["card"] }, "cardNumber": { "type": "string" } },
+      "required": ["method", "cardNumber"]
+    },
+    {
+      "type": "object",
+      "properties": { "method": { "type": "string", "enum": ["crypto"] }, "walletAddress": { "type": "string" } },
+      "required": ["method", "walletAddress"]
+    }
+  ],
+  "discriminator": {
+    "propertyName": "method"
+  }
+}
+```
+
+### 2. Third-Party Validators (Zod, ArkType, JSON Schema)
+
+ExisJS uses multi-validator duck typing to introspect external schemas without requiring adapter packages:
+
+```typescript filename="src/http/orders/route.ts"
+import { controller, route } from 'exisjs/router'
+import { z } from 'zod'
+
+const OrderSchema = z.object({
+  item: z.string().min(2).describe('Product title'),
+  quantity: z.number().int().positive().describe('Item count'),
+  coupon: z.string().optional(),
+})
+
+export default controller({
+  create: route.post('/', {
+    summary: 'Place an order',
+    body: OrderSchema,
+    async handle({ body }) {
+      return { success: true, order: body }
+    },
+  }),
+})
+```
+
+---
+
+## Security Schemes Configuration
+
+Define authentication mechanisms (e.g. Bearer JWT, API Keys, OAuth2) in `exis.config.ts`:
 
 ```typescript filename="exis.config.ts"
 import { defineConfig } from 'exisjs/config'
@@ -219,8 +331,10 @@ export default defineConfig({
         type: 'apiKey',
         in: 'header',
         name: 'X-API-KEY',
+        description: 'Static API Key passed in headers',
       },
     },
+    // Global default security (can be overridden per route)
     security: [
       { bearerAuth: [] },
     ],
@@ -230,60 +344,47 @@ export default defineConfig({
 
 ---
 
-## Advanced Configuration (`exis.config.ts`)
+## Configuration Reference (`SwaggerConfig`)
 
-For advanced customization, such as modifying the generated OpenAPI spec before serving or injecting custom styling:
+The full set of options supported under `docs` in `exis.config.ts`:
 
-```typescript filename="exis.config.ts"
-import { defineConfig } from 'exisjs/config'
-
-export default defineConfig({
-  docs: {
-    enabled: true,
-    title: 'Enterprise API Gateway',
-    version: '2.0.0',
-    description: 'Internal and external microservices API reference',
-    ui: 'scalar', // 'swagger-ui' | 'scalar'
-    servers: [
-      { url: 'https://api.example.com', description: 'Production Server' },
-      { url: 'http://localhost:3000', description: 'Local Development' },
-    ],
-    transformSpec(spec) {
-      // Programmatically mutate or enrich OpenAPI specification
-      spec.info.contact = { name: 'API Support', email: 'support@example.com' }
-      return spec
-    },
-  },
-})
-```
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `enabled` | `boolean` | `false` | Enables documentation mounting and OpenAPI spec generation. |
+| `path` | `string` | `'/docs'` | URL path where the interactive documentation UI is served. |
+| `specPath` | `string` | `'/docs/json'` | URL path where the raw OpenAPI 3.1 JSON specification is served. |
+| `title` | `string` | `'ExisJS API Documentation'` | Title displayed in the documentation header. |
+| `version` | `string` | `'1.0.0'` | API Version displayed in documentation. |
+| `description` | `string` | — | API description markdown shown below the header. |
+| `termsOfService` | `string` | — | URL to terms of service agreement. |
+| `contact` | `object` | — | Contact information (`name`, `url`, `email`). |
+| `license` | `object` | — | License information (`name`, `url`). |
+| `servers` | `OpenApiServer[]` | — | Target environments (e.g., Production, Staging). |
+| `tags` | `OpenApiTag[]` | — | Global list of tag metadata and external documentation links. |
+| `ui` | `'swagger-ui' \| 'scalar'` | `'swagger-ui'` | Interactive documentation UI renderer. |
+| `customCss` | `string` | — | Custom CSS styles injected into the Swagger/Scalar page. |
+| `customFavicon` | `string` | — | Custom favicon URL for the documentation page. |
+| `transformSpec` | `(spec) => spec` | — | Synchronous hook to programmatically mutate the generated OpenAPI spec. |
 
 ---
 
-## Server Lifecycle Hook (`server.ts`)
+## Programmatic Mount Helper (`swagger()`)
 
-You can also interact with the Swagger subsystem or application instance during server boot in `src/http/server.ts`:
+You can also mount Swagger documentation programmatically inside custom server bootstrapping in `server.ts`:
 
-### Functional Paradigm
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
+import { swagger } from 'exisjs/swagger'
 
 export default exis({
-  onStart(app) {
-    console.log('[API] Swagger documentation ready at /docs')
+  async onStart(app) {
+    swagger({
+      title: 'Custom API Gateway',
+      version: '2.0.0',
+      path: '/api/docs',
+    })(app)
   },
 })
 ```
 
-### Class-Based (OOP) Paradigm
-```typescript filename="src/http/server.ts"
-import { Server } from 'exisjs/decorators'
-import type { App } from 'exisjs'
-
-@Server()
-export default class RootServer {
-  async onStart(app: App) {
-    console.log('[API] Swagger documentation ready at /docs')
-  }
-}
-```
 

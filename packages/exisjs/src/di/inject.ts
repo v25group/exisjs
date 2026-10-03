@@ -3,7 +3,8 @@ import type { ProviderToken } from './container'
 
 /**
  * Injects a dependency from the Exis Application container.
- * Must be called inside an active route or middleware context.
+ * When called inside an active route or middleware context, it resolves with request-scoped caching.
+ * When called outside of a request context, it resolves from the active application container.
  *
  * Example:
  *

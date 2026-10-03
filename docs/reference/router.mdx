@@ -1,259 +1,278 @@
 ---
-title: "Router & Controllers"
-description: "API Reference for defining routes and controllers in ExisJS."
+title: "exisjs/router"
+description: "API Reference for ExisJS routing engines: Functional routing (controller, route.*, defineBoundary) and Class-Based OOP routing (decorators, parameter injectors)."
+nextUrl: "/docs/reference/validator"
+nextTitle: "Validator Reference"
 ---
 
-# Router & Controllers
+# `exisjs/router`
 
-ExisJS provides two distinct ways to build your API: **Functional Routing** (using `route` and `controller`) and **Class-Based Routing** (using standard decorators). You can use either paradigm, or even mix both in the same application.
+ExisJS provides two routing paradigms with full feature parity: **Functional Routing** (`exisjs/router`) and **Class-Based OOP Routing** (`exisjs/decorators`).
 
 ---
 
-## 1. Functional Routing
+## 1. Functional Routing API
 
-The functional router provides a lightweight, type-safe API via the `route` and `controller` exports from `exisjs/router`. 
+The functional router allows defining endpoints and boundaries using composable objects and functions.
 
-These utilities allow you to define HTTP endpoints with built-in validation schemas, automatically typed execution contexts, and file-level configuration.
+```typescript
+import {
+  route,
+  controller,
+  createRouter,
+  defineMiddleware,
+  defineBoundary,
+  validate,
+  getContext,
+  setContext,
+  getRequest,
+  getResponse,
+  after,
+  fileUpload,
+  SSEStream,
+} from 'exisjs/router'
 
-### `controller()`
+import type {
+  RouteConfig,
+  RouteDefinition,
+  ControllerConfig,
+  SuperContext,
+  BoundaryConfig,
+  BoundaryContext,
+  BoundaryExcludeRule,
+  Request,
+  Response,
+  NextFunction,
+} from 'exisjs/router'
+```
 
-The `controller` function wraps a collection of routes and configuration options (like middleware or CORS) inside a single file. 
+### `controller(config)`
 
-### Usage
+Wraps route definitions, file-scoped middlewares, guards, and CORS policies into an exportable controller slice.
+
+```typescript
+function controller<T extends Record<string, any>>(
+  config: ControllerConfig<T>
+): ControllerDefinition<T>
+```
+
+#### `ControllerConfig` Options
+
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `cors` | `boolean \| CorsConfig` | CORS configuration applied to all routes in this controller file. |
+| `middleware` / `middlewares` | `Handler \| Handler[]` | Middleware functions executed prior to controller route handlers. |
+| `guards` | `Guard[]` | Authorization guards executed before controller endpoints. |
+| `interceptors` | `Interceptor[]` | Response interceptors applied to this controller. |
+| `filters` | `Filter[]` | Exception filters applied across this controller. |
+| `onError` | `(err: Error, req: Request, res: Response) => any` | Controller-scoped error hook. |
+| `onResponse` | `(data: any, req: Request, res: Response) => any` | Controller-scoped response hook. |
+| `[key: string]` | `RouteDefinition` | Route builder definitions (e.g. `list: route.get(...)`). |
+
+#### Composition Methods
+
+- **`controller.merge(...controllers)`**: Combines multiple functional controller slices into a single unified controller.
+- **`controller.extend(base, overrides)`**: Inherits routes and configuration from a base controller, allowing overrides and additions.
 
 ```typescript
 import { controller, route } from 'exisjs/router'
-import { authMiddleware } from '../../middleware/auth'
 
-export default controller({
-  // Global config applied to all routes in this controller
-  cors: true,
-  middleware: [authMiddleware],
-
-  // Your individual routes
-  getUser: route.get('/user', {
-    async handle({ req }) {
-      return { user: req.user }
-    }
-  })
+const base = controller({
+  list: route.get('/', {
+    async handle() {
+      return { items: [] }
+    },
+  }),
 })
-```
 
-### Options (`ControllerConfig`)
-- `cors` (`boolean | CorsConfig`): Enables or configures CORS for all routes in this file.
-- `middleware` (`Handler[]`): Array of middleware functions applied to all routes in this file.
-- `filters` (`any | any[]`): Route filters applied to all routes.
-- `onError` (`HookError`): A file-level error handler.
-- `onResponse` (`HookResponse`): A file-level response hook.
-- `[key: string]` (`RouteDefinition`): **Any other key** is treated as a route definition (e.g. `getUser: route.get(...)`). This is how you bind routes to the controller!
-
-### `controller.merge(...controllers)`
-
-Merges multiple functional controllers into a single unified controller definition. This enables splitting large `route.ts` files into modular, domain-specific controller pieces while exporting a single composite controller from the route file.
-
-```typescript filename="src/http/auth/route.ts"
-import { controller, route } from 'exisjs/router'
-
-// Sub-controller 1: credentials & sessions
-const authRoutes = controller({
-  login: route.post('/login', {
+export default controller.extend(base, {
+  create: route.post('/', {
     async handle({ body }) {
-      return { token: 'jwt-token' }
-    }
+      return { created: true }
+    },
   }),
-  logout: route.post('/logout', {
-    async handle() {
-      return { success: true }
-    }
-  })
-})
-
-// Sub-controller 2: OAuth integrations
-const oauthRoutes = controller({
-  google: route.get('/google', {
-    async handle() {
-      return { redirectUrl: 'https://accounts.google.com/o/oauth2/auth' }
-    }
-  })
-})
-
-// Export combined controller as default
-export default controller.merge(authRoutes, oauthRoutes)
-```
-
-### `controller.extend(base, overrides)`
-
-Inherits all route definitions, middlewares, filters, and configuration from a `base` controller and applies overrides or adds new route endpoints. This provides the functional equivalent of class-based controller inheritance for reusable CRUD templates.
-
-```typescript filename="src/http/products/route.ts"
-import { controller, route } from 'exisjs/router'
-
-// Reusable generic CRUD controller factory
-function createBaseCrud(resource: string) {
-  return controller({
-    list: route.get('/', {
-      async handle() {
-        return { resource, items: [] }
-      }
-    }),
-    getById: route.get('/:id', {
-      async handle({ params }) {
-        return { resource, id: params.id }
-      }
-    })
-  })
-}
-
-// Inherit base endpoints and add specialized or overridden routes
-export default controller.extend(createBaseCrud('products'), {
-  // Additional specialized route
-  featured: route.get('/featured', {
-    async handle() {
-      return { featured: ['Product 1', 'Product 2'] }
-    }
-  }),
-
-  // Override base endpoint
-  getById: route.get('/:id', {
-    async handle({ params }) {
-      return { customProduct: true, id: params.id }
-    }
-  })
 })
 ```
 
 ---
 
-## `route`
+### `route` Builder
 
-The `route` object provides factory functions for every HTTP method (e.g., `route.get`, `route.post`, `route.patch`, `route.delete`, `route.ws`, `route.sse`). 
+Constructs route definitions for standard HTTP methods and streaming protocols:
 
-It takes a path and a `RouteConfig` object.
+- `route.get(path, config)`
+- `route.post(path, config)`
+- `route.put(path, config)`
+- `route.patch(path, config)`
+- `route.delete(path, config)`
+- `route.options(path, config)`
+- `route.head(path, config)`
+- `route.all(path, config)`
+- `route.sse(path, config)`
+- `route.ws(path, config)`
 
-### Usage
+#### `RouteConfig` Specification
 
 ```typescript
-import { controller, route } from 'exisjs/router'
-import { tex } from 'exisjs/validator'
+export interface RouteConfig<B = any, Q = any, P = any, TContext = Record<string, any>, TReturn = any> {
+  // Input Validation Schemas
+  body?: Schema<B>
+  query?: Schema<Q>
+  params?: Schema<P>
+  response?: Schema<TReturn>
+  returns?: Schema<TReturn>
 
-export default controller({
-  createUser: route.post('/users', {
-    body: tex.object({
-      email: tex.email(),
-      password: tex.string({ min: 8 })
-    }),
-    async handle(ctx) {
-      // ctx.body is strictly typed!
-      const { email, password } = ctx.body 
-      return { success: true, email }
-    }
-  })
-})
+  // Execution Handler
+  handle: (ctx: SuperContext<B, Q, P, TContext>) => TReturn | Promise<TReturn>
+
+  // Pipeline & Security
+  middleware?: Handler<any, any, any, any, TContext> | Handler<any, any, any, any, TContext>[]
+  guards?: any | any[]
+  interceptors?: any | any[]
+  filters?: any | any[]
+  roles?: string | string[]
+  permissions?: string | string[]
+  cors?: boolean | CorsConfig
+  host?: string | string[]
+  public?: boolean
+
+  // File Uploads & Tuning
+  upload?: string | RouteUploadOptions
+  timeout?: number | { ms: number; statusCode?: number; message?: string }
+  httpCode?: number
+  headers?: Record<string, string>
+  redirect?: string | { url: string; statusCode?: number }
+
+  // OpenAPI Metadata
+  summary?: string
+  description?: string
+  tags?: string[]
+  operationId?: string
+  deprecated?: boolean
+  excludeFromDocs?: boolean
+}
 ```
-
-### Options (`RouteConfig`)
-
-- `body`: A validation schema for the request body (e.g., using `tex` or Zod).
-- `query`: A validation schema for the query string (e.g., `tex.pagination()`).
-- `params`: A validation schema for the URL path parameters.
-- `upload` (`string | RouteUploadOptions`): Declarative multipart upload configuration (e.g. `{ field: 'photo', maxBytes: 10 * 1024 * 1024, mimeTypes: [...] }`). Automatically mounts `fileUpload` middleware and populates `req.file` / `req.files`.
-- `timeout` (`number`): Per-route timeout override in milliseconds (e.g. `120000`). Overrides global timeout for this endpoint.
-- `response`: A validation schema to serialize/validate the outgoing response.
-- `middleware` (`Handler[]`): An array of middleware specific to this route.
-- `cors` (`boolean | CorsConfig`): Route-specific CORS overrides.
-- `filters` (`any | any[]`): Route-specific filters (like rate limiters or authorization checks).
-- `permissions` (`string[]`): An array of required permission flags to access this route.
-- `metadata` (`Record<string, any>`): Arbitrary metadata attached to the route for custom plugins/middleware.
-- `host` (`string | string[]`): Restrict this route to a specific subdomain/host (e.g. `api.example.com`).
-- `handle`: The async function that executes your business logic. It receives a `SuperContext`.
 
 ---
 
-## `SuperContext`
+### `SuperContext`
 
-Every `handle` function receives a `SuperContext` object that provides fully-typed access to the request and application environment.
+The strongly-typed execution context supplied to every functional `handle()` function:
 
 ```typescript
-import { controller, route } from '../router' // Import your custom router (see below)
-import { tex } from 'exisjs/validator'
-
-export default controller({
-  getUserInfo: route.get('/info/:id', {
-    params: tex.object({ id: tex.string() }),
-    query: tex.object({ debug: tex.boolean({ optional: true }) }),
-    async handle({ body, query, params, headers, req, res, app, state, user, workspace }) {
-      // 1. `body`, `query`, and `params` are pre-validated and fully typed!
-      const id = params.id
-      
-      // 2. `req` and `res` are the raw ExisJS request/response objects
-      const ip = req.ip
-      
-      // 3. `app` is the global ExisJS application instance
-      const db = app.resolve('Database')
-      
-      // 4. `resolve` is the request-scoped dependency injection resolver!
-      const usersService = resolve(UsersService)
-
-      // 5. `state` is a mutable object shared across middlewares
-      const cacheHit = state.cacheHit 
-
-      // 6. `user` and `workspace` are strictly typed from your custom context!
-      return { id, email: user.email, workspace }
-    }
-  })
-})
+export interface SuperContext<B = any, Q = any, P = any, TContext = Record<string, any>> {
+  /** Pre-validated request body */
+  body: B
+  /** Pre-validated query string parameters */
+  query: Q
+  /** Pre-validated URL route parameters */
+  params: P
+  /** Request HTTP headers */
+  headers: Record<string, string | string[] | undefined>
+  /** ExisRequest instance */
+  req: Request<B, Q, P, TContext>
+  /** ExisResponse instance */
+  res: Response
+  /** Exis Application instance */
+  app: App
+  /** Mutable dictionary shared across route middlewares */
+  state: Record<string, any>
+  /** Request-scoped Dependency Injection resolver */
+  resolve: <T>(token: ProviderToken<T>) => T
+  /** Single uploaded file */
+  file?: ExisFile
+  /** Multiple uploaded files */
+  files?: ExisFile[] | Record<string, ExisFile[]>
+  /** Multipart text fields */
+  fields?: Record<string, any>
+}
 ```
 
 ---
 
-## `createRouter<T>()`
+### `defineBoundary(config)`
 
-If your application relies heavily on custom context (e.g., passing a `user` or `workspace` object injected via middleware to every route), you can create a strongly-typed custom router using `createRouter<T>()`.
+Declares hierarchical folder-level middleware, security controls, and response defaults inside `boundary.ts` files.
 
-This removes the need to constantly cast or redefine types.
-
-### Usage
-
-```typescript filename="src/router.ts"
-import { createRouter } from "exisjs/router";
-
-interface User {
-  userId: string;
-  role: string;
-  email: string;
-}
-
-interface AppContext {
-  user: User;
-  workspace: string; // Just an example to prove we can pass any property
-}
-
-// Create a completely customized router scoped to this application
-export const { route, controller } = createRouter<AppContext>();
+```typescript
+function defineBoundary<TContext = Record<string, any>>(
+  config: BoundaryConfig<TContext>
+): BoundaryConfig<TContext>
 ```
 
-Now, when you use this custom `route` object, the `SuperContext` will automatically infer your custom context fields!
+#### `BoundaryConfig` Options
 
-```typescript filename="src/http/users/route.ts"
-import { route, controller } from '../../router'
+| Property | Type | Description |
+| :--- | :--- | :--- |
+| `middleware` / `middlewares` | `Handler \| Handler[]` | Middleware cascaded to all routes in this directory and subdirectories. |
+| `cors` | `boolean \| CorsConfig` | Directory-scoped CORS policy. |
+| `headers` | `Record<string, string>` | Default response headers applied to matching routes. |
+| `guards` | `Guard[]` | Authorization guards applied to matching routes. |
+| `interceptors` | `Interceptor[]` | Response interceptors applied to matching routes. |
+| `filters` | `Filter[]` | Exception filters applied to matching routes. |
+| `exclude` | `(string \| BoundaryExcludeRule)[]` | Route patterns or method rules excluded from this boundary. |
+| `timeout` | `number \| ((req: Request) => number)` | Timeout threshold in milliseconds for routes in this directory. |
+| `blockSuspiciousProbes` | `boolean \| BlockProbesOptions` | Suppresses and blackholes malicious scanner probes (`.env`, `wp-admin`, `.git`). |
+| `metadata` | `Record<string, any>` | Metadata (e.g. OpenAPI tags) cascaded to all child routes. |
 
-export default controller({
-  me: route.get('/me', {
-    async handle({ user, workspace }) {
-      // `user` and `workspace` are strictly typed!
-      return { id: user.userId, workspace }
-    }
-  })
-})
+---
+
+## 2. Class-Based OOP Routing API (`exisjs/decorators`)
+
+The Class-Based paradigm uses standard TypeScript decorators for controller definitions, route methods, parameter injection, and pipeline lifecycle hooks.
+
+```typescript
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Delete,
+  Options,
+  Head,
+  All,
+  Ws,
+  Sse,
+  Body,
+  Param,
+  Query,
+  QueryParam,
+  Headers,
+  Req,
+  Res,
+  Next,
+  Ip,
+  Session,
+  UploadedFile,
+  UploadedFiles,
+  createParamDecorator,
+  Use,
+  Guards,
+  Filters,
+  Interceptors,
+  HttpCode,
+  Header,
+  Redirect,
+  SetMetadata,
+  Reflector,
+} from 'exisjs/decorators'
 ```
 
 ---
 
-## 2. Class-Based Routing (OOP)
+### `@Controller(prefix?, options?)`
 
-If you prefer an Object-Oriented paradigm, ExisJS provides a robust set of decorators via `exisjs/decorators`. These decorators are built on standard ECMAScript decorators and do not require `reflect-metadata`, making them incredibly fast and lightweight.
+Decorates a class as an HTTP controller slice mounted at the specified route prefix.
 
-### Usage
+```typescript
+function Controller(
+  prefixOrOptions?: string | ControllerOptions,
+  options?: ControllerOptions
+): ClassDecorator
+```
+
+#### Example
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
@@ -261,131 +280,94 @@ import { tex } from 'exisjs/validator'
 
 @Controller('/users')
 export default class UserController {
-  
   @Get('/:id')
   async getUser(@Param('id') id: string) {
     return { id, name: 'Alice' }
   }
 
   @Post('/', {
-    body: tex.object({ email: tex.email(), password: tex.string() })
+    body: tex.object({
+      name: tex.string(),
+      email: tex.email(),
+    }),
   })
-  async createUser(@Body() body: any) {
-    // body is automatically validated!
-    return { success: true, email: body.email }
+  async createUser(@Body() body: { name: string; email: string }) {
+    return { success: true, user: body }
   }
 }
 ```
 
-### Route Decorators
+---
 
-- `@Get(path, schema?)`
-- `@Post(path, schema?)`
-- `@Put(path, schema?)`
-- `@Patch(path, schema?)`
-- `@Delete(path, schema?)`
-- `@Ws(path, schema?)`: Defines a WebSocket route.
-- `@Sse(path, schema?)`: Defines a Server-Sent Events stream route.
+### HTTP Method Decorators
 
-*Note: Just like functional routes, you can pass an optional `RouteSchema` to any of these decorators to automatically validate requests!*
+Method decorators attach HTTP handler logic and validation schemas to controller methods:
 
-### Parameter Injectors
-
-Use parameter decorators to automatically extract data from the incoming request and inject them into your method arguments:
-
-- `@Body()`: Injects the parsed JSON request body.
-- `@Param('id')`: Injects a specific URL path parameter.
-- `@QueryParam('search')` / `@Query('search')`: Injects a specific query string parameter.
-- `@Headers('authorization')`: Injects a specific HTTP header.
-- `@Req()`: Injects the raw ExisJS Request object.
-- `@Res()`: Injects the raw ExisJS Response object.
-- `@Next()`: Injects the next function.
-- `@Socket()`: Injects the active WebSocket instance (for `@Ws` routes).
-- `@Stream()`: Injects the active SSE instance (for `@Sse` routes).
-- `createParamDecorator(factory)`: Factory to construct custom parameter decorators.
-
-### Extended Decorators
-
-ExisJS provides a rich ecosystem of decorators to apply middleware, configure responses, and enforce security on both individual routes and entire controllers:
-
-#### Configuration & Pipeline
-- `@Use(...items)`: Unified decorator that applies middlewares, Guards (`canActivate`), Interceptors (`intercept`), and Exception Filters (`catch`) to a route or entire controller.
-- `@Hosts('api.example.com')`: Restricts the route or controller to specific domains.
-
-#### Security & Metadata
-- `@Permissions('admin')`: Requires specific permission flags.
-- `@SetMetadata(key, value)`: Attaches arbitrary metadata to classes and handler methods (retrieved via `Reflector`).
-- `Reflector`: Reads and merges metadata attached with `@SetMetadata`.
-
-#### Responses & Reliability
-- `@HttpCode(201)`: Forces a specific HTTP status code for successful responses.
-- `@Header('X-Custom', 'Value')`: Automatically injects a specific response header.
-- `@Returns(schema)`: Explicitly defines the response schema for OpenAPI generation.
-- `@Idempotent()`: Enforces idempotency keys for mutations (e.g., checkout/payments).
+- `@Get(path?, schema?)`
+- `@Post(path?, schema?)`
+- `@Put(path?, schema?)`
+- `@Patch(path?, schema?)`
+- `@Delete(path?, schema?)`
+- `@Options(path?, schema?)`
+- `@Head(path?, schema?)`
+- `@All(path?, schema?)`
+- `@Sse(path?, schema?)`
+- `@Ws(path?, schema?)`
 
 ---
 
-## 3. Streaming & Backpressure Pipeline
+### Parameter Injector Decorators
 
-The response object supports universal streaming with backpressure management across all route types:
+Parameter decorators extract and inject typed data directly into handler method parameters:
 
-- `res.sendStream(source)`: Streams a Node.js `stream.Readable`, Web `ReadableStream`, or `AsyncIterable` directly to the client socket. Pauses consumption when socket buffers fill up and terminates source readers upon client disconnection.
-- `res.stream(source)`: Alias for `sendStream()`.
-- **Automatic Handler Auto-Piping**: Returning a Node.js stream, Web standard `ReadableStream`, or `AsyncIterable` generator directly from `handle()` automatically delegates to `res.sendStream()`.
+| Decorator | Injected Data | Example |
+| :--- | :--- | :--- |
+| `@Body(property?)` | Request body payload or sub-property | `@Body() data: CreateUserDto` |
+| `@Param(key?)` | URL path parameters dictionary or specific param | `@Param('id') userId: string` |
+| `@Query(key?)` / `@QueryParam(key?)` | Query string parameters dictionary or specific key | `@Query('limit') limit: number` |
+| `@Headers(name?)` | Request headers dictionary or specific header | `@Headers('authorization') auth: string` |
+| `@Req()` | Underlying `ExisRequest` instance | `@Req() req: Request` |
+| `@Res()` | Underlying `ExisResponse` instance | `@Res() res: Response` |
+| `@Next()` | Pipeline `NextFunction` callback | `@Next() next: NextFunction` |
+| `@Ip()` | Client remote IP address | `@Ip() clientIp: string` |
+| `@UploadedFile(field?)` | Single uploaded multipart file object | `@UploadedFile('avatar') file: ExisFile` |
+| `@UploadedFiles(field?)` | Multiple uploaded multipart file objects | `@UploadedFiles('docs') files: ExisFile[]` |
 
 ---
 
-## 4. Boundaries & Folder-Scoped Pipelines (`boundary.ts`)
+### `createParamDecorator(factory)`
 
-ExisJS introduces **Boundaries** (`boundary.ts`) to manage folder-scoped middleware, CORS policies, security probes, guards, interceptors, and default headers without having to wire them manually across every route file.
+Constructs custom parameter decorators to extract specialized values from the request context:
 
-### How Boundaries Work
+```typescript
+import { createParamDecorator } from 'exisjs/decorators'
 
-Place a `boundary.ts` file in any route directory (e.g., `src/http/boundary.ts` or `src/http/api/v1/boundary.ts`):
-
-```typescript filename="src/http/api/boundary.ts"
-import { defineBoundary } from 'exisjs/router'
-import { authGuard } from '../../guards/auth'
-
-export default defineBoundary({
-  // Applied to all routes in src/http/api/* and subdirectories
-  cors: {
-    origin: 'https://app.example.com',
-    credentials: true,
-  },
-  guards: [authGuard],
-  headers: {
-    'X-API-Version': 'v1',
-  },
-  // Exclude public endpoints from this boundary's pipeline
-  exclude: ['/api/health', '/api/public/*'],
+export const CurrentUser = createParamDecorator((data: string | undefined, ctx) => {
+  const req = ctx.req
+  return data ? req.user?.[data] : req.user
 })
+
+// Usage in controller:
+@Get('/profile')
+getProfile(@CurrentUser() user: any, @CurrentUser('id') userId: string) {
+  return { userId, user }
+}
 ```
 
-### Cascading & Precedence Rules
-
-When route slices are nested in subdirectories (e.g. `src/http/boundary.ts` -> `src/http/api/boundary.ts` -> `src/http/api/users/route.ts`), ExisJS evaluates boundary configurations using the following rules:
-
-1. **Middlewares, Guards, Filters, & Interceptors (Cascading / Additive)**:
-   - Evaluated **top-down** from parent boundary -> child boundary -> route-level controller.
-2. **CORS Configuration (Innermost Precedence)**:
-   - **Route-Level `cors`** (in `route.ts` / `controller({ cors: ... })`) overrides any boundary CORS.
-   - **Child Boundary `cors`** (in `src/http/api/boundary.ts`) overrides parent boundary `cors` (in `src/http/boundary.ts`).
-   - **Parent Boundary `cors`** applies if no child boundary or route overrides it.
-   - **Global `app.options.cors`** acts as the root fallback.
-3. **Response Headers (Deep Merge with Child Precedence)**:
-   - Headers defined in child boundaries or route definitions overwrite identical header keys from parent boundaries.
-
 ---
 
-## 5. `AppRouter` Client Manifest Contract
+### Pipeline & Response Decorators
 
-ExisJS generates a compile-time route manifest in `.exis/types.d.ts` and `.exis/types/index.d.ts`:
-
-- `AppRouterPaths`: Flat dictionary mapping URL route patterns (e.g. `'/users/:id'`) to their strongly-typed handler contracts (`(payload?: B, options?: { query?: Q; params?: P }) => Promise<R>`).
-- `AppRouterTree`: Hierarchical dot-notation tree mapping nested folder paths (`users: { ':id': ... }`) for `@exisjs/fetch`'s `createClient<AppRouter>()`.
-- `AppRouter`: Combined intersection type `AppRouterPaths & AppRouterTree`.
-- `RouteDefinition.__type`: Phantom type property on every route definition preserving exact inferred return types, DTO schemas, and Drizzle/Prisma models.
+| Decorator | Target | Description |
+| :--- | :--- | :--- |
+| `@Use(...middlewares)` | Class / Method | Applies middleware functions to the controller or route. |
+| `@Guards(...guards)` | Class / Method | Attaches authorization guards. |
+| `@Filters(...filters)` | Class / Method | Attaches exception filters. |
+| `@Interceptors(...interceptors)` | Class / Method | Attaches response/request interceptors. |
+| `@HttpCode(status)` | Method | Sets the default HTTP status code for successful responses. |
+| `@Header(name, value)` | Method | Sets static HTTP response headers. |
+| `@Redirect(url, status?)` | Method | Redirects responses to the target URL. |
+| `@SetMetadata(key, value)` | Class / Method | Attaches arbitrary metadata readable via `Reflector`. |
 
 
 

@@ -1,41 +1,42 @@
 ---
-nextUrl: "/docs/queues"
-nextTitle: "Queues & Background Jobs"
+title: "Background Tasks and Cron"
+description: "Schedule background tasks, recurring cron jobs, intervals, and startup timeouts with overlap prevention and drift correction in ExisJS."
+nextUrl: "/docs/swagger"
+nextTitle: "OpenAPI & Swagger"
 ---
 
-# Cron & Task Scheduling
+# Background Tasks & Cron
 
-ExisJS includes a built-in Cron and Task Scheduling system designed for reliability and developer ergonomic efficiency. It resolves common Node.js scheduling challenges such as timer drift, concurrent execution overlap, unhandled exceptions crashing the process, timezone/DST inaccuracies, and zombie timers during hot reload or process shutdown.
+ExisJS provides an integrated task scheduling system for background jobs, recurring intervals, and delayed timeouts. It eliminates common Node.js scheduling hazards including timer drift, execution overlap, unhandled exceptions crashing the process, timezone/DST inaccuracies, and lingering zombie timers during graceful shutdowns.
 
-Both **Functional** and **Class-Based (OOP)** paradigms are fully supported with complete feature parity.
+Both **Functional** (`cron()`) and **Class-Based OOP** (`@Cron()`) paradigms are fully supported with complete feature parity.
 
 ---
 
 ## File Conventions & Auto-Discovery
 
-ExisJS auto-mounts cron jobs using two straightforward conventions:
+ExisJS automatically discovers, compiles, and mounts scheduled cron tasks during server bootstrap using two flexible layout conventions:
 
-1. **Single-File Management (`src/http/cron.ts` or `src/http/cron.js`)**:
-   Define and manage all your scheduled tasks in a single file located at `src/http/cron.ts` (or inside route slices such as `src/http/admin/cron.ts`). Multiple jobs can be exported using named exports, a default export, or an array of jobs.
-
-2. **Dedicated Directory (`src/cron/*`)**:
-   Organize distinct tasks into separate files inside `src/cron/` (e.g. `src/cron/sync.ts`, `src/cron/reports.ts`). Every file inside `src/cron/` is automatically registered upon application boot.
+1. **Single-File / Root HTTP Convention (`src/http/cron.ts` or `src/http/cron.js`)**:
+   Define and manage all your application's background jobs in a single root file at `src/http/cron.ts`. You can also co-locate cron files within route slices (e.g., `src/http/admin/cron.ts` or `src/http/billing/cron.ts`). Multiple jobs can be exported using named exports, default exports, or an array of job definitions (`export default [job1, job2]`).
+2. **Dedicated Task Directory (`src/cron/*`)**:
+   Organize individual tasks into separate files inside `src/cron/` (e.g., `src/cron/cleanup.ts`, `src/cron/sync.ts`). Every file inside `src/cron/` is automatically registered upon boot.
 
 ---
 
 ## 1. Functional Paradigm (`cron`)
 
-Import `cron` from `exisjs/cron` to define scheduled tasks.
+Import `cron` and `CronExpression` from `exisjs/cron` to define scheduled background tasks.
 
-### Single-File Multi-Job Example
+### Root Single-File Management (`src/http/cron.ts`)
 
-Manage multiple jobs within `src/http/cron.ts`:
+You can define and export all your application's background tasks directly within `src/http/cron.ts`:
 
 ```typescript filename="src/http/cron.ts"
 import { cron, CronExpression } from 'exisjs/cron'
 
-// Job 1: Nightly synchronization
-export const syncJob = cron({
+// Task 1: Nightly synchronization at midnight UTC
+export const nightlySync = cron({
   name: 'nightly-sync',
   schedule: CronExpression.EVERY_DAY_AT_MIDNIGHT,
   timezone: 'UTC',
@@ -43,30 +44,58 @@ export const syncJob = cron({
   retries: 2,
   retryDelayMs: 3000,
   async run({ app, log }) {
-    log.info('Executing nightly sync...')
+    log.info('Running nightly data synchronization...')
   },
   onError(err, { log }) {
-    log.error({ err }, 'Nightly sync failed after retries')
+    log.error({ err }, 'Nightly sync failed after retry attempts')
   }
 })
 
-// Job 2: Frequent polling using human-readable duration
-export const pollJob = cron.every('5 minutes', async ({ log }) => {
-  log.info('Checking external queue...')
+// Task 2: Human-readable duration schedule
+export const queuePoller = cron.every('5 minutes', async ({ log }) => {
+  log.info('Polling external queue...')
+}, {
+  name: 'queue-poller',
+  preventOverlap: true
 })
 
-// Job 3: Recurring millisecond interval
+// Task 3: Fixed millisecond interval
 export const heartbeat = cron.interval(30_000, async ({ log }) => {
   log.info('System heartbeat active')
+}, {
+  name: 'health-heartbeat'
 })
 
-// Job 4: Startup delayed task (runs 5 seconds after server boots)
-export const warmup = cron.timeout(5_000, async ({ app, log }) => {
-  log.info('Pre-warming cache...')
+// Task 4: One-time startup delayed task (runs 5s after server boots)
+export const cacheWarmup = cron.timeout(5_000, async ({ log }) => {
+  log.info('Pre-warming cache in memory...')
+}, {
+  name: 'cache-warmup'
 })
 ```
 
-### Dedicated File Example
+### Exporting an Array of Jobs (`export default [...]`)
+
+In both `src/http/cron.ts` and `src/cron/*.ts`, you can also export an array of jobs as the default export:
+
+```typescript filename="src/http/cron.ts"
+import { cron, CronExpression } from 'exisjs/cron'
+
+export default [
+  cron({
+    name: 'session-cleanup',
+    schedule: CronExpression.EVERY_HOUR,
+    async run({ log }) {
+      log.info('Purging expired sessions...')
+    }
+  }),
+  cron.interval(60_000, async ({ log }) => {
+    log.info('Checking worker status...')
+  }, { name: 'worker-status' })
+]
+```
+
+### Dedicated File Convention (`src/cron/cleanup.ts`)
 
 ```typescript filename="src/cron/cleanup.ts"
 import { cron, CronExpression } from 'exisjs/cron'
@@ -86,111 +115,196 @@ export default cron({
 
 ## 2. Class-Based (OOP) Paradigm (`@Cron`)
 
-In the OOP paradigm, methods on any `@Injectable()` service or class can be scheduled using decorators from `exisjs/decorators` with full **Dependency Injection** support.
+In class-based applications, schedule methods on `@Injectable()` service classes using decorators from `exisjs/decorators` with full **Dependency Injection** support.
 
-```typescript filename="src/cron/cleanup.ts"
+```typescript filename="src/cron/maintenance.service.ts"
 import { Injectable, Cron, Interval, TimeoutTask, CronExpression } from 'exisjs/decorators'
-import { DatabaseService } from '../services/database.service'
-import { LoggerService } from '../services/logger.service'
+import { DatabaseService } from '../database/database.service'
+import { LoggerService } from '../common/logger.service'
 
 @Injectable()
-export default class CleanupService {
+export default class MaintenanceService {
   constructor(
-    private db: DatabaseService,
-    private logger: LoggerService
+    private readonly db: DatabaseService,
+    private readonly logger: LoggerService
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
     name: 'nightly-purge',
     timezone: 'UTC',
     preventOverlap: true,
+    retries: 2,
+    retryDelayMs: 5000,
   })
-  async purgeOldSessions() {
+  async purgeExpiredSessions() {
     this.logger.info('Purging expired user sessions...')
     await this.db.deleteExpiredSessions()
   }
 
-  @Interval(60_000, { name: 'health-ping' })
-  async checkDatabaseHealth() {
+  @Interval(60_000, {
+    name: 'db-health-check',
+    preventOverlap: true,
+  })
+  async pingDatabase() {
     await this.db.ping()
   }
 
-  @TimeoutTask(5_000, { name: 'cache-warmup' })
+  @TimeoutTask(5_000, {
+    name: 'cache-init',
+  })
   async warmupCache() {
-    this.logger.info('Pre-warming cache...')
+    this.logger.info('Pre-warming cache after server boot...')
   }
 }
 ```
 
 ---
 
-## 3. Core Reliability Features
+## Configuration Options (`CronJobOptions`)
 
-### Overlap Prevention (`preventOverlap: true`)
-Standard timers trigger subsequent ticks even if the current execution is stalled, leading to connection exhaustion and database lock contention. With `preventOverlap: true` (default: `true`), ExisJS locks execution during active jobs and skips overlapping executions until the current run completes.
+The following options configure job execution, error recovery, and scheduling policies:
 
-### Error Isolation Sandbox
-Exceptions thrown inside cron handlers are caught within an isolated execution boundary. An error in a background task will never crash the HTTP server or stop subsequent cron triggers. Errors are logged and forwarded to an optional `onError(err, context)` hook for monitoring integration (e.g. Sentry, Datadog).
-
-### IANA Timezones & Daylight Saving Time (DST)
-Supports standard IANA timezones (e.g. `'America/New_York'`, `'Asia/Kolkata'`, `'Europe/London'`, `'UTC'`). Next execution dates are computed accurately across DST transitions using cached native `Intl.DateTimeFormat` evaluations.
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | Auto-generated | Unique identifier for the job, used in logs and programmatic management. |
+| `schedule` | `string` | — | Standard 5-part or 6-part cron pattern (e.g., `'0 0 * * *'`). |
+| `interval` | `number` | — | Execution interval in milliseconds (used with interval jobs). |
+| `timeout` | `number` | — | Startup delay in milliseconds before executing once (used with timeout jobs). |
+| `timezone` | `string` | System Local | IANA timezone identifier (e.g., `'UTC'`, `'America/New_York'`, `'Asia/Kolkata'`). |
+| `preventOverlap` | `boolean` | `true` | When `true`, skips execution if the previous tick is still running. |
+| `autoStart` | `boolean` | `true` | Automatically starts the scheduler when the job is registered. |
+| `retries` | `number` | `0` | Number of retry attempts if the handler throws an error. |
+| `retryDelayMs` | `number` | `1000` | Milliseconds to wait between retry attempts. |
+| `run` / `handle` | `(ctx) => Promise<any>` | — | The execution handler function receiving `CronContext`. |
+| `onError` | `(err, ctx) => void` | — | Optional callback triggered when all execution attempts fail. |
 
 ---
 
-## 4. Programmatic Runtime Management (`app.cron`)
+## Execution Context (`CronContext`)
 
-You can inspect, pause, resume, or trigger jobs dynamically at runtime via `app.cron`:
+Every job handler receives a `CronContext` object containing execution metadata and framework instances:
 
-```typescript filename="src/http/admin/cron/route.ts"
+```typescript
+export interface CronContext {
+  /** The Exis application instance */
+  app: App<any>
+  /** Structured logger instance */
+  log: Logger
+  /** Name of the running job */
+  jobName: string
+  /** Timestamp when this execution iteration started */
+  startedAt: Date
+  /** Current execution iteration count */
+  iteration: number
+  /** Signal aborted when graceful server shutdown is initiated */
+  signal?: AbortSignal
+}
+```
+
+---
+
+## Standard Cron Expression Constants (`CronExpression`)
+
+ExisJS exports pre-tested cron expressions for common schedules:
+
+```typescript
+import { CronExpression } from 'exisjs/cron'
+
+CronExpression.EVERY_SECOND            // '* * * * * *'
+CronExpression.EVERY_5_SECONDS         // '*/5 * * * * *'
+CronExpression.EVERY_10_SECONDS        // '*/10 * * * * *'
+CronExpression.EVERY_30_SECONDS        // '*/30 * * * * *'
+CronExpression.EVERY_MINUTE            // '* * * * *'
+CronExpression.EVERY_5_MINUTES         // '*/5 * * * *'
+CronExpression.EVERY_10_MINUTES        // '*/10 * * * *'
+CronExpression.EVERY_30_MINUTES        // '*/30 * * * *'
+CronExpression.EVERY_HOUR              // '0 * * * *'
+CronExpression.EVERY_2_HOURS           // '0 */2 * * *'
+CronExpression.EVERY_6_HOURS           // '0 */6 * * *'
+CronExpression.EVERY_DAY_AT_MIDNIGHT   // '0 0 * * *'
+CronExpression.EVERY_DAY_AT_1AM        // '0 1 * * *'
+CronExpression.EVERY_DAY_AT_2AM        // '0 2 * * *'
+CronExpression.EVERY_DAY_AT_NOON       // '0 12 * * *'
+CronExpression.EVERY_WEEK              // '0 0 * * 0'
+CronExpression.EVERY_WEEKDAY           // '0 0 * * 1-5'
+CronExpression.EVERY_WEEKEND           // '0 0 * * 6,0'
+CronExpression.EVERY_MONTH             // '0 0 1 * *'
+CronExpression.EVERY_YEAR              // '0 0 1 1 *'
+```
+
+---
+
+## Core Reliability Guarantees
+
+### 1. Overlap Prevention (`preventOverlap: true`)
+If a job takes longer than its scheduling frequency (for example, a database migration running for 90 seconds on a 60-second interval), standard Node.js timers cause overlapping concurrent runs. ExisJS locks execution during active runs and skips overlapping ticks until the current run completes.
+
+### 2. Isolated Error Sandbox
+Exceptions thrown inside cron handlers are caught within an isolated execution boundary. An uncaught error in a background task will never crash the HTTP server or prevent subsequent scheduled runs. Errors are logged with execution duration and forwarded to your `onError` handler.
+
+### 3. Accurate Timezone & DST Calculation
+Cron schedules evaluate IANA timezones (e.g. `'America/Chicago'`, `'Europe/Berlin'`, `'UTC'`) using native `Intl.DateTimeFormat` evaluations, adjusting accurately for Daylight Saving Time (DST) transitions.
+
+### 4. Graceful Shutdown & Drain Window
+When the server receives `SIGTERM` or `SIGINT`:
+1. The scheduler halts all future timer registrations.
+2. Active timers are unreferenced (`timer.unref()`).
+3. Running tasks are allowed to complete within the configurable drain window (default: 5000ms) before the process terminates.
+
+---
+
+## Programmatic Management (`app.cron`)
+
+Manage registered jobs dynamically at runtime from HTTP endpoints or administrative services via `app.cron`:
+
+```typescript filename="src/http/admin/tasks/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  // Query status and metrics of all registered jobs
-  listJobs: route.get('/', async ({ app }) => {
+  // Get execution statistics and status for all jobs
+  listStats: route.get('/', async ({ app }) => {
     return {
-      jobs: app.cron.status()
+      jobs: app.cron.getStats()
     }
   }),
 
-  // Manually trigger a scheduled job on demand
+  // Manually trigger an immediate execution
   triggerJob: route.post('/:name/trigger', async ({ app, params }) => {
     const result = await app.cron.trigger(params.name)
     return { success: true, result }
   }),
 
-  // Pause a job
+  // Pause a running job
   pauseJob: route.post('/:name/pause', async ({ app, params }) => {
-    app.cron.pause(params.name)
+    const job = app.cron.getJob(params.name)
+    if (!job) return { success: false, error: 'Job not found' }
+    
+    job.pause()
     return { success: true, message: `Job ${params.name} paused` }
   }),
 
   // Resume a paused job
   resumeJob: route.post('/:name/resume', async ({ app, params }) => {
-    app.cron.resume(params.name)
+    const job = app.cron.getJob(params.name)
+    if (!job) return { success: false, error: 'Job not found' }
+    
+    job.resume()
     return { success: true, message: `Job ${params.name} resumed` }
-  }),
+  })
 })
 ```
 
 ---
 
-## 5. Graceful Shutdown & Draining
+## CLI Generation
 
-When the application receives a shutdown signal (`SIGINT`, `SIGTERM`, or `app.close()`):
-1. The scheduler stops scheduling future ticks immediately.
-2. Active timers are unreferenced (`unref()`).
-3. Running tasks are allowed to finish within the configured drain window (default: 5000ms) before the process terminates.
-
----
-
-## 6. CLI Scaffolding
-
-Generate cron job files using the ExisJS CLI:
+Scaffold new scheduled tasks with the ExisJS CLI:
 
 ```bash
-# Functional Job (generates src/cron/cleanup.ts)
+# Functional job (generates src/cron/cleanup.ts)
 npx exis generate cron cleanup
 
-# Class-Based Job (generates src/cron/cleanup.ts with @Injectable & @Cron)
+# Class-based OOP service (generates src/cron/cleanup.service.ts with @Injectable & @Cron)
 npx exis generate cron cleanup --oop
 ```
+

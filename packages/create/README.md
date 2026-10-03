@@ -1,33 +1,21 @@
-<p align="center">
-  <img src="https://raw.githubusercontent.com/v25group/exisjs/main/.github/assets/exisjs.png" height="200" alt="Exis JS Logo" />
-  <h1 align="center">create-exisjs</h1>
-</p>
+# create-exisjs
 
-<p align="center">
-  <b>The official scaffolding CLI tool for Exis JS.</b>
-</p>
+[![npm create-exisjs package](https://img.shields.io/npm/v/create-exisjs.svg)](https://npmjs.org/package/create-exisjs)
+[![npm license](https://img.shields.io/npm/l/create-exisjs.svg)](https://github.com/v25group/exisjs/blob/main/LICENSE)
+[![GitHub discussions](https://img.shields.io/badge/Discussions-GitHub-blue.svg)](https://github.com/v25group/exisjs/discussions)
 
-<p align="center">
-  <a aria-label="NPM version" href="https://www.npmjs.com/package/create-exisjs">
-    <img alt="" src="https://img.shields.io/npm/v/create-exisjs.svg?style=for-the-badge&color=000000&labelColor=000000">
-  </a>
-  <a aria-label="License" href="https://github.com/v25group/exisjs/blob/main/LICENSE">
-    <img alt="" src="https://img.shields.io/npm/l/create-exisjs.svg?style=for-the-badge&color=000000&labelColor=000000">
-  </a>
-  <a aria-label="Join the community on GitHub" href="https://github.com/v25group/exisjs/discussions">
-    <img alt="" src="https://img.shields.io/badge/Join%20the%20community-on%20GitHub-000000.svg?style=for-the-badge&logo=github&labelColor=000000&logoWidth=20">
-  </a>
-</p>
+`create-exisjs` is the official CLI tool for scaffolding new ExisJS applications with interactive prompts and preconfigured starter templates.
 
 ---
 
-## Description
+## Quickstart
 
-`create-exisjs` is the interactive CLI tool used to bootstrap new Exis JS applications. It sets up a structured, production-ready environment in seconds so you can start building immediately.
+Run the initialization command directly without installing globally:
 
-## Usage
-
-You do not need to install this package globally. You can run it directly with your package manager:
+### npx
+```bash
+npx create-exisjs@latest my-backend
+```
 
 ### npm
 ```bash
@@ -49,24 +37,66 @@ yarn create exisjs my-backend
 bun create exisjs@latest my-backend
 ```
 
-This will launch an interactive prompt that guides you through template selection and setup options, then generates your project.
+---
 
-### What's Included?
+## Non-Interactive & CI Flags
 
-Out of the box, `create-exisjs` configures:
+You can pass command-line arguments to skip prompts and automate project generation:
 
-- A strictly typed TypeScript environment
-- File-system routing structure (`src/http`)
-- Pre-configured scripts for development, building, and running
-- ESLint configuration
-- Live-reloading development server
+| Flag | Description |
+| :--- | :--- |
+| `-y`, `--yes` | Skip all interactive prompts and use default settings |
+| `--functional` | Select the Functional routing paradigm (`controller`, `route.*`) |
+| `--oop` | Select the Class-Based (OOP) routing paradigm (`@Controller`, `@Get`, `@Post`) |
+| `--ts`, `--typescript` | Initialize with TypeScript support (default) |
+| `--js`, `--javascript` | Initialize with JavaScript support |
+| `--eslint` / `--no-eslint` | Enable or disable ESLint configuration |
+| `--skip-install` | Generate files without automatically running `npm install` |
+| `--skip-git` | Skip initializing a local Git repository |
 
-## Documentation
+### Example
 
-For full documentation, guides, and architecture references, please visit the main [Exis JS Repository](https://github.com/v25group/exisjs).
+```bash
+npx create-exisjs@latest my-backend --oop --ts --eslint
+```
 
 ---
 
-<p align="center">
-  <i>Developed with care by the Exis JS Team.</i>
-</p>
+## Generated Project Layout
+
+A generated ExisJS project includes a standard file-system routing structure:
+
+```text
+my-backend/
+├── src/
+│   ├── http/
+│   │   ├── server.ts         # Server lifecycle hooks (onStart, onClose)
+│   │   ├── boundary.ts       # Root request boundary & security middleware
+│   │   ├── route.ts          # Root route handler (GET /)
+│   │   └── health/
+│   │       └── route.ts      # Healthcheck endpoint (GET /health)
+│   ├── config/
+│   │   └── env.ts            # Environment schema validation with tex.env
+│   ├── database/
+│   │   └── db.ts             # Database connection lifecycle setup
+│   └── cron/
+│       └── cleanup.ts        # Background cron task definitions
+├── tests/
+│   └── index.test.ts         # Automated test suite using Node.js test runner
+├── .env                      # Environment variables
+├── exis.config.ts            # Framework configuration
+├── package.json              # Scripts (dev, build, start, test)
+└── tsconfig.json             # TypeScript configuration with @/* path alias
+```
+
+---
+
+## Documentation
+
+For full guides and architecture documentation, visit the [ExisJS Repository](https://github.com/v25group/exisjs) and [exisjs.com](https://exisjs.com).
+
+---
+
+## License
+
+[MIT License](https://github.com/v25group/exisjs/blob/main/LICENSE)

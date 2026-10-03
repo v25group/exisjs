@@ -182,6 +182,7 @@ export class TestRequest {
 export interface RequestOptions {
   headers?: Record<string, string>
   body?: unknown
+  payload?: unknown
 }
 
 export interface TestApp {
@@ -206,7 +207,7 @@ function applyRequestOptions(
   if (
     typeof options === 'object' &&
     options !== null &&
-    ('headers' in options || 'body' in options)
+    ('headers' in options || 'body' in options || 'payload' in options)
   ) {
     const opt = options as RequestOptions
     if (opt.headers) {
@@ -216,6 +217,8 @@ function applyRequestOptions(
     }
     if (opt.body !== undefined) {
       req.send(opt.body)
+    } else if (opt.payload !== undefined) {
+      req.send(opt.payload)
     }
   } else {
     req.send(options)

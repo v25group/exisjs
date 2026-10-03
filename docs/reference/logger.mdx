@@ -1,11 +1,17 @@
 ---
-title: "Logger"
-description: "API Reference and Architecture Guide for the ExisJS structured logger (exisjs/logger)."
+title: "exisjs/logger"
+description: "API Reference for ExisJS structured logging, Pino integration, configureLogger, custom transports, and formatting helpers."
+nextUrl: "/docs/reference/di"
+nextTitle: "DI Reference"
 ---
 
-# Logger (`exisjs/logger`)
+# `exisjs/logger`
 
-ExisJS includes a high-performance, zero-overhead structured logging engine powered by Pino. It provides an **industry-standard single-line terminal format** in development and **ultra-fast structured NDJSON** in production for cloud observability platforms (Datadog, Loki, CloudWatch, OpenTelemetry).
+The `exisjs/logger` module provides structured logging powered by Pino. It includes a single-line terminal formatter for development, structured NDJSON output for production environments, automatic credential redaction, request-scoped loggers, and distributed tracing integration.
+
+---
+
+## Module Exports
 
 ```typescript
 import {
@@ -21,60 +27,23 @@ import {
   formatStatus,
   formatUrl,
   formatIp,
+  extractValidationSummary,
+  extractErrorMessage,
 } from 'exisjs/logger'
+
+import type { Logger, LoggerConfig } from 'exisjs/logger'
 ```
 
 ---
 
-## 1. Terminal Request Logging (Development DX)
+## Global Logger Singleton (`logger`)
 
-When running your application in development mode (`exis dev` or `pretty: true`), ExisJS automatically formats every incoming HTTP request into a clean, concise, single-line terminal log:
-
-```text
-[22:50:17] [exis] GET     /                            304 Not Modified 18ms
-[22:50:55] [exis] GET     /api/v1/profile              200 OK          1.2ms   240 B
-[22:51:02] [exis] POST    /api/v1/users                201 Created     14.5ms  1.4 KB
-[22:51:10] [exis] PATCH   /api/v1/users/42             400 Bad Request 3.1ms   120 B
-   └─ ⚠ Validation [body]: Field "email" must be a valid email format
-[22:51:15] [exis] GET     /api/v1/unknown              404 Not Found   0.8ms    45 B
-[22:51:22] [exis] POST    /api/v1/checkout             500 Internal Error 320ms 82 B
-   └─ ✖ Error: Database connection timeout
-```
-
-### Visual Features & Formatting Elements
-
-| Element | Description | Behavior / Color Coding |
-| :--- | :--- | :--- |
-| **Timestamp** | `[HH:MM:SS]` | Dimmed gray for non-intrusive readability |
-| **Brand Badge** | `[exis]` | Framework brand color (`\x1b[38;2;160;70;255m`), `[warn]` (yellow), `[error]` (red) |
-| **HTTP Method** | `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `QUERY`, `SEARCH`, `OPTIONS`, `HEAD`, `WS`, `SSE`, `CONNECT`, `TRACE`, `PURGE` | Fixed-width padded badge with distinct colors (`GET`/`SEARCH` cyan, `POST` green, `PUT`/`PATCH` yellow, `DELETE`/`PURGE` red, `QUERY` blue, `OPTIONS`/`HEAD`/`WS` magenta) |
-| **Path & Query** | `/api/v1/items?page=1` | Path in bright white, query parameters in dimmed gray |
-| **Status Code** | `101 Switching Protocols`, `200 OK`, `201 Created`, `400 Bad Request`, `404 Not Found`, `500 Internal Error` | Color-coded by range: `101` magenta, `2xx` green, `3xx` cyan, `4xx` yellow, `5xx` red |
-| **Response Latency** | `1.2ms`, `18ms`, `1.45s` | Dynamic threshold color coding: `< 50ms` (green), `50ms - 250ms` (yellow), `> 250ms` (red) |
-| **Content Size** | `120 B`, `1.4 KB`, `2.8 MB` | Formatted human-readable byte sizes from `Content-Length` |
-| **Client IP** | `192.168.1.5` | Localhost (`127.0.0.1` / `::1`) is suppressed by default for minimal noise; remote client IPs are cleanly displayed |
-| **Diagnostic Sublines** | `└─ ⚠ Validation: ...` / `└─ ✖ Error: ...` | Indented warning and error summaries printed directly below failed requests |
-
----
-
-## 2. Structured Logging in Production (NDJSON)
-
-In production (`NODE_ENV === 'production'` or `pretty: false`), the logger outputs single-line structured JSON (NDJSON) directly to `stdout` with zero serialization overhead:
-
-```json
-{"level":30,"time":1774286390000,"pid":1234,"hostname":"prod-app-01","requestId":"req-42","method":"GET","url":"/api/v1/profile","statusCode":200,"responseTime":1.2,"contentLength":240,"ip":"10.0.0.4","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","msg":"GET /api/v1/profile"}
-```
-
----
-
-## 3. Global Logger Singleton (`logger`)
-
-The `logger` singleton is a high-performance proxy that can be imported and used anywhere in your services, repositories, workers, and controllers:
+`logger` is a global proxy satisfying the `Logger` interface. It can be imported and executed anywhere across controllers, services, repositories, or background tasks.
 
 ```typescript
 import { logger } from 'exisjs/logger'
 
-// Standard level methods
+// Level logging methods
 logger.info('Payment service initialized')
 logger.warn({ ip: req.ip, attempts: 3 }, 'Multiple failed login attempts')
 logger.error({ err, orderId: 'ord_123' }, 'Stripe webhook processing failed')
@@ -82,16 +51,54 @@ logger.debug({ payload }, 'Parsed RPC frame')
 logger.trace('Entering database connection pool checkout')
 logger.fatal({ err }, 'Unrecoverable process state')
 
-// Child loggers with bound context
+// Contextual child loggers
 const workerLogger = logger.child({ workerId: 'worker-1', queue: 'emails' })
 workerLogger.info('Processing email batch')
 ```
 
+### `Logger` Interface
+
+```typescript
+export interface LogFn {
+  (msg: string, ...args: unknown[]): void
+  (obj: Record<string, unknown>, msg?: string, ...args: unknown[]): void
+}
+
+export interface Logger {
+  fatal: LogFn
+  error: LogFn
+  warn: LogFn
+  info: LogFn
+  debug: LogFn
+  trace: LogFn
+  silent: LogFn
+  child(bindings: Record<string, unknown>): Logger
+  level: string
+}
+```
+
 ---
 
-## 4. Configuration (`configureLogger`)
+## Configuration (`configureLogger`)
 
-Use `configureLogger()` to adjust log levels, toggle pretty printing, and customize sensitive field redactions across your entire application:
+Configures global logger settings, default log levels, terminal pretty printing, and sensitive field redaction.
+
+```typescript
+function configureLogger(
+  config: LoggerConfig & { replaceRedact?: boolean }
+): void
+```
+
+### Options Reference (`LoggerConfig`)
+
+| Property | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `level` | `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace' \| 'silent'` | `'info'` | Minimum severity level to emit. |
+| `pretty` | `boolean` | `NODE_ENV !== 'production'` | Whether to use formatted single-line terminal output or raw NDJSON. |
+| `redact` | `string[]` | *See Redaction section* | Array of object property paths to censor. |
+| `replaceRedact` | `boolean` | `false` | When `true`, overrides the default redact list instead of merging with it. |
+
+### Example
 
 ```typescript filename="src/http/server.ts"
 import { configureLogger } from 'exisjs/logger'
@@ -99,28 +106,45 @@ import { configureLogger } from 'exisjs/logger'
 configureLogger({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   pretty: process.env.NODE_ENV !== 'production',
-  redact: ['*.password', '*.token', '*.secret', 'req.headers.cookie', '*.creditCard'],
+  redact: ['*.password', '*.token', '*.secret', 'req.headers.cookie'],
 })
 ```
 
-### Options Reference
+---
 
-| Option | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `level` | `'fatal' \| 'error' \| 'warn' \| 'info' \| 'debug' \| 'trace' \| 'silent'` | `'info'` | Minimum log level to emit |
-| `pretty` | `boolean` | `NODE_ENV !== 'production'` | Whether to use colored single-line terminal formatting |
-| `redact` | `string[]` | *See Redaction section* | Array of object paths to automatically censor from logs |
-| `replaceRedact` | `boolean` | `false` | When `true`, overrides default redact paths instead of merging |
+## Custom Logger Replacement (`setLogger`)
+
+Replaces the underlying global logger instance with a custom Pino instance or third-party logger implementing the `Logger` interface.
+
+```typescript
+function setLogger(custom: Logger): void
+```
+
+### Example: Custom Transport with `pino-loki`
+
+```typescript filename="src/http/server.ts"
+import { setLogger } from 'exisjs/logger'
+import pino from 'pino'
+
+const customPino = pino({
+  level: 'info',
+  transport: {
+    target: 'pino-loki',
+    options: { host: 'http://localhost:3100' },
+  },
+})
+
+setLogger(customPino)
+```
 
 ---
 
-## 5. Security & Sensitive Data Redaction
+## Sensitive Data Redaction
 
-By default, ExisJS automatically censors sensitive fields in all log payloads before they are serialized to disk or terminal:
+By default, the logger censors sensitive fields in logged objects, replacing values with `"[Redacted]"` before serialization:
 
 ```typescript
-// Built-in default redacted paths:
-[
+const DEFAULT_REDACT = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.body.password',
@@ -131,44 +155,43 @@ By default, ExisJS automatically censors sensitive fields in all log payloads be
   '*.secret',
   'password',
   'token',
-  'secret'
+  'secret',
 ]
 ```
 
-When logging objects containing these keys (e.g. `{ username: 'alex', password: 'supersecretpassword' }`), the value is replaced with `"[Redacted]"`.
-
 ---
 
-## 6. Request-Scoped Logger (`req.log` / `ctx.log`)
+## Request-Scoped Logging (`req.log`)
 
-Every incoming HTTP request in ExisJS provides a zero-allocation lazy child logger bound to `req.log`. It automatically inherits and binds:
-- `requestId` (`req.requestId`)
-- `method` (`req.method`)
-- `url` (`req.path`)
+Every incoming `ExisRequest` provides a lazy child logger bound to `req.log` containing contextual request metadata:
+
+- `requestId`: Unique request identifier (`req.requestId`).
+- `method`: HTTP method (e.g. `GET`, `POST`).
+- `url`: Request path.
 
 ```typescript filename="src/http/orders/route.ts"
-import { route, controller } from 'exisjs/router'
+import { controller, route } from 'exisjs/router'
 
 export default controller({
   create: route.post('/', {
     async handle({ req, body }) {
-      // req.log automatically includes { requestId, method, url }
       req.log.info({ orderId: body.id }, 'Creating order record')
       return { success: true }
-    }
-  })
+    },
+  }),
 })
 ```
 
 ---
 
-## 7. OpenTelemetry & Distributed Tracing
+## Distributed Tracing & OpenTelemetry
 
-ExisJS automatically integrates with `@opentelemetry/api` when present in your environment. Every log entry emitted via `logger` or `req.log` automatically receives the active `trace_id` and `span_id`:
+When `@opentelemetry/api` is present in the application runtime, log entries automatically include active distributed tracing identifiers:
 
 ```json
 {
   "level": 30,
+  "time": 1774286390000,
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
   "span_id": "00f067aa0ba902b7",
   "msg": "Order created successfully"
@@ -177,56 +200,17 @@ ExisJS automatically integrates with `@opentelemetry/api` when present in your e
 
 ---
 
-## 8. Custom Logger Integration (`setLogger`)
+## Formatting Utilities
 
-To route ExisJS logs directly into custom transports (such as `pino-loki`, `@google-cloud/logging`, or Elasticsearch), supply your custom instance to `setLogger()`:
+The module exports helper utilities for formatting terminal outputs:
 
-```typescript filename="src/http/server.ts"
-import { setLogger } from 'exisjs/logger'
-import pino from 'pino'
+| Function | Signature | Output Example |
+| :--- | :--- | :--- |
+| `formatBytes` | `(bytes?: number) => string` | `1420` -> `'1.4 KB'` |
+| `formatLatency` | `(ms?: number) => string` | `14.5` -> `'\x1b[32m14.5ms\x1b[0m'` |
+| `formatMethod` | `(method?: string) => string` | `'GET'` -> `'\x1b[1;36mGET    \x1b[0m'` |
+| `formatStatus` | `(status: number) => string` | `200` -> `'\x1b[1;32m200 OK\x1b[0m'` |
+| `formatIp` | `(ip?: string) => string` | `'192.168.1.10'` -> formatted IP string |
+| `createSilentLogger` | `() => Logger` | Returns a no-op logger instance |
+| `isLogger` | `(obj: unknown) => obj is Logger` | Type guard checking `Logger` compliance |
 
-const customPino = pino({
-  level: 'info',
-  transport: {
-    target: 'pino-loki',
-    options: { host: 'http://localhost:3100' }
-  }
-})
-
-setLogger(customPino)
-```
-
----
-
-## 9. Formatting Helper Utilities
-
-ExisJS exports all terminal formatting helpers from `exisjs/logger` so you can use them in custom CLI tools, workers, and plugins:
-
-```typescript
-import {
-  formatBytes,
-  formatLatency,
-  formatMethod,
-  formatStatus,
-  formatUrl,
-  formatIp,
-  extractValidationSummary,
-  extractErrorMessage,
-} from 'exisjs/logger'
-
-// Byte formatting
-formatBytes(1420) // "1.4 KB"
-
-// Latency with color threshold
-formatLatency(14.5) // "\x1b[32m14.5ms\x1b[0m"
-
-// Padded color-coded method
-formatMethod('GET') // "\x1b[1;36mGET    \x1b[0m"
-
-// Status code with standard phrase
-formatStatus(200) // "\x1b[1;32m200 OK\x1b[0m"
-
-// Localhost suppression
-formatIp('127.0.0.1') // "" (suppressed)
-formatIp('192.168.1.10') // "\x1b[90m192.168.1.10\x1b[0m"
-```

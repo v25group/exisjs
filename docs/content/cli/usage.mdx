@@ -1,75 +1,152 @@
 ---
+title: "CLI Usage"
+description: "How to run the ExisJS CLI, configure package scripts, forward command-line arguments, and load environments."
 nextUrl: "/docs/cli/commands"
 nextTitle: "CLI Commands"
 ---
 
 # CLI Usage
 
-The ExisJS CLI (`exis` / `exisjs`) can be executed in two primary contexts: **globally / on-demand** via `npx`, or **locally** via your project's `package.json` scripts.
+The ExisJS CLI (`exisjs` or `exis`) can be executed through global package managers, on-demand runner utilities like `npx`, or locally defined `package.json` scripts.
 
-## Global vs. Local Execution
+---
 
-When bootstrapping a brand-new project, invoke the initialization tool using `npx`:
+## Execution Methods
+
+### 1. On-Demand Execution (`npx`)
+
+When initializing a new application or running ad-hoc commands without a global install:
 
 ```bash
-$ npx exisjs init my-api
+# Initialize a project in the current working directory
+npx exisjs init
+
+# Check environment diagnostics
+npx exisjs doctor
+
+# Print the application routing table
+npx exisjs routes
 ```
 
-Once inside an initialized ExisJS project, execution through `npm run` ensures deterministic behavior pinned to the local `exisjs` version in `node_modules`.
+### 2. Global Installation
+
+For system-wide command availability:
+
+```bash
+# Install globally
+npm install -g exisjs
+
+# Run directly
+exisjs dev
+exis routes
+```
+
+### 3. Project-Local Scripts (Recommended)
+
+When working inside an established project, invoking the CLI via `npm run` ensures consistent execution pinned to the local `exisjs` dependency in `node_modules`.
+
+---
 
 ## Default Package Scripts
 
-Every ExisJS project scaffolded with `init` includes the standard script targets in `package.json`:
+Applications initialized with `npx exisjs init` include standard npm lifecycle scripts in `package.json`:
 
 ```json
 {
+  "name": "my-exis-app",
+  "version": "1.0.0",
   "scripts": {
     "dev": "exisjs dev",
     "build": "exisjs build",
+    "clean": "exisjs clean",
     "start": "exisjs start",
-    "test": "exisjs test"
+    "test": "exisjs test",
+    "routes": "exisjs routes",
+    "doctor": "exisjs doctor"
+  },
+  "dependencies": {
+    "exisjs": "^1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
   }
 }
 ```
 
-Invoke these scripts using your package manager:
+Run these scripts using your preferred package manager:
 
 ```bash
-$ npm run dev
-$ npm run build
-$ npm run start
-$ npm test
+# Start development server
+npm run dev
+
+# Compile TypeScript and build route manifests
+npm run build
+
+# Start production server
+npm run start
+
+# Run native test runner
+npm test
+
+# Print routing table
+npm run routes
 ```
 
-## Passing Arguments via Scripts
+---
 
-To pass options through `npm run`, append a double-dash (`--`) before the CLI flags:
+## Passing Arguments to Scripts
+
+When invoking CLI commands through `npm run`, use the double-dash delimiter (`--`) to forward flags and positional arguments to `exisjs`:
 
 ```bash
-# Start the dev server on port 5000
-$ npm run dev -- -p 5000
+# Run dev server on a custom port
+npm run dev -- -p 4000
 
 # Run a specific test file
-$ npm test -- tests/users.test.ts
+npm test -- tests/users.test.ts
+
+# Filter routes table by method and path
+npm run routes -- -m POST -f /api/v1
 ```
 
-Direct commands can also be called via `npx exisjs`:
+With `pnpm` or `yarn`:
 
 ```bash
-# Scaffold a new resource slice
-$ npx exisjs g resource users
+# pnpm forwards arguments directly
+pnpm dev -p 4000
 
-# Print the routing table
-$ npx exisjs routes
-
-# Inspect available public exports
-$ npx exisjs exports
+# yarn forwards arguments directly
+yarn dev -p 4000
 ```
 
-## Recommended Workflow
+---
 
-1. Use `npx exisjs init <name>` to scaffold new applications.
-2. Use `npm run dev` for local hot-reloading development with automatic port conflict handling.
-3. Use `npx exisjs generate <type> <name>` to scaffold file conventions (`route`, `service`, `schema`, `boundary`, `resource`).
-4. Use `npm test` to run the integrated test runner.
-5. Use `npm run build` and `npm run start` for production deployment.
+## Environment Configuration
+
+The CLI automatically loads environment variables according to the current execution mode:
+
+| File | Loaded In | Priority |
+| :--- | :--- | :--- |
+| `.env.local` | All modes (except test) | High |
+| `.env.<mode>` | Matching mode (e.g. `.env.production`) | Medium |
+| `.env` | All modes | Default |
+
+### Overriding the Environment Mode
+
+Use the `-m, --mode <mode>` flag or set `NODE_ENV`:
+
+```bash
+# Build with staging environment variables
+npx exisjs build --mode staging
+
+# Execute a script under staging configuration
+npx exisjs run scripts/seed.ts --mode staging
+```
+
+---
+
+## Next Steps
+
+- Explore the complete command catalog in the [CLI Command Reference](/docs/cli/commands).
+- Review global server configurations in the [Configuration Guide](/docs/config).
+

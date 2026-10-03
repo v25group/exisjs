@@ -1,180 +1,214 @@
 ---
-title: "Dependency Injection"
-description: "API Reference for ExisJS Dependency Injection (`exisjs/di`)."
+title: "exisjs/di"
+description: "API Reference for ExisJS Inversion of Control (IoC) Container, inject() helper, provider definitions, scopes, and forwardRef."
+nextUrl: "/docs/reference/error"
+nextTitle: "Error Reference"
 ---
 
-# Dependency Injection (`exisjs/di`)
+# `exisjs/di`
 
-ExisJS ships with a powerful, built-in Inversion of Control (IoC) Container. 
-
-It fully supports standard Class-Based constructor injection (similar to NestJS or Angular) but also introduces a highly optimized `inject()` function that allows perfectly typed, deeply nested dependency injection inside purely functional architectures.
+The `exisjs/di` module provides the Inversion of Control (IoC) dependency injection container for ExisJS. It supports functional context-driven injection (`inject()`), class constructor and property decorators (`@Inject()`, `@Optional()`), circular dependency resolution (`forwardRef()`), and multiple lifecycle scopes.
 
 ---
 
-## Providing Dependencies
+## Module Exports
 
-Before a dependency can be injected, it must be provided to the application container. This is typically done in your plugins or the global `server.ts` file using `app.provide()`.
-
-### Provider Types
-
-ExisJS supports four types of providers:
-
-**1. Value Providers**
-Provide static, pre-instantiated values or configuration objects.
 ```typescript
-app.provide('API_KEY', { useValue: 'sk_live_123' })
+import {
+  Container,
+  inject,
+  forwardRef,
+  isForwardRef,
+  Inject,
+  Optional,
+  INJECT_METADATA,
+  PROPERTY_INJECT_METADATA,
+  OPTIONAL_METADATA,
+  SCOPE_METADATA,
+} from 'exisjs/di'
+
+import type {
+  ProviderToken,
+  ProviderDefinition,
+  CustomProvider,
+  ValueProvider,
+  FactoryProvider,
+  ClassProvider,
+  ExistingProvider,
+  ClassConstructor,
+  ForwardReference,
+} from 'exisjs/di'
 ```
 
-**2. Class Providers**
-Provide a class constructor. ExisJS will automatically instantiate it the first time it is resolved.
+---
+
+## 1. Provider Definitions & Types
+
+Dependencies are registered with the container using tokens (classes, string identifiers, symbols, or forward references):
+
 ```typescript
-app.provide('UserService', { useClass: UserService })
+export type ProviderToken<T = any> =
+  | string
+  | symbol
+  | (new (...args: any[]) => T)
+  | ForwardReference<T>
 ```
 
-**3. Factory Providers**
-Provide a synchronous or asynchronous function to generate the value dynamically.
+### Provider Variants
+
+| Provider Type | Interface | Description | Example |
+| :--- | :--- | :--- | :--- |
+| **Value Provider** | `ValueProvider<T>` | Binds a static value, client instance, or configuration object. | `app.provide('CONFIG', { useValue: { env: 'prod' } })` |
+| **Class Provider** | `ClassProvider<T>` | Binds a class constructor instantiated on first resolution. | `app.provide('UserService', { useClass: UserService })` |
+| **Factory Provider** | `FactoryProvider<T>` | Executes a factory function with resolved dependency tokens. | `app.provide({ provide: 'DB', useFactory: (cfg) => connect(cfg), inject: ['CONFIG'] })` |
+| **Existing / Alias Provider** | `ExistingProvider<T>` | Creates an alias pointing to another registered provider token. | `app.provide({ provide: 'DB_ALIAS', useExisting: 'DB' })` |
+| **Direct Class** | `ClassConstructor<T>` | Direct constructor binding without an options wrapper. | `app.provide(AuthService, AuthService)` |
+
+---
+
+## 2. Provider Scopes
+
+ExisJS supports three provider lifecycle scopes:
+
+| Scope | Lifetime | Description |
+| :--- | :--- | :--- |
+| `'singleton'` *(Default)* | Application Lifetime | Instantiated once and cached in memory across all requests. |
+| `'request'` | Request Lifetime | Instantiated once per incoming HTTP request; isolated in request-scoped cache. |
+| `'transient'` | Resolution Lifetime | Re-instantiated every single time the dependency is requested. |
+
 ```typescript
-app.provide('Database', { 
-  useFactory: async () => {
-    const db = new DatabaseConnection()
-    await db.connect()
-    return db
-  }
+app.provide('TraceLogger', {
+  useClass: RequestScopedLogger,
+  scope: 'request',
 })
 ```
 
-**4. Direct Injection**
-If you pass an undecorated Class or object directly, ExisJS will attempt to resolve it automatically.
-```typescript
-app.provide(AuthService, AuthService)
-```
-
 ---
 
-## Scopes (`singleton`, `request`, `transient`)
+## 3. Functional Injection (`inject()`)
 
-By default, all providers in ExisJS are **Singletons**. They are instantiated once and cached for the lifetime of the application.
-
-ExisJS supports three provider scopes in the `@Injectable()` decorator and `app.provide()`:
-
-- **`singleton` (Default)**: Instantiated once and cached for the lifetime of the application.
-- **`request`**: A new instance is created exclusively for each incoming HTTP request, and garbage collected afterward.
-- **`transient`**: A new instance is created every single time the dependency is injected or resolved.
+Resolves dependencies from within active route handlers, middleware functions, or helper routines using `AsyncLocalStorage`.
 
 ```typescript
-app.provide('TraceLogger', { 
-  useClass: RequestScopedLogger, 
-  scope: 'request' 
-})
-
-app.provide('OperationContext', {
-  useClass: OperationContext,
-  scope: 'transient'
-})
+function inject<T>(token: ProviderToken<T>): T
 ```
 
-> [!WARNING]
-> Request-scoped providers can severely impact application performance because they force the engine to allocate new memory and construct new classes on every single HTTP request. Only use `request` scope when strictly necessary.
-
----
-
-## Injecting Dependencies
-
-### 1. Functional Injection (`inject()`)
-
-The true superpower of ExisJS is the `inject()` hook. 
-
-Powered by Node.js `AsyncLocalStorage`, `inject()` can be called from **anywhere** within a request lifecycle (Controllers, Middlewares, nested utility functions) without needing to explicitly pass the `app` or `req` objects down the call chain!
+### Example
 
 ```typescript filename="src/http/users/route.ts"
-import { route, controller } from 'exisjs/router'
+import { controller, route } from 'exisjs/router'
 import { inject } from 'exisjs/di'
-import { Database } from '../db' // The class definition
+import { DatabaseService } from '../services/database'
 
 export default controller({
-  getUsers: route.get('/', {
+  list: route.get('/', {
     async handle() {
-      // Automatically resolves the correct instance from the global container!
-      // Type is automatically inferred as `Database`.
-      const db = inject(Database) 
-      
+      // Resolved from active request execution context
+      const db = inject(DatabaseService)
       const apiKey = inject<string>('API_KEY')
-      
+
       return db.query('SELECT * FROM users')
-    }
-  })
+    },
+  }),
 })
 ```
 
-> [!NOTE]
-> `inject()` relies on the active execution context. If you call `inject()` outside of an active HTTP request or application lifecycle hook (e.g., in a background `setInterval` without context), it will throw an error.
+---
 
-### 2. Constructor & Property Injection in Classes (OOP)
+## 4. Class-Based OOP Injection
 
-ExisJS supports full OOP constructor parameter and property field injection with **automatic parameter type reflection**:
-- **Automatic Type Reflection**: If `emitDecoratorMetadata: true` is enabled in `tsconfig.json`, ExisJS inspects `design:paramtypes` and automatically maps constructor parameter classes directly to dependencies registered in `INJECTABLE_REGISTRY`. You do not need `@Inject()` on standard service classes!
-- **Property-Level `@Inject()`**: Inject dependencies directly onto class properties (`@Inject(Token) public service!: Service`) with automatic `design:type` reflection fallback.
-- **Token Injection (`@Inject(token)`)**: Use `@Inject('TOKEN')` when injecting custom strings, config objects, or symbols.
-- **Optional Dependencies (`@Optional()`)**: Mark dependencies that can safely resolve to `undefined` if not registered.
-- **Forward References (`forwardRef(() => Service)`)**: Resolve circular dependencies between services using lazy forward references and ES6 Proxy delegates.
+### `@Inject(token)`
+Parameter and property decorator specifying an explicit injection token:
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param } from 'exisjs/decorators'
-import { Inject, Optional, forwardRef } from 'exisjs/di'
+```typescript
+import { Controller, Get } from 'exisjs/decorators'
+import { Inject } from 'exisjs/di'
 import { UserService } from './service'
-import { ConfigService } from '../config/service'
 
 @Controller('/users')
 export default class UserController {
-  // 1. Property-level injection
-  @Inject(ConfigService)
-  private config!: ConfigService
-
-  // 2. Optional property injection
-  @Inject('ANALYTICS')
-  @Optional()
-  private analytics?: any
+  @Inject('CONFIG')
+  private config!: Record<string, any>
 
   constructor(
-    // 3. Automatically resolved from INJECTABLE_REGISTRY via type reflection!
     private userService: UserService,
-    // 4. Explicit token injection
-    @Inject('DATABASE_URL') private dbUrl: string,
-    // 5. Circular dependency resolution via forwardRef
-    @Inject(forwardRef(() => UserService)) private circularRef: UserService
+    @Inject('DATABASE_URL') private dbUrl: string
   ) {}
-
-  @Get('/:id')
-  async getUser(@Param('id') id: string) {
-    return this.userService.findById(id)
-  }
 }
 ```
 
+### `@Optional()`
+Marks a dependency as optional, resolving to `undefined` without throwing if not present in the container:
+
+```typescript
+import { Inject, Optional } from 'exisjs/di'
+
+export class NotificationService {
+  constructor(
+    @Inject('SLACK_WEBHOOK') @Optional() private slackUrl?: string
+  ) {}
+}
+```
 
 ---
 
-## Lifecycle Hooks (`OnInit`, `OnDestroy`)
+## 5. Circular Dependency Resolution (`forwardRef`)
 
-Providers can implement lifecycle interfaces. When the application container initializes or gracefully closes, ExisJS automatically triggers these hooks:
+Resolves mutually dependent services by deferring token resolution until instantiation time:
 
-- **`OnInit` (`onInit()` / `onModuleInit()`)**: Executed when the container initializes during `app.create()` or `app.listen()`.
-- **`OnDestroy` (`onDestroy()` / `onModuleDestroy()`)**: Executed when the application receives a termination signal or `app.close()` is called.
-- **`OnApplicationBootstrap` (`onApplicationBootstrap()`)**: Executed after all modules are initialized and before the server begins listening for incoming requests.
+```typescript
+function forwardRef<T>(fn: () => ProviderToken<T>): ForwardReference<T>
+```
 
-```typescript filename="src/http/database/service.ts"
-import { Injectable, type OnInit, type OnDestroy } from 'exisjs/decorators'
+### Example
+
+```typescript filename="src/services/orders.ts"
+import { Injectable } from 'exisjs/decorators'
+import { Inject, forwardRef } from 'exisjs/di'
+import { PaymentService } from './payments'
 
 @Injectable()
-export class DatabaseService implements OnInit, OnDestroy {
-  async onInit(): Promise<void> {
-    await this.pool.connect()
-  }
-
-  async onDestroy(): Promise<void> {
-    await this.pool.end()
-  }
+export class OrderService {
+  constructor(
+    @Inject(forwardRef(() => PaymentService))
+    private paymentService: PaymentService
+  ) {}
 }
 ```
+
+---
+
+## 6. `Container` Class API
+
+The core IoC container coordinating provider registration and resolution.
+
+```typescript
+export class Container {
+  provide<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): void
+  resolve<T>(token: ProviderToken<T>, requestCache?: Map<any, any>): T
+  instantiateClass<T>(TargetClass: ClassConstructor<T>, requestCache?: Map<any, any>): T
+  clearCache(): void
+}
+```
+
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `provide(token, provider)` | `(token, provider) => void` | Registers a provider definition under a token. |
+| `resolve(token, cache?)` | `(token, cache?) => T` | Resolves an instance matching the token. |
+| `instantiateClass(Target, cache?)` | `(Target, cache?) => T` | Instantiates a class, resolving constructor parameters recursively. |
+| `clearCache()` | `() => void` | Clears all cached singleton instances and in-flight locks. |
+
+---
+
+## 7. Lifecycle Hooks
+
+Providers registered in the container can implement standard lifecycle interfaces:
+
+| Hook Interface | Method | Triggered When |
+| :--- | :--- | :--- |
+| `OnInit` | `onInit(): Promise<void> \| void` | Application server starts and container boots. |
+| `OnDestroy` | `onDestroy(): Promise<void> \| void` | Server receives termination signal (`SIGTERM`, `SIGINT`) or `app.close()`. |
+| `OnApplicationBootstrap` | `onApplicationBootstrap(): Promise<void> \| void` | All modules have initialized before listening for connections. |
+
 
 

@@ -1,35 +1,88 @@
 ---
-nextUrl: "/docs/websockets"
-nextTitle: "WebSockets"
+title: "Error Handling and Exceptions"
+description: "Standardize HTTP errors, exception filters, validation diagnostics, and uncaught exception handling in ExisJS."
+nextUrl: "/docs/cron"
+nextTitle: "Cron & Background Tasks"
 ---
 
 # Error Handling
 
-ExisJS implements a comprehensive error boundary and observability system. The framework is designed to reduce the need to manually construct HTTP error responses.
+ExisJS provides an integrated exception architecture designed to standardize HTTP error responses, handle validation failures, and safely catch uncaught runtime exceptions across both functional and class-based applications.
 
-## The `HttpError` System
+---
 
-You can throw an `HttpError` anywhere in your application, and the ExisJS router will automatically intercept it, log it, and format it into a standardized JSON response for the client.
+## The `HttpError` Hierarchy
+
+All HTTP-related exceptions in ExisJS inherit from the base `HttpError` class. When an `HttpError` is thrown within a route handler or middleware, the router intercepts it and formats a consistent JSON error response with appropriate HTTP status codes and headers.
+
+### Base `HttpError` Class
+
+```typescript
+export class HttpError extends Error {
+  public readonly statusCode: number
+  public readonly code: string
+  public readonly isOperational: boolean
+  public readonly details?: unknown
+
+  constructor(
+    message: string,
+    statusCode = 500,
+    code = 'INTERNAL_ERROR',
+    details?: unknown
+  )
+}
+```
+
+- **`statusCode`**: The HTTP status code returned to the client (e.g., `404`, `401`, `500`).
+- **`code`**: A machine-readable uppercase string identifying the error category (e.g., `'NOT_FOUND'`, `'BAD_REQUEST'`).
+- **`isOperational`**: A boolean flag (`true` for `HttpError`) indicating expected operational errors versus programmer bugs or unhandled runtime crashes.
+- **`details`**: Optional structured context or validation metadata attached to the error.
+
+---
+
+## Standard Error Classes & Exception Aliases
+
+ExisJS exports dedicated error classes alongside standard `*Exception` aliases for compatibility with both idiomatic TypeScript and NestJS-style OOP architectures.
+
+| HTTP Status | Error Class | Exception Alias | Default Error Code | Static Factory Method |
+| :--- | :--- | :--- | :--- | :--- |
+| **`400`** | `BadRequestError` | `BadRequestException` | `BAD_REQUEST` | `HttpError.badRequest(msg, details?)` |
+| **`401`** | `UnauthorizedError` | `UnauthorizedException` | `UNAUTHORIZED` | `HttpError.unauthorized(msg?)` |
+| **`403`** | `ForbiddenError` | `ForbiddenException` | `FORBIDDEN` | `HttpError.forbidden(msg?)` |
+| **`404`** | `NotFoundError` | `NotFoundException` | `NOT_FOUND` | `HttpError.notFound(resource?)` |
+| **`409`** | `ConflictError` | `ConflictException` | `CONFLICT` | `HttpError.conflict(msg)` |
+| **`413`** | `PayloadTooLargeError` | `PayloadTooLargeException` | `PAYLOAD_TOO_LARGE` | `HttpError.payloadTooLarge(msg?, details?)` |
+| **`422`** | `UnprocessableError` | `UnprocessableException` | `UNPROCESSABLE_ENTITY` | `HttpError.unprocessable(msg, details?)` |
+| **`429`** | `RateLimitError` | `RateLimitException` | `RATE_LIMITED` | `HttpError.tooManyRequests(msg?)` |
+| **`500`** | `InternalError` | `InternalException` | `INTERNAL_ERROR` | `HttpError.internal(msg?)` |
+| **`503`** | `ServiceUnavailableError` | `ServiceUnavailableException` | `SERVICE_UNAVAILABLE` | `HttpError.serviceUnavailable(msg?)` |
+| **`504`** | `GatewayTimeoutError` | `GatewayTimeoutException` | `GATEWAY_TIMEOUT` | `HttpError.gatewayTimeout(msg?)` |
+
+---
+
+## Throwing Errors in Handlers
+
+You can throw errors directly in controllers, route definitions, or services using either static factory methods, direct instantiation of error classes, or exception aliases.
 
 ### Functional Paradigm
 
 ```typescript filename="src/http/users/route.ts"
 import { controller, route } from 'exisjs/router'
-import { HttpError } from 'exisjs/error'
+import { HttpError, NotFoundError, ForbiddenException } from 'exisjs/error'
 
 export default controller({
   getUser: route.get('/:id', {
     async handle({ params }) {
-      const user = db.findUser(params.id)
+      const user = await db.users.findById(params.id)
       
       if (!user) {
-        // This stops execution and returns a 404
-        throw HttpError.notFound('User') 
+        // Option 1: Static factory helper
+        throw HttpError.notFound('User')
       }
       
-      if (user.isBanned) {
-        // This returns a 403 Forbidden
-        throw HttpError.forbidden('User is banned from the platform')
+      if (user.isSuspended) {
+        // Option 2: Direct exception alias
+        throw new ForbiddenException('User account has been suspended')
       }
 
       return { user }
@@ -42,22 +95,20 @@ export default controller({
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param } from 'exisjs/decorators'
-import { HttpError } from 'exisjs/error'
+import { NotFoundException, ForbiddenException } from 'exisjs/error'
 
-@Controller()
+@Controller('/users')
 export default class UsersController {
   @Get('/:id')
   async getUser(@Param('id') id: string) {
-    const user = db.findUser(id)
+    const user = await db.users.findById(id)
     
     if (!user) {
-      // This stops execution and returns a 404
-      throw HttpError.notFound('User') 
+      throw new NotFoundException('User')
     }
     
-    if (user.isBanned) {
-      // This returns a 403 Forbidden
-      throw HttpError.forbidden('User is banned from the platform')
+    if (user.isSuspended) {
+      throw new ForbiddenException('User account has been suspended')
     }
 
     return { user }
@@ -65,141 +116,109 @@ export default class UsersController {
 }
 ```
 
-### Common Error Factories
+---
 
-The `HttpError` class provides static factory methods for standard HTTP status codes:
+## Standard Error Response Format
 
-- `HttpError.badRequest('Message')` - 400
-- `HttpError.unauthorized('Message')` - 401
-- `HttpError.forbidden('Message')` - 403
-- `HttpError.notFound('Resource')` - 404
-- `HttpError.conflict('Message')` - 409
-- `HttpError.payloadTooLarge('Message')` - 413
-- `HttpError.unprocessable('Message', details)` - 422
-- `HttpError.rateLimit('Message')` - 429
-- `HttpError.internal('Message')` - 500
+When an `HttpError` is thrown, ExisJS returns a standardized JSON payload:
 
-### Direct Error Classes & Exceptions
-
-If you prefer a class-based approach, ExisJS exports every standard error as its own class. We also provide `Exception` aliases for every error class. You can import and throw them directly:
-
-```typescript filename="example.ts"
-import { 
-  NotFoundException, 
-  UnauthorizedException, 
-  BadRequestError, 
-  PayloadTooLargeError 
-} from 'exisjs/error'
-
-export const uploadMedia = (req, res) => {
-  if (req.headers['content-length'] > 10 * 1024 * 1024) {
-    throw new PayloadTooLargeError('File exceeds 10MB limit')
-  }
-}
-```
-
-### The Standardized Error Response Envelope
-
-When an `HttpError` is thrown or a validation failure occurs, the client automatically receives a standardized JSON payload with status codes, error descriptions, and ISO timestamps:
-
-```json filename="HTTP Error Response Envelope"
+```json filename="HTTP 404 Response"
 {
   "success": false,
   "statusCode": 404,
   "error": "Not Found",
   "message": "User not found",
   "validationErrors": null,
-  "timestamp": "2026-09-27T10:11:42.000Z"
+  "timestamp": "2026-10-02T12:45:00.000Z"
 }
 ```
 
-### Validation Error Responses & Diagnostic Visibility
+### Validation Error Responses
 
-When schema validation fails (via `tex`, Zod, or Yup), ExisJS produces a typed `400 Bad Request` containing both a concise `validationErrors` (and `errors`) map for seamless frontend form field binding:
+When schema validation fails (via `tex`, Zod, or Yup), ExisJS intercepts the validation failure and generates a structured `400 Bad Request` payload containing field-level error mappings:
 
-```json filename="HTTP 400 Bad Request Response"
+```json filename="HTTP 400 Validation Error Response"
 {
   "success": false,
   "statusCode": 400,
   "error": "Bad Request",
-  "message": "Validation Error: email: Invalid email format, age: Field must be >= 18",
+  "message": "Validation Error: email: Invalid email format, age: Minimum age is 18",
   "validationErrors": {
     "email": "Invalid email format",
-    "age": "Field must be >= 18"
+    "age": "Minimum age is 18"
   },
   "errors": {
     "email": "Invalid email format",
-    "age": "Field must be >= 18"
+    "age": "Minimum age is 18"
   },
-  "timestamp": "2026-09-27T10:11:42.000Z"
+  "details": [
+    {
+      "field": "email",
+      "message": "Invalid email format",
+      "expected": "Valid email address",
+      "received": "invalid-email",
+      "code": "INVALID_EMAIL",
+      "httpPart": "body"
+    },
+    {
+      "field": "age",
+      "message": "Minimum age is 18",
+      "expected": ">= 18",
+      "received": "16",
+      "code": "MIN_VALUE",
+      "httpPart": "body"
+    }
+  ],
+  "timestamp": "2026-10-02T12:45:00.000Z"
 }
 ```
 
-#### Development Terminal Diagnostics
+### Development Terminal Diagnostics
 
-In development mode, ExisJS automatically outputs formatted tabular diagnostics to the terminal displaying the exact HTTP part, field, received value, and expected requirement:
+In development mode (`NODE_ENV !== 'production'`), validation failures output a formatted diagnostic table to the console identifying the failed HTTP part (`body`, `query`, `params`, `headers`), field names, received values, and expected criteria:
 
 ```text
-[VALIDATION FAILED] POST /auth/register (part: body)
-┌─────────────┬───────────────────────────┬──────────────────┐
-│ Field       │ Received                  │ Expected         │
-├─────────────┼───────────────────────────┼──────────────────┤
-│ email       │ "alice"                   │ Valid email      │
-│ age         │ "16"                      │ min: 18          │
-└─────────────┴───────────────────────────┴──────────────────┘
+[Validation Failed] POST /auth/register (part: body)
+  ✖ email: Invalid email format
+  ✖ age: Minimum age is 18
+┌─────────────┬───────────────────────────┬──────────────────────────┐
+│ Field       │ Received                  │ Expected                 │
+├─────────────┼───────────────────────────┼──────────────────────────┤
+│ email       │ "invalid-email"           │ Valid email address      │
+│ age         │ "16"                      │ >= 18                    │
+└─────────────┴───────────────────────────┴──────────────────────────┘
 ```
 
-If you throw an unhandled exception (like a database connection failure or a `TypeError`), ExisJS catches it and securely returns a `500 Internal Server Error`, hiding the stack trace from the client in production mode while logging the full trace to your internal logger.
+---
 
-## Error Handling Decision Tree
+## Centralized Exception Handling (`src/http/error.ts`)
 
-To keep your codebase clean and consistent, use this decision tree when deciding how to handle errors:
+ExisJS supports an application-wide error handler convention located at `src/http/error.ts`. When this file is present, the framework routes all unhandled exceptions, validation errors, and uncaught rejections through this handler before sending the final HTTP response.
 
-1. **Is it a known client error (e.g., missing parameter, forbidden)?**
-   👉 **Throw an `HttpError` directly.** Let the framework format the 4xx response automatically.
-2. **Do you need to intercept an unexpected failure (e.g., Database Connection failure) globally?**
-   👉 **Use an Exception Filter (`catchError`) in `server.ts`.** Map the specific exception class to a 5xx response.
-3. **Do you need to intercept errors only for a specific route group (e.g., Admin Panel)?**
-   👉 **Use Local Error Hooks (`onError`) in the gateway/controller.** Keep the logic isolated to that specific module.
-4. **Is it standard 4-arg middleware from the Express ecosystem?**
-   👉 **Use `app.use(errorHandler)`** (where `errorHandler = (err, req, res, next) => {}`). ExisJS supports standard Connect/Express error middleware natively.
-
-## Extended Error Handling
-
-ExisJS provides mechanisms for granular and centralized error handling.
-
-### 1. Framework-Level Exception Handler (`src/http/error.ts`)
-
-Instead of writing manual `try/catch` blocks in every route or wiring `app.onError` inside `server.ts`, ExisJS provides a dedicated file convention: **`src/http/error.ts`** (or `src/http/*.error.ts`).
-
-When `src/http/error.ts` is present, ExisJS automatically discovers and mounts it during application boot as the global exception interceptor. Any uncaught exception, thrown `HttpError`, or validation failure anywhere in your application is routed to this file.
-
-#### Functional Paradigm
+### Functional Paradigm
 
 ```typescript filename="src/http/error.ts"
-import type { Request, Response } from 'exisjs'
-import { isDev } from 'exisjs/config'
+import type { ExisRequest, ExisResponse } from 'exisjs'
 
 /**
- * Global Framework Exception Handler
- * Auto-mounted at startup to intercept all unhandled exceptions and validation errors.
+ * Global application error handler.
+ * Automatically mounted during server bootstrap.
  */
-export function onError(err: any, req: Request, res: Response) {
+export function onError(err: any, req: ExisRequest, res: ExisResponse) {
   const status = err.statusCode || err.status || 500
-  const isOperational = Boolean(err.isOperational || err.statusCode < 500)
+  const isOperational = Boolean(err.isOperational || status < 500)
 
-  // 1. Log unexpected crashes in production to external APM (Sentry, Datadog, Axiom)
-  if (!isOperational && !isDev) {
-    // e.g. Sentry.captureException(err, { extra: { path: req.path, method: req.method } })
-    req.log.error({ err }, '[Fatal] Unhandled Server Exception')
+  // Log non-operational server crashes to telemetry / APM
+  if (!isOperational && process.env.NODE_ENV === 'production') {
+    req.log.error({ err, path: req.path, method: req.method }, 'Unhandled server crash')
   }
 
-  // 2. Format a unified, standard error envelope for client applications
   res.status(status).json({
     success: false,
+    statusCode: status,
     error: {
       code: err.code || (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'ERROR'),
-      message: err.message || 'Internal Server Error',
+      message: err.message || 'An unexpected error occurred',
       ...(err.details ? { details: err.details } : {}),
       ...(err.errors ? { errors: err.errors } : {}),
       path: req.path,
@@ -209,26 +228,26 @@ export function onError(err: any, req: Request, res: Response) {
 }
 ```
 
-#### Class-Based (OOP) Paradigm
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/error.ts"
-import type { Request, Response } from 'exisjs'
-import { isDev } from 'exisjs/config'
+import type { ExisRequest, ExisResponse } from 'exisjs'
 
 export default class GlobalErrorHandler {
-  onError(err: any, req: Request, res: Response) {
+  onError(err: any, req: ExisRequest, res: ExisResponse) {
     const status = err.statusCode || err.status || 500
-    const isOperational = Boolean(err.isOperational || err.statusCode < 500)
+    const isOperational = Boolean(err.isOperational || status < 500)
 
-    if (!isOperational && !isDev) {
-      req.log.error({ err }, '[Fatal] Unhandled Server Exception')
+    if (!isOperational && process.env.NODE_ENV === 'production') {
+      req.log.error({ err, path: req.path, method: req.method }, 'Unhandled server crash')
     }
 
     res.status(status).json({
       success: false,
+      statusCode: status,
       error: {
         code: err.code || (status === 500 ? 'INTERNAL_SERVER_ERROR' : 'ERROR'),
-        message: err.message || 'Internal Server Error',
+        message: err.message || 'An unexpected error occurred',
         ...(err.details ? { details: err.details } : {}),
         path: req.path,
         timestamp: new Date().toISOString(),
@@ -238,249 +257,127 @@ export default class GlobalErrorHandler {
 }
 ```
 
-> [!TIP]
-> **Scaffold with CLI**: You can generate this file instantly using the ExisJS CLI:
-> ```bash
-> npx exis generate error
-> # or shorthand:
-> npx exis g error
-> ```
+---
 
-#### What `src/http/error.ts` Intercepts:
-- **`HttpError` instances**: (e.g. `throw HttpError.notFound()`, `throw HttpError.unauthorized()`).
-- **Validation failures**: Zod, Tex, or Yup validation rejections automatically pass structured `err.errors` and `err.details`.
-- **Database / Network exceptions**: Postgres connection failures, timeout rejections, and third-party API errors.
-- **Syntax errors**: Malformed JSON bodies or bad request payloads.
+## Exception Filters (`@Catch` & `catchError`)
 
+Exception filters allow you to bind error-handling logic to specific exception types, preventing repetitive `try/catch` boilerplate across service layers.
 
-### 2. Exception Filters (`catchError`)
+### Middleware-Based Exception Filter (`catchError`)
 
-ExisJS allows you to create **Exception Filters** to globally intercept specific types of errors. 
-
-Using the `catchError` middleware, you can map specific custom errors to custom responses globally:
-
-### Functional Paradigm
+Use the `catchError` middleware to intercept specific error classes at the server or boundary level:
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
 import { catchError } from 'exisjs/middleware'
 
-export class DatabaseConnectionError extends Error {
-  constructor(message: string) {
+export class DatabaseTimeoutError extends Error {
+  constructor(message = 'Database query timed out') {
     super(message)
-    this.name = 'DatabaseConnectionError'
+    this.name = 'DatabaseTimeoutError'
   }
 }
 
 export default exis({
   async onStart(app) {
-    // Globally intercept DatabaseConnectionError
-    app.use(catchError(DatabaseConnectionError, (err, req, res) => {
+    // Intercept DatabaseTimeoutError globally and map to a 503 response
+    app.use(catchError(DatabaseTimeoutError, (err, req, res) => {
       res.status(503).json({
         success: false,
-        error: { code: 'DB_OFFLINE', message: err.message }
+        statusCode: 503,
+        error: {
+          code: 'DATABASE_UNAVAILABLE',
+          message: err.message,
+        },
       })
     }))
   }
 })
 ```
 
-### Class-Based (OOP) Paradigm
+### OOP Exception Filters (`@Catch` & `ExceptionFilter`)
 
-```typescript filename="src/http/server.ts"
-import { Server } from 'exisjs/decorators'
-import { catchError } from 'exisjs/middleware'
-import type { App } from 'exisjs'
+In class-based applications, implement the `ExceptionFilter<T>` interface and bind it using `@UseFilters()` or `@Use()`:
 
-export class DatabaseConnectionError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'DatabaseConnectionError'
-  }
-}
-
-@Server()
-export default class RootServer {
-  async onStart(app: App) {
-    // Globally intercept DatabaseConnectionError
-    app.use(catchError(DatabaseConnectionError, (err, req, res) => {
-      res.status(503).json({
-        success: false,
-        error: { code: 'DB_OFFLINE', message: err.message }
-      })
-    }))
-  }
-}
-```
-
-This prevents you from having to write `try/catch` blocks in every single route just to handle standard database failures.
-
-### 2. Local Error Hooks (`onError`)
-
-If you want to catch errors only within a specific module or route grouping, you can use the `onError` hook directly in your controller definition.
-
-When a controller throws an error, the local `onError` hook will intercept it before it reaches the global error handler.
-
-### Functional Paradigm
-
-```typescript filename="src/http/users/route.ts"
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  // This local hook catches errors thrown by the routes in this controller
-  onError: (err, req, res) => {
-    console.log('Users Controller Error Handler Caught:', err.message)
-    res.status(400).json({ success: false, localError: err.message })
-  },
-
-  crash: route.get('/crash', async () => {
-    // This error will be caught by the local onError hook
-    throw new Error("Something went wrong in the users module")
-  })
-})
-```
-
-### Class-Based (OOP) Paradigm
-
-You can use function handlers or structured class-based `ExceptionFilter` implementations with `@Catch()`:
-
-```typescript filename="src/http/filters/not-found.filter.ts"
+```typescript filename="src/http/filters/database.filter.ts"
 import { Catch, type ExceptionFilter, type ArgumentsHost } from 'exisjs/decorators'
-import { NotFoundException } from 'exisjs/error'
+import { DatabaseTimeoutError } from '../errors/database-timeout.error'
 
-@Catch(NotFoundException)
-export class NotFoundExceptionFilter implements ExceptionFilter<NotFoundException> {
-  catch(exception: NotFoundException, host: ArgumentsHost) {
+@Catch(DatabaseTimeoutError)
+export class DatabaseExceptionFilter implements ExceptionFilter<DatabaseTimeoutError> {
+  catch(exception: DatabaseTimeoutError, host: ArgumentsHost) {
     const { res } = host
-    res.status(404).json({
-      statusCode: 404,
-      error: 'Not Found',
-      message: exception.message,
+    
+    res.status(503).json({
+      success: false,
+      statusCode: 503,
+      error: {
+        code: 'DATABASE_TIMEOUT',
+        message: exception.message,
+      },
       timestamp: new Date().toISOString(),
     })
   }
 }
 ```
 
+Attach the filter to a controller or specific route method:
+
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get, UseFilters, Use } from 'exisjs/decorators'
-import { NotFoundException } from 'exisjs/error'
-import { NotFoundExceptionFilter } from '../filters/not-found.filter'
+import { Controller, Get, UseFilters } from 'exisjs/decorators'
+import { DatabaseExceptionFilter } from '../filters/database.filter'
 
 @Controller('/users')
-@Use(NotFoundExceptionFilter) // or @UseFilters(NotFoundExceptionFilter)
+@UseFilters(DatabaseExceptionFilter)
 export default class UsersController {
-  @Get('/:id')
-  async getUser() {
-    throw new NotFoundException('User')
+  @Get('/metrics')
+  async getMetrics() {
+    // If this throws DatabaseTimeoutError, DatabaseExceptionFilter handles it
+    return await db.queryMetrics()
   }
 }
 ```
 
-By combining Exception Filters and Local Error Hooks, ExisJS gives you complete control over your error boundaries.
+---
 
-## Observability (BYOM/BYOT)
+## Local Controller Error Handlers (`onError`)
 
-ExisJS ships with tracing and metric adapters. Instead of tying you to a specific telemetry ecosystem, ExisJS lets you **Bring Your Own Metrics** (BYOM) and **Bring Your Own Tracer** (BYOT).
-
-### Metrics
-
-You can use the `metrics` middleware to track request durations and counts.
+For localized error boundaries that apply only to routes within a single controller, define an `onError` hook directly on the controller.
 
 ### Functional Paradigm
 
-```typescript filename="src/http/boundary.ts"
-import { defineBoundary } from 'exisjs/router'
-import { metrics } from 'exisjs/observability'
+```typescript filename="src/http/billing/route.ts"
+import { controller, route } from 'exisjs/router'
 
-const myPrometheusAdapter = {
-  onRequestStart: ({ method, path }) => {
-    // A request just started. Start a timer.
-    return ({ statusCode, durationMs }) => {
-      // The request just finished. Push to Prometheus.
-      console.log(`[Metrics] ${method} ${path} took ${durationMs}ms with status ${statusCode}`)
-    }
-  }
-}
-
-export const config = defineBoundary({
-  middleware: [metrics(myPrometheusAdapter)]
-})
-```
-
-### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/boundary.ts"
-import { Boundary } from 'exisjs/decorators'
-import { metrics } from 'exisjs/observability'
-
-const myPrometheusAdapter = {
-  onRequestStart: ({ method, path }) => {
-    return ({ statusCode, durationMs }) => {
-      console.log(`[Metrics] ${method} ${path} took ${durationMs}ms with status ${statusCode}`)
-    }
-  }
-}
-
-@Boundary({
-  middleware: [metrics(myPrometheusAdapter)]
-})
-export default class RootBoundary {}
-```
-
-*Note: ExisJS normalizes dynamic paths (e.g., turning `/users/123` into `/users/:id`) to prevent metrics cardinality issues.*
-
-### OpenTelemetry Tracing
-
-ExisJS seamlessly integrates with OpenTelemetry (OTel) via the `tracing` middleware.
-
-### Functional Paradigm
-
-```typescript filename="src/http/boundary.ts"
-import { defineBoundary } from 'exisjs/router'
-import { tracing } from 'exisjs/observability'
-
-const myOtelAdapter = {
-  startActiveSpan: (name, metadata, callback) => {
-    // Create an OTel span
-    const span = tracer.startSpan(name)
-    // Run the callback and pass the span proxy
-    callback({
-      setAttribute: (k, v) => span.setAttribute(k, v),
-      setStatus: (status) => span.setStatus(status),
-      recordException: (e) => span.recordException(e),
-      end: () => span.end()
+export default controller({
+  // Intercepts all errors thrown by routes in this controller
+  onError(err, req, res) {
+    req.log.warn({ err }, 'Billing operation failed')
+    res.status(402).json({
+      success: false,
+      statusCode: 402,
+      error: {
+        code: 'PAYMENT_REQUIRED',
+        message: err.message,
+      },
     })
-  }
-}
+  },
 
-export const config = defineBoundary({
-  middleware: [tracing(myOtelAdapter)]
+  checkout: route.post('/checkout', {
+    async handle({ body }) {
+      throw new Error('Insufficient funds')
+    }
+  })
 })
 ```
 
-### Class-Based (OOP) Paradigm
+---
 
-```typescript filename="src/http/boundary.ts"
-import { Boundary } from 'exisjs/decorators'
-import { tracing } from 'exisjs/observability'
+## Unhandled Errors in Production vs Development
 
-const myOtelAdapter = {
-  startActiveSpan: (name, metadata, callback) => {
-    const span = tracer.startSpan(name)
-    callback({
-      setAttribute: (k, v) => span.setAttribute(k, v),
-      setStatus: (status) => span.setStatus(status),
-      recordException: (e) => span.recordException(e),
-      end: () => span.end()
-    })
-  }
-}
+ExisJS handles uncaught non-operational errors (such as unexpected `TypeError` or unhandled promise rejections) based on `NODE_ENV`:
 
-@Boundary({
-  middleware: [tracing(myOtelAdapter)]
-})
-export default class RootBoundary {}
-```
-
-By providing these standard interfaces natively, your application metrics and traces are bound to the ExisJS router lifecycle.
+- **Production (`NODE_ENV === 'production'`)**: Returns a generic `500 Internal Server Error` without leaking stack traces, internal variables, or system paths. The complete stack trace is written to the structured logger.
+- **Development (`NODE_ENV !== 'production'`)**:
+  - For JSON clients (`Accept: application/json`): Returns the error message and complete stack trace in the JSON envelope.
+  - For browser clients (`Accept: text/html`): Renders an interactive diagnostic error overlay with visual code frames and file locations.

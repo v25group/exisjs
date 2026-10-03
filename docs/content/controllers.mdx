@@ -1,183 +1,134 @@
 ---
-nextUrl: "/docs/providers"
-nextTitle: "Providers"
+title: 'Class-Based Controllers'
+description: 'Defining Object-Oriented controllers with TypeScript decorators, route methods, parameter injection, pipes, and inheritance.'
+nextUrl: '/docs/requests'
+nextTitle: 'Request Object'
 ---
 
-# Controllers
+# Class-Based Controllers
 
-Controllers are responsible for handling incoming requests and sending responses back to the client.
+ExisJS provides an Object-Oriented Programming (OOP) paradigm for developers who prefer class-based architecture, TypeScript decorators, and constructor-based Dependency Injection.
 
-A controller's purpose is to handle specific requests for the application. The routing mechanism determines which controller will handle each request. Often, a controller has multiple routes, and each route can perform a different action.
+---
 
-While ExisJS natively supports Functional Routing, developers coming from enterprise backgrounds often prefer Object-Oriented patterns. To create a basic OOP controller, we use classes and decorators. Decorators link classes with the necessary metadata, allowing ExisJS to automatically route requests.
+## Defining a Controller
 
-## Routing & Prefixes
-
-In the following example, we'll use the `@Controller()` decorator, which is required to define a basic OOP controller. We'll specify an optional route path prefix of `users`. Using a path prefix helps group related routes together.
+To declare a class-based controller, decorate a class with `@Controller()` and export it as default from a `route.ts` or `<name>.route.ts` file located inside `src/http/`:
 
 ```typescript filename="src/http/users/route.ts"
-import { Controller, Get } from 'exisjs/decorators'
+import { Controller, Get, Post, Body, ApiOperation } from 'exisjs/decorators'
 
-@Controller('users')
+@Controller()
 export default class UsersController {
-  @Get()
-  findAll(): any[] {
+  @Get('/')
+  @ApiOperation({ summary: 'List all users' })
+  async listUsers() {
     return [
       { id: 1, name: 'Alice' },
-      { id: 2, name: 'Bob' }
+      { id: 2, name: 'Bob' },
     ]
   }
-}
-```
 
-The `@Get()` HTTP request method decorator placed before the `findAll()` method tells ExisJS to create a handler for GET requests. Because the controller has a prefix of `users`, this endpoint maps to `GET /users`. If we used `@Get('active')`, it would map to `GET /users/active`.
-
-## Request Object
-
-Handlers often need access to the client’s request details. You can access the request object by injecting it using the `@Req()` decorator.
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Req } from 'exisjs/decorators'
-import type { Request } from 'exisjs/router'
-
-@Controller('users')
-export default class UsersController {
-  @Get()
-  findAll(@Req() request: Request): any[] {
-    console.log(request.ip, request.headers)
-    return []
+  @Post('/')
+  @ApiOperation({ summary: 'Create user' })
+  async createUser(@Body() body: { name: string; email: string }) {
+    return { id: 3, ...body }
   }
 }
 ```
 
-In most cases, you don't need to manually access the entire request object. Instead, you can use dedicated decorators provided out of the box:
+> [!NOTE]
+> Route paths defined on `@Controller('/prefix')` or HTTP method decorators (`@Get('/subpath')`) are combined relative to the directory location inside `src/http/`.
 
-<div className="overflow-x-auto mb-6">
-  <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
-    <thead className="bg-muted/50 text-foreground">
-      <tr>
-        <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Decorator</th>
-        <th className="px-4 py-3 border-b border-border/50 font-semibold">Represents</th>
-      </tr>
-    </thead>
-    <tbody className="divide-y divide-border/50">
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Req()</td>
-        <td className="px-4 py-3 text-muted-foreground">The raw HTTP Request object</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Res()</td>
-        <td className="px-4 py-3 text-muted-foreground">The raw HTTP Response object</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Param(key?)</td>
-        <td className="px-4 py-3 text-muted-foreground">URL Path Parameters (e.g. req.params.id)</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Body(key?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Parsed Request Body</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Query(key?)</td>
-        <td className="px-4 py-3 text-muted-foreground">URL Query Parameters</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Headers(name?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Specific HTTP Header</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>HostParam(name?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Subdomain / Host route parameter</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Session()</td>
-        <td className="px-4 py-3 text-muted-foreground">The request session object</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Next()</td>
-        <td className="px-4 py-3 text-muted-foreground">Next middleware function in pipeline</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Ip()</td>
-        <td className="px-4 py-3 text-muted-foreground">The client's IP address</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Cookies(name?) / <span className="text-primary">@</span>Cookie(name?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Incoming parsed cookies or specific cookie value</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>State(key?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Request state from execution context or middleware</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>AppCtx()</td>
-        <td className="px-4 py-3 text-muted-foreground">The root ExisJS Application instance</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>Fields(name?)</td>
-        <td className="px-4 py-3 text-muted-foreground">Non-file multipart form fields</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFile()</td>
-        <td className="px-4 py-3 text-muted-foreground">A single uploaded file (multipart/form-data)</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs"><span className="text-primary">@</span>UploadedFiles()</td>
-        <td className="px-4 py-3 text-muted-foreground">Array or dictionary of uploaded files</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+---
 
-## Payloads & Validation
+## HTTP Method Decorators
 
-For POST, PUT, and PATCH endpoints, you can validate and read incoming payloads using either method-level schemas or parameter-level `@Body(Schema)` decorators:
+ExisJS exposes decorators for all standard HTTP verbs:
+
+| Decorator | HTTP Method | Example |
+| :--- | :--- | :--- |
+| `@Get(path?, schema?)` | `GET` | `@Get('/')` |
+| `@Post(path?, schema?)` | `POST` | `@Post('/')` |
+| `@Put(path?, schema?)` | `PUT` | `@Put('/:id')` |
+| `@Patch(path?, schema?)` | `PATCH` | `@Patch('/:id')` |
+| `@Delete(path?, schema?)` | `DELETE` | `@Delete('/:id')` |
+| `@Options(path?, schema?)` | `OPTIONS` | `@Options('/')` |
+| `@Head(path?, schema?)` | `HEAD` | `@Head('/')` |
+| `@Connect(path?, schema?)` | `CONNECT` | `@Connect('/')` |
+| `@Trace(path?, schema?)` | `TRACE` | `@Trace('/')` |
+| `@Query(path?, schema?)` | `QUERY` | `@Query('/search')` |
+| `@All(path?, schema?)` | Matches any method | `@All('*')` |
+
+---
+
+## Parameter Decorators
+
+ExisJS provides dedicated parameter decorators to extract and inject request data directly into controller method arguments:
+
+| Decorator | Source / Injected Value | Example |
+| :--- | :--- | :--- |
+| `@Req()` | The raw `ExisRequest` instance | `getUser(@Req() req: Request)` |
+| `@Res(options?)` | The `ExisResponse` instance | `send(@Res() res: Response)` |
+| `@Param(name?)` | Route path parameter (`req.params`) | `getById(@Param('id') id: string)` |
+| `@Body(schemaOrPipe?)` | Parsed request body payload (`req.body`) | `create(@Body() body: CreateDto)` |
+| `@Query(nameOrPipe?)` / `@QueryParam(name?)` | URL query parameter (`req.query`) | `search(@Query('q') q: string)` |
+| `@Headers(name?)` | Request headers (`req.headers`) | `auth(@Headers('authorization') token: string)` |
+| `@HostParam(name?)` | Subdomain or host parameter | `handleHost(@HostParam('tenant') tenant: string)` |
+| `@Cookies(name?)` / `@Cookie(name?)` | Parsed request cookies | `session(@Cookie('sid') sid: string)` |
+| `@Ip()` | Client IP address (`req.ip`) | `audit(@Ip() clientIp: string)` |
+| `@Session()` | Active session state (`req.session`) | `profile(@Session() session: any)` |
+| `@State(key?)` | AsyncLocalStorage context state | `getState(@State('tenantId') id: string)` |
+| `@AppCtx()` | Root ExisJS Application instance | `boot(@AppCtx() app: App)` |
+| `@UploadedFile()` | Single uploaded file from multipart form | `upload(@UploadedFile() file: ExisFile)` |
+| `@UploadedFiles()` | Array or map of uploaded files | `upload(@UploadedFiles() files: ExisFile[])` |
+| `@Next()` | Next middleware function | `passthrough(@Next() next: NextFunction)` |
+
+---
+
+## Request Validation with `tex` Schemas
+
+You can validate incoming request bodies and parameters by passing schemas to method decorators or directly to parameter decorators:
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Post, Body, HttpCode } from 'exisjs/decorators'
-import { tex } from 'exisjs/validator'
-import type { ResolveSchema } from 'exisjs/validator'
+import { tex, type ResolveSchema } from 'exisjs/validator'
 
-export const CreateUserSchema = tex.object({
+export const createUserSchema = tex.object({
   name: tex.string({ min: 2 }),
   email: tex.email(),
-  role: tex.enum(['admin', 'user'], { default: 'user' }),
+  role: tex.enum(['admin', 'member'], { default: 'member' }),
 })
 
-export type CreateUserDto = ResolveSchema<typeof CreateUserSchema>
+export type CreateUserDto = ResolveSchema<typeof createUserSchema>
 
-@Controller('users')
+@Controller()
 export default class UsersController {
-  // 1. Parameter-level validation schema
-  @Post('/')
+  @Post('/', { body: createUserSchema })
   @HttpCode(201)
-  async create(@Body(CreateUserSchema) dto: CreateUserDto) {
-    return { id: 3, ...dto }
-  }
-
-  // 2. Or method-level schema object
-  @Post('/raw', { body: CreateUserSchema })
-  async createWithMethodSchema(@Body() dto: CreateUserDto) {
-    return { id: 4, ...dto }
+  async create(@Body() dto: CreateUserDto) {
+    return { id: Date.now(), ...dto }
   }
 }
 ```
 
+---
+
 ## Dependency Injection in Controllers
 
-Controllers can inject services using either the ergonomic `inject()` helper or standard constructor injection:
+Controllers support dependency injection through constructor injection or property-level injection via `inject()`:
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param } from 'exisjs/decorators'
 import { inject, Inject, Optional } from 'exisjs/di'
-import { UsersService } from './service'
+import { UserService } from './service'
 
-@Controller('users')
+@Controller()
 export default class UsersController {
-  // Approach A: Property-level injection (Recommended)
-  private usersService = inject(UsersService)
+  // 1. Property-level injection
+  private userService = inject(UserService)
 
-  // Approach B: Constructor injection
+  // 2. Constructor injection with custom tokens
   constructor(
     @Inject('DATABASE_URL') private dbUrl: string,
     @Optional() @Inject('METRICS') private metrics?: any
@@ -185,354 +136,16 @@ export default class UsersController {
 
   @Get('/:id')
   async getUser(@Param('id') id: string) {
-    return this.usersService.findById(id)
+    return this.userService.getUserById(id)
   }
 }
 ```
 
-## File Uploads
+---
 
-You can process file uploads in OOP controllers using `@UseUpload` or `@Upload` decorators alongside `@UploadedFile()` and `@UploadedFiles()`:
+## Parameter Transformation with Built-In Pipes
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Post, UseUpload, UploadedFile, Body } from 'exisjs/decorators'
-import type { UploadedFile as IUploadedFile } from 'exisjs/router'
-
-@Controller('users')
-export default class UsersController {
-  @Post('/avatar')
-  @UseUpload({
-    field: 'avatar',
-    maxBytes: 5 * 1024 * 1024,
-    mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
-  })
-  async uploadAvatar(
-    @UploadedFile() file: IUploadedFile,
-    @Body() body: { caption?: string }
-  ) {
-    return {
-      success: true,
-      filename: file.filename,
-      size: file.size,
-      caption: body.caption,
-    }
-  }
-}
-```
-
-## Streaming & Downloads
-
-OOP controllers support all streaming features including Node.js `Readable` streams, Web `ReadableStream`, async generators, and file downloads:
-
-```typescript filename="src/http/files/route.ts"
-import { Controller, Get, Res } from 'exisjs/decorators'
-import type { Response } from 'exisjs/router'
-import fs from 'node:fs'
-
-@Controller('files')
-export default class FilesController {
-  // 1. Force file download
-  @Get('/download')
-  download(@Res() res: Response) {
-    res.download('./reports/annual.pdf', 'Annual-Report.pdf')
-  }
-
-  // 2. Stream Node.js Readable or auto-pipe return value
-  @Get('/stream')
-  streamCsv() {
-    return fs.createReadStream('./data/export.csv')
-  }
-
-  // 3. Server-Sent Events (SSE)
-  @Get('/events')
-  events(@Res() res: Response) {
-    const sse = res.sse()
-    sse.send({ event: 'ping', data: { time: Date.now() } })
-  }
-}
-```
-
-## Status Codes & Headers
-
-By default, responses have a `200 OK` status (except POST which uses `201`). You can change this declaratively using the `@HttpCode()` and `@Header()` decorators.
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Post, HttpCode, Header } from 'exisjs/decorators'
-
-@Controller('users')
-export default class UsersController {
-  @Post()
-  @HttpCode(204)
-  @Header('Cache-Control', 'no-store')
-  create() {
-    return null // No Content
-  }
-}
-```
-
-## Extended Features
-
-ExisJS provides routing enhancements like Subdomain Routing, Redirects, and Passthrough Responses. These are supported across both paradigms.
-
-### Functional Paradigm
-
-```typescript filename="src/http/advanced/route.ts"
-import { controller, route } from 'exisjs/router'
-
-export default controller({
-  // 1. Subdomain Routing
-  ping: route.get('/ping', {
-    host: ':sub.exis.local',
-    handle({ req }) {
-      return { subdomain: (req.params as any).sub }
-    }
-  }),
-  // 2. Redirect
-  redirect: route.get('/redirect', {
-    handle({ res }) {
-      res.redirect('https://google.com')
-    }
-  }),
-  // 3. Passthrough Response
-  manual: route.get('/manual', {
-    handle({ res }) {
-      res.setHeader('X-Custom', 'true')
-      return { msg: 'This is auto-serialized with custom headers!' }
-    }
-  })
-})
-```
-
-### Class-Based (OOP) Paradigm
-
-```typescript filename="src/http/advanced/route.ts"
-import { Controller, Get, HostParam, Redirect, Res } from 'exisjs/decorators'
-import type { Response } from 'exisjs/router'
-
-// 1. Subdomain Routing
-@Controller({ host: ':sub.exis.local' })
-export class SubdomainController {
-  @Get('/ping')
-  ping(@HostParam('sub') sub: string) {
-    return { subdomain: sub }
-  }
-}
-
-@Controller('users')
-export class AdvancedController {
-  // 2. Redirect
-  @Get('/redirect')
-  @Redirect('https://google.com')
-  redirect() {}
-
-  // 3. Passthrough Response
-  @Get('/manual')
-  manual(@Res({ passthrough: true }) res: Response) {
-    res.setHeader('X-Custom', 'true')
-    return { msg: 'This is auto-serialized with custom headers!' }
-  }
-}
-```
-
-## Registration & Library-Specific Response
-
-Unlike frameworks where controllers must be registered manually in a module file, ExisJS uses Folder-Based Routing. To register a controller, you export default the class inside a `route.ts` file.
-
-If you need low-level control over the response, you can inject the native `@Res()` object.
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Res } from 'exisjs/decorators'
-import type { Response } from 'exisjs/router'
-
-@Controller('users')
-export default class UsersController {
-  @Get()
-  findAll(@Res() res: Response) {
-    res.status(200).json({ data: [] })
-  }
-}
-```
-
-## Controller Inheritance (Base & Abstract Controllers)
-
-ExisJS supports full OOP inheritance for controllers. You can create generic base or abstract CRUD controllers and inherit all route handlers, parameter decorators, middlewares, guards, interceptors, and filters down to subclasses:
-
-```typescript filename="src/http/base-crud.controller.ts"
-import { Get, Post, Delete, Param, Body } from 'exisjs/decorators'
-
-export abstract class BaseCrudController<T> {
-  protected abstract resourceName: string
-
-  @Get('/')
-  async findAll(): Promise<T[]> {
-    return []
-  }
-
-  @Get('/:id')
-  async findById(@Param('id') id: string): Promise<T> {
-    return { id, resource: this.resourceName } as any
-  }
-
-  @Delete('/:id')
-  async remove(@Param('id') id: string): Promise<{ deleted: boolean }> {
-    return { deleted: true }
-  }
-}
-```
-
-Subclasses inherit all parent endpoints and can add new routes or selectively override base methods:
-
-```typescript filename="src/http/users/route.ts"
-import { Controller, Post, Body, Param } from 'exisjs/decorators'
-import { BaseCrudController } from '../base-crud.controller'
-
-export interface User {
-  id: string
-  name: string
-}
-
-@Controller('/users')
-export default class UsersController extends BaseCrudController<User> {
-  protected resourceName = 'users'
-
-  // Subclass defines additional route
-  @Post('/')
-  async create(@Body() user: User) {
-    return { created: true, user }
-  }
-
-  // Subclass can override inherited remove handler
-  override async remove(@Param('id') id: string) {
-    return { deleted: true, id, customAudit: true }
-  }
-}
-```
-
-### Functional Controller Inheritance (`controller.extend`)
-
-In the functional paradigm, inheritance is achieved via `controller.extend(base, overrides)`. This inherits all route handlers, lifecycle hooks, and middlewares from a base controller factory and allows overriding endpoints or adding new routes with full type inference:
-
-```typescript filename="src/http/products/route.ts"
-import { controller, route } from 'exisjs/router'
-
-// 1. Generic functional base CRUD controller
-function createBaseCrud(resourceName: string) {
-  return controller({
-    list: route.get('/', {
-      async handle() {
-        return { resource: resourceName, items: [] }
-      }
-    }),
-    getById: route.get('/:id', {
-      async handle({ params }) {
-        return { resource: resourceName, id: params.id }
-      }
-    }),
-    remove: route.delete('/:id', {
-      async handle({ params }) {
-        return { deleted: true, id: params.id }
-      }
-    })
-  })
-}
-
-// 2. Extend base controller with overrides and additional routes
-export default controller.extend(createBaseCrud('products'), {
-  // Additional specialized route
-  featured: route.get('/featured', {
-    async handle() {
-      return { featured: ['Product 1', 'Product 2'] }
-    }
-  }),
-
-  // Override base endpoint
-  getById: route.get('/:id', {
-    async handle({ params }) {
-      return { customProduct: true, id: params.id }
-    }
-  })
-})
-```
-
-## Functional Controller Composition (`controller.merge`)
-
-When a single `route.ts` manages a feature area with multiple concerns (for example, auth flows containing credentials, sessions, and OAuth), `controller.merge(...controllers)` allows splitting logic into modular controller objects and merging them into a single default export:
-
-```typescript filename="src/http/auth/route.ts"
-import { controller, route } from 'exisjs/router'
-
-// 1. Modular controller for password authentication
-const passwordAuth = controller({
-  login: route.post('/login', {
-    async handle({ body }) {
-      return { token: 'jwt-auth-token' }
-    }
-  }),
-  logout: route.post('/logout', {
-    async handle() {
-      return { success: true }
-    }
-  })
-})
-
-// 2. Modular controller for OAuth providers
-const oauthProviders = controller({
-  google: route.get('/google', {
-    async handle() {
-      return { redirectUrl: 'https://accounts.google.com/o/oauth2/auth' }
-    }
-  }),
-  github: route.get('/github', {
-    async handle() {
-      return { redirectUrl: 'https://github.com/login/oauth/authorize' }
-    }
-  })
-})
-
-// 3. Merge both into the single exported controller for this folder
-export default controller.merge(passwordAuth, oauthProviders)
-```
-
-## Built-in Transformation Pipes & `@UsePipes`
-
-Pipes transform and validate incoming request data before it reaches the route handler. ExisJS provides built-in pipes for common primitives:
-
-<div className="overflow-x-auto mb-6">
-  <table className="w-full text-sm text-left border border-border/50 rounded-lg overflow-hidden">
-    <thead className="bg-muted/50 text-foreground">
-      <tr>
-        <th className="px-4 py-3 border-b border-border/50 font-semibold w-1/3">Pipe</th>
-        <th className="px-4 py-3 border-b border-border/50 font-semibold">Description</th>
-      </tr>
-    </thead>
-    <tbody className="divide-y divide-border/50">
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ParseIntPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Parses string/number parameter into integer or throws 400 Bad Request</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ParseFloatPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Parses parameter into floating-point number</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ParseBoolPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Parses boolean strings (<code>'true'</code>, <code>'false'</code>, <code>1</code>, <code>0</code>) into native booleans</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ParseUUIDPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Validates UUID format (v3, v4, v5, or all)</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ParseArrayPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Splits comma-separated strings into arrays and applies item pipes</td>
-      </tr>
-      <tr className="bg-background hover:bg-muted/30 transition-colors">
-        <td className="px-4 py-3 font-mono text-xs">ValidationPipe</td>
-        <td className="px-4 py-3 text-muted-foreground">Validates and transforms DTO classes or schema metatypes</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
+Pipes transform and validate incoming request data before your controller method executes. If validation fails, pipes throw an appropriate `HttpError` (e.g., `400 Bad Request`):
 
 ```typescript filename="src/http/items/route.ts"
 import {
@@ -552,13 +165,13 @@ import {
 
 @Controller('/items')
 export default class ItemsController {
-  // 1. Parameter-level pipe
+  // Parses string route parameter to integer
   @Get('/:id')
   async getItem(@Param('id', ParseIntPipe) id: number) {
-    return { id, isNumber: typeof id === 'number' }
+    return { id, type: typeof id }
   }
 
-  // 2. Query boolean & array pipes
+  // Validates boolean query string and comma-separated integer array
   @Get('/')
   async listItems(
     @Query('active', ParseBoolPipe) active: boolean,
@@ -567,13 +180,13 @@ export default class ItemsController {
     return { active, ids }
   }
 
-  // 3. UUID validation pipe
+  // Validates standard UUID format
   @Get('/by-uuid/:uuid')
   async getByUUID(@Param('uuid', ParseUUIDPipe) uuid: string) {
     return { uuid }
   }
 
-  // 4. Method-level or Class-level @UsePipes
+  // Method-level validation pipe
   @Post('/')
   @UsePipes(new ValidationPipe({ transform: true }))
   async createItem(@Body() body: any) {
@@ -582,7 +195,123 @@ export default class ItemsController {
 }
 ```
 
-<Info title="Tip: Safely Returning with @Res">
-In some frameworks, injecting the `@Res()` object disables auto-serialization, causing the request to hang if you forget to call `res.send()`. ExisJS handles this differently: if you return a value from your handler, ExisJS will still safely auto-serialize it to JSON even if you injected `@Res()` to set a custom header.
-</Info>
+---
 
+## Status Codes, Headers & Redirects
+
+You can customize response status codes, HTTP headers, and URL redirects declaratively using decorators:
+
+```typescript filename="src/http/orders/route.ts"
+import { Controller, Post, Get, HttpCode, Header, Redirect } from 'exisjs/decorators'
+
+@Controller()
+export default class OrdersController {
+  @Post('/')
+  @HttpCode(204)
+  @Header('Cache-Control', 'no-store')
+  async createOrder() {
+    return null
+  }
+
+  @Get('/legacy-checkout')
+  @Redirect('/checkout', 301)
+  legacyCheckout() {}
+}
+```
+
+---
+
+## Multipart File Uploads
+
+Handle file uploads using the `@Upload` (or `@UseUpload`) decorator alongside `@UploadedFile()` and `@UploadedFiles()`:
+
+```typescript filename="src/http/avatar/route.ts"
+import { Controller, Post, Upload, UploadedFile, Body } from 'exisjs/decorators'
+import type { ExisFile } from 'exisjs/router'
+
+@Controller()
+export default class AvatarController {
+  @Post('/')
+  @Upload('avatar', {
+    maxBytes: 5 * 1024 * 1024,
+    mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  })
+  async uploadAvatar(
+    @UploadedFile() file: ExisFile,
+    @Body('caption') caption?: string
+  ) {
+    await file.saveToDisk('./uploads')
+    return {
+      filename: file.filename,
+      size: file.size,
+      caption,
+    }
+  }
+}
+```
+
+---
+
+## Controller Inheritance
+
+ExisJS supports Object-Oriented class inheritance. Subclasses inherit all route handlers, parameter decorators, validation rules, and guards from base controllers:
+
+### Base Generic Controller
+
+```typescript filename="src/http/base-crud.controller.ts"
+import { Get, Delete, Param } from 'exisjs/decorators'
+
+export abstract class BaseCrudController<T> {
+  protected abstract service: {
+    findAll: () => Promise<T[]>
+    findById: (id: string) => Promise<T | null>
+    remove: (id: string) => Promise<boolean>
+  }
+
+  @Get('/')
+  async findAll(): Promise<T[]> {
+    return this.service.findAll()
+  }
+
+  @Get('/:id')
+  async findById(@Param('id') id: string): Promise<T | null> {
+    return this.service.findById(id)
+  }
+
+  @Delete('/:id')
+  async remove(@Param('id') id: string): Promise<{ deleted: boolean }> {
+    const deleted = await this.service.remove(id)
+    return { deleted }
+  }
+}
+```
+
+### Concrete Controller Subclass
+
+```typescript filename="src/http/users/route.ts"
+import { Controller, Post, Body } from 'exisjs/decorators'
+import { BaseCrudController } from '../base-crud.controller'
+import { UserService, type User } from './service'
+
+@Controller()
+export default class UsersController extends BaseCrudController<User> {
+  constructor(protected readonly service: UserService) {
+    super()
+  }
+
+  // Add specialized endpoint
+  @Post('/')
+  async create(@Body() user: User) {
+    return this.service.create(user)
+  }
+}
+```
+
+---
+
+## Next Steps
+
+- **[Request Object](/docs/requests)**: Inspect headers, query strings, and custom context on `ExisRequest`.
+- **[Response Helpers](/docs/responses)**: Response shaping, custom cookies, streaming, and Server-Sent Events.
+- **[Providers & DI](/docs/providers)**: Deep dive into the IoC container and custom provider lifecycles.
+- **[Boundaries](/docs/boundaries)**: Apply scoped middleware and guards to entire controller directories.

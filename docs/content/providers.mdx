@@ -1,169 +1,160 @@
 ---
-nextUrl: "/docs/gateways"
-nextTitle: "Gateways"
+title: "Dependency Injection and Providers"
+description: "Manage dependencies, services, provider lifecycles, injection scopes, and database integration using the ExisJS Inversion of Control container."
+nextUrl: "/docs/modules"
+nextTitle: "Modules"
 ---
 
-# Providers
+# Dependency Injection and Providers
 
-Providers are a fundamental concept in ExisJS. Many of the basic classes may be treated as a provider: services, repositories, factories, helpers, and so on.
+Providers in ExisJS represent classes and values managed by the Inversion of Control (IoC) Dependency Injection (DI) container. Services, repositories, configuration factories, and database clients can be registered as providers and injected into controllers, routes, and other services.
 
-The main idea of a provider is that it can be injected as a dependency; this means objects can create various relationships with each other, and the function of "wiring up" instances of objects can largely be delegated to the ExisJS runtime system.
+---
 
-## Services
+## Defining Injectable Services
 
-Let's start by creating a simple `UsersService`. This service will be responsible for data storage and retrieval, and is designed to be used by the `UsersController`. 
-
-To mark a class as a provider that the ExisJS Inversion of Control (IoC) container can manage, we use the `@Injectable()` decorator.
+To make a class discoverable by the IoC container, annotate it with the `@Injectable()` decorator.
 
 ```typescript filename="src/http/users/service.ts"
 import { Injectable } from 'exisjs/decorators'
 
 export interface User {
-  id: string;
-  email: string;
+  id: string
+  name: string
+  email: string
 }
 
-@Injectable({ scope: 'singleton' })
+@Injectable()
 export class UsersService {
-  private readonly users: User[] = []
+  private users: User[] = []
 
-  create(user: User) {
-    this.users.push(user)
+  async findAll(): Promise<User[]> {
+    return this.users
   }
 
-  findAll(): User[] {
-    return this.users
+  async create(user: User): Promise<User> {
+    this.users.push(user)
+    return user
   }
 }
 ```
 
-Now that we have a service class to retrieve users, let's use it inside the `UsersController`. ExisJS provides a powerful `inject()` primitive that automatically resolves dependencies from the current context.
+---
+
+## Injecting Dependencies
+
+ExisJS supports three injection patterns:
+1. **Contextual Injection (`inject()`)**: Used in functional route handlers, middleware, and boundaries.
+2. **Constructor Injection**: Automatically resolves types from constructor parameters in OOP classes.
+3. **Property Field Injection (`@Inject()`)**: Injects dependencies directly into class properties.
+
+### Functional Route Context (`inject()`)
+
+In the functional paradigm, call `inject(Token)` inside route handlers, middleware, or boundaries. The container resolves the dependency from the active execution context:
+
+```typescript filename="src/http/users/route.ts"
+import { controller, route } from 'exisjs/router'
+import { inject } from 'exisjs/di'
+import { UsersService } from './service'
+
+export default controller({
+  list: route.get('/', {
+    async handle({ res }) {
+      const usersService = inject(UsersService)
+      const users = await usersService.findAll()
+      res.json({ users })
+    },
+  }),
+})
+```
+
+### OOP Constructor and Property Injection
+
+In class-based controllers and services, dependencies declared in the constructor are automatically resolved using TypeScript's emitted metadata (`design:paramtypes`):
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Body } from 'exisjs/decorators'
-import { inject } from 'exisjs/di'
+import { Inject, Optional } from 'exisjs/di'
 import { UsersService, User } from './service'
+import { MetricsService } from '../../services/metrics.service'
 
-@Controller('users')
+@Controller('/users')
 export default class UsersController {
-  
-  // Clean, ergonomic dependency injection
-  private usersService = inject(UsersService)
+  // Property injection with an optional token
+  @Inject('METRICS_SERVICE')
+  @Optional()
+  private metrics?: MetricsService
 
-  @Post()
-  async create(@Body() user: User) {
-    this.usersService.create(user)
-    return { success: true }
-  }
+  // Automatic constructor injection
+  constructor(private usersService: UsersService) {}
 
-  @Get()
-  async findAll() {
+  @Get('/')
+  async list() {
+    this.metrics?.track('get_users')
     return this.usersService.findAll()
   }
-}
-```
 
-<Info title="Note on Dependency Injection">
-ExisJS provides two elegant ways to inject dependencies:
-1. **Property-Level / Functional Injection**: Use `inject(UsersService)` for concise, boilerplate-free injection.
-2. **Constructor Injection**: In OOP controllers and services, ExisJS inspects TypeScript's emitted `design:paramtypes` and `INJECTABLE_REGISTRY` to automatically inject service instances into constructor parameters (`constructor(private usersService: UsersService)`) without requiring explicit `@Inject()` decorators on every parameter!
-</Info>
-
-### Extended: Manual Resolution
-If you are operating completely outside of an ExisJS controller or route (for example, in a background worker, CRON job, or a raw script like a database seeder), you can manually resolve dependencies as an escape hatch via the app container:
-
-```typescript filename="scripts/seed.ts"
-import { getActiveApp } from 'exisjs/app'
-import { UsersService } from './service'
-
-const app = getActiveApp()
-const usersService = app.container.resolve(UsersService)
-```
-
-## Service Lifecycle Hooks
-
-ExisJS `@Injectable()` services can implement lifecycle interfaces. When the application starts up or shuts down gracefully, ExisJS automatically triggers these hooks on all managed singletons:
-
-```typescript filename="src/http/database/service.ts"
-import { Injectable, type OnInit, type OnDestroy } from 'exisjs/decorators'
-
-@Injectable()
-export class DatabaseService implements OnInit, OnDestroy {
-  async onInit(): Promise<void> {
-    // Invoked automatically during app startup (app.create / app.listen)
-    await this.connectPool()
-  }
-
-  async onDestroy(): Promise<void> {
-    // Invoked automatically during graceful termination (app.close / SIGINT / SIGTERM)
-    await this.drainPool()
+  @Post('/')
+  async create(@Body() user: User) {
+    return this.usersService.create(user)
   }
 }
 ```
 
-## Service Method Enhancements
+---
 
-You can supercharge service methods with off-heap caching, automated transaction wrapping, and SLA performance profiling:
+## Provider Tokens and Custom Providers
 
-```typescript filename="src/http/users/service.ts"
-import { Injectable, Cacheable, CacheEvict, Transactional, Profile } from 'exisjs/decorators'
+By default, passing a class constructor to the container creates an instance of that class. You can also register custom providers using string or symbol tokens, explicit values, factory functions with injected dependencies, or token aliases via `app.provide()` or module provider arrays.
 
-@Injectable()
-export class UsersService {
-  constructor(private db: DatabaseService) {}
+### Provider Types
 
-  // Caches return values off-heap in Rust LRU cache
-  @Cacheable({ ttl: 300, key: (id: string) => `user:${id}` })
-  @Profile({ thresholdMs: 100, warnSlow: true })
-  async findById(id: string) {
-    return this.db.query('SELECT * FROM users WHERE id = $1', [id])
-  }
+| Provider Form | Syntax | Description |
+| :--- | :--- | :--- |
+| **Class Provider** | `UsersService` or `{ provide: 'IUsersService', useClass: UsersService }` | Instantiates and manages a class constructor. |
+| **Value Provider** | `{ provide: 'CONFIG', useValue: value }` | Injects a static value, configuration object, or third-party client. |
+| **Factory Provider** | `{ provide: 'DB', useFactory: (cfg) => connect(cfg), inject: ['CONFIG'] }` | Evaluates a factory function with automatically resolved dependencies. |
+| **Existing / Alias Provider** | `{ provide: 'DB_ALIAS', useExisting: 'DB' }` | Maps an alias token directly to another registered provider token. |
 
-  // Runs in an atomic transaction; automatically rolls back on error
-  @Transactional()
-  @CacheEvict({ key: (id: string) => `user:${id}` })
-  async updateUser(id: string, data: any) {
-    return this.db.update('users', id, data)
-  }
-}
-```
+### Registering Custom Providers in Application Startup
 
-## Custom Providers
-
-ExisJS's DI container is flexible. By default, when you register a class, ExisJS instantiates it for you. However, you often need more control. You can register standard classes, raw values, factories, or aliased classes natively using `app.provide()`.
-
-### Functional Paradigm
+#### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
-import exis from 'exisjs'
+import { exis } from 'exisjs'
 import { UsersService } from './users/service'
 
 export default exis({
   async onStart(app) {
-    // 1. Standard Class Provider
+    // 1. Standard class provider
     app.provide(UsersService, UsersService)
 
-    // 2. Value Provider
-    app.provide('DATABASE_URL', {
-      useValue: 'postgres://localhost:5432/mydb'
+    // 2. Value provider with single-object syntax
+    app.provide({
+      provide: 'DATABASE_URL',
+      useValue: process.env.DATABASE_URL || 'postgres://localhost:5432/mydb',
     })
 
-    // 3. Factory Provider
-    app.provide('LoggerService', {
-      useFactory: () => {
-        return { log: (msg: string) => console.log(`[Logger]: ${msg}`) }
-      }
+    // 3. Factory provider with dependency injection
+    app.provide({
+      provide: 'DATABASE_CLIENT',
+      useFactory: (dbUrl: string) => ({
+        url: dbUrl,
+        query: (sql: string) => `Executed ${sql}`,
+      }),
+      inject: ['DATABASE_URL'],
     })
 
-    // 4. Aliased Class Provider
-    app.provide('AuthService', {
-      useClass: UsersService
+    // 4. Existing alias provider
+    app.provide({
+      provide: 'DB',
+      useExisting: 'DATABASE_CLIENT',
     })
-  }
+  },
 })
 ```
 
-### Class-Based (OOP) Paradigm
+#### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
@@ -171,56 +162,50 @@ import { UsersService } from './users/service'
 
 @Server({
   providers: [
-    // 1. Standard Class Provider
     UsersService,
-    // 2. Value Provider
-    ['DATABASE_URL', { useValue: 'postgres://localhost:5432/mydb' }],
-    // 3. Factory Provider
-    ['LoggerService', { useFactory: () => ({ log: (msg: string) => console.log(`[Logger]: ${msg}`) }) }],
-    // 4. Aliased Class Provider
-    ['AuthService', { useClass: UsersService }]
-  ]
+    { provide: 'DATABASE_URL', useValue: 'postgres://localhost:5432/mydb' },
+    {
+      provide: 'DATABASE_CLIENT',
+      useFactory: (dbUrl: string) => ({ url: dbUrl }),
+      inject: ['DATABASE_URL'],
+    },
+    { provide: 'DB', useExisting: 'DATABASE_CLIENT' },
+    { provide: 'IUsersService', useClass: UsersService },
+  ],
 })
 export default class RootServer {}
 ```
 
-### Constructor & Property Injection (`@Inject`, `@Optional`, and `forwardRef`)
+---
 
-In addition to property-level `inject()`, ExisJS provides full OOP constructor and property field injection with `@Inject(token)`, `@Optional()`, and `forwardRef()`:
+## Injection Scopes
 
-```typescript filename="src/http/users/route.ts"
-import { Controller, Get, Param } from 'exisjs/decorators'
-import { Inject, Optional, forwardRef } from 'exisjs/di'
-import { UsersService } from './service'
-import { ConfigService } from '../config/service'
+ExisJS supports three provider lifetime scopes configured via `@Injectable({ scope })` or the `scope` option in custom provider definitions:
 
-@Controller('/users')
-export default class UsersController {
-  // 1. Property-level decorator injection
-  @Inject(ConfigService)
-  private config!: ConfigService
+| Scope | Identifier | Lifetime Behavior |
+| :--- | :--- | :--- |
+| **Singleton (Default)** | `'singleton'` | A single instance is cached globally and shared across all incoming requests. |
+| **Request** | `'request'` | A new instance is instantiated for each incoming HTTP request and destroyed when the request completes. |
+| **Transient** | `'transient'` | A new instance is created every time the dependency is injected or resolved. |
 
-  // 2. Optional token injection
-  @Inject('METRICS')
-  @Optional()
-  private metrics?: any
+```typescript filename="src/services/context.service.ts"
+import { Injectable } from 'exisjs/decorators'
 
-  // 3. Constructor injection with forwardRef for circular dependencies
-  constructor(
-    private usersService: UsersService,
-    @Inject(forwardRef(() => UsersService)) private circularRef: UsersService
-  ) {}
-
-  @Get('/:id')
-  async getUser(@Param('id') id: string) {
-    return this.usersService.findAll()
-  }
+@Injectable({ scope: 'request' })
+export class RequestContextService {
+  public readonly requestId = crypto.randomUUID()
+  public readonly timestamp = new Date()
 }
 ```
 
-### Forward References (`forwardRef`) & Circular Dependencies
+> [!WARNING]
+> **Request Scope Lifecycle**: Request-scoped providers can only be resolved within an active HTTP request context. Attempting to resolve a request-scoped provider during boot scripts, background cron tasks, or standalone worker processes will throw a container error.
 
-When two services mutually depend on each other (`ServiceA` requires `ServiceB` and `ServiceB` requires `ServiceA`), circular references normally lead to `ReferenceError` during module evaluation. ExisJS solves this using `forwardRef(() => Service)` alongside lazy ES6 proxy resolution:
+---
+
+## Circular Dependencies (`forwardRef`)
+
+When two providers depend on each other, direct TypeScript constructor references cause `ReferenceError` during module loading. Wrap the injection token in `forwardRef()` to resolve circular dependencies using lazy proxy instances:
 
 ```typescript filename="src/services/order.service.ts"
 import { Injectable } from 'exisjs/decorators'
@@ -231,45 +216,104 @@ import { InventoryService } from './inventory.service'
 export class OrderService {
   constructor(
     @Inject(forwardRef(() => InventoryService))
-    private inventory: InventoryService
+    private inventoryService: InventoryService
   ) {}
 
-  processOrder(id: string) {
-    return this.inventory.reserveStock(id)
+  async processOrder(orderId: string) {
+    return this.inventoryService.reserveStock(orderId)
   }
 }
 ```
 
+```typescript filename="src/services/inventory.service.ts"
+import { Injectable } from 'exisjs/decorators'
+import { Inject, forwardRef } from 'exisjs/di'
+import { OrderService } from './order.service'
 
-## Injection Scopes
+@Injectable()
+export class InventoryService {
+  constructor(
+    @Inject(forwardRef(() => OrderService))
+    private orderService: OrderService
+  ) {}
 
-For people coming from different programming language backgrounds, it might be unexpected to learn that in ExisJS, almost everything is shared across incoming requests. We have a connection pool to the database, singleton services with global state, etc. This is because Node.js doesn't follow the request/response Multi-Threaded Stateless Model.
-
-However, there are use-cases when request-based or transient lifetime is desired. ExisJS supports three provider scopes in the `@Injectable()` decorator and `app.provide()`:
-
-- **Singleton (Default)**: A single instance of the provider is shared across the entire application.
-- **Request**: A new instance of the provider is created exclusively for each incoming request, and garbage collected afterward.
-- **Transient**: A brand-new instance is created every single time the dependency is requested/injected.
-
-```typescript
-@Injectable({ scope: 'transient' })
-export class OperationContext {
-  public readonly id = crypto.randomUUID()
+  async reserveStock(orderId: string) {
+    // Inventory reservation logic
+    return { reserved: true, orderId }
+  }
 }
 ```
 
-> [!WARNING]
-> **Request Scope Constraints**: A provider marked as `scope: 'request'` **must** be resolved within the lifecycle of an active HTTP request. If you try to `inject()` or resolve a request-scoped provider during application startup, inside a background queue worker, or from a cron job, the container will throw a runtime error.
+---
+
+## Service Lifecycle Hooks
+
+Providers can implement `OnInit` and `OnDestroy` lifecycle interfaces to handle asynchronous resource initialization and graceful cleanup:
+
+```typescript filename="src/services/database.service.ts"
+import { Injectable, type OnInit, type OnDestroy } from 'exisjs/decorators'
+
+@Injectable()
+export class DatabaseService implements OnInit, OnDestroy {
+  async onInit(): Promise<void> {
+    // Triggered automatically during application startup
+    await this.connectConnectionPool()
+  }
+
+  async onDestroy(): Promise<void> {
+    // Triggered automatically during graceful shutdown (SIGINT / SIGTERM)
+    await this.closeConnectionPool()
+  }
+
+  private async connectConnectionPool() {
+    // Connection logic
+  }
+
+  private async closeConnectionPool() {
+    // Teardown logic
+  }
+}
+```
 
 ---
 
-## Database Providers & Lifecycle Interop (`exisjs/database`)
+## Method Decorator Enhancements
 
-ExisJS provides first-party lifecycle management and transaction coordination for databases (PostgreSQL, SQLite, MySQL, MongoDB, Prisma, Drizzle, Mongoose).
+ExisJS provides method decorators to add caching, transactions, and execution profiling to service methods:
 
-### 1. Registering Database Lifecycle (`registerDatabase`)
+```typescript filename="src/services/roles.service.ts"
+import { Injectable, Cacheable, CacheEvict, Transactional, Profile } from 'exisjs/decorators'
+import { DatabaseService } from './database.service'
 
-Registering your database with `registerDatabase` ensures connections are automatically connected on boot and safely closed with zero leaked sockets when the server receives `SIGTERM` / `SIGINT`:
+@Injectable()
+export class RolesService {
+  constructor(private db: DatabaseService) {}
+
+  // Caches method results using an LRU cache
+  @Cacheable({ ttl: 300, key: (id: string) => `role:${id}` })
+  @Profile({ thresholdMs: 50, warnSlow: true })
+  async findById(id: string) {
+    return this.db.query('SELECT * FROM roles WHERE id = $1', [id])
+  }
+
+  // Wraps operations in an atomic database transaction and evicts cache keys
+  @Transactional()
+  @CacheEvict({ key: (id: string) => `role:${id}` })
+  async updateRole(id: string, name: string) {
+    return this.db.query('UPDATE roles SET name = $1 WHERE id = $2', [name, id])
+  }
+}
+```
+
+---
+
+## Database Providers & Lifecycle Management (`exisjs/database`)
+
+The `exisjs/database` package coordinates database connections, health checks, transactions, and graceful connection draining.
+
+### 1. Connection Lifecycle Registration (`registerDatabase`)
+
+Registering databases with `registerDatabase` ensures connections are initialized during server boot and drained gracefully on application shutdown without lingering open sockets:
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -278,7 +322,6 @@ import mongoose from 'mongoose'
 
 export default exis({
   async onStart(app) {
-    // Automatically handles startup and graceful shutdown
     registerDatabase(app, {
       name: 'mongodb',
       connect: async () => {
@@ -291,25 +334,24 @@ export default exis({
         return mongoose.connection.readyState === 1
       },
     })
-  }
+  },
 })
 ```
 
 ### 2. Universal Transaction Runner (`withTransaction`)
 
-`withTransaction` provides a duck-typed transaction runner that automatically coordinates transaction lifecycles, commits, aborts, and session cleanups across different ORMs:
+`withTransaction` provides a unified transaction wrapper compatible with **Mongoose**, **Prisma**, **Drizzle**, and generic SQL connection clients:
 
-```typescript filename="src/http/orders/service.ts"
+```typescript filename="src/services/order.service.ts"
 import { withTransaction } from 'exisjs/database'
 import mongoose from 'mongoose'
-import { Order } from '@/models/Order'
-import { Inventory } from '@/models/Inventory'
+import { Order } from '../models/order.model'
+import { Inventory } from '../models/inventory.model'
 
 export async function placeOrder(customerId: string, items: { sku: string; qty: number }[]) {
   return withTransaction(mongoose, async (session) => {
-    // Automatically attaches session to queries and commits/aborts on error
     const order = await Order.create([{ customerId, items }], { session })
-    
+
     for (const item of items) {
       const updated = await Inventory.findOneAndUpdate(
         { sku: item.sku, stock: { $gte: item.qty } },
@@ -317,7 +359,7 @@ export async function placeOrder(customerId: string, items: { sku: string; qty: 
         { session, returnDocument: 'after' }
       )
       if (!updated) {
-        throw new Error(`Insufficient stock for SKU: ${item.sku}`)
+        throw new Error(`Insufficient inventory for SKU: ${item.sku}`)
       }
     }
 
@@ -326,27 +368,21 @@ export async function placeOrder(customerId: string, items: { sku: string; qty: 
 }
 ```
 
-Works identically with Prisma (`prisma.$transaction`) and Drizzle (`db.transaction`).
+### 3. Modern Mongoose Interoperability
 
-### 3. Modern Mongoose 8/9 Interop & Connection Pooling
+Use `mongoPoolOptions` and `modernUpdateOptions` to standardize connection pools and query behavior:
 
-ExisJS exports helpers to prevent deprecation warnings in modern Mongoose:
-
-```typescript filename="src/models/user.ts"
+```typescript filename="src/models/user.model.ts"
 import { modernUpdateOptions, mongoPoolOptions } from 'exisjs/database'
 import mongoose from 'mongoose'
 
-// Cloud-hardened pool options (maxPoolSize, serverSelectionTimeoutMS, etc.)
-export const poolConfig = mongoPoolOptions({ maxPoolSize: 50 })
+export const poolOptions = mongoPoolOptions({ maxPoolSize: 50 })
 
-// Automatically maps legacy { new: true } to { returnDocument: 'after' }
-export async function updateUsername(id: string, name: string) {
-  return User.findByIdAndUpdate(
+export async function updateUser(id: string, name: string) {
+  return mongoose.model('User').findByIdAndUpdate(
     id,
     { $set: { name } },
     modernUpdateOptions({ returnDocument: 'after' })
   )
 }
 ```
-
-

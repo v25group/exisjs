@@ -1,4 +1,4 @@
-import type { ExisPlugin } from '../plugin/types'
+import type { ExisPlugin, ExisPluginInstance } from '../plugin/types'
 import type { SslConfig } from '../types'
 
 // ─── Config Types ─────────────────────────────────────────────────────────────
@@ -153,7 +153,7 @@ export interface ExisConfig {
   }
   watch?: WatchConfig
   dev?: DevConfig
-  plugins?: ExisPlugin[]
+  plugins?: (ExisPlugin | ExisPluginInstance)[]
   test?: {
     include?: string[]
     exclude?: string[]

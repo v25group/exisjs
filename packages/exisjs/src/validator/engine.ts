@@ -1,5 +1,5 @@
 import { TexValidator } from '@exisjs/rs'
-import { TexType } from './tex-types'
+import { TexType, type ResolveSchema } from './tex-types'
 import { ValidatorError, getNestedValue, formatReceivedValue } from './error'
 import type { ValidationErrorDescriptor } from './types'
 
@@ -50,6 +50,46 @@ export class TexEngine<T = any> {
       }
     }
     return new TexEngine(newSchema, newRaw, this.strict, this._isOptional)
+  }
+
+  extend<E extends Record<string, any>>(
+    extension: E
+  ): TexEngine<T & ResolveSchema<E>> {
+    const newSchema: Record<string, string> = { ...this.schema }
+    const newRaw: Record<string, any> = { ...this.rawSchema }
+    for (const [key, val] of Object.entries(extension)) {
+      if (val instanceof TexEngine) {
+        newSchema[key] = `object<${JSON.stringify(val.getCompiledSchema())}>`
+        newRaw[key] = val
+      } else if (val instanceof TexType) {
+        newSchema[key] = val._raw
+        newRaw[key] = val
+      } else {
+        newSchema[key] = val as string
+        newRaw[key] = val
+      }
+    }
+    return new TexEngine(
+      newSchema,
+      newRaw,
+      this.strict,
+      this._isOptional
+    ) as any
+  }
+
+  merge<Other>(other: TexEngine<Other>): TexEngine<T & Other> {
+    const newSchema = { ...this.schema, ...other.getCompiledSchema() }
+    const newRaw = { ...this.rawSchema, ...(other as any).rawSchema }
+    return new TexEngine(
+      newSchema,
+      newRaw,
+      this.strict,
+      this._isOptional
+    ) as any
+  }
+
+  transform<Out>(fn: (val: T) => Out): TexTransformedEngine<T, Out> {
+    return new TexTransformedEngine<T, Out>(this, fn)
   }
 
   pick<K extends keyof T>(keys: K[]): TexEngine<Pick<T, K>> {
@@ -208,6 +248,12 @@ export class TexEngine<T = any> {
                   },
                 ])
               }
+            }
+          }
+
+          if (val instanceof TexType && val._raw.startsWith('string')) {
+            if (val._raw.includes('coerce') && typeof data[key] !== 'string') {
+              data[key] = String(data[key])
             }
           }
 
@@ -536,11 +582,25 @@ export class TexEngine<T = any> {
     }
 
     if (errors.length > 0) throw new ValidatorError(errors)
+
+    // 4. Post-validation field transformations
+    if (parsedData && typeof parsedData === 'object') {
+      for (const [key, val] of Object.entries(this.rawSchema)) {
+        if (parsedData[key] !== undefined) {
+          if (val instanceof TexType && val.transformations.length > 0) {
+            for (const t of val.transformations) {
+              parsedData[key] = t(parsedData[key])
+            }
+          }
+        }
+      }
+    }
+
     return parsedData
   }
 
   async parseAsync(data: any): Promise<T> {
-    const parsed = this.parse(data) // Handles sync sanitizers + rust + sync refine
+    const parsed = this.parse(data) // Handles sync sanitizers + rust + sync refine + transformations
 
     const errors: ValidationErrorDescriptor[] = []
     if (parsed && typeof parsed === 'object') {
@@ -616,34 +676,45 @@ export class TexEngine<T = any> {
   toOpenApi(): Record<string, any> {
     const properties: Record<string, any> = {}
     const required: string[] = []
-    for (const [key, rawDef] of Object.entries(this.schema)) {
+    for (const [key, rawVal] of Object.entries(this.rawSchema)) {
+      const rawDef = this.schema[key] || ''
       const typeStr = rawDef.split('|')[0].trim()
-      const isOptional = typeStr.endsWith('?')
-      const baseType = typeStr.replace('?', '')
-      const prop: any = {}
+      const isOptional =
+        typeStr.endsWith('?') ||
+        rawDef.includes('optional') ||
+        (rawVal as any)?._isOptional
 
-      if (
-        baseType.startsWith('string') ||
-        baseType.startsWith('uuid') ||
-        baseType.startsWith('cuid') ||
-        baseType.startsWith('password')
-      ) {
-        prop.type = 'string'
-      } else if (baseType.startsWith('email')) {
-        prop.type = 'string'
-        prop.format = 'email'
-      } else if (baseType.startsWith('number')) {
-        prop.type = 'number'
-      } else if (baseType.startsWith('boolean')) {
-        prop.type = 'boolean'
-      } else if (baseType.startsWith('date')) {
-        prop.type = 'string'
-      } else if (baseType.startsWith('array<')) {
-        prop.type = 'array'
-      } else if (baseType.startsWith('enum:')) {
-        prop.type = 'string'
+      let prop: any
+      if (rawVal && typeof rawVal.toOpenApi === 'function') {
+        prop = rawVal.toOpenApi()
       } else {
-        prop.type = 'object'
+        const baseType = typeStr.replace('?', '')
+        prop = {}
+        if (
+          baseType.startsWith('string') ||
+          baseType.startsWith('uuid') ||
+          baseType.startsWith('cuid') ||
+          baseType.startsWith('password')
+        ) {
+          prop.type = 'string'
+        } else if (baseType.startsWith('email')) {
+          prop.type = 'string'
+          prop.format = 'email'
+        } else if (baseType.startsWith('number')) {
+          prop.type = 'number'
+        } else if (baseType.startsWith('boolean')) {
+          prop.type = 'boolean'
+        } else if (baseType.startsWith('date')) {
+          prop.type = 'string'
+          prop.format = 'date-time'
+        } else if (baseType.startsWith('array<')) {
+          prop.type = 'array'
+        } else if (baseType.startsWith('enum:')) {
+          prop.type = 'string'
+          prop.enum = baseType.replace('enum:', '').split(',')
+        } else {
+          prop.type = 'object'
+        }
       }
 
       properties[key] = prop
@@ -652,5 +723,172 @@ export class TexEngine<T = any> {
     const result: any = { type: 'object', properties }
     if (required.length > 0) result.required = required
     return result
+  }
+}
+
+export class TexTransformedEngine<In, Out> {
+  public readonly _type!: Out
+
+  constructor(
+    public readonly inner: TexEngine<In>,
+    public readonly transformFn: (val: In) => Out
+  ) {}
+
+  parse(data: any): Out {
+    const validated = this.inner.parse(data)
+    return this.transformFn(validated)
+  }
+
+  async parseAsync(data: any): Promise<Out> {
+    const validated = await this.inner.parseAsync(data)
+    return this.transformFn(validated)
+  }
+
+  toOpenApi(): Record<string, any> {
+    return this.inner.toOpenApi()
+  }
+}
+
+export class TexDiscriminatedUnionEngine<
+  Discriminator extends string,
+  Variants extends (TexEngine<any> | Record<string, any>)[],
+> {
+  public readonly _type!: Variants[number]['_type']
+  private engines: TexEngine<any>[]
+
+  constructor(
+    public readonly discriminator: Discriminator,
+    public readonly variants: Variants
+  ) {
+    this.engines = variants.map((v) =>
+      v instanceof TexEngine
+        ? v
+        : new TexEngine(
+            Object.fromEntries(
+              Object.entries(v).map(([k, val]) => [
+                k,
+                val instanceof TexType ? val._raw : String(val),
+              ])
+            ),
+            v
+          )
+    )
+  }
+
+  parse(data: any): Variants[number]['_type'] {
+    if (!data || typeof data !== 'object') {
+      throw new ValidatorError([
+        {
+          path: '',
+          message: 'Expected an object for discriminated union payload',
+          expected: 'object',
+          received: formatReceivedValue(data),
+          code: 'INVALID_TYPE',
+        },
+      ])
+    }
+
+    const tagValue = data[this.discriminator]
+    if (tagValue === undefined) {
+      throw new ValidatorError([
+        {
+          path: this.discriminator,
+          message: `Missing discriminator field '${this.discriminator}'`,
+          expected: 'string | number',
+          received: 'undefined',
+          code: 'MISSING_DISCRIMINATOR',
+        },
+      ])
+    }
+
+    for (const engine of this.engines) {
+      const rawField = (engine as any).rawSchema?.[this.discriminator]
+
+      let matches = false
+      if (rawField instanceof TexType) {
+        if (rawField._raw.startsWith('literal:')) {
+          const literalVal = rawField._raw
+            .replace('literal:', '')
+            .split('|')[0]
+            .trim()
+          if (String(tagValue) === literalVal) matches = true
+        } else if (rawField._raw.startsWith('enum:')) {
+          const allowed = rawField._raw
+            .replace('enum:', '')
+            .split('|')[0]
+            .trim()
+            .split(',')
+          if (allowed.includes(String(tagValue))) matches = true
+        }
+      } else if (
+        typeof rawField === 'string' &&
+        rawField.startsWith('literal:')
+      ) {
+        const literalVal = rawField.replace('literal:', '').split('|')[0].trim()
+        if (String(tagValue) === literalVal) matches = true
+      }
+
+      if (matches) {
+        return engine.parse(data)
+      }
+    }
+
+    throw new ValidatorError([
+      {
+        path: this.discriminator,
+        message: `Invalid discriminator value '${tagValue}' for field '${this.discriminator}'`,
+        expected: 'one of matching variant discriminators',
+        received: formatReceivedValue(tagValue),
+        code: 'INVALID_DISCRIMINATOR_VALUE',
+      },
+    ])
+  }
+
+  async parseAsync(data: any): Promise<Variants[number]['_type']> {
+    if (!data || typeof data !== 'object') {
+      return this.parse(data)
+    }
+
+    const tagValue = data[this.discriminator]
+    if (tagValue === undefined) {
+      return this.parse(data)
+    }
+
+    for (const engine of this.engines) {
+      const rawField = (engine as any).rawSchema?.[this.discriminator]
+      let matches = false
+      if (rawField instanceof TexType) {
+        if (rawField._raw.startsWith('literal:')) {
+          const literalVal = rawField._raw
+            .replace('literal:', '')
+            .split('|')[0]
+            .trim()
+          if (String(tagValue) === literalVal) matches = true
+        } else if (rawField._raw.startsWith('enum:')) {
+          const allowed = rawField._raw
+            .replace('enum:', '')
+            .split('|')[0]
+            .trim()
+            .split(',')
+          if (allowed.includes(String(tagValue))) matches = true
+        }
+      }
+
+      if (matches) {
+        return engine.parseAsync(data)
+      }
+    }
+
+    return this.parse(data)
+  }
+
+  toOpenApi(): Record<string, any> {
+    const oneOf = this.engines.map((e) => e.toOpenApi())
+    return {
+      oneOf,
+      discriminator: {
+        propertyName: this.discriminator,
+      },
+    }
   }
 }

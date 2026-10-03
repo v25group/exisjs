@@ -1,124 +1,195 @@
 ---
-title: "exis()"
-description: "API Reference for the exis() application builder."
+title: "exisjs (Root API)"
+description: "API Reference for the defineApp (exis) entrypoint, App instance methods, lifecycle hooks, and server bootstrap."
+nextUrl: "/docs/reference/config"
+nextTitle: "Config Reference"
 ---
 
-# Application Instance (exis)
+# `exisjs` (Root API)
 
-The `exis()` function is the primary entry point for configuring and booting your ExisJS application. It defines your core configuration, middleware, plugins, and lifecycle hooks.
+The root `exisjs` module exports the core application builder `defineApp` (aliased as `exis`), the `App` class definition, active application resolvers, response helpers, and circuit breaker utilities.
 
-It returns a configured `App` instance that the CLI or deployment platform will automatically discover and run. The framework's auto-discovery mechanism effortlessly handles both **Functional** and **Class-Based (OOP)** routes inside your `src/http` directory.
+---
 
-## Usage
+## Module Exports
 
-ExisJS supports both Functional and Class-Based (OOP) paradigms for configuring your application entry point.
+```typescript
+import {
+  exis,
+  defineApp,
+  App,
+  getActiveApp,
+  defineConfig,
+  parseEnv,
+  loadEnv,
+} from 'exisjs'
 
-### 1. Functional Setup
+import type {
+  ExisConfig,
+  ExisPlugin,
+  ExisPluginInstance,
+  Logger,
+  CorsConfig,
+  LoggerConfig,
+  HookRequest,
+  HookResponse,
+  HookError,
+  HookReady,
+  HookClose,
+} from 'exisjs'
+```
+
+---
+
+## 1. Application Entrypoint: `exis()` / `defineApp()`
+
+Defines an ExisJS application definition for CLI execution or programmatic booting.
+
+```typescript
+function defineApp(options?: ExisAppOptions): ExisAppDefinition
+export { defineApp as exis }
+```
+
+### `ExisAppOptions` Interface
+
+Extends `ExisConfig` with application lifecycle hooks:
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `port` | `number` | `3000` | Port number to bind the server listener to. |
+| `host` | `string` | `'0.0.0.0'` | Network address to bind the listener to. |
+| `env` | `'development' \| 'production' \| 'test'` | `NODE_ENV` | Application execution environment. |
+| `logger` | `boolean \| LoggerConfig` | `true` | Configures or disables the built-in Pino structured logger. |
+| `helmet` | `boolean \| HelmetOptions` | `true` | Automatically injects security response headers. |
+| `cors` | `boolean \| CorsConfig` | `false` | Manages Cross-Origin Resource Sharing headers and preflights. |
+| `compression` | `boolean \| CompressionOptions` | `false` | Response payload compression via Gzip, Deflate, or Brotli. |
+| `plugins` | `(ExisPlugin \| ExisPluginInstance)[]` | `[]` | Array of modules or plugins to initialize on boot. |
+| `middlewares` | `Handler[]` | `[]` | Global middleware executed on all incoming requests. |
+| `onStart` | `(app: App) => void \| Promise<void>` | `undefined` | Hook executed during startup before the listener begins accepting requests. |
+| `onClose` | `(app: App) => void \| Promise<void>` | `undefined` | Hook executed during graceful shutdown. |
+
+---
+
+## 2. Dual-Paradigm Setup
+
+### Functional Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
-import { cors } from 'exisjs/middleware'
 
 export default exis({
   port: 3000,
+  logger: true,
   helmet: true,
-  cors: {
-    origin: '*',
-  },
-  middlewares: [
-    cors()
-  ],
+  cors: { origin: '*' },
   async onStart(app) {
-    app.log.info("Server is starting up!")
-  }
+    app.log.info('Application initialized successfully')
+  },
+  async onClose(app) {
+    app.log.info('Graceful shutdown complete')
+  },
 })
 ```
 
 ---
 
-### 2. Class-Based Setup (OOP)
-
-If you prefer an Object-Oriented approach, you can define your application entry point using the `@Server()` decorator.
+### Class-Based (OOP) Paradigm
 
 ```typescript filename="src/http/server.ts"
 import { Server } from 'exisjs/decorators'
 import type { App } from 'exisjs'
 
 @Server({
-  plugins: [
-    // You can register plugins or configuration directly in the decorator options
-  ]
+  plugins: [],
 })
 export default class RootServer {
   async onStart(app: App) {
-    app.log.info("Server is starting up!")
+    app.log.info('Application initialized successfully')
   }
-  
+
   async onClose(app: App) {
-    app.log.info("Server is shutting down!")
+    app.log.info('Graceful shutdown complete')
   }
 }
 ```
 
 ---
 
-## Configuration Options
+## 3. `App` Class Methods Reference
 
-The `exis()` function takes an `ExisConfig` object.
+The `App` instance coordinates dependency injection, routing, middleware pipelines, lifecycle hooks, and background cron execution.
 
-### `port`
-- **Type**: `number`
-- **Default**: `3000` (or `process.env.PORT`)
-- The port the server will listen on during development or manual instantiation.
+### Routing & Pipeline
 
-### `host`
-- **Type**: `string`
-- **Default**: `'0.0.0.0'` (or `process.env.HOST`)
-- The host the server will bind to.
-
-### `env`
-- **Type**: `'development' | 'production' | 'test'`
-- **Default**: Auto-detected via `NODE_ENV`.
-- The current environment of the application.
-
-### `logger`
-- **Type**: `boolean | LoggerConfig`
-- **Default**: `true`
-- Toggles the built-in Pino logger. You can pass a custom configuration object to set the log level, redact sensitive fields, or output JSON.
-
-### `helmet`
-- **Type**: `boolean`
-- **Default**: `true`
-- Automatically applies security headers to every response. Set to `false` to disable.
-
-### `cors`
-- **Type**: `boolean | CorsConfig`
-- **Default**: `false`
-- Automatically injects CORS headers into the request pipeline. You can pass a configuration object to specify allowed origins, methods, and credentials.
-
-### `compression`
-- **Type**: `boolean`
-- **Default**: `true` (if applicable)
-- Automatically compresses HTTP responses (gzip/brotli).
-
-### `middlewares`
-- **Type**: `Handler[]`
-- **Default**: `[]`
-- An array of global middleware functions that will run on every single request.
-
-### `plugins`
-- **Type**: `ExisPlugin[]`
-- **Default**: `[]`
-- An array of ExisJS plugins to register.
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `use` | `(...handlers: (Handler \| ErrorHandler)[]): this` | Registers global request middlewares or 4-argument error handlers. |
+| `get` | `(path: string, ...handlers: Handler[]): this` | Registers a `GET` route handler. |
+| `post` | `(path: string, ...handlers: Handler[]): this` | Registers a `POST` route handler. |
+| `put` | `(path: string, ...handlers: Handler[]): this` | Registers a `PUT` route handler. |
+| `patch` | `(path: string, ...handlers: Handler[]): this` | Registers a `PATCH` route handler. |
+| `delete` | `(path: string, ...handlers: Handler[]): this` | Registers a `DELETE` route handler. |
+| `mount` | `(prefix: string, subRouter: Router): this` | Mounts a sub-router under a URL path prefix. |
+| `getRoutes` | `(): Route[]` | Returns an array of all compiled route definitions. |
 
 ---
 
-## Lifecycle Hooks
+### Dependency Injection & Plugins
 
-You can define async hooks that execute at specific stages of the application's lifecycle.
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `provide` | `<T>(token: ProviderToken<T>, provider: ProviderDefinition<T>): this` | Registers a dependency provider into the application container. |
+| `resolve` | `<T>(token: ProviderToken<T>, requestCache?: Map<any, any>): T` | Resolves a singleton or request-scoped dependency from the container. |
+| `register` | `(plugin: ExisPlugin \| ExisPluginInstance, options?: any): Promise<this>` | Registers an encapsulated plugin or module. |
+| `hasPlugin` | `(name: string): boolean` | Checks whether a plugin has been registered. |
 
-### `onStart(app: App)`
-Fired after configuration is loaded but before the server starts accepting connections. This is the ideal place to connect to databases, initialize singletons, or run startup migrations.
+---
 
-### `onClose(app: App)`
-Fired when the server receives a shutdown signal (e.g., `SIGINT`, `SIGTERM`). Use this to gracefully close database connections, flush analytics events, or tear down background workers.
+### Lifecycle Hooks
+
+```typescript
+// Registers a hook called once the server is ready and listening
+app.onReady((app: App) => void | Promise<void>)
+
+// Registers a hook called when the server initiates graceful shutdown
+app.onClose((app: App) => void | Promise<void>)
+
+// Registers a hook called on each incoming HTTP request
+app.onRequest((req: Request, res: Response) => void | Promise<void>)
+
+// Registers a hook called after an HTTP response finishes dispatching
+app.onResponse((req: Request, res: Response) => void | Promise<void>)
+
+// Registers a hook called whenever an unhandled error occurs
+app.onError((err: Error, req: Request, res: Response) => void | Promise<void>)
+```
+
+---
+
+### Server Execution & Testing
+
+| Method | Signature | Description |
+| :--- | :--- | :--- |
+| `create` | `(cwd?: string): Promise<this>` | Automatically loads configuration, mounts file-system routes, connects databases, and initializes lifecycles. |
+| `listen` | `(portOrOptions?: number \| ListenOptions, callback?: () => void): Server` | Binds the underlying Node.js HTTP/HTTPS server and begins listening for connections. |
+| `close` | `(timeout?: number): Promise<void>` | Initiates graceful server shutdown, drains cron jobs, and destroys DI singletons. |
+| `inject` | `(options: InjectOptions): Promise<TestResponse>` | Dispatches an in-memory synthetic request without binding a real network socket (ideal for unit/E2E testing). |
+
+---
+
+## 4. `getActiveApp()`
+
+Retrieves the currently running singleton `App` instance within the active Node.js process:
+
+```typescript
+function getActiveApp(): App
+```
+
+```typescript filename="src/services/billing.ts"
+import { getActiveApp } from 'exisjs'
+
+export function processInvoice(invoiceId: string) {
+  const app = getActiveApp()
+  app.log.info({ invoiceId }, 'Processing invoice')
+}
+```
