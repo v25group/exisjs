@@ -51,7 +51,7 @@
     "@napi-rs/cli": "^3.10.5",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
     "@typescript-eslint/parser": "^8.70.1",
     "autocannon": "^8.0.0",
     "benchmark": "^2.1.4",
