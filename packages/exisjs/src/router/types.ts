@@ -107,13 +107,13 @@ export type HttpMethod =
   | 'ALL'
 
 export type RouteValidator<T = any> =
-  | { parse: (val: unknown) => T; transform?: unknown }
-  | { parse?: unknown; transform: (val: unknown, meta?: any) => Promise<T> | T }
-  | ((val: unknown) => T | Promise<T>)
+  | { parse: (val: any) => T; transform?: unknown }
+  | { parse?: unknown; transform: (val: any, meta?: any) => Promise<T> | T }
+  | ((val: any) => T | Promise<T>)
+  | { readonly _type: T }
   | (T extends Record<string, any>
-      ? { [K in keyof T]?: any } | Record<string, any>
+      ? { [K in keyof T]?: any }
       : Record<string, any>)
-  | any
 
 export interface RouteUploadOptions {
   field?: string

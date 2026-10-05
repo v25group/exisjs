@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.7.14`** | 2026-10-05 | Stability & Hardening | Windows path quoting fix for `exis run`, FS route specificity sorting, binary/stream `res.download()`, Windows libuv shutdown `UV_HANDLE_CLOSING` & `EPIPE` resolution, type inference strictness | [**Read v0.7.14 Notes →**](./changelog/v0.7/v0.7.14.md) |
 | **`v0.7.13`** | 2026-10-02 | Feature & Engine Upgrades | `tex.discriminatedUnion`, schema composition (`extend`, `merge`, `pick`, `omit`), field/schema `transform`, `tex.coerce` primitives, multi-validator OpenAPI 3.1 translation | [**Read v0.7.13 Notes →**](./changelog/v0.7/v0.7.13.md) |
 | **`v0.7.12`** | 2026-10-02 | Alignment & Patch | Automatic boot database connection (`DatabaseManager.connectAll()`), health check dual callback (`isHealthy` & `healthCheck`), docs sync, template update | [**Read v0.7.12 Notes →**](./changelog/v0.7/v0.7.12.md) |
 | **`v0.7.11`** | 2026-10-01 | Performance & DX | Static route fast path (>51k req/s), lazy AbortSignal, uWS adapter event parity, `timingSafeEqual`, configurable `dev` watcher, flexible `registerDatabase`, `create-exisjs` cron scaffolding | [**Read v0.7.11 Notes →**](./changelog/v0.7/v0.7.11.md) |
@@ -28,9 +29,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.13] - 2026-10-02
+## Current Release: [0.7.14] - 2026-10-05
 
-> For full technical details and code examples, see [**`changelog/v0.7/v0.7.13.md`**](./changelog/v0.7/v0.7.13.md).
+> For full technical details and code examples, see [**`changelog/v0.7/v0.7.14.md`**](./changelog/v0.7/v0.7.14.md).
+
+### Added
+- **Enhanced Binary, Buffer & Stream `res.download()` Response Helper**: Extended `res.download()` on `ExisResponse` to handle Buffers, Node.js Readable streams, Web ReadableStreams, strings, and file paths with automatic `Content-Disposition` and `Content-Type` header setting.
+
+### Fixed
+- **Windows Path Quoting & Space Handling in Subprocess Spawning (`exis run` / `exis exec`)**: Configured direct Node execution to use `shell: false` and `windowsHide: true`, resolving `C:\Program is not recognized` failures when Node is installed in directories containing spaces.
+- **File-System Route Specificity & Radix Tree Segment Ordering**: Updated directory scanner to prioritize static paths over dynamic wildcard `[id]` and catch-all `[...slug]` segments, eliminating route shadowing.
+- **Windows Libuv Shutdown Assertion & `write EPIPE`**: Safely disconnected active IPC channels via `process.disconnect()` prior to tearing down database pools and HTTP handles, suppressing broken pipe errors on exit and preventing `!(handle->flags & UV_HANDLE_CLOSING)` crashes.
+- **Type Resolution Strictness**: Fixed optional/nullable type markers in `TexEngine` and route definitions to prevent unexpected union type collapsing.
+
+---
+
+## Previous Release: [0.7.13] - 2026-10-02
 
 ### Added
 - **`tex.discriminatedUnion` Polymorphic Schema Branching**: First-class polymorphic schema validation matching literal/enum discriminant tags across sync/async parsing with OpenAPI 3.1 `oneOf` and `discriminator` generation.

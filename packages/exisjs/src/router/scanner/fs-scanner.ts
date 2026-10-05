@@ -18,6 +18,27 @@ export async function scanDirectory(
   baseRoute = '/'
 ): Promise<ScannedRoute[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+
+  // Sort entries: Files first, then Static directories, then Dynamic [param] directories, then Wildcard [...catchAll]
+  entries.sort((a, b) => {
+    const aIsDir = a.isDirectory()
+    const bIsDir = b.isDirectory()
+    if (!aIsDir && bIsDir) return -1
+    if (aIsDir && !bIsDir) return 1
+
+    const aIsCatchAll = a.name.startsWith('[...')
+    const bIsCatchAll = b.name.startsWith('[...')
+    if (aIsCatchAll && !bIsCatchAll) return 1
+    if (!aIsCatchAll && bIsCatchAll) return -1
+
+    const aIsDynamic = a.name.startsWith('[')
+    const bIsDynamic = b.name.startsWith('[')
+    if (aIsDynamic && !bIsDynamic) return 1
+    if (!aIsDynamic && bIsDynamic) return -1
+
+    return a.name.localeCompare(b.name)
+  })
+
   const results: ScannedRoute[] = []
 
   for (const entry of entries) {

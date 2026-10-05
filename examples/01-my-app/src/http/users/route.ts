@@ -49,8 +49,7 @@ export default controller({
       pipe('params', 'id', (val) => Number(val)),
     ],
     async handle(ctx) {
-      // Cast ctx.req as any because the type inference from Zod schema to route config generics is currently loose
-      return getUserById(ctx.req as any, ctx.res)
+      return getUserById(ctx.req, ctx.res)
     },
   }),
 

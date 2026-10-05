@@ -269,6 +269,29 @@ export class ServerBootstrapper {
             )
           }
 
+          // Disconnect all registered databases (Neon, Postgres, Mongo, Prisma, Drizzle, etc.)
+          try {
+            const { DatabaseManager } = await import('../database/lifecycle')
+            if (DatabaseManager.size > 0) {
+              await runHookSafely(
+                () => DatabaseManager.disconnectAll(),
+                'DatabaseManager.disconnectAll',
+                perHookTimeout
+              )
+            }
+          } catch {
+            /* ignore */
+          }
+
+          // Stop all active background cron jobs
+          try {
+            if (this.app.cron && typeof this.app.cron.stopAll === 'function') {
+              this.app.cron.stopAll()
+            }
+          } catch {
+            /* ignore */
+          }
+
           // Automatically unregister process-level listeners registered during App lifetime
           try {
             const { ProcessLifecycle } = await import('./lifecycle')

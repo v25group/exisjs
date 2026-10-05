@@ -471,45 +471,116 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Transfers a file on disk as an attachment with automatic Content-Disposition and MIME lookup.
+   * Transfers a file on disk, Readable stream, Buffer, or string as an attachment with automatic Content-Disposition and MIME lookup.
    *
-   * @param filePath Absolute path to file on disk
-   * @param filename Optional override for downloaded filename
-   * @param options File stream options
+   * @param fileOrData Absolute path to file on disk, or a Stream, Buffer, or string
+   * @param filename Optional override for downloaded filename (e.g. 'export.csv')
+   * @param options Download options (contentType, headers) or fs.createReadStream options
    *
    * @example
    * ```ts
    * res.download('/data/reports/report.pdf', 'monthly-report.pdf')
+   * res.download(csvBuffer, 'sales.csv', { contentType: 'text/csv' })
+   * res.download(stream, 'export.xlsx')
    * ```
    */
-  download(filePath: string, filename?: string, options?: unknown): void {
+  download(
+    fileOrData:
+      | string
+      | Buffer
+      | NodeJS.ReadableStream
+      | ReadableStream
+      | AsyncIterable<any>,
+    filename?: string,
+    options?: {
+      contentType?: string
+      headers?: Record<string, string>
+    } & Record<string, any>
+  ): void {
     if (this.headersSent) return
 
-    const name = filename || path.basename(filePath)
+    const name =
+      filename ||
+      (typeof fileOrData === 'string' && !fileOrData.includes('\n')
+        ? path.basename(fileOrData)
+        : 'download')
 
     this.setHeader('Content-Disposition', contentDisposition(name))
 
+    const contentType =
+      options?.contentType || mime.lookup(name) || 'application/octet-stream'
+
     if (!this.hasHeader('Content-Type')) {
-      const type = mime.lookup(name) || 'application/octet-stream'
-      this.setHeader('Content-Type', type)
+      this.setHeader('Content-Type', contentType)
     }
 
-    const stream = fs.createReadStream(
-      filePath,
-      options as Parameters<typeof fs.createReadStream>[1]
-    )
-
-    stream.on('error', (err: NodeJS.ErrnoException) => {
-      if (err.code === 'ENOENT') {
-        this.statusCode = 404
-        this.end('File not found')
-      } else {
-        this.statusCode = 500
-        this.end('Error reading file')
+    if (options?.headers) {
+      for (const [k, v] of Object.entries(options.headers)) {
+        this.setHeader(k, v)
       }
-    })
+    }
 
-    stream.pipe(this.raw as unknown as NodeJS.WritableStream)
+    // 1. Buffer payload
+    if (Buffer.isBuffer(fileOrData)) {
+      if (!this.hasHeader('Content-Length')) {
+        this.setHeader('Content-Length', fileOrData.length)
+      }
+      this.end(fileOrData)
+      return
+    }
+
+    // 2. Stream payload
+    if (
+      typeof fileOrData === 'object' &&
+      fileOrData !== null &&
+      (typeof (fileOrData as any).pipe === 'function' ||
+        typeof (fileOrData as any).getReader === 'function' ||
+        typeof (fileOrData as any)[Symbol.asyncIterator] === 'function')
+    ) {
+      this.sendStream(fileOrData as any)
+      return
+    }
+
+    // 3. String content vs file on disk
+    if (typeof fileOrData === 'string') {
+      const isLikelyPath =
+        !fileOrData.includes('\n') &&
+        (fileOrData.startsWith('/') ||
+          fileOrData.startsWith('./') ||
+          fileOrData.startsWith('../') ||
+          /^[a-zA-Z]:[\\/]/.test(fileOrData) ||
+          fs.existsSync(fileOrData))
+
+      if (isLikelyPath && fs.existsSync(fileOrData)) {
+        const stream = fs.createReadStream(
+          fileOrData,
+          options as Parameters<typeof fs.createReadStream>[1]
+        )
+
+        stream.on('error', (err: NodeJS.ErrnoException) => {
+          if (err.code === 'ENOENT') {
+            this.statusCode = 404
+            this.end('File not found')
+          } else {
+            this.statusCode = 500
+            this.end('Error reading file')
+          }
+        })
+
+        stream.pipe(this.raw as unknown as NodeJS.WritableStream)
+        return
+      }
+
+      // Plain string data
+      const buf = Buffer.from(fileOrData, 'utf8')
+      if (!this.hasHeader('Content-Length')) {
+        this.setHeader('Content-Length', buf.length)
+      }
+      this.end(buf)
+      return
+    }
+
+    this.end(fileOrData)
   }
 
   /**

@@ -253,4 +253,26 @@ describe('Tex Schema Builder Advanced Capabilities & OpenAPI 3.1 Integration', (
       expect(openApi.properties.tags.items.type).toBe('string')
     })
   })
+
+  describe('Type Resolution & Schema Inference (Issue 1 & 2)', () => {
+    it('correctly resolves schema fields with primitive builders', () => {
+      const UserSchema = tex.object({
+        name: tex.string(),
+        email: tex.email(),
+        age: tex.number().optional(),
+        isActive: tex.boolean(),
+      })
+
+      type InferredUser = typeof UserSchema._type
+      const sample: InferredUser = {
+        name: 'Alice',
+        email: 'alice@example.com',
+        isActive: true,
+      }
+      expect(sample.name).toBe('Alice')
+      expect(sample.email).toBe('alice@example.com')
+      expect(sample.isActive).toBe(true)
+      expect(sample.age).toBeUndefined()
+    })
+  })
 })

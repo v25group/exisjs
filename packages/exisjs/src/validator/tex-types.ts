@@ -255,19 +255,13 @@ export type ResolveTexType<T> = T extends {
                             ? ResolveSchema<T>
                             : never
 
-export type IsOptional<T> = T extends { __isOptional: infer IsOpt }
-  ? IsOpt extends true
-    ? true
-    : false
+export type IsOptional<T> = T extends { __isOptional: true }
+  ? true
   : T extends { _isOptional: true }
     ? true
-    : false // Handle TexEngine
-
-export type IsNullable<T> = T extends { __isNullable: infer IsNull }
-  ? IsNull extends true
-    ? true
     : false
-  : false
+
+export type IsNullable<T> = T extends { __isNullable: true } ? true : false
 
 export type ApplyNullable<T, Type> =
   IsNullable<T> extends true ? Type | null : Type

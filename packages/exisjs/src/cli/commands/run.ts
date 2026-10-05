@@ -57,11 +57,13 @@ export async function runCommand(
     execArgs = args
   }
 
+  const isDirectNode = executable === process.execPath
   const child = spawn(executable, execArgs, {
     cwd,
     env: process.env,
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: isDirectNode ? false : process.platform === 'win32',
+    windowsHide: true,
   })
 
   child.on('error', (err) => {

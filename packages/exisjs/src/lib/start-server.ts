@@ -183,11 +183,33 @@ async function start() {
             `\n[exis] ${signal} received. Shutting down gracefully...`
           )
         }
+
+        // Prevent write EPIPE crashes on Windows if parent closes stdio pipe before child finishes
+        process.stdout?.on('error', (err: any) => {
+          if (err?.code === 'EPIPE') return
+        })
+        process.stderr?.on('error', (err: any) => {
+          if (err?.code === 'EPIPE') return
+        })
+
         try {
           if (typeof app.close === 'function') {
             await app.close()
           }
           if (!isCLI) console.error('[exis] Server closed cleanly.')
+
+          // Disconnect IPC if still connected
+          if (
+            typeof process.disconnect === 'function' &&
+            (process as any).connected
+          ) {
+            try {
+              process.disconnect()
+            } catch {
+              /* ignore */
+            }
+          }
+
           process.exit(0)
         } catch (err) {
           if (!isCLI) console.error('[exis] Error during shutdown:', err)
