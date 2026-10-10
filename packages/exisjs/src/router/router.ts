@@ -10,6 +10,7 @@ import type {
 } from '../types'
 import { RadixTree } from './radix'
 import { SSEStream } from '../server/sse'
+import { DownloadResponse } from '../server/download'
 import { fileUpload, parseSizeToBytes } from '../middleware/upload'
 import { routeTimeout } from '../middleware/security'
 import { cors } from '../middleware/middleware'
@@ -19,6 +20,122 @@ try {
   fastJsonStringify = require('fast-json-stringify')
 } catch {
   // fast-json-stringify is optional
+}
+
+// ─── Validation helpers ───────────────────────────────────────────────────────
+// Everything here is resolved once per route (lazily, on first request, since
+// validatorCompiler may be assigned after routes are registered).
+
+type Coercion = [key: string, kind: 'number' | 'boolean' | 'date']
+
+// Zod keeps its definition on `_def` (v3) or `def` (v4, which also aliases
+// `_def`); the kind is `typeName: 'ZodNumber'` in v3 and `type: 'number'` in v4
+function zodKind(schema: any): string | undefined {
+  const def = schema?._def ?? schema?.def
+  const kind = def?.typeName ?? def?.type
+  return typeof kind === 'string'
+    ? kind.replace(/^Zod/, '').toLowerCase()
+    : undefined
+}
+
+// Steps through optional/default/nullable/effects/pipe wrappers to the type
+// that receives the raw input
+function zodUnwrap(schema: any): any {
+  let current = schema
+  for (let depth = 0; depth < 8 && current; depth++) {
+    const def = current._def ?? current.def
+    const inner = def?.innerType ?? def?.schema ?? def?.in
+    if (!inner) break
+    current = inner
+  }
+  return current
+}
+
+/**
+ * Query strings and path params always arrive as strings. For tex and Zod
+ * object schemas, fields declared as number, boolean or date are converted
+ * before validation, so `z.number()` works without `z.coerce` or `.transform`.
+ */
+function buildCoercions(validator: any): Coercion[] {
+  const out: Coercion[] = []
+  const raw = validator?.rawSchema
+  if (raw && typeof raw === 'object') {
+    for (const k of Object.keys(raw)) {
+      const r = raw[k]?._raw || ''
+      if (r.startsWith('number')) out.push([k, 'number'])
+      else if (r.startsWith('boolean')) out.push([k, 'boolean'])
+    }
+    return out
+  }
+
+  const object = zodUnwrap(validator)
+  if (zodKind(object) !== 'object') return out
+  let shape: any
+  try {
+    shape = object.shape ?? (object._def ?? object.def)?.shape
+    if (typeof shape === 'function') shape = shape()
+  } catch {
+    return out
+  }
+  if (!shape || typeof shape !== 'object') return out
+  for (const k of Object.keys(shape)) {
+    const kind = zodKind(zodUnwrap(shape[k]))
+    if (kind === 'number' || kind === 'boolean' || kind === 'date') {
+      out.push([k, kind])
+    }
+  }
+  return out
+}
+
+function applyCoercions(target: any, coercions: Coercion[]): void {
+  if (!target || typeof target !== 'object') return
+  for (const [k, kind] of coercions) {
+    const v = target[k]
+    if (typeof v !== 'string') continue
+    if (kind === 'number') {
+      if (v.trim() !== '') {
+        const n = Number(v)
+        if (!isNaN(n)) target[k] = n
+      }
+    } else if (kind === 'date') {
+      // Left as a string when unparseable so the validator reports it
+      const d = new Date(v)
+      if (v.trim() !== '' && !isNaN(d.getTime())) target[k] = d
+    } else {
+      const lower = v.toLowerCase().trim()
+      if (lower === 'true' || lower === '1') target[k] = true
+      else if (lower === 'false' || lower === '0') target[k] = false
+    }
+  }
+}
+
+function compileValidator(
+  router: Router<any>,
+  validator: any,
+  httpPart: string
+): ((val: any) => any) | null {
+  if (router.validatorCompiler) {
+    return router.validatorCompiler({ schema: validator, httpPart })
+  }
+  if (typeof validator.parse === 'function') {
+    return (val) => validator.parse(val)
+  }
+  return null
+}
+
+async function runPipeTransform(
+  validator: any,
+  value: any,
+  type: string
+): Promise<any> {
+  if (typeof validator.transform === 'function') {
+    return validator.transform(value, { type, data: value })
+  }
+  if (typeof validator === 'function' && validator.prototype?.transform) {
+    const pipe = new validator()
+    return pipe.transform(value, { type, data: value })
+  }
+  return value
 }
 
 // ─── Router ───────────────────────────────────────────────────────────────────
@@ -105,9 +222,16 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       }
     }
 
+    // Upload parsing and validation run directly before the final handler,
+    // after the route's own middleware. Authentication therefore decides
+    // first: an unauthenticated request gets 401, not a validation error
+    // describing the expected payload.
+    const beforeHandler: Handler<any, any, any>[] = []
+
     if (schema?.body) {
       const bodyValidator: any = schema.body
-      actualHandlers.unshift(async (req, res, next) => {
+      let compiledBody: ((val: any) => any) | null | undefined
+      beforeHandler.unshift(async (req, res, next) => {
         let body: any
         try {
           const contentType = req.header('content-type') || ''
@@ -122,29 +246,12 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           } else {
             body = await req.json()
           }
-          let compiledBodyValidator: ((val: any) => any) | null = null
-          if (this.validatorCompiler) {
-            compiledBodyValidator = this.validatorCompiler({
-              schema: bodyValidator,
-              httpPart: 'body',
-            })
-          } else if (typeof bodyValidator.parse === 'function') {
-            compiledBodyValidator = (val) => bodyValidator.parse(val)
+          if (compiledBody === undefined) {
+            compiledBody = compileValidator(this, bodyValidator, 'body')
           }
-          if (compiledBodyValidator) {
-            req.body = compiledBodyValidator(body)
-          } else if (typeof bodyValidator.transform === 'function') {
-            req.body = await bodyValidator.transform(body, {
-              type: 'body',
-              data: body,
-            })
-          } else if (
-            typeof bodyValidator === 'function' &&
-            bodyValidator.prototype?.transform
-          ) {
-            const pipe = new bodyValidator()
-            req.body = await pipe.transform(body, { type: 'body', data: body })
-          }
+          req.body = compiledBody
+            ? compiledBody(body)
+            : await runPipeTransform(bodyValidator, body, 'body')
           next()
         } catch (err: any) {
           if (err && typeof err === 'object') {
@@ -160,63 +267,19 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
     if (schema?.query) {
       const queryValidator: any = schema.query
-      actualHandlers.unshift(async (req, res, next) => {
+      const queryCoercions = buildCoercions(queryValidator)
+      let compiledQuery: ((val: any) => any) | null | undefined
+      beforeHandler.unshift(async (req, res, next) => {
         try {
-          if (
-            req.query &&
-            typeof req.query === 'object' &&
-            queryValidator.rawSchema
-          ) {
-            for (const [k, v] of Object.entries(queryValidator.rawSchema)) {
-              const raw = (v as any)?._raw || ''
-              if (
-                raw.startsWith('number') &&
-                typeof req.query[k] === 'string' &&
-                req.query[k].trim() !== ''
-              ) {
-                const n = Number(req.query[k])
-                if (!isNaN(n)) req.query[k] = n
-              } else if (
-                raw.startsWith('boolean') &&
-                typeof req.query[k] === 'string'
-              ) {
-                const lower = req.query[k].toLowerCase().trim()
-                if (lower === 'true' || lower === '1') req.query[k] = true
-                else if (lower === 'false' || lower === '0')
-                  req.query[k] = false
-              }
-            }
+          applyCoercions(req.query, queryCoercions)
+          if (compiledQuery === undefined) {
+            compiledQuery = compileValidator(this, queryValidator, 'query')
           }
-
-          let compiledQueryValidator: ((val: any) => any) | null = null
-          if (this.validatorCompiler) {
-            compiledQueryValidator = this.validatorCompiler({
-              schema: queryValidator,
-              httpPart: 'query',
-            })
-          } else if (typeof queryValidator.parse === 'function') {
-            compiledQueryValidator = (val) => queryValidator.parse(val)
-          }
-          if (compiledQueryValidator) {
-            req.query = compiledQueryValidator(req.query) as Record<
-              string,
-              string
-            >
-          } else if (typeof queryValidator.transform === 'function') {
-            req.query = (await queryValidator.transform(req.query, {
-              type: 'query',
-              data: req.query,
-            })) as any
-          } else if (
-            typeof queryValidator === 'function' &&
-            queryValidator.prototype?.transform
-          ) {
-            const pipe = new queryValidator()
-            req.query = (await pipe.transform(req.query, {
-              type: 'query',
-              data: req.query,
-            })) as any
-          }
+          req.query = (
+            compiledQuery
+              ? compiledQuery(req.query)
+              : await runPipeTransform(queryValidator, req.query, 'query')
+          ) as any
           next()
         } catch (err: any) {
           if (err && typeof err === 'object') {
@@ -232,65 +295,19 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
     if (schema?.params) {
       const paramsValidator: any = schema.params
-      // Params validation runs as middleware AFTER the router sets req.params
-      // So we push it (not unshift) to run after route matching populates params
-      actualHandlers.unshift(async (req, res, next) => {
+      const paramsCoercions = buildCoercions(paramsValidator)
+      let compiledParams: ((val: any) => any) | null | undefined
+      beforeHandler.unshift(async (req, res, next) => {
         try {
-          if (
-            req.params &&
-            typeof req.params === 'object' &&
-            paramsValidator.rawSchema
-          ) {
-            for (const [k, v] of Object.entries(paramsValidator.rawSchema)) {
-              const raw = (v as any)?._raw || ''
-              if (
-                raw.startsWith('number') &&
-                typeof req.params[k] === 'string' &&
-                req.params[k].trim() !== ''
-              ) {
-                const n = Number(req.params[k])
-                if (!isNaN(n)) req.params[k] = n
-              } else if (
-                raw.startsWith('boolean') &&
-                typeof req.params[k] === 'string'
-              ) {
-                const lower = req.params[k].toLowerCase().trim()
-                if (lower === 'true' || lower === '1') req.params[k] = true
-                else if (lower === 'false' || lower === '0')
-                  req.params[k] = false
-              }
-            }
+          applyCoercions(req.params, paramsCoercions)
+          if (compiledParams === undefined) {
+            compiledParams = compileValidator(this, paramsValidator, 'params')
           }
-
-          let compiledParamsValidator: ((val: any) => any) | null = null
-          if (this.validatorCompiler) {
-            compiledParamsValidator = this.validatorCompiler({
-              schema: paramsValidator,
-              httpPart: 'params',
-            })
-          } else if (typeof paramsValidator.parse === 'function') {
-            compiledParamsValidator = (val) => paramsValidator.parse(val)
-          }
-          if (compiledParamsValidator) {
-            req.params = compiledParamsValidator(req.params) as Record<
-              string,
-              string
-            >
-          } else if (typeof paramsValidator.transform === 'function') {
-            req.params = (await paramsValidator.transform(req.params, {
-              type: 'param',
-              data: req.params,
-            })) as any
-          } else if (
-            typeof paramsValidator === 'function' &&
-            paramsValidator.prototype?.transform
-          ) {
-            const pipe = new paramsValidator()
-            req.params = (await pipe.transform(req.params, {
-              type: 'param',
-              data: req.params,
-            })) as any
-          }
+          req.params = (
+            compiledParams
+              ? compiledParams(req.params)
+              : await runPipeTransform(paramsValidator, req.params, 'param')
+          ) as any
           next()
         } catch (err: any) {
           if (err && typeof err === 'object') {
@@ -339,7 +356,15 @@ export class Router<TRoutes extends Record<string, any> = {}> {
         : uploadOpts.fields
           ? fileUpload.fields(uploadOpts.fields, uploadOpts)
           : fileUpload(uploadOpts)
-      actualHandlers.unshift(uploadHandler)
+      beforeHandler.unshift(uploadHandler)
+    }
+
+    if (beforeHandler.length > 0) {
+      actualHandlers.splice(
+        Math.max(0, actualHandlers.length - 1),
+        0,
+        ...beforeHandler
+      )
     }
 
     const routeTimeoutSetting =
@@ -615,7 +640,12 @@ function isStreamLike(val: any): boolean {
 
 function handleReturnedData(data: unknown, res: Response): void {
   if (data === undefined || data === res || res.headersSent) return
-  if (isStreamLike(data)) {
+  if (data instanceof DownloadResponse) {
+    res.download(data.data, data.filename, data.options)
+  } else if (Buffer.isBuffer(data)) {
+    // Binary payloads are sent as-is, never JSON-encoded
+    res.send(data)
+  } else if (isStreamLike(data)) {
     ;(res as any).sendStream(data)
   } else if (!(data instanceof SSEStream)) {
     res.json(data)

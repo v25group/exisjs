@@ -20,8 +20,37 @@ jobs:
         with:
           node-version: 24.x
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck (sources, tests, bench)
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Tests
+        run: npm test
+
+  examples:
+    name: Examples and scaffold
+    runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.x
 
       - name: Install Dependencies
         run: npm install
@@ -29,5 +58,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run Tests
-        run: npm test
+      # Type-checks, tests, builds and boots each example in production mode,
+      # then does the same for freshly scaffolded projects
+      - name: Verify examples and create-exisjs output
+        run: npm run verify:examples

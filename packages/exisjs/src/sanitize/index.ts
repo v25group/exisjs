@@ -1,11 +1,13 @@
 import {
-  escapeHtml as rsEscapeHtml,
-  stripHtml as rsStripHtml,
-  preventSql as rsPreventSql,
-  preventTraversal as rsPreventTraversal,
-  maskEmail as rsMaskEmail,
-  maskString as rsMaskString,
-} from '@exisjs/rs'
+  escapeHtml,
+  stripHtml,
+  maskEmail,
+  maskString,
+  hasSqlInjection,
+  hasPathTraversal,
+  SQL_INJECTION_MESSAGE,
+  PATH_TRAVERSAL_MESSAGE,
+} from '../validator/text'
 
 const safeString =
   (fn: (s: string) => string) =>
@@ -17,38 +19,35 @@ const safeString =
 /**
  * ExisJS Sanitization Engine
  *
- * Offers dual-use standalone sanitization powered by native Rust
- * bindings along with pure Javascript fallback utilities for complex object
- * manipulation.
+ * Standalone sanitizers, usable directly or composed into tex schemas via
+ * `.sanitize()`.
  */
 export const sanitize = {
-  // ─── Native Rust Sanitizers ──────────────────────────────────────────────
+  // ─── Security ────────────────────────────────────────────────────────────
 
-  escapeHtml: safeString((val: string): string => rsEscapeHtml(val)),
+  escapeHtml: safeString(escapeHtml),
 
-  stripHtml: safeString((val: string): string => rsStripHtml(val)),
+  stripHtml: safeString(stripHtml),
 
   preventSql: safeString((val: string): string => {
-    try {
-      return rsPreventSql(val)
-    } catch (e: any) {
-      throw new Error(`Sanitization failed: ${e.message}`, { cause: e })
+    if (hasSqlInjection(val)) {
+      throw new Error(`Sanitization failed: ${SQL_INJECTION_MESSAGE}`)
     }
+    return val
   }),
 
   preventTraversal: safeString((val: string): string => {
-    try {
-      return rsPreventTraversal(val)
-    } catch (e: any) {
-      throw new Error(`Sanitization failed: ${e.message}`, { cause: e })
+    if (hasPathTraversal(val)) {
+      throw new Error(`Sanitization failed: ${PATH_TRAVERSAL_MESSAGE}`)
     }
+    return val
   }),
 
-  maskEmail: safeString((val: string): string => rsMaskEmail(val)),
+  maskEmail: safeString(maskEmail),
 
-  maskString: safeString((val: string): string => rsMaskString(val)),
+  maskString: safeString(maskString),
 
-  // ─── Javascript Utilities ────────────────────────────────────────────────
+  // ─── Formatting ──────────────────────────────────────────────────────────
 
   trim: safeString((val) => val.trim()),
 

@@ -1,78 +1,36 @@
 import { controller, route } from 'exisjs/router'
-import { guard, pipe } from 'exisjs/middleware'
+import { NotFoundError } from 'exisjs/error'
+import { requireAuth } from '@/middleware/auth'
 import { UserParamsSchema } from './schema'
-import { getUsers, getUserById } from './controller'
-import { tex } from 'exisjs/validator'
-
-class MyService {
-  get [Symbol.for('exisjs:scope')]() {
-    return 'request'
-  }
-  sayHello() {
-    return 'hello from DI test!'
-  }
-}
+import { UsersService } from './service'
 
 export default controller({
-  cors: true,
-  middleware: [
-    (req: any, res: any, next: any) => {
-      console.log('Users file-based route hit via config!')
-      next()
-    },
-  ],
-  onError: (err, req, res) => {
-    console.log('Users Local Error Handler Caught:', err.message)
-    res.status(400).json({ success: false, localError: err.message })
-  },
-  onResponse: (req, res) => {
-    console.log('Users Route sent response with status:', res.statusCode)
-  },
-
   list: route.get('/', {
-    async handle({ req, res, resolve }) {
-      // Test Dependency Injection
-      const myService = resolve(MyService)
-      console.log('DI Test:', myService.sayHello())
+    summary: 'List users',
+    handle({ resolve }) {
+      return resolve(UsersService).findAll()
+    },
+  }),
 
-      // Re-use the existing controller
-      return getUsers(req, res)
+  me: route.get('/me', {
+    summary: 'The authenticated user',
+    // Listing the middleware here types req.user; the boundary already ran it
+    middleware: [requireAuth],
+    handle({ req, resolve }) {
+      const user = resolve(UsersService).findById(req.user.id)
+      if (!user) throw new NotFoundError('User')
+      return user
     },
   }),
 
   getById: route.get('/:id', {
+    summary: 'Get a user by id',
     params: UserParamsSchema,
-    middleware: [
-      guard((req) => req.params.id !== '999', {
-        message: 'You do not have access to this user',
-      }),
-      pipe('params', 'id', (val) => Number(val)),
-    ],
-    async handle(ctx) {
-      return getUserById(ctx.req, ctx.res)
-    },
-  }),
-
-  implicit: route.post('/:id/implicit', {
-    params: UserParamsSchema,
-    body: tex.object({ role: tex.string() }),
-    async handle({ params, body }) {
-      return {
-        success: true,
-        data: {
-          id: params.id,
-          role: body.role,
-          hiddenField: 'THIS SHOULD BE STRIPPED OUT!',
-        },
-      }
-    },
-  }),
-
-  fail: route.get('/fail', {
-    async handle() {
-      throw new Error(
-        "This error should be caught by the module's local onError hook!"
-      )
+    handle({ params, resolve }) {
+      // params.id is a number here: validation runs before the handler
+      const user = resolve(UsersService).findById(params.id)
+      if (!user) throw new NotFoundError('User')
+      return user
     },
   }),
 })

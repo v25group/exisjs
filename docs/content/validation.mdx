@@ -368,7 +368,7 @@ When validating, `tex.discriminatedUnion` matches the discriminator property aga
 ```json filename="Discriminator Error Example"
 {
   "statusCode": 400,
-  "error": "Bad Request",
+  "error": { "code": "VALIDATION_ERROR", "message": "Validation Error", "details": [] },
   "message": "Validation Error: type: Invalid discriminator value 'archive' for field 'type'",
   "details": [
     {
@@ -588,7 +588,7 @@ When incoming requests fail validation, ExisJS returns an HTTP `400 Bad Request`
 ```json filename="HTTP 400 Bad Request"
 {
   "statusCode": 400,
-  "error": "Bad Request",
+  "error": { "code": "VALIDATION_ERROR", "message": "Validation Error", "details": [] },
   "message": "Validation Error: username: Field must be at least 4 characters, email: Invalid email address",
   "errors": {
     "username": "Field must be at least 4 characters",
@@ -642,6 +642,20 @@ export default controller({
   }),
 })
 ```
+
+### Query and Param Coercion with Zod
+
+Query strings and path parameters always arrive as strings. For Zod object schemas used as `query` or `params`, ExisJS converts fields declared as `z.number()`, `z.boolean()` or `z.date()` before validating, so `z.coerce` and `.transform(Number)` are not needed (they keep working if present). This works with Zod 3 and Zod 4, including fields wrapped in `.optional()`, `.default()` or `.nullable()`.
+
+```typescript
+const ListQuery = z.object({
+  page: z.number().int().min(1).default(1), // ?page=2      -> 2
+  active: z.boolean().optional(),           // ?active=true -> true
+  from: z.date().optional(),                // ?from=2026-10-01 -> Date
+})
+```
+
+A value that cannot be converted (`?page=abc`) is left as a string, so the schema rejects it with a normal validation error. Request bodies are never coerced.
 
 ### Using Zod in OOP Controllers
 

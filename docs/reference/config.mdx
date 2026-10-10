@@ -172,7 +172,7 @@ The root configuration schema accepted by `exis.config.ts`:
 | `host` | `string` | `'0.0.0.0'` | Network interface binding. |
 | `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | HTTP server backend. Automatically selects Bun or Node when detected. |
 | `cluster` | `{ workers?: number \| 'auto' \| 'safe' \| 'max' }` | `{ workers: 1 }` | Multi-process worker clustering. `'safe'` uses available CPU cores minus 1; `'max'` uses all available cores. |
-| `trustProxy` | `boolean \| number` | `false` | Enables reverse-proxy IP headers (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`). |
+| `trustProxy` | `boolean \| number` | `false` | `true`: trust all proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`). `N`: trust only the N closest hops in `X-Forwarded-For`, counting the socket peer; CDN headers are ignored. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum payload size in bytes for JSON and URL-encoded request bodies. |
 | `compression` | `boolean` | `false` | Enables gzip and Brotli response compression. |
 | `etag` | `boolean` | `false` | Enables ETag computation for dynamic responses. |

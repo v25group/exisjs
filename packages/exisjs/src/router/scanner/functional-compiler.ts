@@ -4,6 +4,7 @@ import { tex } from '../../validator/index'
 import { executionContext } from '../../server/context'
 import type { App } from '../../server/app'
 import { CATCH_EXCEPTIONS_METADATA } from '../../decorators/constants'
+import { DownloadResponse } from '../../server/download'
 
 /**
  * Compiles a modern functional controller configuration object into an ExisJS Router instance.
@@ -471,7 +472,12 @@ export function compileFunctionalController(config: any, app: App): Router {
           }
 
           if (result !== undefined) {
-            if (
+            if (result instanceof DownloadResponse) {
+              res.download(result.data, result.filename, result.options)
+            } else if (Buffer.isBuffer(result)) {
+              // Binary payloads are sent as-is, never JSON-encoded
+              res.send(result)
+            } else if (
               result &&
               (typeof result.pipe === 'function' ||
                 (typeof result.getReader === 'function' &&

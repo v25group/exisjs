@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <b>Ultra-high-performance TypeScript web framework with a raw Rust engine under the hood.</b>
+  <b>Fast, lightweight TypeScript web framework with no native dependencies.</b>
 </p>
 
 <p align="center">

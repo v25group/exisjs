@@ -1,8 +1,18 @@
 import fs from 'node:fs'
 import type { ErrorHandler, Handler } from '../types'
 import { logger } from '../logger'
+import { isSensitiveField } from '../validator/error'
 
 // ─── HttpError ─────────────────────────────────────────────────────────────────
+
+// notFound('User') -> "User not found". A full sentence such as
+// notFound('Book not found') is used as written instead of becoming
+// "Book not found not found".
+function notFoundMessage(resource: string): string {
+  return /not found.?$/i.test(resource.trim())
+    ? resource
+    : `${resource} not found`
+}
 
 export class HttpError extends Error {
   public readonly statusCode: number
@@ -42,7 +52,7 @@ export class HttpError extends Error {
   }
 
   static notFound(resource = 'Resource'): HttpError {
-    return new HttpError(`${resource} not found`, 404, 'NOT_FOUND')
+    return new HttpError(notFoundMessage(resource), 404, 'NOT_FOUND')
   }
 
   static conflict(message: string): HttpError {
@@ -76,9 +86,12 @@ export class HttpError extends Error {
     return new HttpError(message, 504, 'GATEWAY_TIMEOUT')
   }
 
+  // Every error response shares this core:
+  //   { success: false, statusCode, error: { code, message, details? } }
   toJSON(): object {
     return {
       success: false,
+      statusCode: this.statusCode,
       error: {
         code: this.code,
         message: this.message,
@@ -112,7 +125,7 @@ export class ForbiddenError extends HttpError {
 
 export class NotFoundError extends HttpError {
   constructor(resource = 'Resource') {
-    super(`${resource} not found`, 404, 'NOT_FOUND')
+    super(notFoundMessage(resource), 404, 'NOT_FOUND')
     this.name = 'NotFoundError'
   }
 }
@@ -518,7 +531,8 @@ export function createErrorHandler(isDev = false): ErrorHandler {
 
         tableRows.push({
           field,
-          received: formattedReceived,
+          // Never echo credentials into logs or error responses
+          received: isSensitiveField(field) ? '[Redacted]' : formattedReceived,
           expected: itemDetail?.expected || expectedMsg,
           code: itemDetail?.code,
         })
@@ -527,8 +541,13 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       const diagnosticLines = Object.entries(errorsMap).map(
         ([f, msg]) => `  ✖ ${f}: ${msg}`
       )
-      const table = renderValidationTable(tableRows)
-      const diagnosticMsg = `[Validation Failed] ${routeLoc}${part}\n${diagnosticLines.join('\n')}\n${table}`
+      // The ASCII table is a development aid; production logs keep the same
+      // data as structured fields (validationTable) without the drawing
+      const table =
+        process.env.NODE_ENV === 'production'
+          ? ''
+          : `\n${renderValidationTable(tableRows)}`
+      const diagnosticMsg = `[Validation Failed] ${routeLoc}${part}\n${diagnosticLines.join('\n')}${table}`
 
       if (req.log && typeof req.log.warn === 'function') {
         req.log.warn(
@@ -564,7 +583,12 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       res.status(400).json({
         success: false,
         statusCode: 400,
-        error: 'Bad Request',
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: message || 'Validation Error',
+          details: responseDetails,
+        },
+        // Kept for existing clients: field -> message map and flat details
         message: message || 'Validation Error',
         validationErrors: errorsMap,
         errors: errorsMap,
@@ -610,15 +634,17 @@ export function createErrorHandler(isDev = false): ErrorHandler {
       return
     }
 
+    const internalMessage =
+      (isDev && err?.message) || 'An unexpected error occurred'
     res.status(500).json({
       success: false,
       statusCode: 500,
       error: {
         code: 'INTERNAL_ERROR',
-        message: isDev ? err.message : 'An unexpected error occurred',
+        message: internalMessage,
         ...(isDev && { stack: err.stack }),
       },
-      message: isDev ? err.message : 'An unexpected error occurred',
+      message: internalMessage,
       validationErrors: null,
       timestamp: new Date().toISOString(),
     })

@@ -70,7 +70,7 @@ export default controller({
 
 ### OOP Constructor and Property Injection
 
-In class-based controllers and services, dependencies declared in the constructor are automatically resolved using TypeScript's emitted metadata (`design:paramtypes`):
+In class-based controllers and services, constructor dependencies are injected by token. Mark each parameter with `@Inject(Token)`; a class is its own token. ExisJS does not rely on TypeScript's emitted type metadata (the `tsx`/esbuild toolchain does not produce it), so an undecorated parameter on a controller or `@Injectable()` class fails with a clear error instead of receiving `undefined`:
 
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Post, Body } from 'exisjs/decorators'
@@ -85,8 +85,8 @@ export default class UsersController {
   @Optional()
   private metrics?: MetricsService
 
-  // Automatic constructor injection
-  constructor(private usersService: UsersService) {}
+  // Constructor injection: the class is the token
+  constructor(@Inject(UsersService) private usersService: UsersService) {}
 
   @Get('/')
   async list() {
@@ -287,7 +287,7 @@ import { DatabaseService } from './database.service'
 
 @Injectable()
 export class RolesService {
-  constructor(private db: DatabaseService) {}
+  constructor(@Inject(DatabaseService) private db: DatabaseService) {}
 
   // Caches method results using an LRU cache
   @Cacheable({ ttl: 300, key: (id: string) => `role:${id}` })

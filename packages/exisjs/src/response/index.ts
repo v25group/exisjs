@@ -400,8 +400,39 @@ export function redirect(
   return { redirect: url, status }
 }
 
+/**
+ * Sends content (a string, Buffer or stream) as a file download when
+ * returned from a handler. Sets `Content-Disposition` and infers
+ * `Content-Type` from the filename. A string is always sent as content; to
+ * send a file from disk use `res.download(path, name, { root })`.
+ *
+ * @example
+ * ```ts
+ * import { download } from 'exisjs/response'
+ *
+ * export default controller({
+ *   exportCsv: route.get('/export', {
+ *     async handle() {
+ *       const csv = await ReportService.buildCsv()
+ *       return download(csv, 'report.csv')
+ *     },
+ *   }),
+ * })
+ * ```
+ */
+export function download(
+  data: ConstructorParameters<typeof DownloadResponse>[0],
+  filename: string,
+  options?: DownloadOptions
+): DownloadResponse {
+  return new DownloadResponse(data, filename, options)
+}
+
+export { DownloadResponse, type DownloadOptions } from '../server/download'
+
 // ─── Direct Re-exports ────────────────────────────────────────────────────────
 
+import { DownloadResponse, type DownloadOptions } from '../server/download'
 export { ExisResponse } from '../server/response'
 export {
   SSEStream,

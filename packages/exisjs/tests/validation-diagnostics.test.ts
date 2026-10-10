@@ -39,7 +39,7 @@ describe('Validation Error Diagnostic Visibility', () => {
     expect(res.statusCode).toBe(400)
     const body = getResponseBody<any>(res)
     expect(body.statusCode).toBe(400)
-    expect(body.error).toBe('Bad Request')
+    expect(body.error.code).toBe('VALIDATION_ERROR')
     expect(body.errors).toEqual({
       visitDate: 'Expected date string',
       visitorName: 'Required field missing',
@@ -420,7 +420,7 @@ describe('Validation Error Diagnostic Visibility', () => {
     expect(res.statusCode).toBe(400)
     const body = getResponseBody<any>(res)
     expect(body.statusCode).toBe(400)
-    expect(body.error).toBe('Bad Request')
+    expect(body.error.code).toBe('VALIDATION_ERROR')
     expect(body.errors).toEqual({
       username: 'Must be at least 4 characters',
     })

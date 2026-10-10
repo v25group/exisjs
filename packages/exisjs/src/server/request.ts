@@ -2,7 +2,8 @@ import { IncomingMessage } from 'node:http'
 import type { Logger } from '../types'
 import type { ExisResponse } from './response'
 import { HttpError } from '../error/errors'
-import { parseJsonBody, stripPrototype, parseCookies } from '@exisjs/rs'
+import { secureJsonParse, stripPrototype } from './helpers/json'
+import { parseCookies } from './helpers/cookie'
 import {
   resolveIps,
   resolveProtocol,
@@ -51,10 +52,22 @@ export class ExisRequest<
     if (!this._abortController) {
       this._abortController = new AbortController()
       this._signal = this._abortController.signal
+      if (!this._onClose) {
+        this._onClose = () => {
+          if (!this.res.raw.writableEnded && !this.res.headersSent) {
+            if (
+              this._abortController &&
+              !this._abortController.signal.aborted
+            ) {
+              this._abortController.abort()
+            }
+          }
+        }
+      }
       if (typeof this.raw?.once === 'function') {
-        this.raw.once('close', this._onClose)
+        this.raw.once('close', this._onClose!)
       } else if (typeof this.raw?.on === 'function') {
-        this.raw.on('close', this._onClose)
+        this.raw.on('close', this._onClose!)
       }
     }
     return this._signal!
@@ -64,7 +77,11 @@ export class ExisRequest<
     this._signal = val
   }
 
-  public _diCache = new Map<any, any>()
+  // Created on first use: most requests never touch request-scoped DI
+  private _diCacheMap?: Map<any, any>
+  public get _diCache(): Map<any, any> {
+    return this._diCacheMap || (this._diCacheMap = new Map())
+  }
 
   private _urlStr: string
   private _qIdx: number
@@ -77,16 +94,10 @@ export class ExisRequest<
   private _hostname?: string
   private _method?: string
 
-  private _onClose = () => {
-    if (!this.res.raw.writableEnded && !this.res.headersSent) {
-      if (this._abortController && !this._abortController.signal.aborted) {
-        this._abortController.abort()
-      }
-    }
-  }
+  private _onClose?: () => void
 
   public cleanup(): void {
-    if (this._abortController) {
+    if (this._abortController && this._onClose) {
       if (typeof this.raw?.removeListener === 'function') {
         this.raw.removeListener('close', this._onClose)
       } else if (typeof this.raw?.off === 'function') {
@@ -95,7 +106,7 @@ export class ExisRequest<
       this._abortController = undefined
       this._signal = undefined
     }
-    this._diCache.clear()
+    this._diCacheMap?.clear()
     this.user = undefined as any
     this.session = undefined
     this.body = undefined as any
@@ -147,7 +158,7 @@ export class ExisRequest<
     this.requestId = undefined
     this.tenantId = undefined
 
-    this._diCache.clear()
+    this._diCacheMap?.clear()
 
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
@@ -322,7 +333,7 @@ export class ExisRequest<
       return this.body as unknown as T
     }
     try {
-      this.body = parseJsonBody(this.rawBody)
+      this.body = secureJsonParse(this.rawBody)
       return this.body as unknown as T
     } catch {
       throw HttpError.badRequest('Invalid JSON body')
@@ -425,7 +436,7 @@ export class ExisRequest<
       throw HttpError.badRequest('Missing multipart boundary.')
     }
 
-    const res = await streamMultipartUpload(this.raw, destDir)
+    const res = await streamMultipartUpload(this.raw, destDir, this.bodyLimit)
     this.body = res.fields as unknown as TBody
     return res
   }

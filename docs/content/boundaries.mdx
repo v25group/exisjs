@@ -13,6 +13,8 @@ Any `boundary.ts` automatically applies to every route within its directory and 
 
 ---
 
+> Boundaries apply the same way in development and in production builds. If a `boundary.ts` file fails to load, the routes beneath it are not mounted, so a broken boundary can never leave routes unprotected.
+
 ## Anatomy of a Boundary
 
 A `boundary.ts` consists of two distinct components:

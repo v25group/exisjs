@@ -1,43 +1,41 @@
 {
   "name": "exis",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "private": true,
-  "description": "ExisJS workspace",
+  "description": "ExisJS monorepo: exisjs, create-exisjs and @exisjs/fetch",
+  "homepage": "https://github.com/v25group/exisjs#readme",
+  "bugs": {
+    "url": "https://github.com/v25group/exisjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git"
+  },
+  "license": "MIT",
   "author": "V25 Group <support@v25group.com>",
-  "keywords": [
-    "ExisJS",
-    "exis",
-    "exis.js",
-    "exisjs",
-    "framework",
-    "nodejs",
-    "typescript",
-    "backend",
-    "api",
-    "rpc",
-    "type-safe"
-  ],
   "workspaces": [
     "packages/*",
     "examples/*",
     "examples/*/*"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "build": "npm run build --workspace=packages/rs --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/create",
+    "build": "npm run build --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/create",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
+    "verify:examples": "node scripts/verify-examples.mjs",
     "lint": "eslint .",
+    "typecheck": "tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
     "prepare": "husky",
     "release": "npm run build && npm publish --workspace=packages/exisjs --workspace=packages/create --workspace=packages/fetch --access public",
-    "bench": "tsx bench/basic.ts",
-    "bench:compare": "tsx bench/compare.ts",
-    "bench:router": "tsx bench/router.ts",
-    "profile:cpu:node": "node --cpu-prof --import tsx bench/profile/node-server.ts",
-    "profile:mem:node": "node --heap-prof --import tsx bench/profile/node-server.ts",
-    "profile:cpu:uws": "node --cpu-prof --import tsx bench/profile/uws-server.ts",
-    "profile:mem:uws": "node --heap-prof --import tsx bench/profile/uws-server.ts",
-    "bench:load:profile": "autocannon http://localhost:3000"
+    "bench": "npm run build --workspace=packages/exisjs && tsx bench/http.ts",
+    "bench:quick": "npm run build --workspace=packages/exisjs && tsx bench/http.ts --quick",
+    "bench:router": "tsx bench/micro/router.ts",
+    "bench:validation": "tsx bench/micro/validation.ts",
+    "bench:profile": "npm run build --workspace=packages/exisjs && tsx bench/profile.ts"
   },
   "lint-staged": {
     "packages/**/*.ts": [
@@ -45,33 +43,32 @@
       "prettier --write"
     ]
   },
+  "dependencies": {
+    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0",
+    "ws": "^8.22.0"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@hono/node-server": "^2.1.1",
-    "@napi-rs/cli": "^3.10.5",
+    "@hono/node-server": "^2.1.3",
+    "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.70.1",
-    "@typescript-eslint/parser": "^8.70.1",
+    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/parser": "^8.71.0",
     "autocannon": "^8.0.0",
-    "benchmark": "^2.1.4",
     "cross-env": "^10.1.0",
     "eslint": "^10.9.1",
     "express": "^5.2.1",
     "fastify": "^5.12.5",
     "find-my-way": "^9.9.0",
-    "hono": "^4.13.8",
+    "hono": "^4.13.11",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
+    "lint-staged": "^17.6.0",
     "mitata": "^1.0.34",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.70.1"
-  },
-  "dependencies": {
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0",
-    "ws": "^8.21.3"
+    "typescript-eslint": "^8.71.0"
   },
   "overrides": {
     "hyperid": "^4.0.0"

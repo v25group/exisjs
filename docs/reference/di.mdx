@@ -131,7 +131,7 @@ export default class UserController {
   private config!: Record<string, any>
 
   constructor(
-    private userService: UserService,
+    @Inject(UserService) private userService: UserService,
     @Inject('DATABASE_URL') private dbUrl: string
   ) {}
 }

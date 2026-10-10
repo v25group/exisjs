@@ -8,6 +8,8 @@ export {
 export type {
   RouteConfig,
   RouteDefinition,
+  InferRouteInput,
+  InferRouteOutput,
   ControllerConfig,
   SuperContext,
 } from './route-builder'

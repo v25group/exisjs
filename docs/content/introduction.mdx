@@ -9,7 +9,7 @@ nextTitle: 'Installation'
 
 **ExisJS** is an opinionated web framework for building TypeScript backends on Node.js. It brings convention-over-configuration and automatic file-system routing to backend API development.
 
-Rather than manually assembling, wiring, and maintaining separate third-party libraries for routing, input validation, dependency injection, OpenAPI documentation, rate limiting, and background task scheduling, ExisJS provides a standard library integrated with a native Rust acceleration engine (`@exisjs/rs`).
+Rather than manually assembling, wiring, and maintaining separate third-party libraries for routing, input validation, dependency injection, OpenAPI documentation, rate limiting, and background task scheduling, ExisJS provides an integrated standard library in a lightweight, pure TypeScript core with no native add-ons.
 
 ---
 
@@ -20,7 +20,7 @@ TypeScript backend development often faces two approaches:
 1. **Micro-frameworks (Express, Fastify)**: Require developers to manually select, wire, and maintain middleware packages for validation, OpenAPI schemas, dependency injection, and security headers. Over time, projects diverge in structure and maintenance overhead increases.
 2. **Heavy enterprise frameworks**: Introduce deep class hierarchies, verbose configuration modules, and steep learning curves.
 
-ExisJS combines convention-based file routing, built-in standard modules, and native Rust primitives with support for both functional and object-oriented paradigms.
+ExisJS combines convention-based file routing, built-in standard modules, and a lean runtime with support for both functional and object-oriented paradigms.
 
 ---
 
@@ -38,16 +38,16 @@ ExisJS combines convention-based file routing, built-in standard modules, and na
 │  Request Context (ExisRequest/Response) · Hierarchical Boundaries · Swagger │
 │        Rate Limiting · Helmet Headers · CSRF · Idempotency · Telemetry      │
 └──────────────────────────────────────┬──────────────────────────────────────┘
-                                       │ (N-API Direct Bindings with Fallback)
+                                       │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
-│                       Native Rust Engine (@exisjs/rs)                       │
-│    NativeRadixTree Routing  │  LRU Memory Cache  │  Fast CIDR IP Filtering  │
-│    TexValidator Accelerator │  Safe Sanitization Body Parser                │
+│                               Runtime Core                                  │
+│      Radix-Tree Router   │   Compiled tex Validators   │   CIDR IP Filter   │
+│      Secure Body Parser  │   Bounded In-Memory Caches                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. File-System Native Routing
-The file-system routing engine scans the `src/http` directory and compiles route paths into a native Rust radix tree (`NativeRadixTree`). Path parameter extraction and endpoint dispatching execute through native N-API bindings.
+### 1. File-System Routing
+The file-system routing engine scans the `src/http` directory and compiles route paths into a radix tree at startup. Purely static paths resolve through an exact-match table; parameterized paths walk the tree with no per-request parsing of the route definitions.
 
 ### 2. Dual-Paradigm Parity
 ExisJS provides feature parity across both functional and object-oriented paradigms. Both compile down to the same runtime execution pipeline:
@@ -60,8 +60,8 @@ The built-in `tex` schema builder provides runtime type validation, parameter co
 ### 4. Hierarchical Security & Error Boundaries
 Directory-based `boundary.ts` files allow you to declare scoped authentication guards, rate limits, CORS configurations, and error handlers that cascade down folder trees without manual middleware repetition.
 
-### 5. Resilient Native Fallbacks
-All native Rust bindings (`@exisjs/rs`) include pure TypeScript fallback implementations. If native binaries cannot load on an unsupported architecture, ExisJS automatically runs its pure TypeScript fallback implementations.
+### 5. No Native Dependencies
+The core is pure TypeScript. There are no platform binaries to download or compile, so ExisJS installs the same way on every OS and CPU architecture that Node.js supports.
 
 ---
 
@@ -70,7 +70,7 @@ All native Rust bindings (`@exisjs/rs`) include pure TypeScript fallback impleme
 | Feature Area | ExisJS Built-In Capability | Benefit |
 | :--- | :--- | :--- |
 | **Routing** | File-system route discovery (`src/http/**/route.ts`) | No manual router mounting or path strings |
-| **Validation** | `tex` Schema Validator (Rust accelerated) | Fast parsing, zero-crash sanitization, automatic OpenAPI types |
+| **Validation** | `tex` Schema Validator (compiled once per schema) | Fast parsing, zero-crash sanitization, automatic OpenAPI types |
 | **Documentation** | Automatic Swagger / OpenAPI 3.1 at `/docs` | Self-updating interactive documentation with zero manual sync |
 | **Traffic Control** | Native Token Bucket Rate Limiting & CIDR Filtering | Fast DoS prevention and client throttling |
 | **Security** | Security headers (`helmet`), CSRF, HPP, Body Sanitization | Secure defaults without installing separate packages |
@@ -178,7 +178,7 @@ Every HTTP request dispatched through ExisJS follows a predictable, high-perform
 Incoming Request
       │
       ▼
-1. Native Radix Path Match (@exisjs/rs)
+1. Radix Path Match
       │
       ▼
 2. CIDR IP Filter & Rate Limit Check

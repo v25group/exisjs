@@ -10,7 +10,7 @@ import type { HttpEngine } from './engines/engine'
 export class ServerBootstrapper {
   private app: App<any>
   public engine: HttpEngine
-  private shutdownHooks: (() => Promise<void> | void)[] = []
+  private shutdownHooks: ((signal?: string) => Promise<void> | void)[] = []
 
   constructor(app: App<any>) {
     this.app = app
@@ -188,12 +188,12 @@ export class ServerBootstrapper {
     )
   }
 
-  public onShutdown(hook: () => Promise<void> | void): this {
+  public onShutdown(hook: (signal?: string) => Promise<void> | void): this {
     this.shutdownHooks.push(hook)
     return this
   }
 
-  public close(timeout = 5000): Promise<void> {
+  public close(timeout = 5000, signal?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
       if (!isCLI) this.app.log.info('Initiating graceful shutdown')
@@ -246,7 +246,7 @@ export class ServerBootstrapper {
           // Execute shutdown hooks
           for (let i = 0; i < this.shutdownHooks.length; i++) {
             await runHookSafely(
-              () => this.shutdownHooks[i](),
+              () => this.shutdownHooks[i](signal),
               `shutdownHook[${i}]`,
               perHookTimeout
             )

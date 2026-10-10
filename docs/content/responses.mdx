@@ -248,21 +248,62 @@ res.clearCookie('token', { path: '/' })
 
 ## File Downloads & Streaming
 
-### File Downloads with `res.download()`
+### File Downloads
 
-Reads a file from disk, sets `Content-Disposition: attachment`, and infers MIME type:
+Return `download()` from a handler to send generated content (a string, `Buffer` or stream) as an attachment. It sets `Content-Disposition` and infers `Content-Type` from the filename:
+
+```typescript filename="src/http/reports/route.ts"
+import { controller, route } from 'exisjs/router'
+import { download } from 'exisjs/response'
+
+export default controller({
+  exportCsv: route.get('/export', {
+    async handle() {
+      const csv = await ReportService.buildCsv()
+      return download(csv, 'report.csv')
+    },
+  }),
+  exportXlsx: route.get('/export.xlsx', {
+    async handle() {
+      const stream = await ReportService.streamWorkbook()
+      return download(stream, 'report.xlsx', {
+        headers: { 'Cache-Control': 'no-store' },
+      })
+    },
+  }),
+})
+```
+
+Pass `{ contentType }` to override the inferred MIME type. A handler that returns a plain `Buffer` sends it as `application/octet-stream`.
+
+#### Files on disk: `res.download(path)`
+
+`res.download()` sends a file from disk. A string argument is **always a file path**, never content; a missing file answers `404`. It also accepts a `Buffer` or stream.
 
 ```typescript filename="src/http/reports/route.ts"
 import { controller, route } from 'exisjs/router'
 
 export default controller({
-  download: route.get('/annual', {
+  annual: route.get('/annual', {
     handle: async ({ res }) => {
       res.download('./storage/annual-report.pdf', 'Annual-Report-2026.pdf')
     },
   }),
+  // The filename comes from the request, so confine it to one directory
+  byName: route.get('/files/:name', {
+    handle: async ({ params, res }) => {
+      res.download(params.name, undefined, { root: './storage/exports' })
+    },
+  }),
 })
 ```
+
+> **Security:** whenever any part of the path comes from the request (a param, query value or body field), pass `root`. Paths that resolve outside it, such as `../../.env` or an absolute path, answer `404` instead of leaking the file.
+
+| | String argument means | Use for |
+| :--- | :--- | :--- |
+| `return download(data, name)` | Content | Generated CSV, JSON, reports |
+| `res.download(path, name?, { root })` | File path | Files stored on disk |
 
 ---
 

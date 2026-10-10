@@ -148,7 +148,10 @@ describe('cors()', () => {
   })
 
   it('sets credentials header when enabled', () => {
-    const handler = cors({ credentials: true })
+    const handler = cors({
+      origin: 'https://app.example.com',
+      credentials: true,
+    })
     const req = createMockRequest()
     const res = createMockResponse()
     const next = createMockNext()
@@ -157,6 +160,20 @@ describe('cors()', () => {
 
     expect(getResponseHeader(res, 'access-control-allow-credentials')).toBe(
       'true'
+    )
+  })
+
+  it('never combines a wildcard origin with credentials', () => {
+    const handler = cors({ origin: '*', credentials: true })
+    const req = createMockRequest()
+    const res = createMockResponse()
+    const next = createMockNext()
+
+    handler(req, res, next)
+
+    expect(getResponseHeader(res, 'access-control-allow-origin')).toBe('*')
+    expect(getResponseHeader(res, 'access-control-allow-credentials')).toBe(
+      undefined
     )
   })
 
@@ -217,7 +234,7 @@ describe('helmet()', () => {
 
     expect(getResponseHeader(res, 'x-content-type-options')).toBe('nosniff')
     expect(getResponseHeader(res, 'x-frame-options')).toBe('DENY')
-    expect(getResponseHeader(res, 'x-xss-protection')).toBe('1; mode=block')
+    expect(getResponseHeader(res, 'x-xss-protection')).toBe('0')
     expect(getResponseHeader(res, 'referrer-policy')).toBe(
       'strict-origin-when-cross-origin'
     )
@@ -540,15 +557,15 @@ describe('validate() fallback', () => {
 })
 
 describe('compression & pre-compressed static assets', () => {
-  it('compresses payloads using native Brotli and Gzip', async () => {
+  it('compresses payloads using Brotli and Gzip', async () => {
     const { compression } = await import('../src/middleware/compression')
-    const rs = require('@exisjs/rs')
+    const zlib = require('node:zlib')
 
     const data = Buffer.from('hello world repeated '.repeat(100))
-    const brCompressed = rs.brotliCompress(data)
+    const brCompressed = zlib.brotliCompressSync(data)
     expect(brCompressed.length).toBeLessThan(data.length)
 
-    const gzCompressed = rs.gzipCompress(data)
+    const gzCompressed = zlib.gzipSync(data)
     expect(gzCompressed.length).toBeLessThan(data.length)
 
     const middleware = compression()

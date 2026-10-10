@@ -70,7 +70,10 @@ export class RouteScanner {
     // STANDALONE MODE: If the bundler statically injected the manifest, skip filesystem!
     if ((globalThis as any).__EXIS_STANDALONE_MANIFEST__) {
       manifest = (globalThis as any).__EXIS_STANDALONE_MANIFEST__
-    } else {
+    } else if (isProd) {
+      // The build manifest is a production artifact. Development and tests
+      // always read the source files, so a leftover build can never make
+      // them run stale code.
       const manifestPath = path.join(root, '.exis', 'routes-manifest.js')
       try {
         const stat = await fs.stat(manifestPath)
@@ -129,52 +132,28 @@ export class RouteScanner {
         await this.mountCronJobs(root)
       }
 
+      // Boundaries live next to the compiled routes
+      this.apiDir = path.join(root, '.exis', 'server', 'src', 'http')
+      this._allApiDirs = [this.apiDir]
+
       for (const entry of manifest) {
         const { routePath, module: routeMod, filePath } = entry
         const normalizedPath = path.resolve(root, filePath)
         this.routeMap.set(normalizedPath, routePath)
-        const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
-        const isClassController = (obj: any) =>
-          obj && obj.prototype && obj.prototype[CONTROLLER_PREFIX] !== undefined
-
-        const unwrappedMod =
-          routeMod.default && routeMod.default.default
-            ? routeMod.default.default
-            : routeMod.default
-              ? routeMod.default
-              : routeMod
-
-        const functionalControllerObj =
-          unwrappedMod && unwrappedMod.__isController ? unwrappedMod : null
-
-        const routerInstance = routeMod.router || routeMod.default || routeMod
-
-        if (functionalControllerObj) {
-          if (this.globalParadigm === 'oop') {
-            this.app.log.error(
-              `Mixed Paradigm Error: File ${filePath} uses a Functional controller, but the app is already using Class-Based (OOP) controllers. Please use a single paradigm for the entire project.`
-            )
-            process.exit(1)
-          }
-          this.globalParadigm = 'functional'
-          const router = this.compileFunctionalController(
-            functionalControllerObj
+        try {
+          // Same path as development: applies boundary guards, middleware,
+          // CORS, headers and providers before mounting the route
+          await this.mountRouteFile(normalizedPath, routePath, routeMod)
+        } catch (err) {
+          // Fail closed: a route whose boundary cannot load is not served
+          this.app.log.error(
+            { err, file: filePath },
+            `Failed to load route file: ${filePath}`
           )
-          this.mountRouteWithSource(routePath, router, normalizedPath)
-        } else if (isClassController(routerInstance)) {
-          if (this.globalParadigm === 'functional') {
-            this.app.log.error(
-              `Mixed Paradigm Error: File ${filePath} uses a Class-Based (OOP) controller, but the app is already using Functional controllers. Please use a single paradigm for the entire project.`
-            )
-            process.exit(1)
-          }
-          this.globalParadigm = 'oop'
-          this.app.registerControllers([routerInstance], routePath)
-        } else {
-          this.mountRouteWithSource(routePath, routerInstance, normalizedPath)
         }
       }
-      // Skip the filesystem scan completely!
+
+      await this.mountDocs()
       return
     }
 
@@ -338,6 +317,11 @@ export class RouteScanner {
       )
     }
 
+    await this.mountDocs()
+  }
+
+  // The config alone decides whether docs are served, in every environment
+  private async mountDocs(): Promise<void> {
     const docsConfig = this.app.options.docs || this.app.options.swagger
     if (
       docsConfig &&
@@ -355,26 +339,33 @@ export class RouteScanner {
 
   // ─── Route File Mounting (shared by autoMount and HotReloader) ──────────────
 
-  async mountRouteFile(filePath: string, routePath: string): Promise<void> {
-    let mod: any
-    try {
-      const url =
-        process.env.VITEST || process.env.NODE_ENV === 'test'
-          ? pathToFileURL(filePath).href
-          : pathToFileURL(filePath).href + '?t=' + Date.now()
+  async mountRouteFile(
+    filePath: string,
+    routePath: string,
+    preloaded?: any
+  ): Promise<void> {
+    // The production manifest hands over modules it already imported
+    let mod: any = preloaded
+    if (mod === undefined) {
+      try {
+        const url =
+          process.env.VITEST || process.env.NODE_ENV === 'test'
+            ? pathToFileURL(filePath).href
+            : pathToFileURL(filePath).href + '?t=' + Date.now()
 
-      if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-        mod = await import(url)
-      } else {
-        const dynamicImport = new Function(
-          'specifier',
-          'return import(specifier)'
-        )
-        mod = await dynamicImport(url)
+        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+          mod = await import(url)
+        } else {
+          const dynamicImport = new Function(
+            'specifier',
+            'return import(specifier)'
+          )
+          mod = await dynamicImport(url)
+        }
+      } catch {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        mod = require(filePath)
       }
-    } catch {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      mod = require(filePath)
     }
 
     const {

@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { CookieOptions, Request as IRequest } from '../types'
 import { logger } from '../logger/index'
 import { SSEStream, type SSEOptions } from './sse'
+import type { DownloadOptions } from './download'
 import {
   serializeCookie,
   serializeClearCookie,
@@ -13,7 +14,12 @@ import {
 } from './helpers'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const contentDisposition = require('content-disposition')
+const contentDispositionLib = require('content-disposition')
+// v2 exports { create }; v1 exported the function itself
+const contentDisposition: (filename: string) => string =
+  typeof contentDispositionLib === 'function'
+    ? contentDispositionLib
+    : contentDispositionLib.create
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mime = require('mime-types')
 
@@ -79,18 +85,46 @@ export class ExisResponse<TResponse = any> {
 
   end(data?: unknown) {
     if (this.raw.destroyed || (this.raw as any).writableEnded) return
-    const onEndCallback = () => {
+    if (this._onFinish.length === 0) {
+      // Common case: no finish hooks, so skip the completion callback that
+      // would make Node register a 'finish' listener for every response
+      this.raw.end(data)
+      this._markDone()
+      return
+    }
+    this.raw.end(data, () => {
       // eslint-disable-next-line @typescript-eslint/prefer-for-of
       for (let i = 0; i < this._onFinish.length; i++) {
         this._onFinish[i]()
       }
-      if (this._onDone) {
-        const cb = this._onDone
-        this._onDone = undefined
-        cb()
-      }
+      this._markDone()
+    })
+  }
+
+  // 304 only applies to conditional requests; check the cheap request
+  // headers first so ordinary responses skip two hasHeader() calls
+  private _isNotModified(): boolean {
+    const req = this.req
+    if (req === undefined) return false
+    const h = req.headers
+    if (
+      h === undefined ||
+      (h['if-none-match'] === undefined && h['if-modified-since'] === undefined)
+    ) {
+      return false
     }
-    this.raw.end(data, onEndCallback)
+    return (
+      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
+      req.fresh
+    )
+  }
+
+  private _markDone(): void {
+    const cb = this._onDone
+    if (cb !== undefined) {
+      this._onDone = undefined
+      cb()
+    }
   }
 
   /**
@@ -200,11 +234,7 @@ export class ExisResponse<TResponse = any> {
       this.raw.setHeader('ETag', generateETag(buf))
     }
 
-    if (
-      this.req &&
-      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
-      this.req.fresh
-    ) {
+    if (this._isNotModified()) {
       this.statusCode = 304
       this.end()
       return
@@ -281,11 +311,7 @@ export class ExisResponse<TResponse = any> {
       this.raw.setHeader('ETag', generateETag(buf))
     }
 
-    if (
-      this.req &&
-      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
-      this.req.fresh
-    ) {
+    if (this._isNotModified()) {
       this.statusCode = 304
       this.end()
       return
@@ -471,16 +497,23 @@ export class ExisResponse<TResponse = any> {
   }
 
   /**
-   * Transfers a file on disk, Readable stream, Buffer, or string as an attachment with automatic Content-Disposition and MIME lookup.
+   * Sends a file as an attachment, with `Content-Disposition` and a MIME type
+   * inferred from the filename.
    *
-   * @param fileOrData Absolute path to file on disk, or a Stream, Buffer, or string
-   * @param filename Optional override for downloaded filename (e.g. 'export.csv')
-   * @param options Download options (contentType, headers) or fs.createReadStream options
+   * A **string is always a path to a file on disk**, never content. To send
+   * generated text, pass a `Buffer` or stream, or return `download(text,
+   * name)` from `exisjs/response`. When any part of the path comes from the
+   * request, pass `root`: paths resolving outside it answer 404.
+   *
+   * @param fileOrData File path, or a Buffer / stream of content
+   * @param filename Name the browser saves the file as (defaults to the file's basename)
+   * @param options `contentType`, extra `headers`, and `root` for file paths
    *
    * @example
    * ```ts
-   * res.download('/data/reports/report.pdf', 'monthly-report.pdf')
-   * res.download(csvBuffer, 'sales.csv', { contentType: 'text/csv' })
+   * res.download('./storage/annual-report.pdf', 'Annual-Report-2026.pdf')
+   * res.download(req.params.file, undefined, { root: './storage/exports' })
+   * res.download(csvBuffer, 'sales.csv')
    * res.download(stream, 'export.xlsx')
    * ```
    */
@@ -492,35 +525,17 @@ export class ExisResponse<TResponse = any> {
       | ReadableStream
       | AsyncIterable<any>,
     filename?: string,
-    options?: {
-      contentType?: string
-      headers?: Record<string, string>
-    } & Record<string, any>
+    options?: DownloadOptions
   ): void {
     if (this.headersSent) return
 
-    const name =
-      filename ||
-      (typeof fileOrData === 'string' && !fileOrData.includes('\n')
-        ? path.basename(fileOrData)
-        : 'download')
-
-    this.setHeader('Content-Disposition', contentDisposition(name))
-
-    const contentType =
-      options?.contentType || mime.lookup(name) || 'application/octet-stream'
-
-    if (!this.hasHeader('Content-Type')) {
-      this.setHeader('Content-Type', contentType)
+    if (typeof fileOrData === 'string') {
+      this._downloadFile(fileOrData, filename, options)
+      return
     }
 
-    if (options?.headers) {
-      for (const [k, v] of Object.entries(options.headers)) {
-        this.setHeader(k, v)
-      }
-    }
+    this._setDownloadHeaders(filename || 'download', options)
 
-    // 1. Buffer payload
     if (Buffer.isBuffer(fileOrData)) {
       if (!this.hasHeader('Content-Length')) {
         this.setHeader('Content-Length', fileOrData.length)
@@ -529,58 +544,63 @@ export class ExisResponse<TResponse = any> {
       return
     }
 
-    // 2. Stream payload
+    this.sendStream(fileOrData)
+  }
+
+  private _setDownloadHeaders(name: string, options?: DownloadOptions): void {
+    this.setHeader('Content-Disposition', contentDisposition(name))
+    if (options?.contentType) {
+      this.setHeader('Content-Type', options.contentType)
+    } else if (!this.hasHeader('Content-Type')) {
+      this.setHeader(
+        'Content-Type',
+        mime.lookup(name) || 'application/octet-stream'
+      )
+    }
+    if (options?.headers) {
+      for (const [k, v] of Object.entries(options.headers)) {
+        this.setHeader(k, v)
+      }
+    }
+  }
+
+  private _downloadFile(
+    filePath: string,
+    filename: string | undefined,
+    options?: DownloadOptions
+  ): void {
+    const notFound = () => {
+      if (!this.isWritable) return
+      ;(this as ExisResponse<any>).status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'File not found' },
+      })
+    }
+
+    // With a root, the resolved path must stay inside it, which defeats
+    // "../" segments and absolute paths in request-supplied names
+    const root = options?.root ? path.resolve(options.root) : undefined
+    const full = root ? path.resolve(root, filePath) : path.resolve(filePath)
     if (
-      typeof fileOrData === 'object' &&
-      fileOrData !== null &&
-      (typeof (fileOrData as any).pipe === 'function' ||
-        typeof (fileOrData as any).getReader === 'function' ||
-        typeof (fileOrData as any)[Symbol.asyncIterator] === 'function')
+      filePath.indexOf(String.fromCharCode(0)) !== -1 ||
+      (root !== undefined && !full.startsWith(root + path.sep))
     ) {
-      this.sendStream(fileOrData as any)
+      notFound()
       return
     }
 
-    // 3. String content vs file on disk
-    if (typeof fileOrData === 'string') {
-      const isLikelyPath =
-        !fileOrData.includes('\n') &&
-        (fileOrData.startsWith('/') ||
-          fileOrData.startsWith('./') ||
-          fileOrData.startsWith('../') ||
-          /^[a-zA-Z]:[\\/]/.test(fileOrData) ||
-          fs.existsSync(fileOrData))
-
-      if (isLikelyPath && fs.existsSync(fileOrData)) {
-        const stream = fs.createReadStream(
-          fileOrData,
-          options as Parameters<typeof fs.createReadStream>[1]
-        )
-
-        stream.on('error', (err: NodeJS.ErrnoException) => {
-          if (err.code === 'ENOENT') {
-            this.statusCode = 404
-            this.end('File not found')
-          } else {
-            this.statusCode = 500
-            this.end('Error reading file')
-          }
-        })
-
-        stream.pipe(this.raw as unknown as NodeJS.WritableStream)
+    // Headers are only set once the file is known to exist, so a 404 does
+    // not carry attachment headers
+    fs.stat(full, (err, stat) => {
+      if (err || !stat.isFile()) {
+        notFound()
         return
       }
-
-      // Plain string data
-      const buf = Buffer.from(fileOrData, 'utf8')
-      if (!this.hasHeader('Content-Length')) {
-        this.setHeader('Content-Length', buf.length)
-      }
-      this.end(buf)
-      return
-    }
-
-    this.end(fileOrData)
+      if (!this.isWritable) return
+      this._setDownloadHeaders(filename || path.basename(full), options)
+      this.setHeader('Content-Length', stat.size)
+      this.sendStream(fs.createReadStream(full))
+    })
   }
 
   /**

@@ -40,7 +40,9 @@ export function helmet(options: HelmetOptions = {}): Handler {
   }
 
   if (options.xssFilter !== false) {
-    staticHeaders['X-XSS-Protection'] = '1; mode=block'
+    // '0' per current OWASP guidance: the legacy XSS auditor that
+    // '1; mode=block' enables can itself be abused for cross-site leaks
+    staticHeaders['X-XSS-Protection'] = '0'
   }
 
   if (options.frameguard !== false) {

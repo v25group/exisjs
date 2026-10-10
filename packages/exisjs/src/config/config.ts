@@ -110,6 +110,15 @@ export function mergeConfig(
       } else {
         ;(result as Record<string, unknown>)[key] = val
       }
+    } else if (key === 'plugins' && Array.isArray(val)) {
+      // Plugins accumulate: those from exis.config.ts and those passed to
+      // exis({ plugins }) are all registered, instead of one list replacing
+      // the other
+      const existing = Array.isArray(base.plugins) ? base.plugins : []
+      result.plugins = [
+        ...existing,
+        ...val.filter((p) => !existing.includes(p)),
+      ]
     } else {
       ;(result as Record<string, unknown>)[key] = val
     }

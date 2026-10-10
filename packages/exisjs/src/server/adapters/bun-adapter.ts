@@ -58,6 +58,16 @@ export class BunIncomingMessage {
     return this
   }
 
+  once(event: string, fn: (...args: any[]) => any) {
+    const wrapped = (...args: any[]) => {
+      const arr = this._listeners[event]
+      const idx = arr ? arr.indexOf(wrapped) : -1
+      if (idx !== -1) arr.splice(idx, 1)
+      fn(...args)
+    }
+    return this.on(event, wrapped)
+  }
+
   emit(event: string, ...args: any[]) {
     if (this._listeners[event]) {
       for (const listener of this._listeners[event]) {
@@ -156,8 +166,15 @@ export class BunServerResponse {
     return true
   }
 
-  end(chunk?: any) {
-    if (this.isEnded) return
+  end(chunk?: any, callback?: () => void) {
+    if (typeof chunk === 'function') {
+      callback = chunk
+      chunk = undefined
+    }
+    if (this.isEnded) {
+      if (callback) callback()
+      return
+    }
     this.isEnded = true
 
     let body: any
@@ -189,6 +206,8 @@ export class BunServerResponse {
       })
     )
     this.emit('finish')
+    if (callback) callback()
+    this.emit('close')
   }
 }
 

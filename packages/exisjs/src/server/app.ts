@@ -3,13 +3,7 @@ import type { Server as HttpServer } from 'node:http'
 import type { Server as HttpsServer } from 'node:https'
 import type { Http2SecureServer } from 'node:http2'
 import { Router } from '../router/router'
-import {
-  cors,
-  helmet,
-  compress,
-  requestId,
-  requestLogger,
-} from '../middleware/middleware'
+import { cors, helmet, compress, requestLogger } from '../middleware/middleware'
 import { createErrorHandler } from '../error/errors'
 import { defaultConfig, mergeConfig } from '../config/config'
 import type { ResolvedConfig } from '../config/config'
@@ -131,7 +125,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
     this.cron = new CronManager(this)
 
     this.bootstrapper.onShutdown(() => this.cron.drain())
-    this.bootstrapper.onShutdown(() => this.container.destroyLifecycle())
+    this.bootstrapper.onShutdown((signal) =>
+      this.container.destroyLifecycle(signal)
+    )
   }
 
   private ensureLogger() {
@@ -555,8 +551,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
       compression: compressionOpt,
     } = this.options
 
-    // Request ID always on
-    this.globalMiddleware.unshift(requestId())
+    // Request ID is always on; RequestHandler applies it inline
 
     if (this.options.blockProbes || this.options.blockSuspiciousProbes) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -578,8 +573,20 @@ export class App<TRoutes extends Record<string, any> = {}> {
       this.globalMiddleware.push(compress())
     }
 
-    if (helmetOpt !== false) {
-      this.globalMiddleware.push(helmet())
+    const helmetCfg =
+      typeof helmetOpt === 'object' && helmetOpt !== null ? helmetOpt : {}
+    if (helmetOpt !== false && helmetCfg.enabled !== false) {
+      const { enabled: _enabled, xFrameOptions, ...rest } = helmetCfg
+      this.globalMiddleware.push(
+        helmet({
+          ...rest,
+          contentSecurityPolicy:
+            rest.contentSecurityPolicy === true
+              ? "default-src 'self'; frame-ancestors 'none'; object-src 'none'"
+              : rest.contentSecurityPolicy || undefined,
+          ...(xFrameOptions && { frameguard: { action: xFrameOptions } }),
+        })
+      )
     }
 
     if (corsOpt !== false) {
@@ -790,13 +797,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
   // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 
-  onShutdown(hook: () => Promise<void> | void): this {
+  onShutdown(hook: (signal?: string) => Promise<void> | void): this {
     this.bootstrapper.onShutdown(hook)
     return this
   }
 
-  close(timeout = 5000): Promise<void> {
-    return this.bootstrapper.close(timeout)
+  close(timeout = 5000, signal?: string): Promise<void> {
+    return this.bootstrapper.close(timeout, signal)
   }
 
   // ─── Expose internals ─────────────────────────────────────────────────────────

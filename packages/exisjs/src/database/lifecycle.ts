@@ -27,9 +27,22 @@ export interface DatabaseRegistration {
 export class DatabaseManager {
   private static databases = new Map<
     string,
-    DatabaseRegistration & { _connected?: boolean }
+    DatabaseRegistration & {
+      _connected?: boolean
+      _disconnecting?: Promise<void>
+    }
   >()
   private static isShutdownHookRegistered = false
+  private static appManagedShutdown = false
+
+  /**
+   * Called by the server when it starts listening. From then on the app's
+   * graceful shutdown disconnects databases, after in-flight requests have
+   * drained, so the manager's own signal handlers must not close them early.
+   */
+  static deferShutdownToApp(): void {
+    this.appManagedShutdown = true
+  }
 
   /**
    * Registers a database connection lifecycle with the framework.
@@ -48,6 +61,7 @@ export class DatabaseManager {
       try {
         await db.connect()
         db._connected = true
+        db._disconnecting = undefined
       } catch (err: any) {
         const error = new Error(
           `[ExisJS Database] Failed to connect database "${name}": ${err.message}`
@@ -62,19 +76,25 @@ export class DatabaseManager {
    * Disconnects all registered databases gracefully.
    */
   static async disconnectAll(): Promise<void> {
-    const disconnectPromises = Array.from(this.databases.values()).map(
-      async (db) => {
-        try {
-          await db.disconnect()
-          db._connected = false
-        } catch (err: any) {
-          console.error(
-            `[ExisJS Database] Error disconnecting "${db.name}":`,
-            err
-          )
-        }
+    const disconnectPromises = Array.from(this.databases.values()).map((db) => {
+      // Each database is disconnected once: repeated or concurrent calls
+      // (signal handler, app.close(), user code) share the first attempt.
+      // Drivers such as pg and Neon throw if a pool is ended twice.
+      if (!db._disconnecting) {
+        db._disconnecting = (async () => {
+          try {
+            await db.disconnect()
+            db._connected = false
+          } catch (err: any) {
+            console.error(
+              `[ExisJS Database] Error disconnecting "${db.name}":`,
+              err
+            )
+          }
+        })()
       }
-    )
+      return db._disconnecting
+    })
     await Promise.allSettled(disconnectPromises)
   }
 
@@ -144,13 +164,17 @@ export class DatabaseManager {
    */
   static clear(): void {
     this.databases.clear()
+    this.appManagedShutdown = false
   }
 
   private static ensureShutdownHooks(): void {
     if (this.isShutdownHookRegistered) return
     this.isShutdownHookRegistered = true
 
+    // Only for scripts and workers that register a database without
+    // running an HTTP server
     const shutdownHandler = async () => {
+      if (DatabaseManager.appManagedShutdown) return
       await DatabaseManager.disconnectAll()
     }
 

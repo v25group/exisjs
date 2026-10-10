@@ -125,8 +125,8 @@ import { LoggerService } from '../common/logger.service'
 @Injectable()
 export default class MaintenanceService {
   constructor(
-    private readonly db: DatabaseService,
-    private readonly logger: LoggerService
+    @Inject(DatabaseService) private readonly db: DatabaseService,
+    @Inject(LoggerService) private readonly logger: LoggerService
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {

@@ -33,6 +33,8 @@ The `exisjs/testing` module re-exports test runner primitives, assertions, mocki
 
 `createTestContext` initializes your application definition, executes `onStart` hooks, establishes database connections (Mongoose, Prisma, or DatabaseManager), and tears down connections gracefully in `afterAll`.
 
+Tests always load routes from your source files, never from a previous `exisjs build`. `exisjs test` reads `.env.test` on top of `.env`, so point it at a separate database. A test file that crashes while loading is reported as failed, and a run that finds no test files fails (set `EXIS_PASS_WITH_NO_TESTS=1` to allow it).
+
 ### Functional Paradigm Application Test
 
 Given a functional application defined in `src/http/server.ts`:

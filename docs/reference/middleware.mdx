@@ -7,7 +7,7 @@ nextTitle: "Context Reference"
 
 # `exisjs/middleware`
 
-The `exisjs/middleware` module provides the built-in HTTP middleware pipeline for ExisJS. It includes native Rust-accelerated traffic controls, multipart upload handlers, security header suites, and request context enhancers.
+The `exisjs/middleware` module provides the built-in HTTP middleware pipeline for ExisJS. It includes traffic controls, multipart upload handlers, security header suites, and request context enhancers.
 
 ---
 
@@ -78,7 +78,7 @@ function helmet(options?: HelmetOptions): Handler
 | `xFrameOptions` | `'DENY' \| 'SAMEORIGIN'` | `'SAMEORIGIN'` | Protects against clickjacking. |
 | `hsts` | `boolean \| HstsOptions` | `true` (in prod) | Strict Transport Security configuration. |
 | `noSniff` | `boolean` | `true` | Sets `X-Content-Type-Options: nosniff`. |
-| `xssFilter` | `boolean` | `true` | Sets `X-XSS-Protection: 1; mode=block`. |
+| `xssFilter` | `boolean` | `true` | Sets `X-XSS-Protection: 0`, disabling the legacy browser XSS auditor (current OWASP guidance). |
 
 ---
 
@@ -145,7 +145,7 @@ function mongoSanitize(options?: MongoSanitizeOptions): Handler
 
 ### `rateLimit(options?)`
 
-In-memory off-heap rate limiter backed by native Rust acceleration (`NativeRateLimiter`).
+In-memory fixed-window rate limiter; expired windows are swept automatically.
 
 ```typescript
 function rateLimit(options?: RateLimitOptions): Handler
@@ -181,7 +181,7 @@ function routeTimeout(msOrOptions: number | TimeoutOptions): Handler
 
 ### `idempotent(options?)`
 
-Caches responses against the `Idempotency-Key` HTTP header in off-heap native memory to prevent duplicate mutations.
+Caches responses against the `Idempotency-Key` HTTP header in a bounded in-memory cache (10,000 entries) to prevent duplicate mutations.
 
 ```typescript
 function idempotent(options?: IdempotencyOptions): Handler
@@ -269,7 +269,9 @@ fileUpload.none(options?: FileUploadOptions): Handler
 | `dest` | `string` | Target directory on disk to stream uploaded files to. |
 | `maxBytes` | `number` | Maximum allowed individual file size in bytes. |
 | `mimeTypes` | `string[]` | Permitted MIME types (e.g. `['image/png', 'image/jpeg']`). |
-| `limits` | `FileUploadLimits` | Detailed limits (`fileSize`, `files`, `fieldSize`, `fields`). |
+| `limits` | `FileUploadLimits` | Detailed limits (`fileSize`, `files`, `fieldSize`, `fields`, `parts`). |
+
+**Default limits** (applied when a route does not set its own): `files: 10`, `fields: 100`, `parts: 200`, `fieldSize: 1 MB`, and `fileSize` equal to the app `bodyLimit` (10 MB by default). Exceeding a limit returns `413 Payload Too Large`. Files written to disk are named `<field>-<uuid><ext>`; field names and extensions are sanitized, so client input cannot choose the path.
 
 #### Example
 

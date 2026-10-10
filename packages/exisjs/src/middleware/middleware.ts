@@ -1,4 +1,11 @@
-import type { Handler, CorsConfig, LoggerConfig, Logger } from '../types'
+import type {
+  Handler,
+  CorsConfig,
+  LoggerConfig,
+  Logger,
+  Request,
+  Response,
+} from '../types'
 import {
   TexEngine,
   ValidatorError as NewValidatorError,
@@ -6,6 +13,8 @@ import {
 import { createLogger, isLogger } from '../utils/logger'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
+
+let warnedWildcardCredentials = false
 
 export function cors(config: CorsConfig = {}): Handler {
   const {
@@ -19,77 +28,113 @@ export function cors(config: CorsConfig = {}): Handler {
       'X-Requested-With',
     ],
     exposedHeaders,
-    credentials = false,
     maxAge = 86400,
   } = config
 
-  return (req, res, next) => {
-    const reqOrigin = req.get('origin')
+  // Browsers reject "Access-Control-Allow-Origin: *" together with
+  // credentials, and reflecting any origin with credentials would let every
+  // site act as the logged-in user. Credentials need an explicit origin list.
+  let credentials = config.credentials === true
+  if (credentials && origin === '*') {
+    credentials = false
+    if (!warnedWildcardCredentials) {
+      warnedWildcardCredentials = true
+      createLogger({ level: 'warn' }).warn(
+        "[CORS] 'credentials: true' is ignored while origin is '*'. Set cors.origin to your site's origin(s), for example ['https://app.example.com'], to allow cookies and Authorization headers cross-origin."
+      )
+    }
+  }
 
-    // 1. Resolve Origin
-    const applyOriginAndProceed = (allowOrigin: string) => {
-      if (allowOrigin) {
-        res.set('Access-Control-Allow-Origin', allowOrigin)
+  // The allowed origin depends on the request's Origin whenever it is not a
+  // fixed string, so shared caches must key on it
+  const reflectsOrigin = typeof origin !== 'string' && Boolean(origin)
+  const methodsHeader = methods.join(', ')
+  const allowedHeadersStr =
+    allowedHeaders && allowedHeaders.length > 0 ? allowedHeaders.join(', ') : ''
+  const exposedHeadersStr =
+    exposedHeaders && exposedHeaders.length > 0 ? exposedHeaders.join(', ') : ''
+  const maxAgeStr = maxAge ? String(maxAge) : ''
+
+  // Hoisted out of the request closure so no function is allocated per request
+  const applyOriginAndProceed = (
+    req: Request,
+    res: Response,
+    next: (err?: any) => void,
+    reqOrigin: string | undefined,
+    allowOrigin: string
+  ) => {
+    if (reflectsOrigin) res.vary('Origin')
+    if (allowOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', allowOrigin)
+    }
+
+    // 2. Credentials
+    if (credentials) {
+      res.setHeader('Access-Control-Allow-Credentials', 'true')
+    }
+
+    // 3. Exposed Headers
+    if (exposedHeadersStr) {
+      res.setHeader('Access-Control-Expose-Headers', exposedHeadersStr)
+    }
+
+    // 4. Preflight (OPTIONS)
+    if (req.method === 'OPTIONS') {
+      res.setHeader('Access-Control-Allow-Methods', methodsHeader)
+
+      const reqHeaders = req.get('access-control-request-headers')
+      if (reqHeaders) {
+        res.setHeader('Access-Control-Allow-Headers', reqHeaders)
+      } else if (allowedHeadersStr) {
+        res.setHeader('Access-Control-Allow-Headers', allowedHeadersStr)
       }
 
-      // 2. Credentials
-      if (credentials) {
-        res.set('Access-Control-Allow-Credentials', 'true')
+      if (maxAgeStr) {
+        res.setHeader('Access-Control-Max-Age', maxAgeStr)
       }
 
-      // 3. Exposed Headers
-      if (exposedHeaders && exposedHeaders.length > 0) {
-        res.set('Access-Control-Expose-Headers', exposedHeaders.join(', '))
+      if (!allowOrigin && reqOrigin) {
+        if (req.log && typeof req.log.warn === 'function') {
+          req.log.warn(
+            { origin: reqOrigin },
+            `[CORS] Rejected preflight request from origin '${reqOrigin}' (not in allowed origins)`
+          )
+        }
       }
 
-      // 4. Preflight (OPTIONS)
-      if (req.method === 'OPTIONS') {
-        res.set('Access-Control-Allow-Methods', methods.join(', '))
-
-        const reqHeaders = req.get('access-control-request-headers')
-        if (reqHeaders) {
-          res.set('Access-Control-Allow-Headers', reqHeaders)
-        } else if (allowedHeaders && allowedHeaders.length > 0) {
-          res.set('Access-Control-Allow-Headers', allowedHeaders.join(', '))
-        }
-
-        if (maxAge) {
-          res.set('Access-Control-Max-Age', String(maxAge))
-        }
-
-        if (!allowOrigin && reqOrigin) {
-          if (req.log && typeof req.log.warn === 'function') {
-            req.log.warn(
-              { origin: reqOrigin },
-              `[CORS] Rejected preflight request from origin '${reqOrigin}' (not in allowed origins)`
-            )
-          }
-        }
-
-        if (config.preflightContinue) {
-          next()
-          return
-        }
-
-        res.status(204).send('')
+      if (config.preflightContinue) {
+        next()
         return
       }
 
-      next()
+      res.status(204).send('')
+      return
     }
 
+    next()
+  }
+
+  return (req, res, next) => {
     if (origin === '*' || !origin) {
-      applyOriginAndProceed(origin === '*' ? '*' : '')
+      applyOriginAndProceed(
+        req,
+        res,
+        next,
+        undefined,
+        origin === '*' ? '*' : ''
+      )
       return
     }
 
     if (typeof origin === 'string') {
-      applyOriginAndProceed(origin)
+      applyOriginAndProceed(req, res, next, undefined, origin)
       return
     }
 
+    const reqOrigin = req.get('origin')
+
     if (!reqOrigin) {
-      applyOriginAndProceed('')
+      applyOriginAndProceed(req, res, next, reqOrigin, '')
       return
     }
 
@@ -97,12 +142,18 @@ export function cors(config: CorsConfig = {}): Handler {
       const matched = origin.some((o) =>
         o instanceof RegExp ? o.test(reqOrigin) : o === reqOrigin
       )
-      applyOriginAndProceed(matched ? reqOrigin : '')
+      applyOriginAndProceed(req, res, next, reqOrigin, matched ? reqOrigin : '')
       return
     }
 
     if (origin instanceof RegExp) {
-      applyOriginAndProceed(origin.test(reqOrigin) ? reqOrigin : '')
+      applyOriginAndProceed(
+        req,
+        res,
+        next,
+        reqOrigin,
+        origin.test(reqOrigin) ? reqOrigin : ''
+      )
       return
     }
 
@@ -112,7 +163,13 @@ export function cors(config: CorsConfig = {}): Handler {
         try {
           origin(reqOrigin, (err, allow) => {
             if (err) return next(err)
-            applyOriginAndProceed(allow ? reqOrigin : '')
+            applyOriginAndProceed(
+              req,
+              res,
+              next,
+              reqOrigin,
+              allow ? reqOrigin : ''
+            )
           })
         } catch (err) {
           next(err as Error)
@@ -124,11 +181,25 @@ export function cors(config: CorsConfig = {}): Handler {
         const result = origin(reqOrigin)
         if (result && typeof (result as any).then === 'function') {
           ;(result as Promise<boolean>)
-            .then((allow) => applyOriginAndProceed(allow ? reqOrigin : ''))
+            .then((allow) =>
+              applyOriginAndProceed(
+                req,
+                res,
+                next,
+                reqOrigin,
+                allow ? reqOrigin : ''
+              )
+            )
             .catch(next)
           return
         }
-        applyOriginAndProceed(result ? reqOrigin : '')
+        applyOriginAndProceed(
+          req,
+          res,
+          next,
+          reqOrigin,
+          result ? reqOrigin : ''
+        )
         return
       } catch (err) {
         next(err as Error)
@@ -136,28 +207,43 @@ export function cors(config: CorsConfig = {}): Handler {
       }
     }
 
-    applyOriginAndProceed('')
-    return
+    applyOriginAndProceed(req, res, next, reqOrigin, '')
   }
 }
 
 // ─── Request ID ───────────────────────────────────────────────────────────────
 
 let reqIdCounter = 0
+const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]+$/
+
+// Applied inline by RequestHandler for every request (always on), so it
+// does not cost a middleware pipeline stage; requestId() wraps it for users
+// who mount it explicitly.
+export function assignRequestId(req: Request, res: Response): void {
+  const h = req.raw.headers
+  const id = (h['x-request-id'] || h['traceparent'] || h['x-b3-traceid']) as
+    string | undefined
+  const candidate = id
+    ? id.startsWith('00-')
+      ? id.split('-')[1]
+      : id
+    : undefined
+  // Client-supplied IDs end up in logs and response headers; only accept
+  // short token-like values so they cannot forge or bloat log lines
+  const finalId =
+    candidate !== undefined &&
+    candidate.length <= 128 &&
+    SAFE_REQUEST_ID.test(candidate)
+      ? candidate
+      : `req-${++reqIdCounter}`
+
+  req.requestId = finalId
+  res.setHeader('X-Request-Id', finalId)
+}
 
 export function requestId(): Handler {
   return (req, res, next) => {
-    const h = req.raw.headers
-    const id = (h['x-request-id'] || h['traceparent'] || h['x-b3-traceid']) as
-      string | undefined
-    const finalId = id
-      ? id.startsWith('00-')
-        ? id.split('-')[1]
-        : id
-      : `req-${++reqIdCounter}`
-
-    req.requestId = finalId
-    res.setHeader('X-Request-Id', finalId)
+    assignRequestId(req, res)
     next()
   }
 }
@@ -247,6 +333,7 @@ export function requestLogger(
 export const notFound: Handler = (req, res) => {
   res.status(404).json({
     success: false,
+    statusCode: 404,
     error: {
       code: 'NOT_FOUND',
       message: `Cannot ${req.method} ${req.path}`,

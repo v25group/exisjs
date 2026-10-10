@@ -353,7 +353,7 @@ function writeTemplates(
   )
   write(
     dir,
-    path.join('tests', `users.e2e-spec.${ext}`),
+    path.join('tests', `users.test.${ext}`),
     userTestTemplate(paradigm, useTypeScript)
   )
 

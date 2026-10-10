@@ -177,3 +177,6 @@ export function TimeoutTask(
 
 export const ScheduledTimeout = TimeoutTask
 export const Scheduled = Cron
+
+// Cron schedules are usually written next to @Cron, so offer them here too
+export { CronExpression } from '../cron/expressions'

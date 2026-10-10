@@ -266,7 +266,7 @@ describe('ExisJS Enterprise OOP Architecture Upgrades', () => {
     const res = await client.get('/items/123')
     expect(res.status).toBe(404)
     expect(res.body.handledBy).toBe('NotFoundFilter')
-    expect(res.body.message).toBe('Item not found not found')
+    expect(res.body.message).toBe('Item not found')
   })
 
   it('automatically resolves constructor parameter dependencies without explicit @Inject decorator', async () => {

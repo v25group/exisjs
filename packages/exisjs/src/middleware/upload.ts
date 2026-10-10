@@ -8,7 +8,10 @@ import type {
 import { HttpError } from '../error/errors'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
-import * as path from 'node:path'
+import {
+  safeUploadPath,
+  DEFAULT_UPLOAD_LIMITS,
+} from '../server/helpers/upload-name'
 import * as fs from 'node:fs/promises'
 
 export interface FileUploadLimits {
@@ -145,7 +148,10 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
         resolve()
       }
 
-      const bbLimits: Record<string, number> = {}
+      const bbLimits: Record<string, number> = {
+        ...DEFAULT_UPLOAD_LIMITS,
+        fileSize: (req as any).bodyLimit || 10 * 1024 * 1024,
+      }
       if (options.limits?.fileSize) bbLimits.fileSize = options.limits.fileSize
       if (options.limits?.files) bbLimits.files = options.limits.files
       if (options.maxCount) bbLimits.files = options.maxCount
@@ -161,7 +167,7 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
       try {
         const bb = busboy({
           headers: req.raw.headers,
-          limits: Object.keys(bbLimits).length > 0 ? bbLimits : undefined,
+          limits: bbLimits,
         })
 
         bb.on('field', (name: string, val: string) => {
@@ -171,6 +177,14 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
         bb.on('filesLimit', () => {
           hasLimitError = true
           limitErrorMessage = `Exceeded maximum file upload limit`
+        })
+        bb.on('fieldsLimit', () => {
+          hasLimitError = true
+          limitErrorMessage = `Exceeded maximum number of form fields`
+        })
+        bb.on('partsLimit', () => {
+          hasLimitError = true
+          limitErrorMessage = `Exceeded maximum number of multipart parts`
         })
 
         bb.on(
@@ -277,11 +291,7 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
                 size,
                 saveToDisk: async (destDir: string) => {
                   await fs.mkdir(destDir, { recursive: true })
-                  const ext = path.extname(filename)
-                  const uniqueSuffix =
-                    Date.now() + '-' + Math.round(Math.random() * 1e9)
-                  const finalName = `${name}-${uniqueSuffix}${ext}`
-                  const destPath = path.join(destDir, finalName)
+                  const destPath = safeUploadPath(destDir, name, filename)
                   await fs.writeFile(destPath, data)
                   fileItem.path = destPath
                   return destPath

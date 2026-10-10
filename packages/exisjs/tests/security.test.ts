@@ -26,6 +26,7 @@ describe('Security Middlewares', () => {
         .expect(429)
         .expect({
           success: false,
+          statusCode: 429,
           error: {
             code: 'RATE_LIMIT_EXCEEDED',
             message: 'Too many requests, please try again later.',

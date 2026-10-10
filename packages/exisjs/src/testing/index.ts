@@ -169,6 +169,8 @@ export function createTestContext(appInput: any): TestApp {
     !(app instanceof App) &&
     !(app as any).isApp &&
     !(app as any).__isAppDefinition &&
+    // exis({...}) definitions: boot() below runs create() and onStart
+    !(app as any)._isExisAppDefinition &&
     typeof (app as any).inject !== 'function' &&
     !app.prototype?.[Symbol.for('exisjs:server_config')]
   ) {
@@ -219,7 +221,11 @@ export function createTestContext(appInput: any): TestApp {
 
   before(async () => {
     if (typeof (app as any).boot === 'function') {
-      const bootedApp = await (app as any).boot()
+      // Share one boot with the request client (it reads _bootPromise), so
+      // the app is created once and the instance closed below is the one used
+      const definition = app as any
+      if (!definition._bootPromise) definition._bootPromise = definition.boot()
+      const bootedApp = await definition._bootPromise
       if (bootedApp) app = bootedApp
     } else {
       if (typeof app.create === 'function') {

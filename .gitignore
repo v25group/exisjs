@@ -52,21 +52,15 @@ examples/**/out/*
 # Cache
 *.tsbuildinfo
 
-# Rust / NAPI
-packages/rs/target/
-packages/rs/*.node
-packages/rs/.*.node*
-packages/rs/test.js
-packages/rs/test2.js
-.napi-rs*
+# Temp files
 *.tmp
 *.tmp.*
 *.swp
 .*.tmp
 .*.tmp.*
 .*.swp
-packages/rs/.*.tmp*
-packages/rs/*.tmp*
-packages/rs/.*.swp*
-packages/rs/*.swp*
 
+
+# Benchmark output
+bench/results/
+bench/.profiles/

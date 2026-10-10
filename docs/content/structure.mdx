@@ -110,11 +110,14 @@ export default controller({
 ```typescript filename="src/http/users/route.ts"
 import { Controller, Get, Param, ApiOperation } from 'exisjs/decorators'
 import { userParamsSchema } from './schema'
+import { Inject } from 'exisjs/di'
 import { UserService } from './service'
 
 @Controller()
 export default class UsersController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    @Inject(UserService) private readonly userService: UserService
+  ) {}
 
   @Get('/:id', { params: userParamsSchema })
   @ApiOperation({ summary: 'Retrieve user by ID' })

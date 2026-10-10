@@ -24,7 +24,7 @@ All standard middlewares can be imported directly from `exisjs/middleware`. Cust
 | `requestLogger` | `requestLogger(options?)` | Request logger powered by Pino, injecting `req.log` with automatic timing and child loggers. |
 | `requestId` | `requestId()` | Attaches a unique `X-Request-Id` to requests and responses with distributed tracing headers. |
 | `compress` | `compress()` | Stream-based HTTP response compression supporting Gzip, Brotli, and Deflate. |
-| `rateLimit` | `rateLimit(options?)` | Off-heap / in-memory rate limiter returning `429 Too Many Requests` with standard headers. |
+| `rateLimit` | `rateLimit(options?)` | In-memory rate limiter returning `429 Too Many Requests` with standard headers. |
 | `idempotent` | `idempotent(options?)` | Duplicate mutation caching keyed by `Idempotency-Key` headers. |
 | `dedupe` | `dedupe(options)` | Merges simultaneous identical in-flight `GET` requests into a single operation. |
 | `backpressure` | `backpressure(options?)` | Queues requests during high load and sheds excess traffic with `503 Service Unavailable`. |

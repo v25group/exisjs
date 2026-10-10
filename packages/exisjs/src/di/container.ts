@@ -43,6 +43,20 @@ export const PROPERTY_INJECT_METADATA = Symbol.for(
 export const OPTIONAL_METADATA = Symbol.for('exisjs:optional_tokens')
 export const SCOPE_METADATA = Symbol.for('exisjs:scope')
 
+// Controllers and @Injectable() services are always built by the container,
+// so a constructor parameter without a token is a wiring mistake. Other
+// classes (pipes, filters with option arguments) may legitimately take
+// non-injected parameters.
+export const INJECTABLE_MARK = Symbol.for('exisjs:injectable')
+const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
+
+function isFrameworkManaged(TargetClass: any): boolean {
+  return (
+    TargetClass[INJECTABLE_MARK] === true ||
+    TargetClass.prototype?.[CONTROLLER_PREFIX] !== undefined
+  )
+}
+
 export class Container {
   private providers = new Map<any, any>()
   private singletonCache = new Map<any, any>()
@@ -170,10 +184,20 @@ export class Container {
                 throw err
               }
             }
-          } else if (isOptional) {
+          } else if (
+            isOptional ||
+            i >= (TargetClass.length || 0) ||
+            !isFrameworkManaged(TargetClass)
+          ) {
             args.push(undefined)
           } else {
-            args.push(undefined)
+            // Passing undefined here would only fail later, far from the
+            // cause, with "Cannot read properties of undefined".
+            throw new Error(
+              `Cannot resolve constructor parameter #${i + 1} of ${TargetClass.name || 'class'}: no injection token is known for it. ` +
+                `The ExisJS toolchain (tsx/esbuild) does not emit TypeScript type metadata, so constructor parameters are not injected by type. ` +
+                `Add @Inject(Dependency) to the parameter, use a field with @Inject(Dependency), or mark it @Optional().`
+            )
           }
         }
         instance = new TargetClass(...args)

@@ -219,7 +219,7 @@ export const CurrentUser = createParamDecorator((data: string | undefined, ctx) 
 | `@RateLimit(options)` | Class / Method | `RateLimitOptions` | Enforces rate limits on endpoints. |
 | `@Cors(options)` | Class / Method | `CorsConfig \| boolean` | Enforces CORS configuration. |
 | `@IpFilter(options)` | Class / Method | `IpFilterOptions` | Enforces CIDR IP allow/deny lists. |
-| `@Idempotent(options?)` | Class / Method | `IdempotencyOptions` | Enables off-heap request caching via `Idempotency-Key`. |
+| `@Idempotent(options?)` | Class / Method | `IdempotencyOptions` | Enables response caching via `Idempotency-Key`. |
 | `@Dedupe(options?)` | Class / Method | `DedupeOptions` | Deduplicates concurrent in-flight requests with identical keys. |
 | `@BlockProbes(options?)` | Class / Method | `BlockProbesOptions` | Blackholes malicious scanner probes (`.env`, `wp-admin`). |
 | `@Upload(field, options?)` | Method | `string, FileUploadOptions` | Configures multipart file upload streaming on the endpoint. |
@@ -266,7 +266,7 @@ export const CurrentUser = createParamDecorator((data: string | undefined, ctx) 
 
 | Decorator | Target | Options | Description |
 | :--- | :--- | :--- | :--- |
-| `@Cacheable(options)` | Method | `{ ttl?: number, key?: string \| ((...args) => string) }` | Caches method return value in native off-heap LRU cache. |
+| `@Cacheable(options)` | Method | `{ ttl?: number, key?: string \| ((...args) => string) }` | Caches method return value in a bounded in-memory cache. |
 | `@CacheEvict(options)` | Method | `{ key: string \| ((...args) => string) }` | Evicts cached keys upon successful method execution. |
 | `@Transactional(options?)` | Method | `TransactionOptions` | Wraps database queries within an atomic transaction. |
 | `@Profile(options?)` | Method | `{ thresholdMs?: number, warnSlow?: boolean }` | Measures and logs method execution latency. |

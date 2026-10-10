@@ -19,14 +19,12 @@
     "**/node_modules": true,
     "**/.git": true,
     "**/dist": true,
-    "**/.exis": true,
-    "packages/rs/target": true
+    "**/.exis": true
   },
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
     "**/.exis": true,
-    "packages/rs/target": true,
     "**/coverage": true
   },
   "terminal.integrated.scrollback": 10000,

@@ -1,41 +1,52 @@
 {
   "name": "@exisjs/fetch",
-  "version": "0.7.0",
-  "description": "End-to-End Type-Safe Client for ExisJS",
+  "version": "0.8.0",
+  "description": "End-to-end type-safe HTTP client for ExisJS APIs",
+  "keywords": [
+    "exisjs",
+    "exis",
+    "fetch",
+    "http-client",
+    "rpc",
+    "type-safe",
+    "typescript",
+    "api-client"
+  ],
+  "homepage": "https://github.com/v25group/exisjs/tree/main/packages/fetch#readme",
+  "bugs": {
+    "url": "https://github.com/v25group/exisjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git",
+    "directory": "packages/fetch"
+  },
+  "license": "MIT",
+  "author": "V25 Group <support@v25group.com>",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "cross-env NODE_ENV=test tsx --test tests/**/*.test.ts"
-  },
-  "keywords": [
-    "exis",
-    "exisjs",
-    "framework",
-    "nodejs",
-    "typescript",
-    "backend",
-    "api",
-    "rpc",
-    "type-safe"
-  ],
-  "author": "V25 Group <support@v25group.com>",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/v25group/exisjs.git"
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

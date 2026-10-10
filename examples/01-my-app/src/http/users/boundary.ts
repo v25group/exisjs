@@ -1,16 +1,10 @@
 import { defineBoundary } from 'exisjs/router'
+import { requireAuth } from '@/middleware/auth'
 
-// Imagine this is a complex external plugin or shared module we are importing
-// import { StripeModule } from '@plugins/stripe'
-
-// We define a local service to be provided ONLY to the users routes
-class UsersService {
-  getWelcomeMessage(name: string) {
-    return `Hello ${name}, welcome to the Modular Architecture!`
-  }
-}
-
+/**
+ * Everything under /users requires a valid token.
+ * Putting the check in the boundary protects routes added here later too.
+ */
 export const config = defineBoundary({
-  // imports: [StripeModule],
-  providers: [['UsersService', { useClass: UsersService }]],
+  middleware: [requireAuth],
 })

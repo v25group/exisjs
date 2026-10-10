@@ -120,28 +120,44 @@ export default class UsersController {
 
 ## Standard Error Response Format
 
-When an `HttpError` is thrown, ExisJS returns a standardized JSON payload:
+Every error response has the same core shape, whatever caused it:
 
 ```json filename="HTTP 404 Response"
 {
   "success": false,
   "statusCode": 404,
-  "error": "Not Found",
-  "message": "User not found",
-  "validationErrors": null,
-  "timestamp": "2026-10-02T12:45:00.000Z"
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "User not found"
+  }
 }
 ```
+
+| Field | Description |
+| :--- | :--- |
+| `success` | Always `false` for errors |
+| `statusCode` | Same as the HTTP status |
+| `error.code` | Stable machine-readable code: `NOT_FOUND`, `UNAUTHORIZED`, `VALIDATION_ERROR`, `INTERNAL_ERROR`... |
+| `error.message` | Human-readable message. For unexpected errors in production it is a generic message; internals are never exposed |
+| `error.details` | Optional extra data (validation issues, or the `details` passed to an `HttpError`) |
+
+Clients can rely on `error.code` and `error.message` for every failed request.
 
 ### Validation Error Responses
 
 When schema validation fails (via `tex`, Zod, or Yup), ExisJS intercepts the validation failure and generates a structured `400 Bad Request` payload containing field-level error mappings:
 
+The top-level `message`, `validationErrors`, `errors` and `details` fields are kept for existing clients; new code should read `error.details`. Values of credential fields (`password`, `token`, `secret`...) are replaced with `[Redacted]` in responses and logs.
+
 ```json filename="HTTP 400 Validation Error Response"
 {
   "success": false,
   "statusCode": 400,
-  "error": "Bad Request",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation Error: email: Invalid email format, age: Minimum age is 18",
+    "details": [ /* same entries as "details" below */ ]
+  },
   "message": "Validation Error: email: Invalid email format, age: Minimum age is 18",
   "validationErrors": {
     "email": "Invalid email format",

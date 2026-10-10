@@ -189,17 +189,32 @@ describe('createRequest()', () => {
     })
 
     it('trusts up to N proxies when trustProxy is a number', () => {
-      // trustProxy: 1 means we trust 1 proxy from the right (proxy2)
-      // the client is then considered to be the next hop (proxy1)
+      // trustProxy: 1 trusts only the socket peer, so the client is the
+      // last X-Forwarded-For entry that peer appended (proxy2)
       const req = createRequest(buildRawRequest({ headers: defaultHeaders }), 1)
-      expect(req.ips).toEqual(['proxy1', 'proxy2'])
-      expect(req.ip).toBe('proxy1')
+      expect(req.ips).toEqual(['proxy2'])
+      expect(req.ip).toBe('proxy2')
     })
 
     it('trusts up to N proxies when trustProxy is 2', () => {
       const req = createRequest(buildRawRequest({ headers: defaultHeaders }), 2)
-      expect(req.ips).toEqual(['client', 'proxy1', 'proxy2'])
-      expect(req.ip).toBe('client')
+      expect(req.ips).toEqual(['proxy1', 'proxy2'])
+      expect(req.ip).toBe('proxy1')
+    })
+
+    it('ignores client-prepended X-Forwarded-For entries with a hop count', () => {
+      // One proxy in front: it appends the real client after whatever the
+      // client sent. The spoofed entry must not win.
+      const req = createRequest(
+        buildRawRequest({
+          headers: {
+            'x-forwarded-for': '6.6.6.6, 203.0.113.7',
+            'cf-connecting-ip': '6.6.6.6',
+          },
+        }),
+        1
+      )
+      expect(req.ip).toBe('203.0.113.7')
     })
 
     it('handles proxy protocols gracefully', () => {

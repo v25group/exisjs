@@ -1,7 +1,11 @@
-import { generateEtag } from '@exisjs/rs'
+import { createHash } from 'node:crypto'
 
+// Weak ETag in the `etag` package format: length in hex plus a truncated
+// base64 SHA-1. SHA-1 is fine here; it only detects content changes.
 export function generateETag(content: Buffer): string {
-  return generateEtag(content)
+  if (content.length === 0) return 'W/"0-2jmj7l5rsw0yVb/vlWAYkK/YBwk"'
+  const hash = createHash('sha1').update(content).digest('base64').slice(0, 27)
+  return `W/"${content.length.toString(16)}-${hash}"`
 }
 
 export function safeSanitize(

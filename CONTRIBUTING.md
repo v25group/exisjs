@@ -4,30 +4,57 @@ First off, thank you for considering contributing to Exis JS! It's people like y
 
 ## Development Setup
 
+**Requirements:** Node.js 20 or newer and npm. Nothing else: ExisJS has no native add-ons, so you do not need Rust, Python or a C++ toolchain.
+
 1. **Fork & Clone**: Fork the repository on GitHub and clone your fork locally.
 2. **Install Dependencies**: Run `npm install` in the root directory.
 3. **Build the packages**: Run `npm run build` from the root directory. This will compile the TypeScript code into the `dist/` folders.
-4. **Run Tests**: Make sure all tests are passing by running `npm test`. We have a suite of over 500 tests across the monorepo that must remain green.
+4. **Run Tests**: Make sure all tests are passing by running `npm test`. We have a suite of over 600 tests across the monorepo that must remain green.
+
+| Command | What it does |
+| :--- | :--- |
+| `npm run build` | Compiles all packages into their `dist/` folders |
+| `npm test` | Runs every test in the monorepo |
+| `npm run lint` | ESLint over sources, tests and benchmarks |
+| `npm run typecheck` | Type-checks sources, tests and benchmarks (tests run through `tsx`, which does not check types) |
+| `npm run bench:quick` | Short HTTP benchmark, about 3 minutes |
 
 ## Making Changes
 
 1. Create a new branch: `git checkout -b feature/your-feature-name`
-2. Make your changes in the appropriate package (`packages/exisjs`, `packages/create`, `packages/fetch`, `packages/telemetry`, or `packages/rs`).
+2. Make your changes in the appropriate package (`packages/exisjs`, `packages/create`, `packages/fetch`).
 3. If you add a new feature, please add a corresponding test in the `tests/` directory.
-4. Ensure your code passes the linter by running `npm run lint`.
+4. If you fix a bug, add a test that fails without your fix.
+5. Ensure `npm run lint`, `npm run typecheck` and `npm test` all pass. CI runs the same three checks.
+6. Update the docs in `docs/` when behavior or a public API changes.
+
+### Performance Changes
+
+If your change touches the request path (`src/server`, `src/router`, `src/validator`, `src/middleware`), measure it before and after and include the numbers in your PR:
+
+- `npm run bench:quick` for end-to-end numbers. Compare the **Server CPU / req** column, which is far more stable than req/s on a laptop.
+- `npm run bench:router` and `npm run bench:validation` for micro-benchmarks.
+- `npm run bench:profile` to see where CPU time goes.
+
+See [`bench/README.md`](./bench/README.md) for the methodology. Do not commit `docs/BENCHMARKS.md`; maintainers regenerate it at release time.
 
 ### What NOT to Change (Strict Boundaries)
 
 To maintain the architectural integrity and performance of Exis JS, please **do not modify** the following without explicit prior approval from the core team (via an approved GitHub Issue):
 
-1. **The Core HTTP & Routing Engine (`src/router` & `src/http`)**: Exis JS is built on a highly optimized, zero-allocation Radix Tree. Any changes to the core request lifecycle must be rigorously benchmarked by the maintainers.
-2. **Public API Signatures**: Do not introduce breaking changes to user-facing APIs (like `defineApp()`, `req`, `res`, or dependency injection).
-3. **Version Numbers (`package.json`)**: Do not manually bump version numbers in the `package.json` files. Version bumps and releases are handled exclusively by the maintainers using git tags (e.g., `git tag v0.4.0 && git push --tags`).
-4. **Generated Files**: Do not commit anything inside the `dist/`, `.exis/`, or `coverage/` directories. These are automatically generated during the build pipeline.
+1. **The Core HTTP & Routing Engine (`src/router` & `src/server`)**: The request lifecycle and the radix-tree router are performance-critical. Any change here must come with benchmark numbers (see Performance Changes above).
+2. **Public API Signatures**: Do not introduce breaking changes to user-facing APIs (like `exis()`, `req`, `res`, `tex`, or dependency injection).
+3. **Native Add-ons and Runtime Dependencies**: Do not add native (N-API, Rust, C++) modules, and do not add runtime dependencies to `packages/exisjs` without approval. The core is pure TypeScript by design; see "Why There Is No Native Engine" in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+4. **Version Numbers (`package.json`)**: Do not manually bump version numbers in the `package.json` files. Version bumps and releases are handled exclusively by the maintainers (see Release Process below).
+5. **Generated Files**: Do not commit anything inside the `dist/`, `.exis/`, `coverage/`, `bench/results/` or `bench/.profiles/` directories. These are generated automatically.
 
 ## Commit Message Guidelines
 
 We enforce a strict, professional commit message format. A great commit message provides context for the reviewer and future maintainers. Every commit must clearly answer the **What**, **Why**, and **How** of the change.
+
+**Types:** `feat` (new feature), `fix` (bug fix), `perf` (performance), `refactor`, `docs`, `test`, `chore` (tooling, dependencies), `ci`.
+
+**Scopes:** the area you changed, for example `core`, `router`, `validator`, `middleware`, `cli`, `create`, `fetch`, `bench`, `docs`. The scope may be omitted for repo-wide changes.
 
 ### Format
 
@@ -72,9 +99,23 @@ How:
 ## Submitting a Pull Request
 
 1. **Versioning**: Versioning and releasing are handled manually by the maintainers. Do not increment package versions in your PR.
-2. Ensure your code passes all tests (`npm test`).
-3. Write a concise summary of your changes in the PR description.
+2. Ensure `npm run lint`, `npm run typecheck` and `npm test` all pass.
+3. Write a concise summary of your changes in the PR description. Call out any breaking change clearly, and include benchmark numbers for performance-sensitive changes.
 4. Push to your fork and submit a Pull Request.
+
+## Reporting Security Issues
+
+Do not open a public issue for a security vulnerability. Follow the private reporting process in [SECURITY.md](./SECURITY.md).
+
+## Release Process (Maintainers)
+
+1. Set the same version in `packages/exisjs`, `packages/create`, `packages/fetch` and the root `package.json`, then update the `exisjs` version that `create-exisjs` scaffolds (`packages/create/src/templates.ts`) and run `npm install` to refresh the lockfile.
+2. Write the release notes in `changelog/vX.Y/vX.Y.Z.md`, add the release to `CHANGELOG.md` and to the table in `changelog/README.md`. Breaking changes go first, with an upgrade guide.
+3. Run `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`.
+4. For minor and major releases, regenerate the published benchmarks on a quiet machine: `npm run bench -- --write`.
+5. Commit, push to `main`, then tag and push the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+Pushing the tag runs the publish workflow, which builds, tests and publishes the packages to npm and creates the GitHub release from `changelog/**/vX.Y.Z.md`. The tag name must match the release notes filename.
 
 ## Code of Conduct
 

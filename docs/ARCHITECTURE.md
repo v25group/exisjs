@@ -6,12 +6,11 @@ This document serves as the architecture specification and technical reference f
 
 ## 1. Monorepo Organization & Subsystems
 
-ExisJS is architected as a modular TypeScript monorepo backed by a native Rust engine. Heavy compute tasks (path matching, memory LRU caching, rate limit buckets, and body sanitization) are handled by Rust native bindings via N-API (`@exisjs/rs`), with pure TypeScript fallbacks ensuring cross-platform stability.
+ExisJS is architected as a modular TypeScript monorepo with no native add-ons. Per-request work (path matching, body parsing, validation, rate limit buckets) stays in JavaScript: crossing into a native binding costs more per call than these operations take in V8, and heavy work such as compression already runs in Node's built-in C libraries off the main thread.
 
 ```text
 packages/
 ├── exisjs/        # Core TypeScript framework, HTTP pipeline, router, DI, Swagger, Telemetry
-├── rs/            # Native Rust engine (radix routing, token bucket rate limiter, fast LRU cache)
 ├── fetch/         # Lightweight, zero-dependency typed HTTP/RPC client
 └── create/        # Scaffolding CLI tool (create-exisjs)
 ```
@@ -20,7 +19,7 @@ packages/
 
 | Subsystem | Source Path | Key Responsibilities |
 | :--- | :--- | :--- |
-| **Router Engine** | `packages/exisjs/src/router/` | File-system directory scanning, `NativeRadixTree` route compilation, route grouping `(group)`, wildcard/param segments. |
+| **Router Engine** | `packages/exisjs/src/router/` | File-system directory scanning, radix-tree route compilation, route grouping `(group)`, wildcard/param segments. |
 | **Dependency Injection** | `packages/exisjs/src/di/` | Hierarchical IoC container, constructor injection reflection, custom providers (`useValue`, `useFactory`, `useExisting`, `useClass`), contextual `inject()`. |
 | **Validation (`tex`)** | `packages/exisjs/src/validator/` | Schema definition AST (`tex.*`), discriminated unions, coercion primitives (`tex.coerce.*`), transforms, OpenAPI 3.1 duck-typing. |
 | **HTTP Pipeline** | `packages/exisjs/src/server/` | `ExisRequest`, `ExisResponse`, lifecycle hooks (`onStart`, `onClose`), cookie parsing, proxy IP resolution. |
@@ -48,7 +47,7 @@ Incoming HTTP Request (Node HTTP / uWS)
 2. Global Boundary & Middleware Pipeline (CORS, Helmet, Rate Limiter, IP Filter)
   │
   ▼
-3. Radix Tree Route Matching (NativeRadixTree with Rust fallback)
+3. Radix Tree Route Matching (static exact-match table, then tree walk)
   │
   ▼
 4. Scoped Folder Boundaries (Cascading boundary.ts configurations)
@@ -100,27 +99,15 @@ Both paradigms compile down to identical internal `RouteDescriptor` structures r
 
 ---
 
-## 4. The Graceful Fallback Pattern
+## 4. Why There Is No Native Engine
 
-Subsystems interfacing with `@exisjs/rs` (Radix router, LRU cache, rate limiting, and parameter validation) implement a strict fallback pattern. If N-API native binaries fail to load on non-standard architectures, the engine seamlessly activates pure TypeScript implementations:
+Earlier versions shipped a Rust N-API package (`@exisjs/rs`). Measured per call, it was slower than plain JavaScript for every hot-path job it handled: route lookup (~7x), JSON parsing (~7x), validation, and cookie parsing, because converting values across the N-API boundary costs more than the work itself. It also meant prebuilt binaries for eight platforms and install failures elsewhere. It was removed; the TypeScript implementations are the only implementations.
 
-```typescript
-export class NativeSubsystemService {
-  private nativeEngine: any
-  private fallbackStore = new Map()
-  private isFallback = false
+Guidelines for keeping the core fast:
 
-  constructor() {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { NativeSubsystem } = require('@exisjs/rs')
-      this.nativeEngine = new NativeSubsystem()
-    } catch {
-      this.isFallback = true
-    }
-  }
-}
-```
+- Precompute at startup (route tables, compiled validators, static headers); do as little as possible per request.
+- Avoid per-request closures, listeners, and object pools; short-lived objects are cheap for V8.
+- Run CPU-heavy work (compression, hashing) through Node's async built-ins so it leaves the event loop.
 
 ---
 
@@ -128,7 +115,7 @@ export class NativeSubsystemService {
 
 The IoC container (`packages/exisjs/src/di/`) supports multiple provider token strategies:
 
-1. **Class Providers**: `@Injectable()` decorated classes resolved via constructor metadata (`design:paramtypes`).
+1. **Class Providers**: `@Injectable()` decorated classes; constructor parameters are injected by `@Inject(Token)` (no reliance on emitted type metadata).
 2. **Value Providers (`useValue`)**: Static configuration, database instances, or constants.
 3. **Factory Providers (`useFactory`)**: Dynamic factory functions with dependency injection (`inject: [TokenA, TokenB]`).
 4. **Alias Providers (`useExisting`)**: Token aliases mapping to an existing provider instance.

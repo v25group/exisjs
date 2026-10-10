@@ -1,11 +1,14 @@
 import { tex } from 'exisjs/validator'
 
-export const env = tex.object({
-  PORT: tex.number({ coerce: true, optional: true }),
-  NODE_ENV: tex.string({ optional: true }),
-  MONGODB_URI: tex.string(),
-  JWT_SECRET: tex.string(),
-  CLOUDINARY_CLOUD_NAME: tex.string(),
-  CLOUDINARY_API_KEY: tex.string(),
-  CLOUDINARY_API_SECRET: tex.string(),
-}).parse(process.env)
+// Validated once at startup: the app refuses to boot with a missing or
+// malformed variable instead of failing later on the first request.
+export const env = tex
+  .env({
+    PORT: tex.number({ default: 4000 }),
+    NODE_ENV: tex.enum(['development', 'production', 'test'], {
+      default: 'development',
+    }),
+    MONGODB_URI: tex.string({ min: 10 }),
+    JWT_SECRET: tex.string({ min: 16 }),
+  })
+  .parse(process.env)

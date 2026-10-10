@@ -116,6 +116,33 @@ describe('Database Lifecycle & Manager', () => {
     await DatabaseManager.disconnectAll()
     expect(disconnected).toBe(true)
   })
+
+  it('disconnects each database once even when called repeatedly', async () => {
+    DatabaseManager.clear()
+    let calls = 0
+
+    registerDatabase({
+      name: 'pg-pool',
+      connect: () => {},
+      disconnect: async () => {
+        calls++
+        // pg / Neon pools throw when ended twice
+        if (calls > 1) throw new Error('Called end on pool more than once')
+      },
+    })
+
+    await Promise.all([
+      DatabaseManager.disconnectAll(),
+      DatabaseManager.disconnectAll(),
+    ])
+    await DatabaseManager.disconnectAll()
+    expect(calls).toBe(1)
+
+    // Reconnecting makes the database eligible for disconnect again
+    await DatabaseManager.connectAll()
+    await DatabaseManager.disconnectAll()
+    expect(calls).toBe(2)
+  })
 })
 
 describe('Universal withTransaction Runner', () => {

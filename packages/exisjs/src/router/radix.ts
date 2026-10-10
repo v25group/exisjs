@@ -1,5 +1,5 @@
 import type { Route, RouteMatch } from '../types'
-import { RadixRouter } from '@exisjs/rs'
+import { HttpError } from '../error/errors'
 
 // ─── Node Types ──────────────────────────────────────────────────────────────
 
@@ -163,6 +163,25 @@ class RadixNode {
     return null
   }
 
+  // Same as findStaticChild(path.substring(start, end)) without allocating
+  // the segment string
+  findStaticChildAt(
+    path: string,
+    start: number,
+    end: number
+  ): RadixNode | null {
+    const keys = this.staticChildKeys
+    if (keys === null) return null
+    const len = end - start
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i]
+      if (k.length === len && path.startsWith(k, start)) {
+        return this.staticChildren![i]
+      }
+    }
+    return null
+  }
+
   addStaticChild(segment: string, child: RadixNode): void {
     if (this.staticChildKeys === null) {
       this.staticChildKeys = [segment]
@@ -179,24 +198,25 @@ class RadixNode {
 export class JSRadixTree {
   root: RadixNode = new RadixNode()
   hasHostRoutes = false
-  private cache: Record<string, Record<string, RouteMatch | null>> = {
-    GET: Object.create(null),
-    POST: Object.create(null),
-    PUT: Object.create(null),
-    DELETE: Object.create(null),
-    PATCH: Object.create(null),
-    OPTIONS: Object.create(null),
-    HEAD: Object.create(null),
-  }
-  private cacheSize = 0
-  private maxCacheSize = 1000
+  // Exact-match table for purely static routes, filled at insert time.
+  // Keyed by method, then by path. Matches are immutable and shared, which
+  // is safe only because static matches carry the frozen emptyParams.
+  private staticRoutes: Record<string, Map<string, RouteMatch>> =
+    Object.create(null)
 
   // ─── Insert ──────────────────────────────────────────────────────────────────
 
   insert(method: string, path: string, route: Route): void {
     if (route.host) this.hasHostRoutes = true
+    else if (path.indexOf(':') === -1 && path.indexOf('*') === -1) {
+      const table =
+        this.staticRoutes[method] || (this.staticRoutes[method] = new Map())
+      if (!table.has(path)) table.set(path, { route, params: emptyParams })
+    }
     let current = this.root
     const len = path.length
+    // [name the tree uses, name this route declared] where they differ
+    let aliases: [string, string][] | null = null
 
     // Fast segment iterator — avoids split() + filter() allocations
     let i = 0
@@ -221,6 +241,11 @@ export class JSRadixTree {
           child.paramName = paramName
           current.paramChild = child
         }
+        // A position shared by several routes keeps the first route's name
+        // in the tree; remember what this route calls it
+        if (current.paramChild.paramName !== paramName) {
+          ;(aliases ||= []).push([current.paramChild.paramName, paramName])
+        }
         current = current.paramChild
       } else if (firstChar === 42 /* * */) {
         // ─── Wildcard ──────────────────────────────────────────────────
@@ -231,6 +256,15 @@ export class JSRadixTree {
           child.part = segment
           child.wildcardName = wildcardName
           current.wildcardChild = child
+        }
+        if (
+          current.wildcardChild.wildcardName !== wildcardName &&
+          wildcardName !== '*'
+        ) {
+          ;(aliases ||= []).push([
+            current.wildcardChild.wildcardName,
+            wildcardName,
+          ])
         }
         current = current.wildcardChild
         break // Wildcard eats the rest
@@ -249,22 +283,8 @@ export class JSRadixTree {
       i = j + 1
     }
 
+    if (aliases) (route as any)._paramAliases = aliases
     current.setRoute(method, route)
-    // Clear cache when new routes are inserted
-    this._clearCache()
-  }
-
-  private _clearCache() {
-    this.cache = {
-      GET: Object.create(null),
-      POST: Object.create(null),
-      PUT: Object.create(null),
-      DELETE: Object.create(null),
-      PATCH: Object.create(null),
-      OPTIONS: Object.create(null),
-      HEAD: Object.create(null),
-    }
-    this.cacheSize = 0
   }
 
   // ─── Search ──────────────────────────────────────────────────────────────────
@@ -272,51 +292,39 @@ export class JSRadixTree {
   // Falls back to backtracking only when param/wildcard children exist.
 
   search(method: string, path: string, host?: string): RouteMatch | null {
-    const cachePath = host ? host + path : path
-    const methodCache =
-      this.cache[method] || (this.cache[method] = Object.create(null))
-
-    if (methodCache[cachePath] !== undefined) {
-      return methodCache[cachePath]
+    // No result cache on purpose: param matches must get a fresh params
+    // object per request (handlers and validators mutate req.params), and
+    // caching attacker-chosen paths only invites churn.
+    if (!this.hasHostRoutes) {
+      const table = this.staticRoutes[method]
+      const hit =
+        (table !== undefined && table.get(path)) ||
+        (this.staticRoutes.ALL !== undefined && this.staticRoutes.ALL.get(path))
+      if (hit) return hit
     }
 
     const len = path.length
 
-    // Fast-path 1: try the direct static walk first (zero allocations)
-    let result = this._staticWalk(method, path, len, host)
-    if (result) {
-      this._addToCache(methodCache, cachePath, result)
-      return result
+    // Without host routes every purely static match was already answered by
+    // the table above, so the static walk could only fail; skip it
+    if (this.hasHostRoutes) {
+      const staticMatch = this._staticWalk(method, path, len, host)
+      if (staticMatch) return staticMatch
     }
 
-    // Fast-path 2: linear walk for simple param/wildcard routes
-    result = this._linearWalk(method, path, len, host)
-    if (result) {
-      this._addToCache(methodCache, cachePath, result)
-      return result
+    // The linear walk only gives up (undefined) where static, param and
+    // wildcard branches compete; a null from it is already a definite miss
+    let result = this._linearWalk(method, path, len, host)
+    if (result === AMBIGUOUS) {
+      result = this._backtrackSearch(method, path, len, host)
     }
-
-    // Slow-path: full backtracking search
-    result = this._backtrackSearch(method, path, len, host)
-    this._addToCache(methodCache, cachePath, result)
+    if (result && (result.route as any)._paramAliases) {
+      result.params = renameParams(
+        result.params,
+        (result.route as any)._paramAliases
+      )
+    }
     return result
-  }
-
-  private _addToCache(
-    methodCache: Record<string, RouteMatch | null>,
-    path: string,
-    result: RouteMatch | null
-  ): void {
-    if (this.cacheSize >= this.maxCacheSize) {
-      this._clearCache()
-      // If we cleared, we must re-assign methodCache as the old one was tossed
-      const newCache = this.cache
-      for (const m in newCache) {
-        if (newCache[m]) methodCache = newCache[m]
-      }
-    }
-    methodCache[path] = result
-    this.cacheSize++
   }
 
   // ─── Static Walk (Zero Allocation) ─────────────────────────────────────────
@@ -368,25 +376,24 @@ export class JSRadixTree {
     path: string,
     len: number,
     host?: string
-  ): RouteMatch | null {
+  ): RouteMatch | null | undefined {
     let current = this.root
     let i = 0
     if (i < len && path.charCodeAt(i) === 47) i++
 
-    let paramCount = 0
-    let paramKeys: string[] | null = null
-    let paramVals: string[] | null = null
+    // Params are written straight into the result object; percent-decoding
+    // happens once at the end and only if a value contained '%'
+    let params: Record<string, string> | null = null
     let needsDecode = false
 
     while (i < len) {
       let j = path.indexOf('/', i)
       if (j === -1) j = len
-      const segment = path.substring(i, j)
 
       // Try static first
-      const staticChild = current.findStaticChild(segment)
+      const staticChild = current.findStaticChildAt(path, i, j)
       if (staticChild) {
-        if (current.paramChild || current.wildcardChild) return null
+        if (current.paramChild || current.wildcardChild) return AMBIGUOUS
         current = staticChild
         i = j + 1
         continue
@@ -394,15 +401,11 @@ export class JSRadixTree {
 
       // Try param
       if (current.paramChild) {
-        if (current.wildcardChild) return null
-        if (!paramKeys) {
-          paramKeys = []
-          paramVals = []
-        }
-        paramKeys[paramCount] = current.paramChild.paramName
-        paramVals![paramCount] = segment
+        if (current.wildcardChild) return AMBIGUOUS
+        const segment = path.substring(i, j)
+        if (params === null) params = {}
+        params[current.paramChild.paramName] = segment
         if (!needsDecode && segment.indexOf('%') !== -1) needsDecode = true
-        paramCount++
         current = current.paramChild
         i = j + 1
         continue
@@ -412,16 +415,10 @@ export class JSRadixTree {
       if (current.wildcardChild) {
         const wName = current.wildcardChild.wildcardName
         if (wName !== '*') {
-          if (!paramKeys) {
-            paramKeys = []
-            paramVals = []
-          }
-          const rawRemainder = path.substring(i)
-          paramKeys[paramCount] = wName
-          paramVals![paramCount] = rawRemainder
-          if (!needsDecode && rawRemainder.indexOf('%') !== -1)
-            needsDecode = true
-          paramCount++
+          const rest = path.substring(i)
+          if (params === null) params = {}
+          params[wName] = rest
+          if (!needsDecode && rest.indexOf('%') !== -1) needsDecode = true
         }
         current = current.wildcardChild
         break
@@ -431,52 +428,31 @@ export class JSRadixTree {
       return null
     }
 
-    const res = current.getRoute(method, host)
+    let res = current.getRoute(method, host)
     if (!res) {
-      // Check wildcard matching empty remainder
-      if (current.wildcardChild) {
-        const wRes = current.wildcardChild.getRoute(method, host)
-        if (wRes) {
-          const wRoute = wRes.route
-          const wName = current.wildcardChild.wildcardName
-          if (wName !== '*') {
-            if (!paramKeys) {
-              paramKeys = []
-              paramVals = []
-            }
-            paramKeys[paramCount] = wName
-            paramVals![paramCount] = ''
-            paramCount++
-          }
-          const wParams = buildParamsLazy(
-            paramKeys,
-            paramVals,
-            paramCount,
-            needsDecode
-          )
-          if (wRes.hostParams) Object.assign(wParams, wRes.hostParams)
-          return {
-            route: wRoute,
-            params: wParams,
-          }
-        }
+      // A wildcard may also match an empty remainder
+      const wild = current.wildcardChild
+      if (!wild) return null
+      res = wild.getRoute(method, host)
+      if (!res) return null
+      if (wild.wildcardName !== '*') {
+        if (params === null) params = {}
+        params[wild.wildcardName] = ''
       }
-      return null
     }
 
-    if (paramCount === 0 && !res.hostParams)
-      return { route: res.route, params: emptyParams }
-    const params = buildParamsLazy(
-      paramKeys,
-      paramVals,
-      paramCount,
-      needsDecode
-    )
-    if (res.hostParams) Object.assign(params, res.hostParams)
-    return {
-      route: res.route,
-      params,
+    if (params === null) {
+      return res.hostParams
+        ? { route: res.route, params: { ...res.hostParams } }
+        : { route: res.route, params: emptyParams }
     }
+    if (needsDecode) {
+      for (const k in params) {
+        if (params[k].indexOf('%') !== -1) params[k] = decodeParam(params[k])
+      }
+    }
+    if (res.hostParams) Object.assign(params, res.hostParams)
+    return { route: res.route, params }
   }
 
   // ─── Backtrack Search ──────────────────────────────────────────────────────
@@ -582,10 +558,42 @@ export class JSRadixTree {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Gives a route the param names it declared when the tree stored the names
+// of an earlier route sharing the same positions
+function renameParams(
+  params: Record<string, string>,
+  aliases: [string, string][]
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const key in params) {
+    let name = key
+    for (const [from, to] of aliases) {
+      if (from === key) {
+        name = to
+        break
+      }
+    }
+    out[name] = params[key]
+  }
+  return out
+}
+
+// Returned by _linearWalk when only a backtracking search can decide
+const AMBIGUOUS = undefined
+
 // Frozen empty params object — reused across all pure-static matches
 const emptyParams: Record<string, string> = Object.freeze(
   Object.create(null) as Record<string, string>
 )
+
+// Malformed escapes like "%E0%A4%A" are a client error, not a server crash
+function decodeParam(value: string): string {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    throw HttpError.badRequest('Malformed URI component in path')
+  }
+}
 
 // Build a params object from parallel key/value arrays
 function buildParams(
@@ -598,113 +606,9 @@ function buildParams(
   const params: Record<string, string> = {}
   for (let i = 0; i < len; i++) {
     const v = vals[i]
-    params[keys[i]] = v.indexOf('%') !== -1 ? decodeURIComponent(v) : v
+    params[keys[i]] = v.indexOf('%') !== -1 ? decodeParam(v) : v
   }
   return params
 }
 
-// Build params, lazily decoding only if %-encoded chars were found
-function buildParamsLazy(
-  keys: string[] | null,
-  vals: string[] | null,
-  count: number,
-  needsDecode: boolean
-): Record<string, string> {
-  if (count === 0 || !keys || !vals) return emptyParams
-  const params: Record<string, string> = {}
-  if (needsDecode) {
-    for (let i = 0; i < count; i++) {
-      params[keys[i]] = decodeURIComponent(vals[i])
-    }
-  } else {
-    for (let i = 0; i < count; i++) {
-      params[keys[i]] = vals[i]
-    }
-  }
-  return params
-}
-
-// ─── Native Radix Tree (Rust Accelerated) ────────────────────────────────────
-
-export class NativeRadixTree {
-  private native: any = null
-  private routes: Route[] = []
-  private jsFallback: JSRadixTree | null = null
-  private staticCache = new Map<string, RouteMatch>()
-  public hasHostRoutes = false
-
-  constructor() {
-    try {
-      if (typeof RadixRouter === 'function') {
-        this.native = new RadixRouter()
-      }
-    } catch {
-      this.native = null
-    }
-    if (!this.native) {
-      this.jsFallback = new JSRadixTree()
-    }
-  }
-
-  insert(method: string, path: string, route: Route): void {
-    if (route.host) {
-      this.hasHostRoutes = true
-      if (!this.jsFallback) {
-        this.jsFallback = new JSRadixTree()
-        for (const r of this.routes) {
-          this.jsFallback.insert(r.method, r.path, r)
-        }
-      }
-      this.jsFallback.insert(method, path, route)
-    } else if (path.indexOf(':') === -1 && path.indexOf('*') === -1) {
-      const match: RouteMatch = { route, params: emptyParams }
-      if (method === 'ALL') {
-        this.staticCache.set('GET:' + path, match)
-        this.staticCache.set('POST:' + path, match)
-        this.staticCache.set('PUT:' + path, match)
-        this.staticCache.set('DELETE:' + path, match)
-        this.staticCache.set('PATCH:' + path, match)
-        this.staticCache.set('OPTIONS:' + path, match)
-        this.staticCache.set('HEAD:' + path, match)
-      } else {
-        this.staticCache.set(method + ':' + path, match)
-      }
-    }
-
-    const routeId = this.routes.length
-    this.routes.push(route)
-
-    if (this.native) {
-      this.native.insert(method, path, routeId)
-    } else if (this.jsFallback) {
-      this.jsFallback.insert(method, path, route)
-    }
-  }
-
-  search(method: string, path: string, host?: string): RouteMatch | null {
-    if (this.hasHostRoutes && host && this.jsFallback) {
-      return this.jsFallback.search(method, path, host)
-    }
-
-    if (!host) {
-      const fastStatic = this.staticCache.get(method + ':' + path)
-      if (fastStatic) return fastStatic
-    }
-
-    if (this.native) {
-      const result = this.native.search(method, path)
-      if (!result) return null
-      const route = this.routes[result.routeId]
-      if (!route) return null
-      return {
-        route,
-        params: result.params || emptyParams,
-      }
-    }
-
-    return this.jsFallback ? this.jsFallback.search(method, path, host) : null
-  }
-}
-
-// Default export uses NativeRadixTree with JS fallback
-export { NativeRadixTree as RadixTree, RadixNode }
+export { JSRadixTree as RadixTree, RadixNode }

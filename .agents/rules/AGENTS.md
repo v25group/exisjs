@@ -1,52 +1,36 @@
 # ExisJS Architectural Guidelines & Memory
 
-**CRITICAL**: You are working in the ExisJS Monorepo. ExisJS is an opinionated, high-performance web framework for TypeScript backends powered by a native Rust engine (`@exisjs/rs`) under the hood for zero-allocation routing, memory caching, rate limiting, and input validation.
+**CRITICAL**: You are working in the ExisJS Monorepo. ExisJS is an opinionated, high-performance web framework for TypeScript backends built as a lightweight, pure TypeScript core with no native add-ons.
 
 Before modifying any code, you MUST understand this architecture.
 
 ## 1. The Monorepo Structure
 
 - `packages/exisjs`: The core TypeScript framework, HTTP pipeline, file-system router, developer-facing APIs, and built-in OpenTelemetry integration (`exisjs/telemetry`).
-- `packages/rs`: The Rust native engine exposing high-performance bindings via N-API (`@exisjs/rs`).
 - `packages/create`: The CLI scaffolding tool for generating new ExisJS projects (`create-exis`).
 - `packages/fetch`: A dedicated lightweight HTTP client (wraps Undici/fetch).
-- **Rule**: Whenever you compile the Rust engine, ALWAYS run `cargo build` in `packages/rs` or `npm run build` from the workspace root.
 
-## 2. The "Graceful Fallback" Pattern
+## 2. No Native Add-ons
 
-High-performance native subsystems in ExisJS use a strict "Fallback Pattern" to ensure the framework still operates seamlessly on obscure OS architectures where N-API binaries might fail to load.
-When writing TS classes that interface with `@exisjs/rs`, follow this structure:
+The `@exisjs/rs` Rust/N-API package was removed: converting values across the N-API boundary cost more per call than the work it replaced (route lookup and JSON parsing were ~7x slower than plain JS). Do not reintroduce native bindings for per-request work. Performance rules:
 
-```typescript
-export class ExampleService {
-  private nativeEngine: any
-  private fallbackData = new Map()
-  private isFallback = false
-
-  constructor() {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { NativeExample } = require('@exisjs/rs')
-      this.nativeEngine = new NativeExample()
-    } catch {
-      this.isFallback = true
-    }
-  }
-}
-```
+- Precompute at startup (route tables, compiled validators, static headers); keep per-request work minimal.
+- Avoid per-request closures, event listeners, and object pooling.
+- Use Node's async built-ins (`zlib`, `crypto`) for CPU-heavy work so it leaves the event loop.
+- Benchmark against the compiled `dist`, comparing CPU time per request, not raw req/s on a laptop.
 
 ## 3. Core Framework Architecture (`packages/exisjs/src/*`)
 
 ExisJS maintains a clean, modular, and opinionated core:
 
-- **`router/`**: High-performance routing engine powered by `NativeRadixTree` in Rust (`packages/rs/src/core/radix.rs`). Handles file-system scanning, route compilation, and method dispatching with zero runtime allocations.
+- **`router/`**: Routing engine: radix tree (`router/radix.ts`) with an exact-match table for static paths. Handles file-system scanning, route compilation, and method dispatching.
 - **`decorators/` & `di/` & `module/`**: The Inversion of Control (IoC) Dependency Injection container. Supports constructor injection via TypeScript `design:paramtypes` reflection, field injection (`@Inject()`, `@Optional()`), circular dependency resolution (`forwardRef()`), and `@Global()` / `@Module()` scopes.
-- **`validator/` & `sanitize/`**: Integrated validation engine powered by `TexValidator` in Rust and TypeScript schema builder (`tex.*`). Handles parameter coercion, type assertions, and zero-crash sanitization (`safeSanitize` for BSON/Dates/ORM models).
+- **`validator/` & `sanitize/`**: Integrated validation engine: the `tex.*` builder emits rule strings; `validator/compile.ts` generates one JS function per schema (like Ajv), calling the check closures in `validator/rules.ts` for rules it does not inline. `rules.ts` alone is the fallback where `new Function` is blocked, and `tests/validator-codegen.test.ts` keeps the two in agreement. Handles parameter coercion, type assertions, and zero-crash sanitization (`safeSanitize` for BSON/Dates/ORM models).
 - **`middleware/`**: Built-in traffic control and security layers:
   - `security.ts`: `helmet()` headers, `csrf()` (signed double-submit cookie), `hpp()`, `mongoSanitize()`, `blockSuspiciousProbes()`, `timingSafeEqual()`, and `timeout()`.
-  - `rate-limit.ts`: Native rate limiter backed by `@exisjs/rs`.
+  - `rate-limit.ts`: In-memory fixed-window rate limiter.
   - `ip-filter.ts`: Fast bitwise CIDR IP blocking.
-  - `idempotency.ts`: Duplicate-request response caching via native LRU memory cache.
+  - `idempotency.ts`: Duplicate-request response caching via a bounded in-memory cache.
   - `upload.ts`: File upload and streaming multipart form-data parser.
 - **`server/` & `response/`**: The core HTTP server abstraction (`ExisRequest`, `ExisResponse`), request context, and lifecycle hooks (`onStart`, `onStop`).
 - **`cron/`**: Built-in background task scheduler and cron engine (`cron()` helper & `@Cron()` decorator) with automatic drift correction and overlap prevention.
@@ -74,5 +58,4 @@ ExisJS maintains a clean, modular, and opinionated core:
 4. **Clean Core Philosophy**:
    - Keep the core framework lean, typed, and structured.
    - External data stores, heavy queue drivers (like Redis), and specialized tools should remain pluggable and modular.
-   - Offload heavy operations (path matching, off-heap caching, CIDR IP filtering, body sanitization) to Rust via `@exisjs/rs`.
    - Keep developer-facing orchestration, route execution, and HTTP interfaces in clean TypeScript.

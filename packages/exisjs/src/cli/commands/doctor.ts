@@ -24,7 +24,7 @@ export async function doctorCommand(
   const nodeVer = process.version
   const majorNode = parseInt(nodeVer.replace(/^v/, '').split('.')[0], 10)
 
-  if (majorNode >= 18) {
+  if (majorNode >= 20) {
     results.push({
       category: 'Runtime',
       name: 'Node.js Version',
@@ -36,48 +36,12 @@ export async function doctorCommand(
       category: 'Runtime',
       name: 'Node.js Version',
       status: 'fail',
-      message: `${nodeVer} is below minimum supported v18.0.0`,
-      hint: 'Upgrade Node.js to v18, v20, or v22 for full N-API and crypto support.',
+      message: `${nodeVer} is below minimum supported v20.0.0`,
+      hint: 'Upgrade Node.js to v20 or newer (an active LTS release is recommended).',
     })
   }
 
-  // 2. Hardware-Accelerated Native Engine (@exisjs/rs) Check
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const rs = require('@exisjs/rs')
-    const hasRadix = typeof rs.NativeRadixTree === 'function'
-    const hasFastJson = typeof rs.fast_json_stringify === 'function'
-
-    if (hasRadix && hasFastJson) {
-      results.push({
-        category: 'Native Engine',
-        name: '@exisjs/rs (Rust Engine)',
-        status: 'pass',
-        message:
-          'Active (hardware-accelerated radix tree, off-heap cache & fast JSON)',
-      })
-    } else {
-      results.push({
-        category: 'Native Engine',
-        name: '@exisjs/rs (Rust Engine)',
-        status: 'warn',
-        message:
-          'Loaded, but some native symbols are unavailable. Fallbacks active.',
-        hint: 'Rebuild native bindings using "npm run build --workspace=packages/rs".',
-      })
-    }
-  } catch {
-    results.push({
-      category: 'Native Engine',
-      name: '@exisjs/rs (Rust Engine)',
-      status: 'warn',
-      message:
-        'Not loaded. Framework running in graceful pure-JS fallback mode.',
-      hint: 'Run "npm install @exisjs/rs" or build from source to unlock 10x off-heap routing performance.',
-    })
-  }
-
-  // 3. Project Configuration & Directory Structure Check
+  // 2. Project Configuration & Directory Structure Check
   const pkgPath = path.join(cwd, 'package.json')
   if (fs.existsSync(pkgPath)) {
     results.push({

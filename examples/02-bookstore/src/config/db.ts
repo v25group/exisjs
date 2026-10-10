@@ -1,25 +1,16 @@
 import mongoose from 'mongoose'
 import { registerDatabase, mongoPoolOptions } from 'exisjs/database'
+import { env } from './env'
 
-export async function connectDB(uri?: string): Promise<void> {
-  const mongoUri =
-    uri || process.env.MONGO_URI || 'mongodb://localhost:27017/bookstore'
-
-  try {
-    await mongoose.connect(mongoUri, mongoPoolOptions())
-    console.log(`[MongoDB] Connected successfully to ${mongoUri}`)
-  } catch (error) {
-    console.error('[MongoDB] Connection error:', error)
-  }
-}
-
-export async function disconnectDB(): Promise<void> {
-  await mongoose.disconnect()
-}
-
+// Registering the database is all that is needed: ExisJS connects it at
+// startup (a failed connection stops the boot), reports it in health checks,
+// and disconnects it once, after in-flight requests finish, on shutdown.
+// Do not also call connect/disconnect from onStart/onClose.
 registerDatabase({
   name: 'mongodb',
-  connect: connectDB,
-  disconnect: disconnectDB,
+  connect: async () => {
+    await mongoose.connect(env.MONGODB_URI, mongoPoolOptions())
+  },
+  disconnect: () => mongoose.disconnect(),
   isHealthy: () => mongoose.connection.readyState === 1,
 })

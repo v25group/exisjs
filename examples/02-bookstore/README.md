@@ -1,36 +1,60 @@
-# 02-bookstore
+# 02-bookstore: class-based ExisJS example
 
-This is an [Exis JS](https://github.com/v25group/exisjs) project bootstrapped with `create-exis`.
+A bookstore API written with the **class-based (OOP)** style (`@Controller`, `@Get`, `@Post`...) on MongoDB with Mongoose.
 
-## Getting Started
+## What it shows
 
-First, run the development server:
+| Feature | Where |
+| :--- | :--- |
+| Decorator controllers | `src/http/**/route.ts` |
+| Validated environment variables | `src/config/env.ts` |
+| Database lifecycle managed by the framework | `src/config/db.ts` (`registerDatabase`) |
+| Typed request bodies from `tex` schemas | `@Body(Schema) body: Infer<typeof Schema>` |
+| Register / login with a hashed password | `src/http/api/auth/route.ts`, `src/models/User.ts` |
+| Protecting routes with `@Use(protectRoute)` | `src/middleware/auth.ts`, `src/http/api/books/route.ts` |
+| Custom status codes with `@HttpCode` | register, create book |
+| File upload with `@UploadedFile` | `POST /api/books/cover` |
+| Idempotent requests with `@Idempotent` | `POST /api/books/checkout` |
+| Health check that reports the database | `src/http/health/route.ts` |
+| Tests on a separate database | `tests/`, `.env.test` |
+
+## Getting started
+
+You need MongoDB running locally (or a connection string).
 
 ```bash
+cp .env.example .env     # set MONGODB_URI and a long random JWT_SECRET
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:4000](http://localhost:4000) with your API client or browser to see the result.
+The API listens on [http://localhost:4000](http://localhost:4000). Interactive docs are at [http://localhost:4000/docs](http://localhost:4000/docs).
 
-You can start editing the API by modifying `src/http/health/route.ts`. The server auto-updates as you edit the file.
+## Endpoints
 
-This project uses built-in file-system routing to automatically map your `src/http/` structure to HTTP endpoints.
+| Method | Path | Auth | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/register` | – | Create an account, returns a token |
+| `POST` | `/api/auth/login` | – | Exchange credentials for a token |
+| `GET` | `/api/auth/me` | Bearer | The current user |
+| `GET` | `/api/books` | – | List books (`?page=&limit=`) |
+| `GET` | `/api/books/user` | Bearer | Books created by the current user |
+| `POST` | `/api/books` | Bearer | Create a book |
+| `POST` | `/api/books/cover` | Bearer | Upload a cover image |
+| `POST` | `/api/books/checkout` | Bearer | Idempotent checkout (send `Idempotency-Key`) |
+| `DELETE` | `/api/books/:id` | Bearer | Delete a book you own |
+| `GET` | `/health` | – | Service and database status |
 
-## Learn More
+## Scripts
 
-To learn more about Exis JS, take a look at the following resources:
+| Command | What it does |
+| :--- | :--- |
+| `npm run dev` | Development server with reload |
+| `npm test` | Runs `tests/` against the `bookstore_test` database from `.env.test` |
+| `npm run build` | Type-checks and compiles to `.exis/` |
+| `npm start` | Runs the production build |
 
-- [Exis JS Documentation](https://github.com/v25group/exisjs/tree/main/docs) - learn about Exis JS features and API.
-- [File-System Routing Guide](https://github.com/v25group/exisjs/blob/main/docs/02-routing.md) - learn how to structure your API.
+## Notes
 
-You can check out [the Exis JS GitHub repository](https://github.com/v25group/exisjs) - your feedback and contributions are welcome!
-
-## Deploy
-
-The easiest way to deploy your Exis JS app is on any Node.js compatible hosting platform (Vercel, Render, Railway, DigitalOcean).
+- Passwords are hashed in one place only: the `pre('save')` hook in `src/models/User.ts`.
+- The database is registered once in `src/config/db.ts`. ExisJS connects it at startup and disconnects it on shutdown, so `onStart`/`onClose` do not touch it.

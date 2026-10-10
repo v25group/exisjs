@@ -1,4 +1,4 @@
-import { TexValidator } from '@exisjs/rs'
+import { compileSchema } from './compile'
 import { TexType, type ResolveSchema } from './tex-types'
 import { ValidatorError, getNestedValue, formatReceivedValue } from './error'
 import type { ValidationErrorDescriptor } from './types'
@@ -6,11 +6,14 @@ import type { ValidationErrorDescriptor } from './types'
 export class TexEngine<T = any> {
   private schema: Record<string, string>
   private rawSchema: Record<string, any>
-  private validator: any
+  private validator: (data: any) => any
   private strict: boolean
 
   public readonly _type!: T
   public _isOptional = false
+  // Per-field work list, built on first parse so builder mutations made
+  // before then (refine, sanitize) are included
+  private _plan?: ParsePlan
 
   constructor(
     schema: Record<string, string>,
@@ -22,7 +25,7 @@ export class TexEngine<T = any> {
     this.rawSchema = rawSchema
     this.strict = strict
     this._isOptional = isOptional
-    this.validator = new TexValidator(schema, strict)
+    this.validator = compileSchema(schema, strict)
   }
 
   getCompiledSchema(): Record<string, string> {
@@ -127,260 +130,21 @@ export class TexEngine<T = any> {
   }
 
   parse(data: any): T {
-    // 1. Apply defaults and run pre-validation sanitizers on the raw payload (if it's an object)
+    const plan =
+      this._plan || (this._plan = splitPlan(buildPlan(this.rawSchema)))
+    const coerceScalars = Boolean((this as any)._isQueryOrParam)
+
+    // 1. Defaults, empty-string handling, coercion and sanitizers. Only
+    // fields that need any of it are visited.
     if (data && typeof data === 'object') {
-      for (const [key, val] of Object.entries(this.rawSchema)) {
-        // Apply default value / lazy factory function if field is omitted or undefined
-        if (data[key] === undefined) {
-          if (val instanceof TexType && val.defaultValue !== undefined) {
-            data[key] =
-              typeof val.defaultValue === 'function'
-                ? val.defaultValue()
-                : val.defaultValue
-          }
-        }
-
-        if (typeof data[key] === 'string' && data[key].trim() === '') {
-          const raw = val instanceof TexType ? val._raw : String(val)
-          if (
-            raw.includes('optional') ||
-            raw.includes('nullable') ||
-            raw.includes('nullish') ||
-            raw.includes('?') ||
-            (val as any)?._isOptional
-          ) {
-            if (
-              raw.includes('nullable') &&
-              !raw.includes('optional') &&
-              !raw.includes('nullish')
-            ) {
-              data[key] = null
-            } else {
-              delete data[key]
-              // If deleted but default is defined, apply default
-              if (val instanceof TexType && val.defaultValue !== undefined) {
-                data[key] =
-                  typeof val.defaultValue === 'function'
-                    ? val.defaultValue()
-                    : val.defaultValue
-              }
-            }
-          }
-        }
-        if (data[key] !== undefined && data[key] !== null) {
-          if (val instanceof TexType && val._raw.startsWith('date')) {
-            if (val._raw.includes('coerce')) {
-              if (
-                typeof data[key] === 'string' ||
-                typeof data[key] === 'number'
-              ) {
-                const d = new Date(data[key])
-                if (isNaN(d.getTime())) {
-                  throw new ValidatorError([
-                    {
-                      path: key,
-                      message: 'Must be a valid date',
-                      expected: 'valid date string or timestamp',
-                      received: formatReceivedValue(data[key]),
-                      code: 'INVALID_DATE',
-                    },
-                  ])
-                }
-                data[key] = d
-              }
-            }
-            if (
-              !(data[key] instanceof Date) &&
-              typeof data[key] !== 'string' &&
-              typeof data[key] !== 'number'
-            ) {
-              throw new ValidatorError([
-                {
-                  path: key,
-                  message: 'Must be a valid date',
-                  expected: 'valid date or date string',
-                  received: formatReceivedValue(data[key]),
-                  code: 'INVALID_TYPE',
-                },
-              ])
-            }
-            if (data[key] instanceof Date && isNaN(data[key].getTime())) {
-              throw new ValidatorError([
-                {
-                  path: key,
-                  message: 'Must be a valid date',
-                  expected: 'valid date string or timestamp',
-                  received: formatReceivedValue(data[key]),
-                  code: 'INVALID_DATE',
-                },
-              ])
-            }
-            if (val._raw.includes('minDate:')) {
-              const minStr = val._raw.match(/minDate:([^\s|]+)/)?.[1]
-              if (
-                minStr &&
-                new Date(data[key]).getTime() < new Date(minStr).getTime()
-              ) {
-                throw new ValidatorError([
-                  {
-                    path: key,
-                    message: `Date must be after ${minStr}`,
-                    expected: `>= ${minStr}`,
-                    received: formatReceivedValue(data[key]),
-                    code: 'DATE_TOO_EARLY',
-                  },
-                ])
-              }
-            }
-            if (val._raw.includes('maxDate:')) {
-              const maxStr = val._raw.match(/maxDate:([^\s|]+)/)?.[1]
-              if (
-                maxStr &&
-                new Date(data[key]).getTime() > new Date(maxStr).getTime()
-              ) {
-                throw new ValidatorError([
-                  {
-                    path: key,
-                    message: `Date must be before ${maxStr}`,
-                    expected: `<= ${maxStr}`,
-                    received: formatReceivedValue(data[key]),
-                    code: 'DATE_TOO_LATE',
-                  },
-                ])
-              }
-            }
-          }
-
-          if (val instanceof TexType && val._raw.startsWith('string')) {
-            if (val._raw.includes('coerce') && typeof data[key] !== 'string') {
-              data[key] = String(data[key])
-            }
-          }
-
-          if (val instanceof TexType && val._raw.startsWith('number')) {
-            if (val._raw.includes('coerce') || (this as any)._isQueryOrParam) {
-              if (typeof data[key] === 'string' && data[key].trim() !== '') {
-                const n = Number(data[key])
-                if (!isNaN(n)) {
-                  data[key] = n
-                } else {
-                  throw new ValidatorError([
-                    {
-                      path: key,
-                      message: 'Must be a number',
-                      expected: 'number',
-                      received: formatReceivedValue(data[key]),
-                      code: 'INVALID_TYPE',
-                    },
-                  ])
-                }
-              }
-            }
-          }
-
-          if (val instanceof TexType && val._raw.startsWith('boolean')) {
-            if (val._raw.includes('coerce') || (this as any)._isQueryOrParam) {
-              if (typeof data[key] === 'string' && data[key].trim() !== '') {
-                const lower = data[key].toLowerCase().trim()
-                if (lower === 'true' || lower === '1') {
-                  data[key] = true
-                } else if (lower === 'false' || lower === '0') {
-                  data[key] = false
-                } else {
-                  throw new ValidatorError([
-                    {
-                      path: key,
-                      message: 'Must be a boolean',
-                      expected: 'boolean (true or false)',
-                      received: formatReceivedValue(data[key]),
-                      code: 'INVALID_TYPE',
-                    },
-                  ])
-                }
-              }
-            }
-          }
-
-          if (
-            val instanceof TexType &&
-            val._raw.startsWith('array<') &&
-            val._raw.includes('coerce')
-          ) {
-            if (!Array.isArray(data[key])) {
-              if (typeof data[key] === 'string') {
-                const parts = data[key].includes(',')
-                  ? data[key].split(',').map((s: string) => s.trim())
-                  : [data[key]]
-                if (val._raw.startsWith('array<number')) {
-                  data[key] = parts.map((p: string) => {
-                    const n = Number(p)
-                    return isNaN(n) ? p : n
-                  })
-                } else if (val._raw.startsWith('array<boolean')) {
-                  data[key] = parts.map((p: string) => {
-                    if (p.toLowerCase() === 'true') return true
-                    if (p.toLowerCase() === 'false') return false
-                    return p
-                  })
-                } else {
-                  data[key] = parts
-                }
-              } else {
-                data[key] = [data[key]]
-              }
-            } else {
-              if (val._raw.startsWith('array<number')) {
-                data[key] = data[key].map((item: any) => {
-                  if (typeof item === 'string') {
-                    const n = Number(item)
-                    return isNaN(n) ? item : n
-                  }
-                  return item
-                })
-              } else if (val._raw.startsWith('array<boolean')) {
-                data[key] = data[key].map((item: any) => {
-                  if (typeof item === 'string') {
-                    if (item.toLowerCase() === 'true') return true
-                    if (item.toLowerCase() === 'false') return false
-                  }
-                  return item
-                })
-              }
-            }
-          }
-
-          if (val instanceof TexType && val.sanitizers.length > 0) {
-            for (const s of val.sanitizers) {
-              if (data[key] === undefined || data[key] === null) break
-              data[key] = s(data[key])
-            }
-          }
-
-          const itemSchema = (val as any)?._item
-          if (itemSchema && Array.isArray(data[key])) {
-            if (
-              itemSchema instanceof TexType &&
-              itemSchema.sanitizers.length > 0
-            ) {
-              for (let i = 0; i < data[key].length; i++) {
-                if (data[key][i] !== undefined && data[key][i] !== null) {
-                  for (const s of itemSchema.sanitizers) {
-                    if (data[key][i] === undefined || data[key][i] === null)
-                      break
-                    data[key][i] = s(data[key][i])
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+      const prep = coerceScalars ? plan.prepQuery : plan.prep
+      for (const f of prep) prepareField(data, f, coerceScalars)
     }
 
-    // 2. Rust Validation
+    // 2. Type validation (compiled once per schema)
     let parsedData: any
     try {
-      parsedData = this.validator.parse(data)
+      parsedData = this.validator(data)
     } catch (err: any) {
       if (
         data === process.env &&
@@ -495,100 +259,38 @@ export class TexEngine<T = any> {
       throw new ValidatorError([{ path, message, expected, received, code }])
     }
 
-    // Preserve Date objects and ensure defaults are applied
-    if (parsedData && typeof parsedData === 'object') {
-      for (const [key, val] of Object.entries(this.rawSchema)) {
+    if (parsedData && typeof parsedData === 'object' && plan.post.length > 0) {
+      const errors: ValidationErrorDescriptor[] = []
+      for (const f of plan.post) {
+        const key = f.key
+
+        // Preserve Date objects and ensure defaults are applied
         if (
           parsedData[key] === undefined &&
-          val instanceof TexType &&
-          val.defaultValue !== undefined
+          f.tex?.defaultValue !== undefined
         ) {
-          parsedData[key] =
-            typeof val.defaultValue === 'function'
-              ? val.defaultValue()
-              : val.defaultValue
+          parsedData[key] = resolveDefault(f.tex.defaultValue)
         }
-        if (
-          val instanceof TexType &&
-          val._raw.startsWith('date') &&
-          data &&
-          data[key] instanceof Date
-        ) {
+        if (f.isDate && data && data[key] instanceof Date) {
           parsedData[key] = data[key]
         }
-      }
-    }
 
-    // 3. Post-validation synchronous refinements
-    const errors: ValidationErrorDescriptor[] = []
-    if (parsedData && typeof parsedData === 'object') {
-      for (const [key, val] of Object.entries(this.rawSchema)) {
-        if (parsedData[key] !== undefined) {
-          const isNullableField =
-            val instanceof TexType &&
-            (val._raw.includes('nullable') || val._raw.includes('nullish'))
-          if (parsedData[key] === null && isNullableField) {
-            continue
-          }
-
-          if (val instanceof TexType && val.refinements.length > 0) {
-            for (const r of val.refinements) {
-              if (!r.async && !r.fn(parsedData[key])) {
-                const msg =
-                  typeof r.message === 'function'
-                    ? r.message(parsedData[key])
-                    : r.message || 'Invalid value'
-                errors.push({
-                  path: key,
-                  message: msg,
-                  expected: 'custom refinement rule',
-                  received: formatReceivedValue(parsedData[key]),
-                  code: 'CUSTOM_VALIDATION',
-                })
-              }
-            }
-          }
-          const itemSchema = (val as any)?._item
-          if (itemSchema && Array.isArray(parsedData[key])) {
-            if (
-              itemSchema instanceof TexType &&
-              itemSchema.refinements.length > 0
-            ) {
-              const isItemNullable =
-                itemSchema._raw.includes('nullable') ||
-                itemSchema._raw.includes('nullish')
-              for (let i = 0; i < parsedData[key].length; i++) {
-                if (parsedData[key][i] === null && isItemNullable) continue
-                for (const r of itemSchema.refinements) {
-                  if (!r.async && !r.fn(parsedData[key][i])) {
-                    const msg =
-                      typeof r.message === 'function'
-                        ? r.message(parsedData[key][i])
-                        : r.message || 'Invalid value'
-                    errors.push({
-                      path: `${key}[${i}]`,
-                      message: msg,
-                      expected: 'custom refinement rule',
-                      received: formatReceivedValue(parsedData[key][i]),
-                      code: 'CUSTOM_VALIDATION',
-                    })
-                  }
-                }
-              }
-            }
+        // 3. Post-validation synchronous refinements
+        if (f.hasRefinements && parsedData[key] !== undefined) {
+          if (!(parsedData[key] === null && f.isNullable)) {
+            runSyncRefinements(f, parsedData[key], errors)
           }
         }
       }
-    }
 
-    if (errors.length > 0) throw new ValidatorError(errors)
+      if (errors.length > 0) throw new ValidatorError(errors)
 
-    // 4. Post-validation field transformations
-    if (parsedData && typeof parsedData === 'object') {
-      for (const [key, val] of Object.entries(this.rawSchema)) {
-        if (parsedData[key] !== undefined) {
-          if (val instanceof TexType && val.transformations.length > 0) {
-            for (const t of val.transformations) {
+      // 4. Post-validation field transformations
+      for (const f of plan.post) {
+        if (f.tex && f.tex.transformations.length > 0) {
+          const key = f.key
+          if (parsedData[key] !== undefined) {
+            for (const t of f.tex.transformations) {
               parsedData[key] = t(parsedData[key])
             }
           }
@@ -889,6 +591,375 @@ export class TexDiscriminatedUnionEngine<
       discriminator: {
         propertyName: this.discriminator,
       },
+    }
+  }
+}
+
+// ─── Parse plan ──────────────────────────────────────────────────────────────
+// Everything derivable from a field's rule string is decided once here, so
+// parse() does no string scanning per request.
+
+interface FieldPlan {
+  key: string
+  tex: TexType | null
+  emptyString: 'keep' | 'null' | 'delete'
+  isDate: boolean
+  dateCoerce: boolean
+  minDate?: string
+  maxDate?: string
+  stringCoerce: boolean
+  number: 'no' | 'coerce' | 'query'
+  boolean: 'no' | 'coerce' | 'query'
+  array: 'no' | 'number' | 'boolean' | 'other'
+  item: TexType | null
+  isNullable: boolean
+  hasRefinements: boolean
+}
+
+interface ParsePlan {
+  /** Fields needing pre-validation work for body parsing */
+  prep: FieldPlan[]
+  /** Same, when the engine validates query/params (scalar coercion on) */
+  prepQuery: FieldPlan[]
+  /** Fields with defaults, dates, refinements or transformations */
+  post: FieldPlan[]
+}
+
+function needsPrep(f: FieldPlan, coerceScalars: boolean): boolean {
+  return (
+    f.tex?.defaultValue !== undefined ||
+    f.emptyString !== 'keep' ||
+    f.isDate ||
+    f.stringCoerce ||
+    f.number === 'coerce' ||
+    f.boolean === 'coerce' ||
+    (coerceScalars && (f.number === 'query' || f.boolean === 'query')) ||
+    f.array !== 'no' ||
+    (f.tex !== null && f.tex.sanitizers.length > 0) ||
+    (f.item !== null && f.item.sanitizers.length > 0)
+  )
+}
+
+function splitPlan(plan: FieldPlan[]): ParsePlan {
+  return {
+    prep: plan.filter((f) => needsPrep(f, false)),
+    prepQuery: plan.filter((f) => needsPrep(f, true)),
+    post: plan.filter(
+      (f) =>
+        f.tex?.defaultValue !== undefined ||
+        f.isDate ||
+        f.hasRefinements ||
+        (f.tex !== null && f.tex.transformations.length > 0)
+    ),
+  }
+}
+
+function scalarMode(
+  plain: boolean,
+  raw: string,
+  type: string,
+  coerce: boolean
+): 'no' | 'coerce' | 'query' {
+  if (!plain || !raw.startsWith(type)) return 'no'
+  return coerce ? 'coerce' : 'query'
+}
+
+function arrayMode(
+  plain: boolean,
+  raw: string,
+  coerce: boolean
+): FieldPlan['array'] {
+  if (!plain || !coerce || !raw.startsWith('array<')) return 'no'
+  if (raw.startsWith('array<number')) return 'number'
+  if (raw.startsWith('array<boolean')) return 'boolean'
+  return 'other'
+}
+
+function buildPlan(rawSchema: Record<string, any>): FieldPlan[] {
+  const plan: FieldPlan[] = []
+  for (const key of Object.keys(rawSchema)) {
+    const val = rawSchema[key]
+    const tex = val instanceof TexType ? val : null
+    const raw = tex ? tex._raw : String(val)
+    // Unions coerce per alternative inside the compiled rule
+    const plain = tex !== null && !raw.includes('||')
+    const coerce = raw.includes('coerce')
+    const nullable = raw.includes('nullable')
+    const nullish = raw.includes('nullish')
+    const optional = raw.includes('optional')
+
+    let emptyString: FieldPlan['emptyString'] = 'keep'
+    if (
+      optional ||
+      nullable ||
+      nullish ||
+      raw.includes('?') ||
+      val?._isOptional
+    ) {
+      emptyString = nullable && !optional && !nullish ? 'null' : 'delete'
+    }
+
+    const item = val?._item instanceof TexType ? (val._item as TexType) : null
+    const isDate = plain && raw.startsWith('date')
+    plan.push({
+      key,
+      tex,
+      emptyString,
+      isDate,
+      dateCoerce: isDate && coerce,
+      minDate: isDate ? raw.match(/minDate:([^\s|]+)/)?.[1] : undefined,
+      maxDate: isDate ? raw.match(/maxDate:([^\s|]+)/)?.[1] : undefined,
+      stringCoerce: plain && coerce && raw.startsWith('string'),
+      number: scalarMode(plain, raw, 'number', coerce),
+      boolean: scalarMode(plain, raw, 'boolean', coerce),
+      array: arrayMode(plain, raw, coerce),
+      item,
+      isNullable: tex !== null && (nullable || nullish),
+      hasRefinements:
+        (tex !== null && tex.refinements.length > 0) ||
+        (item !== null && item.refinements.length > 0),
+    })
+  }
+  return plan
+}
+
+function resolveDefault(defaultValue: any): any {
+  return typeof defaultValue === 'function' ? defaultValue() : defaultValue
+}
+
+function fieldError(
+  key: string,
+  value: any,
+  message: string,
+  expected: string,
+  code: string
+): never {
+  throw new ValidatorError([
+    {
+      path: key,
+      message,
+      expected,
+      received: formatReceivedValue(value),
+      code,
+    },
+  ])
+}
+
+function prepareDate(key: string, value: any, f: FieldPlan): any {
+  if (
+    f.dateCoerce &&
+    (typeof value === 'string' || typeof value === 'number')
+  ) {
+    const d = new Date(value)
+    if (isNaN(d.getTime())) {
+      fieldError(
+        key,
+        value,
+        'Must be a valid date',
+        'valid date string or timestamp',
+        'INVALID_DATE'
+      )
+    }
+    value = d
+  }
+  if (
+    !(value instanceof Date) &&
+    typeof value !== 'string' &&
+    typeof value !== 'number'
+  ) {
+    fieldError(
+      key,
+      value,
+      'Must be a valid date',
+      'valid date or date string',
+      'INVALID_TYPE'
+    )
+  }
+  if (value instanceof Date && isNaN(value.getTime())) {
+    fieldError(
+      key,
+      value,
+      'Must be a valid date',
+      'valid date string or timestamp',
+      'INVALID_DATE'
+    )
+  }
+  const time = new Date(value).getTime()
+  if (f.minDate && time < new Date(f.minDate).getTime()) {
+    fieldError(
+      key,
+      value,
+      `Date must be after ${f.minDate}`,
+      `>= ${f.minDate}`,
+      'DATE_TOO_EARLY'
+    )
+  }
+  if (f.maxDate && time > new Date(f.maxDate).getTime()) {
+    fieldError(
+      key,
+      value,
+      `Date must be before ${f.maxDate}`,
+      `<= ${f.maxDate}`,
+      'DATE_TOO_LATE'
+    )
+  }
+  return value
+}
+
+function prepareField(data: any, f: FieldPlan, coerceScalars: boolean): void {
+  const key = f.key
+  const tex = f.tex
+
+  // Apply default value / lazy factory function if field is omitted
+  if (data[key] === undefined && tex?.defaultValue !== undefined) {
+    data[key] = resolveDefault(tex.defaultValue)
+  }
+
+  if (
+    f.emptyString !== 'keep' &&
+    typeof data[key] === 'string' &&
+    data[key].trim() === ''
+  ) {
+    if (f.emptyString === 'null') {
+      data[key] = null
+    } else {
+      delete data[key]
+      if (tex?.defaultValue !== undefined) {
+        data[key] = resolveDefault(tex.defaultValue)
+      }
+    }
+  }
+
+  let value = data[key]
+  if (value === undefined || value === null) return
+
+  if (f.isDate) data[key] = value = prepareDate(key, value, f)
+
+  if (f.stringCoerce && typeof value !== 'string') {
+    data[key] = value = String(value)
+  }
+
+  if (
+    (f.number === 'coerce' || (f.number === 'query' && coerceScalars)) &&
+    typeof value === 'string' &&
+    value.trim() !== ''
+  ) {
+    const n = Number(value)
+    if (isNaN(n))
+      fieldError(key, value, 'Must be a number', 'number', 'INVALID_TYPE')
+    data[key] = value = n
+  }
+
+  if (
+    (f.boolean === 'coerce' || (f.boolean === 'query' && coerceScalars)) &&
+    typeof value === 'string' &&
+    value.trim() !== ''
+  ) {
+    const lower = value.toLowerCase().trim()
+    if (lower === 'true' || lower === '1') data[key] = value = true
+    else if (lower === 'false' || lower === '0') data[key] = value = false
+    else {
+      fieldError(
+        key,
+        value,
+        'Must be a boolean',
+        'boolean (true or false)',
+        'INVALID_TYPE'
+      )
+    }
+  }
+
+  if (f.array !== 'no') data[key] = coerceArray(value, f.array)
+
+  if (tex !== null && tex.sanitizers.length > 0) {
+    for (const s of tex.sanitizers) {
+      if (data[key] === undefined || data[key] === null) break
+      data[key] = s(data[key])
+    }
+  }
+
+  const item = f.item
+  if (item !== null && item.sanitizers.length > 0 && Array.isArray(data[key])) {
+    const arr = data[key]
+    for (let i = 0; i < arr.length; i++) {
+      for (const s of item.sanitizers) {
+        if (arr[i] === undefined || arr[i] === null) break
+        arr[i] = s(arr[i])
+      }
+    }
+  }
+}
+
+function coerceItem(item: any, kind: FieldPlan['array']): any {
+  if (typeof item !== 'string') return item
+  if (kind === 'number') {
+    const n = Number(item)
+    return isNaN(n) ? item : n
+  }
+  if (kind === 'boolean') {
+    const lower = item.toLowerCase()
+    if (lower === 'true') return true
+    if (lower === 'false') return false
+  }
+  return item
+}
+
+function coerceArray(value: any, kind: FieldPlan['array']): any {
+  if (!Array.isArray(value)) {
+    if (typeof value !== 'string') return [value]
+    const parts = value.includes(',')
+      ? value.split(',').map((s: string) => s.trim())
+      : [value]
+    return kind === 'other' ? parts : parts.map((p) => coerceItem(p, kind))
+  }
+  return kind === 'other' ? value : value.map((v) => coerceItem(v, kind))
+}
+
+function refinementMessage(
+  r: { message?: string | ((val: any) => string) },
+  value: any
+): string {
+  return typeof r.message === 'function'
+    ? r.message(value)
+    : r.message || 'Invalid value'
+}
+
+function runSyncRefinements(
+  f: FieldPlan,
+  value: any,
+  errors: ValidationErrorDescriptor[]
+): void {
+  if (f.tex !== null) {
+    for (const r of f.tex.refinements) {
+      if (!r.async && !r.fn(value)) {
+        errors.push({
+          path: f.key,
+          message: refinementMessage(r, value),
+          expected: 'custom refinement rule',
+          received: formatReceivedValue(value),
+          code: 'CUSTOM_VALIDATION',
+        })
+      }
+    }
+  }
+  const item = f.item
+  if (item === null || item.refinements.length === 0 || !Array.isArray(value)) {
+    return
+  }
+  const itemNullable =
+    item._raw.includes('nullable') || item._raw.includes('nullish')
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === null && itemNullable) continue
+    for (const r of item.refinements) {
+      if (!r.async && !r.fn(value[i])) {
+        errors.push({
+          path: `${f.key}[${i}]`,
+          message: refinementMessage(r, value[i]),
+          expected: 'custom refinement rule',
+          received: formatReceivedValue(value[i]),
+          code: 'CUSTOM_VALIDATION',
+        })
+      }
     }
   }
 }

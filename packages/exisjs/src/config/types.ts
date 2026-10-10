@@ -47,8 +47,13 @@ export interface Logger {
 
 export interface HelmetConfig {
   enabled?: boolean
-  contentSecurityPolicy?: boolean
+  /** `true` applies a strict default policy; a string is used verbatim (may contain `{nonce}`) */
+  contentSecurityPolicy?: boolean | string
   xFrameOptions?: 'DENY' | 'SAMEORIGIN'
+  hsts?: boolean | { maxAge: number; includeSubDomains: boolean }
+  noSniff?: boolean
+  xssFilter?: boolean
+  hidePoweredBy?: boolean
 }
 
 export interface KeepAliveConfig {

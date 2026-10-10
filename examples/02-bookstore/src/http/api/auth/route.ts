@@ -1,21 +1,26 @@
-import { Controller, Post, Get, Body, Use, Req } from 'exisjs/decorators'
-import { User } from '@/models/User'
-import { BadRequestError, UnauthorizedError } from 'exisjs/error'
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Use,
+  Req,
+  HttpCode,
+} from 'exisjs/decorators'
+import { ConflictError, UnauthorizedError } from 'exisjs/error'
 import { tex } from 'exisjs/validator'
-import jwt from 'jsonwebtoken'
-import { protectRoute } from '@/middleware/auth'
-import bcrypt from 'bcryptjs'
-
-const generateToken = (userId: string) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET as string, {
-    expiresIn: 15 * 24 * 60 * 60,
-  }) // 15 days
-}
+import type { Infer } from 'exisjs/validator'
+import { User, type UserDocument } from '@/models/User'
+import {
+  protectRoute,
+  signToken,
+  type AuthedRequest,
+} from '@/middleware/auth'
 
 const RegisterSchema = tex.object({
   email: tex.email({ trim: true, toLowerCase: true }),
-  username: tex.string({ trim: true, toLowerCase: true, min: 3 }),
-  password: tex.string({ min: 6 }),
+  username: tex.string({ trim: true, toLowerCase: true, min: 3, max: 30 }),
+  password: tex.string({ min: 8, max: 72 }),
 })
 
 const LoginSchema = tex.object({
@@ -23,88 +28,60 @@ const LoginSchema = tex.object({
   password: tex.string(),
 })
 
+// Infer the handler argument types from the schemas instead of using `any`
+type RegisterDto = Infer<typeof RegisterSchema>
+type LoginDto = Infer<typeof LoginSchema>
+
+function toPublicUser(user: UserDocument) {
+  return {
+    id: user.id as string,
+    username: user.username,
+    email: user.email,
+    profileImage: user.profileImage,
+    createdAt: user.createdAt,
+  }
+}
+
 @Controller()
 export default class AuthController {
   @Post('/register')
-  async register(@Body(RegisterSchema) body: any) {
-    const { email, username, password } = body
-
-    // check if user already exists
-    const existingEmail = await User.findOne({ email })
-    if (existingEmail) {
-      throw new BadRequestError('Email already exists')
+  @HttpCode(201)
+  async register(@Body(RegisterSchema) body: RegisterDto) {
+    const taken = await User.findOne({
+      $or: [{ email: body.email }, { username: body.username }],
+    })
+    if (taken) {
+      throw new ConflictError(
+        taken.email === body.email
+          ? 'Email is already registered'
+          : 'Username is already taken'
+      )
     }
 
-    const existingUsername = await User.findOne({ username })
-    if (existingUsername) {
-      throw new BadRequestError('Username already exists')
-    }
-
-    // get random avatar
-    const profileImage = `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`
-
-    const passwordHash = await bcrypt.hash(password, 10)
-
-    const user = new User({
-      email,
-      username,
-      password: passwordHash,
-      profileImage,
+    // The model hashes the password in its pre-save hook
+    const user = await User.create({
+      ...body,
+      profileImage: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(body.username)}`,
     })
 
-    await user.save()
-
-    const token = generateToken((user._id as any).toString())
-
-    return {
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        profileImage: user.profileImage,
-        createdAt: (user as any).createdAt,
-      },
-    }
+    return { token: signToken(user.id), user: toPublicUser(user) }
   }
 
   @Post('/login')
-  async login(@Body(LoginSchema) body: any) {
-    const { email, password } = body
-
-    // check if user exists
-    const user = await User.findOne({ email })
-    if (!user) throw new UnauthorizedError('Invalid credentials')
-
-    // check if password is correct
-    const isPasswordCorrect = await (user as any).comparePassword(password)
-    if (!isPasswordCorrect) throw new UnauthorizedError('Invalid credentials')
-
-    const token = generateToken((user._id as any).toString())
-
-    return {
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        profileImage: user.profileImage,
-        createdAt: (user as any).createdAt,
-      },
+  async login(@Body(LoginSchema) body: LoginDto) {
+    // password is excluded from queries by default; ask for it explicitly
+    const user = await User.findOne({ email: body.email }).select('+password')
+    // Same error for an unknown email and a wrong password, so the response
+    // does not reveal which accounts exist
+    if (!user || !(await user.comparePassword(body.password))) {
+      throw new UnauthorizedError('Invalid email or password')
     }
+    return { token: signToken(user.id), user: toPublicUser(user) }
   }
 
   @Get('/me')
   @Use(protectRoute)
-  async me(@Req() req: any) {
-    return {
-      success: true,
-      user: {
-        id: req.user._id,
-        username: req.user.username,
-        email: req.user.email,
-        profileImage: req.user.profileImage,
-      },
-    }
+  me(@Req() req: AuthedRequest) {
+    return { user: toPublicUser(req.user) }
   }
 }

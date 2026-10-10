@@ -24,54 +24,38 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
       return req.ip || 'unknown'
     })
 
-  // Initialize the native rate limiter. Fallback to a JS Map if the native module fails to load in a strange environment.
-  let nativeLimiter: any = null
-  const fallbackHits = new Map<string, { count: number; resetTime: number }>()
+  const hits = new Map<string, { count: number; resetTime: number }>()
 
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { NativeRateLimiter } = require('@exisjs/rs')
-    nativeLimiter = new NativeRateLimiter(windowMs)
-
-    // Sweep native memory periodically via background Rust thread
-    const sweepInterval = setInterval(() => {
-      nativeLimiter.sweep()
-    }, windowMs)
-    sweepInterval.unref()
-  } catch {
-    // Sweep JS memory fallback
-    const sweepInterval = setInterval(() => {
-      const now = Date.now()
-      for (const [key, data] of fallbackHits.entries()) {
-        if (data.resetTime <= now) {
-          fallbackHits.delete(key)
-        }
+  // Drop expired windows so idle keys do not accumulate
+  const sweepInterval = setInterval(() => {
+    const now = Date.now()
+    for (const [key, data] of hits.entries()) {
+      if (data.resetTime <= now) {
+        hits.delete(key)
       }
-    }, windowMs)
-    sweepInterval.unref()
-  }
+    }
+  }, windowMs)
+  sweepInterval.unref()
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const key = keyGenerator(req)
       const now = Date.now()
 
-      let currentHits = 0
-
-      if (nativeLimiter) {
-        currentHits = nativeLimiter.hit(key)
-      } else {
-        let record = fallbackHits.get(key)
-        if (!record || record.resetTime <= now) {
-          record = { count: 0, resetTime: now + windowMs }
-        }
-        record.count += 1
-        fallbackHits.set(key, record)
-        currentHits = record.count
+      let record = hits.get(key)
+      if (!record || record.resetTime <= now) {
+        record = { count: 0, resetTime: now + windowMs }
+        hits.set(key, record)
       }
+      record.count += 1
+      const currentHits = record.count
 
-      const resetSeconds = Math.ceil(windowMs / 1000)
-      const resetEpochSeconds = Math.ceil((now + windowMs) / 1000)
+      // Report when this key's window actually ends, not a full window from now
+      const resetSeconds = Math.max(
+        1,
+        Math.ceil((record.resetTime - now) / 1000)
+      )
+      const resetEpochSeconds = Math.ceil(record.resetTime / 1000)
 
       // Legacy Headers
       res.set('X-RateLimit-Limit', max.toString())

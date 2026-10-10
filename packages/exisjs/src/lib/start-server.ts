@@ -1,6 +1,7 @@
 import v8 from 'node:v8'
 import { pathToFileURL } from 'node:url'
 import { runInCluster } from '../server/cluster.js'
+import { DatabaseManager } from '../database/lifecycle.js'
 
 async function start() {
   // ─── Memory threshold monitor (only runs on worker processes) ───────────
@@ -194,7 +195,7 @@ async function start() {
 
         try {
           if (typeof app.close === 'function') {
-            await app.close()
+            await app.close(undefined, signal)
           }
           if (!isCLI) console.error('[exis] Server closed cleanly.')
 
@@ -216,6 +217,10 @@ async function start() {
           process.exit(1)
         }
       }
+
+      // app.close() disconnects databases after requests have drained; stop
+      // DatabaseManager's own signal handlers from closing pools first
+      DatabaseManager.deferShutdownToApp()
 
       process.once('SIGTERM', () => shutdown('SIGTERM'))
       process.once('SIGINT', () => shutdown('SIGINT'))

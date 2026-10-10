@@ -6,8 +6,10 @@ export {
   streamMultipartUpload,
 } from './body-parser'
 
-export { serializeCookie, serializeClearCookie } from './cookie'
+export { serializeCookie, serializeClearCookie, parseCookies } from './cookie'
 
 export { generateETag, nativeStringify } from './etag'
 
 export { streamToResponse } from './stream'
+
+export { secureJsonParse, stripPrototype } from './json'

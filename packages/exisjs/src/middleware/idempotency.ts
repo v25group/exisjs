@@ -1,6 +1,7 @@
 import type { Handler } from '../types'
 import type { ExisResponse } from '../server/response'
 import type { ExisRequest } from '../server/request'
+import { TtlCache } from '../utils/ttl-cache'
 
 export interface IdempotencyStore {
   get(key: string): Promise<{
@@ -16,48 +17,23 @@ export interface IdempotencyStore {
 }
 
 export class MemoryIdempotencyStore implements IdempotencyStore {
-  private nativeCache: any
-  private fallbackCache = new Map<string, { data: any; expiry: number }>()
-  private isFallback = false
-
-  constructor() {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { NativeMemoryCache } = require('@exisjs/rs')
-      // Cap at 10,000 concurrent idempotent requests to prevent memory exhaustion
-      this.nativeCache = new NativeMemoryCache(10000)
-    } catch {
-      this.isFallback = true
-    }
-  }
+  // Capped so a flood of unique Idempotency-Key values cannot exhaust memory
+  private cache = new TtlCache<{
+    statusCode: number
+    headers: Record<string, string>
+    body: any
+  }>(10000)
 
   async get(key: string) {
-    if (!this.isFallback) {
-      const dataStr = this.nativeCache.get(key)
-      if (!dataStr) return null
-      try {
-        return JSON.parse(dataStr)
-      } catch {
-        return null
-      }
-    }
-
-    const item = this.fallbackCache.get(key)
-    if (!item) return null
-    if (Date.now() > item.expiry) {
-      this.fallbackCache.delete(key)
-      return null
-    }
-    return item.data
+    return this.cache.get(key) ?? null
   }
 
-  async set(key: string, data: any, ttlMs = 86400000) {
-    if (!this.isFallback) {
-      this.nativeCache.set(key, JSON.stringify(data), ttlMs)
-      return
-    }
-
-    this.fallbackCache.set(key, { data, expiry: Date.now() + ttlMs })
+  async set(
+    key: string,
+    data: { statusCode: number; headers: Record<string, string>; body: any },
+    ttlMs = 86400000
+  ) {
+    this.cache.set(key, data, ttlMs)
   }
 }
 

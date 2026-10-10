@@ -10,87 +10,98 @@ export function normalizeIp(ip: string): string {
   return ip
 }
 
+// Env overrides are read once; process.env access is slow on the hot path.
+let envTrust: boolean | undefined
+function envTrustsProxy(): boolean {
+  if (envTrust === undefined) {
+    envTrust =
+      process.env.TRUST_PROXY === 'true' ||
+      process.env.EXIS_TRUST_PROXY === 'true'
+  }
+  return envTrust
+}
+
+function isProxyTrusted(trustProxy: boolean | number): boolean {
+  return Boolean(trustProxy) || envTrustsProxy()
+}
+
+function firstHeader(val: string | string[] | undefined): string | undefined {
+  const v = Array.isArray(val) ? val[0] : val
+  if (typeof v !== 'string') return undefined
+  const t = v.trim()
+  return t === '' ? undefined : t
+}
+
+/**
+ * Resolves the client IP.
+ *
+ * - `trustProxy: false` -> socket address only.
+ * - `trustProxy: true`  -> trust every hop: CDN headers (CF-Connecting-IP,
+ *   True-Client-IP, X-Real-IP, X-Client-IP), else the left-most
+ *   X-Forwarded-For entry. Only safe when every request passes through a
+ *   proxy that overwrites these headers.
+ * - `trustProxy: N`     -> trust the N closest hops, counting the socket peer
+ *   (Express semantics). The client is the entry N steps back from the
+ *   socket, so values a client prepends to X-Forwarded-For are ignored.
+ *   CDN headers are not consulted, since any client can send them.
+ */
 export function resolveIps(
   raw: IncomingMessage,
   trustProxy: boolean | number
 ): { ips: string[]; ip: string } {
-  const isTrusted =
-    Boolean(trustProxy) ||
-    process.env.TRUST_PROXY === 'true' ||
-    process.env.EXIS_TRUST_PROXY === 'true'
-
   const rawRemote = raw.socket?.remoteAddress ?? '127.0.0.1'
   const remoteAddress = normalizeIp(rawRemote)
 
-  if (!isTrusted) {
+  if (!isProxyTrusted(trustProxy)) {
     return { ips: [], ip: remoteAddress }
   }
 
-  // 1. Direct Edge & CDN client IP headers
-  const cfConnectingIp = raw.headers['cf-connecting-ip']
-  if (cfConnectingIp) {
-    const rawVal = Array.isArray(cfConnectingIp)
-      ? cfConnectingIp[0]
-      : cfConnectingIp
-    if (typeof rawVal === 'string' && rawVal.trim() !== '') {
-      const ip = normalizeIp(rawVal.trim())
+  const hops =
+    typeof trustProxy === 'number' && trustProxy > 0 ? trustProxy : Infinity
+
+  if (hops === Infinity) {
+    const h = raw.headers
+    const direct =
+      firstHeader(h['cf-connecting-ip']) ||
+      firstHeader(h['true-client-ip']) ||
+      firstHeader(h['x-real-ip']) ||
+      firstHeader(h['x-client-ip'])
+    if (direct) {
+      const ip = normalizeIp(direct)
       return { ips: [ip], ip }
     }
   }
 
-  const trueClientIp = raw.headers['true-client-ip']
-  if (trueClientIp) {
-    const rawVal = Array.isArray(trueClientIp) ? trueClientIp[0] : trueClientIp
-    if (typeof rawVal === 'string' && rawVal.trim() !== '') {
-      const ip = normalizeIp(rawVal.trim())
-      return { ips: [ip], ip }
-    }
-  }
-
-  const xRealIp = raw.headers['x-real-ip']
-  if (xRealIp) {
-    const rawVal = Array.isArray(xRealIp) ? xRealIp[0] : xRealIp
-    if (typeof rawVal === 'string' && rawVal.trim() !== '') {
-      const ip = normalizeIp(rawVal.trim())
-      return { ips: [ip], ip }
-    }
-  }
-
-  const xClientIp = raw.headers['x-client-ip']
-  if (xClientIp) {
-    const rawVal = Array.isArray(xClientIp) ? xClientIp[0] : xClientIp
-    if (typeof rawVal === 'string' && rawVal.trim() !== '') {
-      const ip = normalizeIp(rawVal.trim())
-      return { ips: [ip], ip }
-    }
-  }
-
-  // 2. Parse standard X-Forwarded-For proxy chain
   const xForwardedFor = raw.headers['x-forwarded-for']
-  let ips: string[] = []
-  if (xForwardedFor) {
-    const rawVal = Array.isArray(xForwardedFor)
-      ? xForwardedFor.join(',')
-      : xForwardedFor
-    ips = rawVal.split(',').map((item) => normalizeIp(item.trim()))
+  if (!xForwardedFor) return { ips: [], ip: remoteAddress }
+
+  const rawVal = Array.isArray(xForwardedFor)
+    ? xForwardedFor.join(',')
+    : xForwardedFor
+  const forwarded: string[] = []
+  for (const part of rawVal.split(',')) {
+    const t = part.trim()
+    if (t !== '') forwarded.push(normalizeIp(t))
+  }
+  if (forwarded.length === 0) return { ips: [], ip: remoteAddress }
+
+  if (hops === Infinity) {
+    return { ips: forwarded, ip: forwarded[0] }
   }
 
-  let trustedIps = ips
-  if (typeof trustProxy === 'number' && trustProxy > 0) {
-    trustedIps = ips.slice(-(trustProxy + 1))
-  }
-  const ip = trustedIps.length > 0 ? trustedIps[0] : remoteAddress
-  return { ips: trustedIps, ip }
+  // Full chain as seen from the server: [...forwarded, socketPeer].
+  // Trusting N hops means the client sits at index (length - 1 - N).
+  const chainLen = forwarded.length + 1
+  const clientIdx = Math.max(0, chainLen - 1 - hops)
+  const ips = forwarded.slice(clientIdx)
+  return { ips, ip: forwarded[clientIdx] }
 }
 
 export function resolveProtocol(
   raw: IncomingMessage,
   trustProxy: boolean | number
 ): string {
-  const isTrusted =
-    Boolean(trustProxy) ||
-    process.env.TRUST_PROXY === 'true' ||
-    process.env.EXIS_TRUST_PROXY === 'true'
+  const isTrusted = isProxyTrusted(trustProxy)
 
   const connection = raw.socket as import('node:net').Socket & {
     encrypted?: boolean
@@ -124,10 +135,7 @@ export function resolveHostname(
   raw: IncomingMessage,
   trustProxy: boolean | number
 ): string {
-  const isTrusted =
-    Boolean(trustProxy) ||
-    process.env.TRUST_PROXY === 'true' ||
-    process.env.EXIS_TRUST_PROXY === 'true'
+  const isTrusted = isProxyTrusted(trustProxy)
 
   let host = raw.headers['x-forwarded-host']
   if (!host || !isTrusted) {

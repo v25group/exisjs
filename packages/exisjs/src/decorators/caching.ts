@@ -1,3 +1,5 @@
+import { TtlCache } from '../utils/ttl-cache'
+
 export interface CacheableOptions {
   /** Time to live in seconds (default: 300 seconds) */
   ttl?: number
@@ -11,84 +13,29 @@ export interface CacheEvictOptions {
 }
 
 class MethodCacheStore {
-  private nativeCache: any
-  private fallbackCache = new Map<string, { val: any; exp: number }>()
-  private isFallback = false
-
-  constructor() {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { NativeMemoryCache } = require('@exisjs/rs')
-      this.nativeCache = new NativeMemoryCache(50000)
-    } catch {
-      this.isFallback = true
-    }
-  }
+  private cache = new TtlCache<any>(50000)
 
   public get(key: string): any {
-    if (!this.isFallback && this.nativeCache) {
-      try {
-        const raw = this.nativeCache.get(key)
-        if (raw !== undefined && raw !== null) {
-          return JSON.parse(raw)
-        }
-      } catch {
-        // Fall back to memory map
-      }
-    }
-
-    const item = this.fallbackCache.get(key)
-    if (!item) return undefined
-    if (Date.now() > item.exp) {
-      this.fallbackCache.delete(key)
-      return undefined
-    }
-    return item.val
+    return this.cache.get(key)
   }
 
   public set(key: string, value: any, ttlSeconds = 300): void {
-    if (!this.isFallback && this.nativeCache) {
-      try {
-        this.nativeCache.set(key, JSON.stringify(value), ttlSeconds * 1000)
-        return
-      } catch {
-        // Fall back
-      }
-    }
-
-    this.fallbackCache.set(key, {
-      val: value,
-      exp: Date.now() + ttlSeconds * 1000,
-    })
+    this.cache.set(key, value, ttlSeconds * 1000)
   }
 
   public delete(key: string): void {
-    if (!this.isFallback && this.nativeCache) {
-      try {
-        this.nativeCache.delete(key)
-      } catch {
-        // noop
-      }
-    }
-    this.fallbackCache.delete(key)
+    this.cache.delete(key)
   }
 
   public clear(): void {
-    if (!this.isFallback && this.nativeCache) {
-      try {
-        this.nativeCache.clear()
-      } catch {
-        // noop
-      }
-    }
-    this.fallbackCache.clear()
+    this.cache.clear()
   }
 }
 
 export const methodCache = new MethodCacheStore()
 
 /**
- * Caches the return value of a service method off-heap in the Rust native engine / memory cache.
+ * Caches the return value of a service method in a bounded in-memory cache.
  *
  * @example
  * ```ts

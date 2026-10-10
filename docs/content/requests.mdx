@@ -155,11 +155,22 @@ When running behind reverse proxies, load balancers, or CDNs (such as AWS ALB, C
 import type { ExisConfig } from 'exisjs/config'
 
 const config: ExisConfig = {
-  trustProxy: true, // Evaluates CF-Connecting-IP, X-Real-IP, and X-Forwarded-For
+  // Exactly one proxy (e.g. NGINX or a load balancer) in front of the app:
+  trustProxy: 1,
 }
 
 export default config
 ```
+
+Choose the value that matches your deployment:
+
+| Value | Trusts | Use when |
+| :--- | :--- | :--- |
+| `false` (default) | Nothing; `req.ip` is the socket address | The app is reached directly |
+| `N` (number) | The `N` closest hops, counting the socket peer. With `X-Forwarded-For: a, b` and `trustProxy: 1`, `req.ip` is `b`, the address your proxy saw. Values a client prepends are ignored. | You run behind a known number of proxies |
+| `true` | Every hop, plus CDN headers (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, `X-Client-IP`) | Every request passes through a CDN or proxy that overwrites these headers |
+
+> **Warning:** with `trustProxy: true`, any client that can reach the app directly can set these headers and spoof `req.ip`, and with it rate limits and IP filters. Prefer a hop count unless the app is only reachable through your proxy.
 
 When enabled:
 - `req.ip` automatically resolves the client IP, normalizes IPv6 loopback (`::1` $\to$ `127.0.0.1`), and strips IPv4-mapped IPv6 prefixes (`::ffff:192.168.1.1` $\to$ `192.168.1.1`).

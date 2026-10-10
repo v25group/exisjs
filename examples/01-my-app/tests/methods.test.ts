@@ -7,19 +7,19 @@ describe('HTTP Methods Tests', () => {
   it('should handle PUT requests', async () => {
     const res = await api.put('/methods').execute()
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { method: 'PUT' } })
+    expect(res.body.data).toEqual({ method: 'PUT' })
   })
 
   it('should handle PATCH requests', async () => {
     const res = await api.patch('/methods').execute()
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { method: 'PATCH' } })
+    expect(res.body.data).toEqual({ method: 'PATCH' })
   })
 
   it('should handle DELETE requests', async () => {
     const res = await api.delete('/methods').execute()
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { method: 'DELETE' } })
+    expect(res.body.data).toEqual({ method: 'DELETE' })
   })
 
   it('should handle OPTIONS requests', async () => {
@@ -40,7 +40,7 @@ describe('HTTP Methods Tests', () => {
   it('should handle TRACE requests', async () => {
     const res = await api.trace('/methods').execute()
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { method: 'TRACE' } })
+    expect(res.body.data).toEqual({ method: 'TRACE' })
   })
   */
 
@@ -48,16 +48,16 @@ describe('HTTP Methods Tests', () => {
     // Custom HTTP method 'QUERY'
     const res = await api.query('/methods').execute()
     expect(res.status).toBe(200)
-    expect(res.body).toEqual({ success: true, data: { method: 'QUERY' } })
+    expect(res.body.data).toEqual({ method: 'QUERY' })
   })
 
   it('should handle route.all for any method', async () => {
     const getRes = await api.get('/methods/all').execute()
     expect(getRes.status).toBe(200)
-    expect(getRes.body).toEqual({ success: true, data: { method: 'GET' } })
+    expect(getRes.body.data).toEqual({ method: 'GET' })
 
     const postRes = await api.post('/methods/all').execute()
     expect(postRes.status).toBe(200)
-    expect(postRes.body).toEqual({ success: true, data: { method: 'POST' } })
+    expect(postRes.body.data).toEqual({ method: 'POST' })
   })
 })

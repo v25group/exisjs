@@ -4,14 +4,14 @@
 [![npm license](https://img.shields.io/npm/l/exisjs.svg)](https://github.com/v25group/exisjs/blob/main/LICENSE)
 [![GitHub discussions](https://img.shields.io/badge/Discussions-GitHub-blue.svg)](https://github.com/v25group/exisjs/discussions)
 
-ExisJS is a TypeScript framework for Node.js backends. It integrates file-system routing, runtime schema validation, dependency injection, and automatic OpenAPI schema generation with a native Rust core (`@exisjs/rs`).
+ExisJS is a TypeScript framework for Node.js backends. It integrates file-system routing, runtime schema validation, dependency injection, and automatic OpenAPI schema generation. The core is pure TypeScript with no native add-ons, so it installs and runs anywhere Node.js does.
 
 ---
 
 ## Key Capabilities
 
 - **File-System Routing**: Automatic route discovery from `src/http/*` directory structure with support for functional routes and class-based controllers.
-- **Native Engine Core**: Native routing radix tree, rate limiting, and parameter validation backed by `@exisjs/rs` with automatic TypeScript fallbacks.
+- **Lightweight Core**: Radix-tree routing, rate limiting, and schema validation written in plain TypeScript, with schemas compiled once into fast checks and no native dependencies.
 - **Integrated Validation**: Typed validation schemas using `tex.*` with automatic type inference and parameter coercion.
 - **Dependency Injection**: IoC container supporting constructor injection, field decorators (`@Inject()`), contextual injection (`inject()`), and custom providers (`useValue`, `useFactory`, `useExisting`, `useClass`).
 - **Automatic OpenAPI Documentation**: Swagger/OpenAPI 3.1 schema and interactive documentation automatically compiled from route definitions.
@@ -154,7 +154,6 @@ my-api/
 | [`exisjs`](./packages/exisjs) | Core framework, HTTP pipeline, router, DI container, and Swagger documentation |
 | [`@exisjs/fetch`](./packages/fetch) | Lightweight type-safe HTTP client for frontend and microservice consumption |
 | [`create-exisjs`](./packages/create) | CLI generator for scaffolding starter projects |
-| [`@exisjs/rs`](./packages/rs) | Native Rust engine for radix routing, cache, and validation |
 
 ---
 

@@ -4,7 +4,7 @@ import { ExisRequest } from './request'
 import { ExisResponse } from './response'
 import { executionContext, cleanupContext } from './context'
 import { runHandlers } from '../router/router'
-import { notFound } from '../middleware/middleware'
+import { notFound, assignRequestId } from '../middleware/middleware'
 import type { Handler } from '../types'
 
 const noop = () => {
@@ -15,58 +15,18 @@ export class RequestHandler {
   private _compiledPipeline?: Handler[]
   public static activeRequests = 0
 
-  // ─── Object Pools ───────────────────────────────────────────────────────────
-  // Recycle ExisRequest and ExisResponse objects instead of allocating new ones
-  // per request. This dramatically reduces V8 GC pressure under high load.
-  private _reqPool: ExisRequest[] = []
-  private _resPool: ExisResponse[] = []
-  private static readonly MAX_POOL_SIZE = 2048
-
   constructor(private app: App<any>) {}
-
-  private _acquireReq(
-    rawReq: IncomingMessage,
-    res: ExisResponse,
-    trustProxy: boolean | number,
-    bodyLimit: number
-  ): ExisRequest {
-    const pooled = this._reqPool.pop()
-    if (pooled) {
-      return pooled.init(rawReq, res, trustProxy, bodyLimit)
-    }
-    return new ExisRequest(rawReq, res, trustProxy, bodyLimit)
-  }
-
-  private _acquireRes(rawRes: ServerResponse): ExisResponse {
-    const pooled = this._resPool.pop()
-    if (pooled) {
-      return pooled.init(rawRes)
-    }
-    return new ExisResponse(rawRes)
-  }
-
-  private _releaseReq(req: ExisRequest): void {
-    req.cleanup()
-    if (this._reqPool.length < RequestHandler.MAX_POOL_SIZE) {
-      this._reqPool.push(req)
-    }
-  }
-
-  private _releaseRes(res: ExisResponse): void {
-    res.req = undefined as any
-    if (this._resPool.length < RequestHandler.MAX_POOL_SIZE) {
-      this._resPool.push(res)
-    }
-  }
 
   public getCompiledPipeline(): Handler[] {
     if (this._compiledPipeline) return this._compiledPipeline
     this.app.applyBuiltins()
     if (this.app.globalMiddleware.length === 0) {
       this._compiledPipeline = [
-        (req, res) =>
-          this.app.getRouter().handle(req, res, () => {
-            notFound(req, res, noop)
+        (req, res, next) =>
+          this.app.getRouter().handle(req, res, (err) => {
+            // Route errors must reach the error handlers, not become a 404
+            if (err) next(err)
+            else notFound(req, res, noop)
           }),
       ]
     } else {
@@ -209,8 +169,12 @@ export class RequestHandler {
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
     RequestHandler.activeRequests++
 
-    const res = this._acquireRes(rawRes)
-    const req = this._acquireReq(
+    // Fresh objects per request. Pooling them is unsafe: a handler that is
+    // still awaiting after the client disconnects would observe the next
+    // request's data once the object is recycled. Short-lived objects are
+    // cheap for V8's young generation, so pooling buys nothing measurable.
+    const res = new ExisResponse(rawRes)
+    const req = new ExisRequest(
       rawReq,
       res,
       this.app.options.trustProxy,
@@ -221,27 +185,21 @@ export class RequestHandler {
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
 
-    // Recycle objects back to pool and decrement active request counter when the response is fully done
+    // Fired by res.end()'s completion callback, or by 'close' when the
+    // client disconnects before the response finished.
     let isDone = false
     const onDone = () => {
       if (isDone) return
       isDone = true
-      if (RequestHandler.activeRequests > 0) {
-        RequestHandler.activeRequests--
-      }
-      this._releaseReq(req)
-      this._releaseRes(res)
+      if (RequestHandler.activeRequests > 0) RequestHandler.activeRequests--
     }
-
     res._onDone = onDone
-
-    if (typeof rawRes.once === 'function') {
-      rawRes.once('close', onDone)
-    } else if (typeof rawRes.on === 'function') {
-      rawRes.on('close', onDone)
-    }
+    // Covers clients that disconnect before res.end(); 'close' fires at most
+    // once, so a plain listener avoids the once() wrapper allocation
+    if (typeof rawRes.on === 'function') rawRes.on('close', onDone)
 
     const pipeline = this._compiledPipeline || this.getCompiledPipeline()
+    assignRequestId(req as any, res as any)
 
     this._executeWithContext(req, res, () => {
       if (

@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.7.14',
+      exisjs: '^0.8.0',
     },
   }
 
@@ -107,23 +107,25 @@ const config: ExisConfig = {
   port: Number(process.env.PORT) || 4000,
   host: '0.0.0.0',
 
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true,
-  },
+  // Browsers only accept credentialed requests from explicit origins, so list
+  // them in CORS_ORIGIN (comma-separated). Without it, any origin may call
+  // the API, but without cookies.
+  cors: process.env.CORS_ORIGIN
+    ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
+    : { origin: '*' },
 
   logger: {
-    level: 'debug',
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
     pretty: process.env.NODE_ENV !== 'production',
-  },
-
-  queue: {
-    driver: 'memory',
   },
 
   helmet: { enabled: true },
   asyncContext: true,
   compression: true,
+
+  // Swagger UI at /docs. Set enabled to
+  // process.env.NODE_ENV !== 'production' to hide it in production.
+  docs: { enabled: true },
 
   test: {
     include: ['tests/**/*.test.ts'],
@@ -139,23 +141,25 @@ const config = {
   port: Number(process.env.PORT) || 4000,
   host: '0.0.0.0',
 
-  cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    credentials: true,
-  },
+  // Browsers only accept credentialed requests from explicit origins, so list
+  // them in CORS_ORIGIN (comma-separated). Without it, any origin may call
+  // the API, but without cookies.
+  cors: process.env.CORS_ORIGIN
+    ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
+    : { origin: '*' },
 
   logger: {
-    level: 'debug',
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
     pretty: process.env.NODE_ENV !== 'production',
-  },
-
-  queue: {
-    driver: 'memory',
   },
 
   helmet: { enabled: true },
   asyncContext: true,
   compression: true,
+
+  // Swagger UI at /docs. Set enabled to
+  // process.env.NODE_ENV !== 'production' to hide it in production.
+  docs: { enabled: true },
 
   test: {
     include: ['tests/**/*.test.js'],
@@ -175,7 +179,7 @@ export const env = tex.env({
   NODE_ENV: tex.enum(['development', 'production', 'test'] as const, {
     default: 'development',
   }),
-  CORS_ORIGIN: tex.string({ default: '*' }),
+  CORS_ORIGIN: tex.string({ optional: true }),
 }).parse(process.env)
 `
   } else {
@@ -186,7 +190,7 @@ export const env = tex.env({
   NODE_ENV: tex.enum(['development', 'production', 'test'], {
     default: 'development',
   }),
-  CORS_ORIGIN: tex.string({ default: '*' }),
+  CORS_ORIGIN: tex.string({ optional: true }),
 }).parse(process.env)
 `
   }
@@ -207,18 +211,16 @@ export function serverTemplate(
 @Server()
 export default class RootServer {
   async onStart(app${paramType}) {
-    // 1. Connect to your database
-    // await db.connect()
-    
-    // 2. Register plugins
-    // app.plugin(authPlugin)
-    
-    // The Exis CLI automatically boots the server and file-system routes
+    // Runs once before the server accepts requests: register providers,
+    // warm caches, start background workers.
+    // Databases: call registerDatabase() (see src/database/db) and ExisJS
+    // connects them at startup and disconnects them on shutdown.
   }
-  
+
   async onClose(app${paramType}) {
-    // Gracefully close database connections here
-    // await db.disconnect()
+    // Runs during graceful shutdown: release what ExisJS does not manage
+    // (queues, browser sessions, workers). Registered databases are
+    // disconnected automatically; do not disconnect them here.
   }
 }
 `
@@ -228,18 +230,16 @@ export default class RootServer {
 
 export default exis({
   async onStart(app) {
-    // 1. Connect to your database
-    // await db.connect()
-    
-    // 2. Register plugins
-    // app.plugin(authPlugin)
-    
-    // The Exis CLI automatically boots the server and file-system routes
+    // Runs once before the server accepts requests: register providers,
+    // warm caches, start background workers.
+    // Databases: call registerDatabase() (see src/database/db) and ExisJS
+    // connects them at startup and disconnects them on shutdown.
   },
-  
+
   async onClose(app) {
-    // Gracefully close database connections here
-    // await db.disconnect()
+    // Runs during graceful shutdown: release what ExisJS does not manage
+    // (queues, browser sessions, workers). Registered databases are
+    // disconnected automatically; do not disconnect them here.
   }
 })
 `
@@ -306,7 +306,9 @@ export default controller({
 export function envTemplate(): string {
   return `PORT=4000
 NODE_ENV=development
-CORS_ORIGIN=*
+# Comma-separated browser origins allowed to send cookies/credentials.
+# Leave unset to allow any origin without credentials.
+# CORS_ORIGIN=http://localhost:5173
 `
 }
 
@@ -428,7 +430,7 @@ export function agentsTemplate(): string {
 
 # This is ExisJS
 
-This repository uses **ExisJS**, a efficient TypeScript backend framework powered by a native Rust engine. 
+This repository uses **ExisJS**, an efficient, lightweight TypeScript backend framework. 
 
 ExisJS has highly specific architectural conventions, built-in subsystems, and routing paradigms that differ significantly from Express, NestJS, or traditional Node.js setups. 
 
@@ -473,7 +475,8 @@ export function commonAuthGuardTemplate(
 @Injectable()
 export class AuthGuard {
   async canActivate(${reqType}) {
-    // In a real app, verify the token here
+    // PLACEHOLDER: this only checks that the header exists, so any value is
+    // accepted. Verify the token (signature and expiry) before using this.
     const token = req.headers.authorization
     if (!token) return false
     return true
@@ -482,6 +485,8 @@ export class AuthGuard {
 `
   }
   return `// Functional Guard Example
+// PLACEHOLDER: this only checks that the header exists, so any value is
+// accepted. Verify the token (signature and expiry) before using this.
 export const authGuard = async (${reqType}) => {
   const token = req.headers.authorization
   if (!token) return false
@@ -491,14 +496,25 @@ export const authGuard = async (${reqType}) => {
 }
 
 export function dbConnectionTemplate(_useTypeScript: boolean): string {
-  return `// Example Database Configuration
-// Import and configure ExisJS database or your preferred ORM here.
+  return `// Database lifecycle
+//
+// Register your client once and ExisJS connects it at startup (a failed
+// connection stops the boot), reports it in health checks, and disconnects it
+// once on shutdown, after in-flight requests have finished.
+//
+// import { registerDatabase } from 'exisjs/database'
+// import { pool } from './pool' // pg, Prisma, Drizzle, Mongoose...
+//
+// registerDatabase({
+//   name: 'main',
+//   connect: () => pool.connect(),
+//   disconnect: () => pool.end(),
+//   isHealthy: async () => (await pool.query('select 1')).rowCount === 1,
+// })
+//
+// Then import this file from src/http/server so it runs at startup.
 
-export const db = {
-  connect: async () => {
-    console.log('[Database] Connected successfully.')
-  }
-}
+export {}
 `
 }
 
@@ -624,7 +640,6 @@ export function rootBoundaryTemplate(paradigm: string): string {
 import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
 
 @Boundary({
-  cors: { origin: '*', credentials: true },
   headers: { 'X-Powered-By': 'ExisJS' },
 })
 export default class RootBoundary {
@@ -645,7 +660,6 @@ export default class RootBoundary {
 import type { Request, Response, Next, BoundaryContext } from 'exisjs/router'
 
 export const config = defineBoundary({
-  cors: { origin: '*', credentials: true },
   headers: { 'X-Powered-By': 'ExisJS' },
 })
 
@@ -669,12 +683,16 @@ export function userRouteTemplate(
 
   if (paradigm === 'oop') {
     return `import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
+import { Inject } from 'exisjs/di'
 import { UserService } from './service'
 import { createUserSchema, userParamsSchema } from './schema'
 ${useTypeScript ? "import type { CreateUserDto } from './schema'\n" : ''}
 @Controller()
 export default class UsersController {
-  constructor(private readonly userService: UserService) {}
+  // Dependencies are injected by token: @Inject(Class) on the parameter
+  constructor(
+    @Inject(UserService) private readonly userService: UserService
+  ) {}
 
   @Get('/')
   async getUsers() {

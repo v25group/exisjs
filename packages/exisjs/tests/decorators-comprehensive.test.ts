@@ -137,7 +137,7 @@ describe('Comprehensive OOP Decorators Suite', () => {
       payload: { name: 'A', age: '28' },
     })
     expect(badRes.status).toBe(400)
-    expect(badRes.body.error).toBe('Bad Request')
+    expect(badRes.body.error.code).toBe('VALIDATION_ERROR')
 
     // Test GET with params, query, headers, ip
     const getRes = await app.inject({

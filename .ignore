@@ -4,7 +4,6 @@
 dist
 node_modules
 packages/*/dist
-packages/rs/target
 .exis
 coverage
 .errors

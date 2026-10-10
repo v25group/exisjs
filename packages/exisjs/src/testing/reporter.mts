@@ -172,6 +172,18 @@ export default async function* customReporter(
       const isTopLevelCompletion = (type === 'test:pass' || type === 'test:fail') && nesting === 0
       
       if (isTopLevelCompletion) {
+        // A file that fails at the top level crashed before or outside its
+        // tests (import error, thrown at module scope). That is a failure,
+        // even though no individual test reported one.
+        if (type === 'test:fail' && !fileData.failed) {
+          fileData.failed = true
+          const err = details?.error
+          const errMsg =
+            err?.cause?.message || err?.message || 'Test file failed to run'
+          fileData.output.push(
+            `   ${RED}${CROSS} ${errMsg.split('\n')[0]}${RESET}\n`
+          )
+        }
         if (!printedFiles.has(activeFile)) {
           const relPath = relFile(activeFile)
           const badge = fileData.failed
@@ -314,6 +326,18 @@ export default async function* customReporter(
   yield `${BOLD}Time:       ${RESET} ${duration} s\n\n`
 
   if (failedTests > 0 || failedSuites > 0) {
+    process.exitCode = 1
+  }
+
+  // A run that executed nothing is not a passing run: most often the test
+  // file pattern does not match any file. Set EXIS_PASS_WITH_NO_TESTS=1 to
+  // allow it.
+  if (
+    totalTests === 0 &&
+    passedSuites + failedSuites === 0 &&
+    process.env.EXIS_PASS_WITH_NO_TESTS !== '1'
+  ) {
+    yield `${RED}${BOLD}No tests were found.${RESET} Check that your test files match the pattern in exis.config (test.include, default: tests/**/*.test.ts).\n\n`
     process.exitCode = 1
   }
 }

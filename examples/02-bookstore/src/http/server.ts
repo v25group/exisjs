@@ -1,17 +1,16 @@
 import { Server } from 'exisjs/decorators'
 import type { App } from 'exisjs'
-import { connectDB, disconnectDB } from '@/config/db'
+import '@/config/db' // registers MongoDB with the framework lifecycle
 
 @Server()
 export default class RootServer {
   async onStart(app: App) {
-    // 1. Connect to local database
-    await connectDB()
-
-    app.log.info('Server successfully started')
+    app.log.info('Bookstore API started')
   }
 
   async onClose(app: App) {
-    await disconnectDB()
+    // Release anything ExisJS does not manage. The registered database is
+    // disconnected automatically.
+    app.log.info('Bookstore API shutting down')
   }
 }

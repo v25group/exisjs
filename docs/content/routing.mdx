@@ -362,6 +362,30 @@ export default controller({
 
 ---
 
+## Reusing Route Types in Services
+
+`InferRouteInput` and `InferRouteOutput` derive types from a route definition, so service methods do not need a second copy of the request shape:
+
+```typescript filename="src/http/users/route.ts"
+import { route, type InferRouteInput, type InferRouteOutput } from 'exisjs/router'
+import { CreateUserSchema } from './schema'
+import { UserService } from './service'
+
+export const createUser = route.post('/', {
+  body: CreateUserSchema,
+  async handle({ body, resolve }) {
+    return resolve(UserService).create(body)
+  },
+})
+
+// { body, query, params } as the handler receives them, after validation
+export type CreateUserInput = InferRouteInput<typeof createUser>['body']
+// What the handler resolves to
+export type CreateUserResult = InferRouteOutput<typeof createUser>
+```
+
+---
+
 ## Dependency Resolution in Functional Routes
 
 Functional routes can resolve dependencies directly from the IoC container using `ctx.resolve()`:

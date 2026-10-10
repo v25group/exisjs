@@ -118,7 +118,7 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.7.14')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.8.0')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 
@@ -168,7 +168,7 @@ describe('create-exis scaffolding', () => {
     expect(oopRoute.includes('@Controller()')).toBe(true)
     expect(
       oopRoute.includes(
-        'constructor(private readonly userService: UserService)'
+        '@Inject(UserService) private readonly userService: UserService'
       )
     ).toBe(true)
     expect(oopRoute.includes("@Get('/')")).toBe(true)

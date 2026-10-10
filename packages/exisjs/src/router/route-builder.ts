@@ -160,6 +160,30 @@ export type RouteDefinition<
 }
 
 /**
+ * The validated input a route's handler receives: `{ body, query, params }`.
+ * Use it to type service methods from the route definition instead of
+ * declaring the same shape twice.
+ *
+ * @example
+ * ```ts
+ * export const createUser = route.post('/', { body: CreateUserSchema, handle })
+ * type CreateUserInput = InferRouteInput<typeof createUser>['body']
+ * ```
+ */
+export type InferRouteInput<R> = R extends {
+  readonly __type?: { body: infer B; query: infer Q; params: infer P }
+}
+  ? { body: B; query: Q; params: P }
+  : never
+
+/** The value a route's handler resolves to (its response payload). */
+export type InferRouteOutput<R> = R extends {
+  readonly __type?: { return: infer T }
+}
+  ? Awaited<T>
+  : never
+
+/**
  * Declarative route builder with schema validation, typed parameters, and supercharged context.
  */
 export const route = {

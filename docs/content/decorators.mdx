@@ -481,7 +481,7 @@ export class OrderService implements OnInit, OnDestroy {
 | `OnDestroy` (`onDestroy()`) | Class Interface | Invoked once during graceful shutdown. |
 | `OnModuleInit` / `OnModuleDestroy` | Class Interface | Invoked during parent module initialization and destruction. |
 | `OnApplicationBootstrap` | Class Interface | Invoked when all modules are initialized and server starts listening. |
-| `OnApplicationShutdown` | Class Interface | Invoked on `SIGTERM` or `SIGINT` signals. |
+| `OnApplicationShutdown` | Class Interface | `onApplicationShutdown(signal?)` runs during graceful shutdown; `signal` is `'SIGTERM'` or `'SIGINT'` when a signal triggered it. |
 
 ---
 
@@ -601,7 +601,7 @@ import { UserService } from './service'
 @Controller('/users')
 export default class UsersController {
   constructor(
-    private userService: UserService,
+    @Inject(UserService) private userService: UserService,
     @Inject('DATABASE_URL') private dbUrl: string,
     @Optional() @Inject('ANALYTICS_SERVICE') private analytics?: any
   ) {}

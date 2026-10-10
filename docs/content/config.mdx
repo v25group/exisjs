@@ -139,14 +139,14 @@ export default defineConfig({
 | `ssl` | `{ key: string \| Buffer, cert: string \| Buffer }` | `undefined` | SSL certificate credentials for native HTTPS. |
 | `http2` | `boolean` | `true` | Enables HTTP/2 (active when SSL is configured). |
 | `redirectHttp` | `boolean \| number` | `false` | Automatically redirects plaintext HTTP traffic to HTTPS. |
-| `trustProxy` | `boolean \| number` | `false` | Respects `X-Forwarded-For` and `X-Forwarded-Proto` proxy headers. |
+| `trustProxy` | `boolean \| number` | `false` | Trust proxy headers. `true` trusts every hop (including CDN headers); a number `N` trusts the N closest hops, counting the socket peer. |
 | `keepAlive` | `boolean \| KeepAliveConfig` | `false` | Configures socket keep-alive (`timeoutMs`, `headersTimeoutMs`, `maxRequests`). |
 
 ### Middleware Defaults & Security
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `cors` | `boolean \| CorsConfig` | `{ origin: '*' }` | Global CORS policy. Can be overridden in boundaries or routes. |
+| `cors` | `boolean \| CorsConfig` | `{ origin: '*' }` | Global CORS policy. Can be overridden in boundaries or routes. `credentials: true` requires explicit origins: with `origin: '*'` it is ignored and a warning is logged, because browsers reject that combination. |
 | `helmet` | `boolean \| HelmetConfig` | `{ enabled: true }` | Security headers (CSP, X-Frame-Options, HSTS). |
 | `compression` | `boolean` | `false` | Gzip/Brotli HTTP response compression. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum request payload body size in bytes. |
@@ -161,7 +161,7 @@ export default defineConfig({
 | `logger` | `boolean \| LoggerConfig` | `false` | Pino logger settings (`level`, `pretty`, `redact`). |
 | `debugRouting` | `boolean` | `false` | Outputs detailed route resolution logs per request in development. |
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
-| `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. |
+| `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; use `enabled: process.env.NODE_ENV !== 'production'` to hide it in production. |
 | `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | System health endpoint (`path: '/_health'`). |
 | `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false }` | OpenTelemetry tracing and metrics export. |
@@ -240,16 +240,29 @@ export default defineConfig({
 ExisJS automatically listens for `SIGTERM` and `SIGINT` signals in containerized environments:
 
 1. Closes the HTTP server listener to stop accepting incoming traffic.
-2. Closes idle keep-alive sockets (`server.closeIdleConnections()`).
-3. Executes registered `onStop(app)` hooks to disconnect databases, Redis pools, or message brokers.
+2. Closes idle keep-alive sockets and waits for in-flight requests to finish (up to the shutdown timeout).
+3. Runs shutdown hooks in order: `app.onShutdown()` hooks (including `onDestroy` / `onApplicationShutdown(signal)` on injectable services), then `onClose` hooks.
+4. Disconnects every database registered with `registerDatabase()`, once each.
+5. Stops cron jobs and exits.
+
+Use `onClose` for resources ExisJS does not manage, such as browser sessions, queues or worker threads:
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
-import { db } from '../database/db'
+import { scraper } from '../workers/scraper'
 
 export default exis({
-  async onStop(app) {
-    await db.disconnect()
-  }
+  async onStart(app) {
+    // Receives the signal name ('SIGTERM', 'SIGINT') when one triggered the shutdown
+    app.onShutdown(async (signal) => {
+      app.log.info({ signal }, 'stopping background workers')
+      await scraper.stop()
+    })
+  },
+  async onClose(app) {
+    await scraper.closeBrowser()
+  },
 })
 ```
+
+Databases registered with `registerDatabase()` are disconnected automatically after requests have drained. Do not also call `disconnect()` on them in a hook. Each hook has a time limit (half the shutdown timeout, at least 1 second), so a hook that hangs cannot block the process from exiting.

@@ -16,12 +16,11 @@ export default defineConfig(
       '**/coverage/**/*',
       'jest.config.js',
       'examples/**/*',
-      'bench/**/*',
+      'bench/results/**/*',
+      'bench/.profiles/**/*',
       '**/bin/**/*',
       '**/assets/**/*',
       'scripts/**/*',
-      'packages/rs/index.js',
-      'packages/rs/index.d.ts',
     ],
   },
   {
@@ -66,6 +65,33 @@ export default defineConfig(
       '@typescript-eslint/no-empty-function': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
+    files: ['bench/**/*.ts', 'bench/**/*.js'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
+    // Benchmark servers are plain CommonJS scripts run directly by Node
+    files: ['bench/servers/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: {
+        require: 'readonly',
+        module: 'writable',
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URLSearchParams: 'readonly',
+      },
+    },
+    rules: {
       '@typescript-eslint/no-require-imports': 'off',
     },
   }

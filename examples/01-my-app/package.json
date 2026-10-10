@@ -1,6 +1,6 @@
 {
   "name": "01-my-app",
-  "version": "0.5.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -21,7 +21,7 @@
     "@types/node": "^20.19.43",
     "eslint": "^9.39.5",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.70.1",
+    "typescript-eslint": "^8.71.0",
     "tsx": "^4.23.15"
   }
 }

@@ -1,86 +1,36 @@
 import { defineConfig } from 'exisjs/config'
-import { PHASE_DEVELOPMENT_SERVER } from 'exisjs/config'
 
-// To show off plugins, we could use defineModule from exisjs/module to create a mock plugin.
-import { defineModule } from 'exisjs/module'
+const isProduction = process.env.NODE_ENV === 'production'
 
-/**
- * Mock third-party GraphQL Plugin to demonstrate native plugin ecosystem
- */
-const graphql = (options: { endpoint: string }) => defineModule({
-  name: 'graphql',
-  routes: (app) => {
-    app.post(options.endpoint, (req, res) => res.json({ data: 'GraphQL Response' }))
-  }
+export default defineConfig({
+  port: Number(process.env.PORT) || 4000,
+  host: '0.0.0.0',
+
+  // Browsers only accept credentialed requests from explicit origins, so list
+  // them. With no CORS_ORIGIN set, any origin may call the API without cookies.
+  cors: process.env.CORS_ORIGIN
+    ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
+    : { origin: '*' },
+
+  helmet: { enabled: true },
+
+  // Wraps successful JSON responses as { success: true, data, timestamp }
+  transformResponse: true,
+
+  healthcheck: { enabled: true },
+
+  // Swagger UI at /docs, OpenAPI JSON at /docs/json.
+  // Use `enabled: !isProduction` to hide the docs in production.
+  docs: {
+    enabled: true,
+    path: '/docs',
+    title: '01-My-App API',
+    version: '1.0.0',
+    description: 'Functional ExisJS example: auth, users, posts and cron',
+  },
+
+  logger: {
+    level: isProduction ? 'info' : 'debug',
+    pretty: !isProduction,
+  },
 })
-
-/**
- * ExisJS Enterprise Configuration Engine
- * 
- * @see https://exisjs.com/docs/api-reference/config (Mock URL)
- */
-export default async (phase: string, { defaultConfig }: any) => {
-  const isDev = phase === PHASE_DEVELOPMENT_SERVER
-
-  return defineConfig({
-    /**
-     * Server Options
-     */
-    port: Number(process.env.PORT) || 4000,
-    host: '0.0.0.0',
-
-    /**
-     * Global Middlewares natively supported
-     */
-    cors: {
-      origin: process.env.CORS_ORIGIN || '*',
-      credentials: true,
-      preflightContinue: true,
-    },
-    helmet: { enabled: true },
-    asyncContext: true,
-    compression: false,
-    telemetry: { enabled: true, exporter: 'console' },
-    metrics: { enabled: true },
-    healthcheck: { 
-      enabled: true,
-      checks: [
-        async () => {
-          // Dummy healthcheck
-          return true
-        }
-      ]
-    },
-    docs: {
-      enabled: true,
-      path: '/docs',
-      title: '01-My-App API Documentation',
-      version: '1.0.0',
-      description: 'Auto-generated Interactive Swagger API Documentation for 01-My-App',
-      ui: 'swagger-ui',
-    },
-
-    /**
-     * Advanced Tuning
-     */
-    queue: {
-      driver: 'memory',
-      maxConcurrent: 100, // For Backpressure
-      maxQueue: 1000
-    },
-    logger: {
-      level: isDev ? 'debug' : 'info',
-      pretty: isDev,
-    },
-
-    /**
-     * ExisJS Plugin Ecosystem
-     * 
-     * Native integration with any official or community plugins.
-     * Works identically to Vite and Next.js NextConfig plugins.
-     */
-    plugins: [
-      graphql({ endpoint: '/graphql' })
-    ]
-  })
-}

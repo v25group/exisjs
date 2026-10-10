@@ -1,7 +1,8 @@
 import type { IncomingMessage } from 'node:http'
 import { HttpError } from '../../error/errors'
-import { stripPrototype } from '@exisjs/rs'
+import { stripPrototype } from './json'
 import type { ExisFile } from '../../types'
+import { safeUploadPath, DEFAULT_UPLOAD_LIMITS } from './upload-name'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
@@ -108,8 +109,40 @@ export function parseMultipartFormData(
     try {
       const bb = busboy({
         headers: raw.headers,
-        limits: { fileSize: bodyLimit },
+        limits: { ...DEFAULT_UPLOAD_LIMITS, fileSize: bodyLimit },
       })
+
+      // Files are buffered in memory, so cap the combined size as well as
+      // each file; otherwise N files could each use the full bodyLimit.
+      let totalSize = 0
+      let failed = false
+      const fail = (err: Error) => {
+        if (failed) return
+        failed = true
+        cleanup()
+        try {
+          raw.unpipe?.(bb)
+          raw.resume?.()
+        } catch {
+          /* noop */
+        }
+        reject(err)
+      }
+      const tooLarge = (what: string) =>
+        fail(
+          HttpError.payloadTooLarge(
+            `${what} exceeds the limit of ${bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+          )
+        )
+      bb.on('filesLimit', () =>
+        fail(HttpError.payloadTooLarge('Too many files in multipart body'))
+      )
+      bb.on('fieldsLimit', () =>
+        fail(HttpError.payloadTooLarge('Too many fields in multipart body'))
+      )
+      bb.on('partsLimit', () =>
+        fail(HttpError.payloadTooLarge('Too many parts in multipart body'))
+      )
 
       const cleanup = () => {
         raw.removeListener('close', onRawClose)
@@ -151,11 +184,19 @@ export function parseMultipartFormData(
         ) => {
           const chunks: Buffer[] = []
           let size = 0
+          fileStream.on('limit', () => tooLarge('Uploaded file'))
           fileStream.on('data', (data: Buffer) => {
-            chunks.push(data)
+            if (failed) return
             size += data.length
+            totalSize += data.length
+            if (totalSize > bodyLimit) {
+              tooLarge('Multipart body')
+              return
+            }
+            chunks.push(data)
           })
           fileStream.on('end', () => {
+            if (failed) return
             const data = Buffer.concat(chunks)
             const filename = info.filename || 'unknown'
 
@@ -167,16 +208,10 @@ export function parseMultipartFormData(
               size,
               saveToDisk: async (destDir: string) => {
                 const fs = await import('node:fs/promises')
-                const path = await import('node:path')
 
                 await fs.mkdir(destDir, { recursive: true })
 
-                const ext = path.extname(filename)
-                const uniqueSuffix =
-                  Date.now() + '-' + Math.round(Math.random() * 1e9)
-                const finalName = `${name}-${uniqueSuffix}${ext}`
-                const destPath = path.join(destDir, finalName)
-
+                const destPath = safeUploadPath(destDir, name, filename)
                 await fs.writeFile(destPath, data)
                 return destPath
               },
@@ -186,17 +221,15 @@ export function parseMultipartFormData(
       )
 
       bb.on('finish', () => {
+        if (failed) return
         cleanup()
         resolve({
-          fields,
+          fields: stripPrototype(fields),
           files: filesContainer as unknown as Record<string, any>,
         })
       })
 
-      bb.on('error', (err: any) => {
-        cleanup()
-        reject(err)
-      })
+      bb.on('error', (err: any) => fail(err))
 
       raw.pipe(bb)
     } catch (err: any) {
@@ -209,7 +242,8 @@ export function parseMultipartFormData(
 
 export async function streamMultipartUpload(
   raw: IncomingMessage,
-  destDir: string
+  destDir: string,
+  bodyLimit = 10 * 1024 * 1024
 ): Promise<{
   fields: Record<string, string>
   files: {
@@ -221,7 +255,6 @@ export async function streamMultipartUpload(
   }[]
 }> {
   const fs = await import('node:fs')
-  const path = await import('node:path')
   await fs.promises.mkdir(destDir, { recursive: true })
 
   return new Promise((resolve, reject) => {
@@ -233,68 +266,124 @@ export async function streamMultipartUpload(
       destPath: string
       size: number
     }[] = []
+    // Resolve only after every file is flushed to disk, not on busboy finish
+    const pendingWrites: Promise<void>[] = []
+    const written: string[] = []
+    let totalSize = 0
+    let failed = false
 
-    try {
-      const bb = busboy({ headers: raw.headers })
-
-      bb.on('field', (name: string, val: string) => {
-        fields[name] = val
-      })
-
-      bb.on(
-        'file',
-        (
-          name: string,
-          fileStream: import('node:stream').Readable,
-          info: any
-        ) => {
-          const filename = info.filename || 'unknown'
-          const ext = path.extname(filename)
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9)
-          const finalName = `${name}-${uniqueSuffix}${ext}`
-          const destPath = path.join(destDir, finalName)
-
-          const writeStream = fs.createWriteStream(destPath)
-          let size = 0
-
-          fileStream.on('data', (data: Buffer) => {
-            size += data.length
-          })
-
-          fileStream.pipe(writeStream)
-
-          fileStream.on('end', () => {
-            streamedFiles.push({
-              fieldname: name,
-              filename,
-              mimetype: info.mimeType || 'application/octet-stream',
-              destPath,
-              size,
-            })
-          })
-        }
+    const fail = (err: Error) => {
+      if (failed) return
+      failed = true
+      try {
+        raw.unpipe?.(bb)
+        raw.resume?.()
+      } catch {
+        /* noop */
+      }
+      // Remove partial files so a rejected upload leaves nothing behind
+      for (const p of written) fs.promises.unlink(p).catch(() => undefined)
+      reject(err)
+    }
+    const tooLarge = (what: string) =>
+      fail(
+        HttpError.payloadTooLarge(
+          `${what} exceeds the limit of ${bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger uploads.`
+        )
       )
 
-      bb.on('finish', () => {
-        resolve({
-          fields: stripPrototype(fields),
-          files: streamedFiles,
-        })
+    let bb: any
+    try {
+      bb = busboy({
+        headers: raw.headers,
+        limits: { ...DEFAULT_UPLOAD_LIMITS, fileSize: bodyLimit },
       })
-
-      bb.on('error', reject)
-
-      if (typeof raw.pipe === 'function') {
-        raw.pipe(bb)
-      } else {
-        raw.on('data', (chunk: any) => bb.write(chunk))
-        raw.on('end', () => bb.end())
-      }
     } catch (err: any) {
       reject(
         HttpError.badRequest(err.message || 'Failed to stream multipart data')
       )
+      return
+    }
+
+    bb.on('field', (name: string, val: string) => {
+      fields[name] = val
+    })
+    bb.on('filesLimit', () =>
+      fail(HttpError.payloadTooLarge('Too many files in multipart body'))
+    )
+    bb.on('fieldsLimit', () =>
+      fail(HttpError.payloadTooLarge('Too many fields in multipart body'))
+    )
+    bb.on('partsLimit', () =>
+      fail(HttpError.payloadTooLarge('Too many parts in multipart body'))
+    )
+
+    bb.on(
+      'file',
+      (name: string, fileStream: import('node:stream').Readable, info: any) => {
+        if (failed) {
+          fileStream.resume()
+          return
+        }
+        const filename = info.filename || 'unknown'
+        let destPath: string
+        try {
+          destPath = safeUploadPath(destDir, name, filename)
+        } catch (err: any) {
+          fileStream.resume()
+          fail(err)
+          return
+        }
+        written.push(destPath)
+
+        const writeStream = fs.createWriteStream(destPath)
+        let size = 0
+
+        fileStream.on('limit', () => tooLarge('Uploaded file'))
+        fileStream.on('data', (data: Buffer) => {
+          size += data.length
+          totalSize += data.length
+          if (totalSize > bodyLimit) tooLarge('Multipart body')
+        })
+
+        pendingWrites.push(
+          new Promise<void>((done, failWrite) => {
+            writeStream.on('finish', () => {
+              streamedFiles.push({
+                fieldname: name,
+                filename,
+                mimetype: info.mimeType || 'application/octet-stream',
+                destPath,
+                size,
+              })
+              done()
+            })
+            writeStream.on('error', failWrite)
+            fileStream.on('error', failWrite)
+          })
+        )
+
+        fileStream.pipe(writeStream)
+      }
+    )
+
+    bb.on('finish', () => {
+      Promise.all(pendingWrites).then(
+        () => {
+          if (failed) return
+          resolve({ fields: stripPrototype(fields), files: streamedFiles })
+        },
+        (err) => fail(err)
+      )
+    })
+
+    bb.on('error', (err: any) => fail(err))
+
+    if (typeof raw.pipe === 'function') {
+      raw.pipe(bb)
+    } else {
+      ;(raw as any).on('data', (chunk: any) => bb.write(chunk))
+      ;(raw as any).on('end', () => bb.end())
     }
   })
 }

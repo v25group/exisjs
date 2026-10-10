@@ -252,6 +252,11 @@ export function Injectable(options?: {
 }): any {
   return function (target: any, _context?: ClassDecoratorContext) {
     INJECTABLE_REGISTRY.add(target)
+    // Lets the DI container recognise classes it is responsible for building
+    Object.defineProperty(target, Symbol.for('exisjs:injectable'), {
+      value: true,
+      enumerable: false,
+    })
     if (options?.scope) {
       MetadataEngine.set(
         target.prototype,

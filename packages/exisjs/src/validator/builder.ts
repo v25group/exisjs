@@ -28,7 +28,7 @@ import type {
 import { TexEngine, TexDiscriminatedUnionEngine } from './engine'
 
 /**
- * Ultra-high performance declarative schema builder powered by the native Rust validator.
+ * Declarative schema builder; each schema compiles once into plain JS checks.
  */
 export class TexBuilder {
   /**
@@ -118,7 +118,7 @@ export class TexBuilder {
   }
 
   /**
-   * Defines an email schema verified natively against RFC standards.
+   * Defines an email schema (`local@domain`, no whitespace).
    *
    * @param opts Validation and formatting rules
    * @returns Strongly typed email string schema descriptor

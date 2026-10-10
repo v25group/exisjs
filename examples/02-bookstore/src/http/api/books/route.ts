@@ -1,3 +1,4 @@
+import path from 'node:path'
 import {
   Controller,
   Get,
@@ -7,41 +8,51 @@ import {
   Query,
   Param,
   Req,
+  Use,
+  HttpCode,
   UploadedFile,
+  Idempotent,
 } from 'exisjs/decorators'
-import { Idempotent } from 'exisjs/decorators'
 import type { ExisFile } from 'exisjs/router'
 import { tex } from 'exisjs/validator'
 import type { Infer } from 'exisjs/validator'
-import { HttpError } from 'exisjs/error'
-import cloudinary from '@/lib/cloudinary'
+import { BadRequestError, ForbiddenError, NotFoundError } from 'exisjs/error'
 import { Book } from '@/models/Book'
+import { protectRoute, type AuthedRequest } from '@/middleware/auth'
 
 const CreateBookSchema = tex.object({
-  title: tex.string(),
-  caption: tex.string(),
-  rating: tex.number(),
-  image: tex.string(),
+  title: tex.string({ min: 1, max: 200, trim: true }),
+  caption: tex.string({ min: 1, max: 1000, trim: true }),
+  rating: tex.number({ min: 1, max: 5 }),
+  image: tex.string({ min: 1, max: 2000 }),
 })
-
 type CreateBookDto = Infer<typeof CreateBookSchema>
 
-// @Use(protectRoute)
+const CheckoutSchema = tex.object({ bookId: tex.string({ min: 1 }) })
+type CheckoutDto = Infer<typeof CheckoutSchema>
+
+// MongoDB ids are 24 hex characters; anything else can never match a book
+const OBJECT_ID = /^[0-9a-f]{24}$/i
+
 @Controller()
 export default class BooksController {
+  // Public: anyone can browse
   @Get('/')
-  async list(@Query('page') pageStr: string, @Query('limit') limitStr: string) {
-    const page = parseInt(pageStr) || 1
-    const limit = parseInt(limitStr) || 2
-    const skip = (page - 1) * limit
+  async list(@Query('page') pageStr?: string, @Query('limit') limitStr?: string) {
+    const page = Math.max(1, Number.parseInt(pageStr ?? '', 10) || 1)
+    const limit = Math.min(
+      50,
+      Math.max(1, Number.parseInt(limitStr ?? '', 10) || 10)
+    )
 
-    const books = await Book.find()
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .populate('user', 'username profileImage')
-
-    const totalBooks = await Book.countDocuments()
+    const [books, totalBooks] = await Promise.all([
+      Book.find()
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('user', 'username profileImage'),
+      Book.countDocuments(),
+    ])
 
     return {
       books,
@@ -52,84 +63,57 @@ export default class BooksController {
   }
 
   @Get('/user')
-  async userBooks(@Req() req: any) {
-    const books = await Book.find({ user: req.user?._id }).sort({
-      createdAt: -1,
-    })
-    return books
+  @Use(protectRoute)
+  userBooks(@Req() req: AuthedRequest) {
+    return Book.find({ user: req.user._id }).sort({ createdAt: -1 })
   }
 
   @Post('/')
-  async create(@Body(CreateBookSchema) body: CreateBookDto, @Req() req: any) {
-    // upload the image to cloudinary
-    const uploadResponse = await cloudinary.uploader.upload(body.image)
-    const imageUrl = uploadResponse.secure_url
-
-    // save to the database
-    const newBook = new Book({
-      title: body.title,
-      caption: body.caption,
-      rating: body.rating,
-      image: imageUrl,
-      user: req.user._id,
-    })
-
-    await newBook.save()
-    return newBook
+  @Use(protectRoute)
+  @HttpCode(201)
+  create(
+    @Body(CreateBookSchema) body: CreateBookDto,
+    @Req() req: AuthedRequest
+  ) {
+    return Book.create({ ...body, user: req.user._id })
   }
 
+  // Sending the same Idempotency-Key header twice returns the first response
+  // instead of running the handler again
   @Post('/checkout')
+  @Use(protectRoute)
   @Idempotent()
-  async checkout(@Body(tex.object({ bookId: tex.string() })) body: any) {
-    console.log('Processing checkout for book:', body.bookId)
-    // simulate a long checkout process
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-    return {
-      success: true,
-      message: 'Checkout successful',
-      bookId: body.bookId,
-    }
+  async checkout(@Body(CheckoutSchema) body: CheckoutDto) {
+    await new Promise((resolve) => setTimeout(resolve, 200)) // simulated work
+    return { message: 'Checkout successful', bookId: body.bookId }
   }
 
   @Post('/cover')
-  async uploadCover(@UploadedFile() file: ExisFile) {
-    if (!file) {
-      throw HttpError.badRequest('No cover file uploaded')
-    }
+  @Use(protectRoute)
+  async uploadCover(@UploadedFile() file?: ExisFile) {
+    if (!file) throw new BadRequestError('No cover file uploaded')
 
-    const destDir = './uploads'
-    const savedPath = await file.saveToDisk(destDir)
-
+    const savedPath = await file.saveToDisk('./uploads')
+    // Return the stored name, never the server's filesystem path
     return {
-      success: true,
-      message: 'Cover uploaded successfully',
-      filename: file.filename,
+      filename: path.basename(savedPath),
+      originalName: file.filename,
       size: file.size,
-      path: savedPath,
     }
   }
 
   @Delete('/:id')
-  async delete(@Param('id') id: string, @Req() req: any) {
+  @Use(protectRoute)
+  async delete(@Param('id') id: string, @Req() req: AuthedRequest) {
+    if (!OBJECT_ID.test(id)) throw new NotFoundError('Book')
+
     const book = await Book.findById(id)
-    if (!book) throw HttpError.notFound('Book not found')
-
-    // check if user is the creator of the book
-    if (book.user.toString() !== req.user._id.toString()) {
-      throw HttpError.unauthorized('Unauthorized')
-    }
-
-    // delete image from cloudinary as well
-    if (book.image && book.image.includes('cloudinary')) {
-      try {
-        const publicId = book.image.split('/').pop()?.split('.')[0]
-        if (publicId) await cloudinary.uploader.destroy(publicId)
-      } catch (deleteError) {
-        console.log('Error deleting image from cloudinary', deleteError)
-      }
+    if (!book) throw new NotFoundError('Book')
+    if (!book.user.equals(req.user._id)) {
+      throw new ForbiddenError('Only the owner can delete this book')
     }
 
     await book.deleteOne()
-    return { message: 'Book deleted successfully' }
+    return { message: 'Book deleted' }
   }
 }

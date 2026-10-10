@@ -557,8 +557,15 @@ export async function loadActiveBoundaries(
           }
         }
       }
-    } catch {
-      /* ignore */
+    } catch (err: any) {
+      // A boundary carries guards, auth middleware and CORS rules. If it
+      // cannot be loaded, the routes under it must not be served without it,
+      // so the failure propagates and the route is not mounted.
+      const error = new Error(
+        `Failed to load boundary in '${dir}': ${err?.message || err}`
+      )
+      ;(error as any).cause = err
+      throw error
     }
   }
 

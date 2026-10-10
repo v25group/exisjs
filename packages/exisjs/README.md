@@ -4,7 +4,7 @@
 [![npm license](https://img.shields.io/npm/l/exisjs.svg)](https://github.com/v25group/exisjs/blob/main/LICENSE)
 [![GitHub discussions](https://img.shields.io/badge/Discussions-GitHub-blue.svg)](https://github.com/v25group/exisjs/discussions)
 
-`exisjs` is the core package for the ExisJS web framework. It provides the HTTP execution engine, file-system routing, dependency injection container, native validation schemas (`tex`), security middlewares, and OpenTelemetry instrumentation.
+`exisjs` is the core package for the ExisJS web framework. It provides the HTTP execution engine, file-system routing, dependency injection container, compiled validation schemas (`tex`), security middlewares, and OpenTelemetry instrumentation.
 
 ---
 

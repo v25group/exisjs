@@ -1,38 +1,46 @@
 {
   "name": "create-exisjs",
-  "version": "0.7.14",
-  "description": "Scaffolding tool for ExisJS applications",
-  "author": "V25 Group <support@v25group.com>",
+  "version": "0.8.0",
+  "description": "Scaffold a new ExisJS application with one command: npm create exisjs@latest",
   "keywords": [
-    "exis",
     "exisjs",
-    "framework",
-    "nodejs",
-    "typescript",
-    "backend",
-    "api",
-    "rpc",
-    "type-safe",
+    "exis",
     "create-exisjs",
-    "create-exis"
+    "create-exis",
+    "scaffold",
+    "starter",
+    "template",
+    "cli",
+    "typescript",
+    "backend"
   ],
+  "homepage": "https://github.com/v25group/exisjs/tree/main/packages/create#readme",
+  "bugs": {
+    "url": "https://github.com/v25group/exisjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git",
+    "directory": "packages/create"
+  },
+  "license": "MIT",
+  "author": "V25 Group <support@v25group.com>",
   "main": "dist/index.js",
   "bin": {
     "create-exisjs": "bin/create-exis.js",
     "create-exis": "bin/create-exis.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/v25group/exisjs.git"
-  },
-  "license": "MIT",
   "files": [
     "dist",
-    "templates"
+    "bin"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "prompts": "^2.4.2"
@@ -41,5 +49,8 @@
     "@types/node": "^26.4.0",
     "@types/prompts": "^2.4.9",
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

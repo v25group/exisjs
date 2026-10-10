@@ -1,13 +1,13 @@
 ---
 title: "exisjs/sanitize"
-description: "API Reference for ExisJS data sanitization engine: Rust-accelerated string cleaners, safeSanitize, and object transformers."
+description: "API Reference for ExisJS data sanitization engine: string cleaners, safeSanitize, and object transformers."
 nextUrl: "/docs/reference/swagger"
 nextTitle: "Swagger Reference"
 ---
 
 # `exisjs/sanitize`
 
-The `exisjs/sanitize` module provides pure data sanitization functions for cleaning and normalizing input strings, numbers, dates, arrays, and complex objects before business logic execution. High-throughput security transforms (XSS escaping, HTML stripping, SQL prevention, path traversal blocking) are backed by native Rust acceleration (`@exisjs/rs`).
+The `exisjs/sanitize` module provides pure data sanitization functions for cleaning and normalizing input strings, numbers, dates, arrays, and complex objects before business logic execution. It includes security transforms for XSS escaping, HTML stripping, and basic SQL injection and path traversal probe detection.
 
 ---
 
@@ -19,9 +19,9 @@ import { sanitize } from 'exisjs/sanitize'
 
 ---
 
-## 1. Rust-Accelerated Security Sanitizers
+## 1. Security Sanitizers
 
-These sanitizers interface with `@exisjs/rs` to ensure high-performance text cleansing.
+The SQL and path traversal checks reject common probe strings; they complement, and never replace, parameterized queries and resolved-path checks.
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |

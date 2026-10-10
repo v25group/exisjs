@@ -40,6 +40,14 @@ export function formatReceivedValue(val: any): string {
   return String(val)
 }
 
+// Field names whose values must not appear in logs or responses
+const SENSITIVE_FIELD =
+  /pass(word|wd|phrase)?|secret|token|authorization|api[-_]?key|credential|card|cvv|cvc|ssn|\bpin\b|otp/i
+
+export function isSensitiveField(name: string): boolean {
+  return SENSITIVE_FIELD.test(name)
+}
+
 export class ValidatorError extends Error {
   public readonly errors: ValidationErrorDescriptor[]
   public httpPart?: string
@@ -53,6 +61,12 @@ export class ValidatorError extends Error {
         errors.map((e) => `${e.path}: ${e.message}`).join(', ')
     )
     this.name = 'ValidatorError'
-    this.errors = errors
+    // Received values end up in logs, error responses and (for tex.env) the
+    // startup crash output, so credentials are masked at the source
+    this.errors = errors.map((e) =>
+      e.received !== undefined && isSensitiveField(e.path)
+        ? { ...e, received: '[Redacted]' }
+        : e
+    )
   }
 }

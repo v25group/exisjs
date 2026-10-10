@@ -11,8 +11,19 @@ import type { Handler, Request, Response } from '../types'
  *
  * This version hooks into the ExisResponse's _onFinish callback and overrides the
  * high-level json()/send()/end() methods on ExisResponse instead. Since ExisResponse
- * is our own object (and already pooled), modifying it doesn't deoptimize Node internals.
+ * is our own per-request object, modifying it doesn't deoptimize Node internals.
  */
+// Brotli's default quality (11) costs tens of ms per 100 KB; 4 compresses
+// close to gzip -9 at a fraction of the CPU, the usual choice for dynamic
+// responses
+const BROTLI_OPTIONS: zlib.BrotliOptions = {
+  params: {
+    [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+    [zlib.constants.BROTLI_PARAM_MODE]: zlib.constants.BROTLI_MODE_TEXT,
+  },
+}
+const GZIP_OPTIONS: zlib.ZlibOptions = { level: 6 }
+
 export function compression(): Handler {
   return (req: Request, res: Response, next) => {
     const acceptEncoding = (req.headers['accept-encoding'] as string) || ''
@@ -33,8 +44,22 @@ export function compression(): Handler {
 
     // Override ExisResponse.end() to compress the final payload in a single pass.
     // This avoids touching ServerResponse's hidden class entirely.
+    // Compression is async, so a second end() could arrive before the first
+    // finishes; only the first one counts
+    let ending = false
     res.end = function (data?: unknown) {
-      if ((res.raw as any).writableEnded) return
+      if (ending || (res.raw as any).writableEnded) return
+      ending = true
+
+      // Already encoded by the handler, or explicitly marked untransformable
+      const cacheControl = String(res.raw.getHeader('Cache-Control') || '')
+      if (
+        res.raw.getHeader('Content-Encoding') ||
+        cacheControl.includes('no-transform')
+      ) {
+        originalEnd(data)
+        return
+      }
 
       // Skip compression for empty responses
       if (!data) {
@@ -57,53 +82,43 @@ export function compression(): Handler {
 
       // Set encoding headers
       res.raw.setHeader('Content-Encoding', selectedEncoding)
-      res.raw.setHeader('Vary', 'Accept-Encoding')
+      res.vary('Accept-Encoding')
       // Remove Content-Length since compressed size will differ
       res.raw.removeHeader('Content-Length')
 
-      // Compress using hardware-accelerated Rust engine (@exisjs/rs) if available, with graceful zlib fallback
-      let compressed: Buffer
-      try {
-        if (selectedEncoding === 'br') {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const rs = require('@exisjs/rs')
-          compressed =
-            typeof rs.brotliCompress === 'function'
-              ? rs.brotliCompress(buf)
-              : zlib.brotliCompressSync(buf)
-        } else if (selectedEncoding === 'gzip') {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const rs = require('@exisjs/rs')
-          compressed =
-            typeof rs.gzipCompress === 'function'
-              ? rs.gzipCompress(buf)
-              : zlib.gzipSync(buf)
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const rs = require('@exisjs/rs')
-          compressed =
-            typeof rs.deflateCompress === 'function'
-              ? rs.deflateCompress(buf)
-              : zlib.deflateSync(buf)
+      // zlib's async API runs on the libuv threadpool, so a large body does
+      // not block other requests while it compresses
+      const finish = (err: Error | null, compressed: Buffer) => {
+        if (err || (res.raw as any).writableEnded || res.raw.destroyed) {
+          if (err && !(res.raw as any).headersSent) {
+            res.raw.removeHeader('Content-Encoding')
+            originalEnd(data)
+          }
+          return
         }
-      } catch {
-        // If native or zlib compression fails, send uncompressed
-        originalEnd(data)
-        return
+        res.raw.setHeader('Content-Length', compressed.length)
+
+        // Fire _onFinish callbacks via the original end path
+        if (res._onFinish.length > 0) {
+          res.raw.end(compressed, () => {
+            // eslint-disable-next-line @typescript-eslint/prefer-for-of
+            for (let i = 0; i < res._onFinish.length; i++) {
+              res._onFinish[i]()
+            }
+            ;(res as any)._markDone?.()
+          })
+        } else {
+          res.raw.end(compressed)
+          ;(res as any)._markDone?.()
+        }
       }
 
-      res.raw.setHeader('Content-Length', compressed.length)
-
-      // Fire _onFinish callbacks via the original end path
-      if (res._onFinish.length > 0) {
-        res.raw.end(compressed, () => {
-          // eslint-disable-next-line @typescript-eslint/prefer-for-of
-          for (let i = 0; i < res._onFinish.length; i++) {
-            res._onFinish[i]()
-          }
-        })
+      if (selectedEncoding === 'br') {
+        zlib.brotliCompress(buf, BROTLI_OPTIONS, finish)
+      } else if (selectedEncoding === 'gzip') {
+        zlib.gzip(buf, GZIP_OPTIONS, finish)
       } else {
-        res.raw.end(compressed)
+        zlib.deflate(buf, GZIP_OPTIONS, finish)
       }
     }
 

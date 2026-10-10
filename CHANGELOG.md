@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.8.0`** | 2026-10-09 | Major: Pure TS Core, Perf & Security | `@exisjs/rs` removed (pure TypeScript core), ~50% less framework overhead per request, compiled `tex` validator, upload/IP-spoofing/cross-request security fixes, Node.js 20+ | [**Read v0.8.0 Notes →**](./changelog/v0.8/v0.8.0.md) |
 | **`v0.7.14`** | 2026-10-05 | Stability & Hardening | Windows path quoting fix for `exis run`, FS route specificity sorting, binary/stream `res.download()`, Windows libuv shutdown `UV_HANDLE_CLOSING` & `EPIPE` resolution, type inference strictness | [**Read v0.7.14 Notes →**](./changelog/v0.7/v0.7.14.md) |
 | **`v0.7.13`** | 2026-10-02 | Feature & Engine Upgrades | `tex.discriminatedUnion`, schema composition (`extend`, `merge`, `pick`, `omit`), field/schema `transform`, `tex.coerce` primitives, multi-validator OpenAPI 3.1 translation | [**Read v0.7.13 Notes →**](./changelog/v0.7/v0.7.13.md) |
 | **`v0.7.12`** | 2026-10-02 | Alignment & Patch | Automatic boot database connection (`DatabaseManager.connectAll()`), health check dual callback (`isHealthy` & `healthCheck`), docs sync, template update | [**Read v0.7.12 Notes →**](./changelog/v0.7/v0.7.12.md) |
@@ -29,7 +30,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.7.14] - 2026-10-05
+## Current Release: [0.8.0] - 2026-10-09
+
+> **Major release.** Read the breaking changes before upgrading. Full details, benchmarks and the upgrade guide are in [**`changelog/v0.8/v0.8.0.md`**](./changelog/v0.8/v0.8.0.md).
+
+### ⚠️ Breaking Changes
+- **`@exisjs/rs` removed**: The Rust N-API engine is gone and `exisjs` no longer depends on it. Direct imports from `@exisjs/rs` (including `signJwt`/`verifyJwt`) no longer work; ExisJS does not ship a built-in JWT implementation.
+- **`trustProxy: <number>` uses Express hop semantics**: `trustProxy: N` trusts the N closest hops, counting the socket peer. The 0.7.x behavior let clients spoof `req.ip`. CDN IP headers are honored only with `trustProxy: true`.
+- **`tex` enforces previously ignored rules**: `uuid`, `cuid`, `creditCard`, `literal`, `union` and `record` are now validated; `dedupe`, `slugify` and `collapseWhitespace` are applied; `email` rejects whitespace; `password` enforces `max`.
+- **Multipart default limits**: 10 files, 100 fields, 200 parts, 1 MB per field, and all files together within `bodyLimit` (`413` when exceeded). Saved files are named `<field>-<uuid><ext>`.
+- **Headers**: `helmet` config is now honored (including `enabled: false`); `X-XSS-Protection` is `0`; CORS allow-lists send `Vary: Origin`.
+- **Request IDs**: client-supplied IDs must be at most 128 token characters, otherwise one is generated.
+- **Error responses**: `error` is always an object (`{ code, message, details? }`) and every error includes `statusCode`. Validation errors no longer return `error: "Bad Request"`; the existing `message`, `validationErrors`, `errors` and `details` fields are kept.
+- **Middleware before validation**: route middleware and `@Use(...)` now run before body/query/param validation, so authentication answers first.
+- **Constructor injection**: undecorated constructor parameters on controllers and `@Injectable()` classes throw a descriptive error; use `@Inject(Token)`.
+- **`exisjs test`** fails when no tests are found or a test file crashes on load.
+- **Node.js 20+** is required (`engines` field on all packages).
+
+### Added
+- **Compiled `tex` validator**: Schemas compile once into plain JS check functions. Each schema compiles to a generated JavaScript function; a 3-field parse takes about 0.05 µs, faster than Ajv on the same benchmark.
+- **Zod query/param coercion**: `z.number()`, `z.boolean()` and `z.date()` fields in `query`/`params` object schemas are converted from strings automatically (Zod 3 and 4).
+- **`download()` helper** (`exisjs/response`) to return attachments from handlers, and **`InferRouteInput` / `InferRouteOutput`** types (`exisjs/router`).
+- **Shutdown signal** passed to `app.onShutdown(signal)` and `onApplicationShutdown(signal)`.
+- **Upload hardening**: Combined-size cap, field/part/file count limits, partial-file cleanup on failure, and `streamUpload()` resolves only after files are written.
+- **Bounded in-memory caches** for `@Cacheable` (50,000 entries) and idempotency (10,000 entries).
+- **Standard package metadata**: `homepage`, `bugs`, `repository.directory`, `engines`, `publishConfig`, `./package.json` export, and a `LICENSE` file per package.
+
+### Changed
+- **Request pipeline performance**: JS radix router with a static exact-match table (7x faster lookups than native), `JSON.parse` body parsing with prototype-pollution stripping (7x faster), validators compiled per route instead of per request, fewer per-request listeners and closures. Framework overhead per request is roughly halved and end-to-end CPU per request drops 9–18%.
+- **Compression** uses Node's async `zlib` (Brotli quality 4) off the event loop, preserves existing `Vary`, and skips already-encoded and `no-transform` responses.
+- **All packages versioned `0.8.0`**; `create-exisjs` scaffolds projects on `exisjs@^0.8.0`.
+
+### Fixed
+- **Boundaries ignored in production**: `boundary.ts` guards, middleware, CORS, headers and providers were skipped after `exisjs build`; a boundary that failed to load was also skipped silently. Both fixed.
+- **Passwords in logs**: validation diagnostics logged received values of credential fields; they are now redacted in logs, responses and `tex.env` errors.
+- **Invalid CORS**: a wildcard origin is never sent together with `Access-Control-Allow-Credentials`.
+- **`/docs` in production** now follows `docs.enabled`.
+- **`createTestContext(exis({...}))`** skipped `onStart` and booted the app twice; tests could also load a stale build manifest.
+- **`plugins` in `exis.config.ts`** were dropped when `exis({ plugins })` was used.
+- **`create-exisjs`**: the class-based project did not compile and the generated test was never run.
+- **Cross-request data exposure**: Removed request/response object pooling, which could hand a late-running handler the next user's request.
+- **Shared route params**: Each route match now gets its own params object; previously one cached object was shared and mutated across requests.
+- **Upload path traversal**: Multipart field names can no longer write files outside the upload directory.
+- **Errors thrown in apps without middleware** reached the 404 handler instead of the error handlers.
+- **Malformed `%` escapes** in path parameters return `400` instead of `500`.
+- **Bun graceful shutdown** waited for its timeout because completed requests were never counted down.
+- **Rate-limit reset headers** now report the actual window end.
+- **`Called end on pool more than once` on shutdown**: registered databases were disconnected immediately on `SIGINT`/`SIGTERM` (before requests drained) and again during graceful shutdown. They are now disconnected once, after draining.
+- **`res.download()` crashed** with `contentDisposition is not a function` on every call.
+- **`res.download(string)` path guessing**: a string is now always a file path, never content, and a new `root` option confines request-supplied filenames to one directory (traversal answers `404`).
+- **Route param names** differing at the same position (`/stock/:id`, `/stock/:stockId/items`) now each resolve to the name their route declared.
+- **Returned `Buffer`s** are sent as bytes instead of being JSON-encoded.
+- **Stale build output**: `dist/` is cleaned before each build so removed modules cannot be published.
+
+### Tooling
+- **Benchmark suite rewritten**: four parity scenarios across six targets with response verification, warmup, interleaved rounds, and server CPU per request; `npm run bench:profile` for V8 CPU/heap profiles; router and validation micro-benchmarks. See [`bench/README.md`](./bench/README.md).
+- **`npm run typecheck`** covers package sources, tests and benchmarks; CI runs lint and typecheck before tests.
+
+### Removed
+- `@exisjs/rs`, its Rust sources and the N-API cross-compilation pipeline (CI no longer installs Rust).
+- `NativeRadixTree` and the native-engine check in `exisjs doctor`.
+
+---
+
+## Previous Release: [0.7.14] - 2026-10-05
 
 > For full technical details and code examples, see [**`changelog/v0.7/v0.7.14.md`**](./changelog/v0.7/v0.7.14.md).
 

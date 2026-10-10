@@ -110,6 +110,7 @@ describe('HttpError.toJSON()', () => {
     const err = HttpError.notFound('User')
     expect(err.toJSON()).toEqual({
       success: false,
+      statusCode: 404,
       error: { code: 'NOT_FOUND', message: 'User not found' },
     })
   })
@@ -136,6 +137,7 @@ describe('createErrorHandler()', () => {
     const body = getResponseBody(res)
     expect(body).toEqual({
       success: false,
+      statusCode: 404,
       error: { code: 'NOT_FOUND', message: 'User not found' },
     })
   })
@@ -154,7 +156,7 @@ describe('createErrorHandler()', () => {
 
     expect(res.statusCode).toBe(400)
     const body = getResponseBody(res) as never
-    expect((body as any).error).toBe('Bad Request')
+    expect((body as any).error.code).toBe('VALIDATION_ERROR')
   })
 
   it('handles ValidatorError (native) → 400', () => {
