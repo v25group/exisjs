@@ -26,11 +26,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Typecheck (sources, tests, bench)
-        run: npm run typecheck
-
+      # Build first: the benchmark sources import the compiled exisjs package
       - name: Build
         run: npm run build
+
+      - name: Typecheck (sources, tests, bench)
+        run: npm run typecheck
 
       - name: Run Tests
         run: npm test

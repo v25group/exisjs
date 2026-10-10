@@ -28,7 +28,7 @@
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
     "verify:examples": "node scripts/verify-examples.mjs",
     "lint": "eslint .",
-    "typecheck": "tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
+    "typecheck": "npm run build --workspace=packages/exisjs && tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
     "prepare": "husky",
     "release": "npm run build && npm publish --workspace=packages/exisjs --workspace=packages/create --workspace=packages/fetch --access public",
     "bench": "npm run build --workspace=packages/exisjs && tsx bench/http.ts",
