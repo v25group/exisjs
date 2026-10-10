@@ -53,7 +53,7 @@
     "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.71.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.1",
     "@typescript-eslint/parser": "^8.71.0",
     "autocannon": "^8.0.0",
     "cross-env": "^10.1.0",
