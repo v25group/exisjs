@@ -425,39 +425,7 @@ export interface DbSanitizeOptions {
 export function dbSanitize(
   options: DbSanitizeOptions = { mongo: true }
 ): Handler {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    if (options.mongo) {
-      if (
-        req.body === undefined &&
-        ['POST', 'PUT', 'PATCH'].includes(req.method) &&
-        typeof (req as any).json === 'function'
-      ) {
-        try {
-          await (req as any).json()
-        } catch {
-          /* ignore */
-        }
-      }
-
-      if (req.body) req.body = sanitizeMongo(req.body)
-      if (
-        req.query &&
-        typeof req.query === 'object' &&
-        Object.keys(req.query).length > 0
-      ) {
-        req.query = sanitizeMongo(req.query) as Record<string, string>
-      }
-      if (
-        req.params &&
-        typeof req.params === 'object' &&
-        Object.keys(req.params).length > 0
-      ) {
-        req.params = sanitizeMongo(req.params) as Record<string, string>
-      }
-    }
-
-    next()
-  }
+  return options.mongo ? mongoSanitize() : (_req, _res, next) => next()
 }
 
 // ─── Security Scanner Noise Suppression & Blackhole Handler ────────────────────

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.8.1`** | 2026-10-12 | Patch: Security & Build | `ipFilter` X-Forwarded-For bypass fixed, `serveStatic` sibling-directory traversal fixed, `exisjs build` works on hosts without `devDependencies` | [**Read v0.8.1 Notes →**](./changelog/v0.8/v0.8.1.md) |
 | **`v0.8.0`** | 2026-10-09 | Major: Pure TS Core, Perf & Security | `@exisjs/rs` removed (pure TypeScript core), ~50% less framework overhead per request, compiled `tex` validator, upload/IP-spoofing/cross-request security fixes, Node.js 20+ | [**Read v0.8.0 Notes →**](./changelog/v0.8/v0.8.0.md) |
 | **`v0.7.14`** | 2026-10-05 | Stability & Hardening | Windows path quoting fix for `exis run`, FS route specificity sorting, binary/stream `res.download()`, Windows libuv shutdown `UV_HANDLE_CLOSING` & `EPIPE` resolution, type inference strictness | [**Read v0.7.14 Notes →**](./changelog/v0.7/v0.7.14.md) |
 | **`v0.7.13`** | 2026-10-02 | Feature & Engine Upgrades | `tex.discriminatedUnion`, schema composition (`extend`, `merge`, `pick`, `omit`), field/schema `transform`, `tex.coerce` primitives, multi-validator OpenAPI 3.1 translation | [**Read v0.7.13 Notes →**](./changelog/v0.7/v0.7.13.md) |
@@ -30,7 +31,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.8.0] - 2026-10-09
+## Current Release: [0.8.1] - 2026-10-12
+
+> **Security patch.** Upgrade if you use `ipFilter` or `serveStatic`. Details in [**`changelog/v0.8/v0.8.1.md`**](./changelog/v0.8/v0.8.1.md).
+
+### ⚠️ Behavior Change
+- **`ipFilter` uses `req.ip` only.** Behind a proxy, set `trustProxy` in `exis.config.ts`; otherwise allow-lists reject every request. The `trustProxy` option of `ipFilter` is deprecated and ignored.
+
+### Security
+- **`ipFilter` bypass**: allow-lists and deny-lists trusted a client-supplied `X-Forwarded-For` header by default.
+- **`serveStatic` traversal**: files in a sibling directory sharing the root's name prefix (`public` and `public-private`) could be served.
+
+### Fixed
+- **`exisjs build` on hosts without `devDependencies`** (Render, Heroku): the type-check is skipped with a warning when `@types/*` packages are not installed, instead of failing with `Cannot find name 'process'`.
+
+### Changed
+- `dbSanitize()` reuses `mongoSanitize()`; no behavior change.
+
+### Tooling
+- Updated the `proxy-addr` development dependency (GHSA-jqcg-44mw-7w3h); not part of the published packages.
+
+---
+
+## Previous Release: [0.8.0] - 2026-10-09
 
 > **Major release.** Read the breaking changes before upgrading. Full details, benchmarks and the upgrade guide are in [**`changelog/v0.8/v0.8.0.md`**](./changelog/v0.8/v0.8.0.md).
 

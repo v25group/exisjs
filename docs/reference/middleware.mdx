@@ -217,6 +217,8 @@ function ipFilter(options: IpFilterOptions): Handler
 | `allow` | `string[]` | Array of permitted IP addresses or CIDR blocks (e.g. `['10.0.0.0/8', '192.168.1.5']`). |
 | `deny` | `string[]` | Array of blocked IP addresses or CIDR blocks. |
 
+The address checked is `req.ip`. Behind a proxy or load balancer, set `trustProxy` in `exis.config.ts` so `req.ip` is the real client; `ipFilter` never reads `X-Forwarded-For` itself, because a client can send any value in that header.
+
 ---
 
 ### `backpressure(options?)`

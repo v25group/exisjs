@@ -15,6 +15,8 @@ import {
 } from './helpers'
 import { describe, expect, it, ex, beforeAll, afterAll } from '../src/testing'
 import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
+import fs from 'node:fs'
+import path from 'node:path'
 import { serveStatic, requestLogger } from '../src/middleware/middleware'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -514,6 +516,28 @@ describe('serveStatic()', () => {
         resolve()
       })
     })
+  })
+
+  it('does not serve a sibling directory that shares the root prefix', async () => {
+    const sibling = tmpDir + '-private'
+    fs.mkdirSync(sibling, { recursive: true })
+    fs.writeFileSync(path.join(sibling, 'secret.txt'), 'secret')
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const req = createMockRequest({
+          method: 'GET',
+          url: `/../${path.basename(sibling)}/secret.txt`,
+        })
+        const res = createMockResponse()
+        res.sendStream = ex.fn(() => {
+          reject(new Error('served a file outside the root'))
+          return res
+        })
+        serveStatic(tmpDir)(req, res, () => resolve())
+      })
+    } finally {
+      cleanupTempDir(sibling)
+    }
   })
 
   it('handles HEAD requests', async () => {

@@ -418,7 +418,8 @@ export function serveStatic(
       const decodedPath = decodeURIComponent(req.path)
       const filePath = path.join(rootPath, decodedPath)
 
-      if (!filePath.startsWith(rootPath)) {
+      // The separator matters: "/app/public-private" also starts with "/app/public"
+      if (!filePath.startsWith(rootPath + path.sep)) {
         return next()
       }
 

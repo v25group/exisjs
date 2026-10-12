@@ -118,7 +118,7 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.8.0')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.8.1')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 

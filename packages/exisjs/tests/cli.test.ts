@@ -2,7 +2,10 @@ import * as path from 'node:path'
 import * as fs from 'node:fs'
 import cp from 'node:child_process'
 import { generateController } from '../src/cli/commands/generate'
-import { buildCommand } from '../src/cli/commands/build'
+import {
+  buildCommand,
+  findMissingTypePackages,
+} from '../src/cli/commands/build'
 import { startCommand } from '../src/cli/commands/start'
 import { devCommand } from '../src/cli/commands/dev'
 import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
@@ -265,6 +268,23 @@ describe('CLI Commands', () => {
 
       expect(fs.existsSync(path.join(tmpDir, 'dist'))).toBe(true)
       expect(process.env.__EXIS_SKIP_ENV_CHECK).toBe('true')
+    })
+
+    it('reports @types devDependencies that are not installed', () => {
+      writeTempFile(
+        tmpDir,
+        'package.json',
+        JSON.stringify({
+          devDependencies: {
+            '@types/node': '^20.0.0',
+            '@types/multer': '^1.0.0',
+            prettier: '^3.0.0',
+          },
+        })
+      )
+      writeTempFile(tmpDir, 'node_modules/@types/node/package.json', '{}')
+
+      expect(findMissingTypePackages(tmpDir)).toEqual(['@types/multer'])
     })
   })
 

@@ -51,6 +51,9 @@ npx exisjs build [options]
 | `--dry-run` | `boolean` | `false` | Compile and bundle without halting on missing environment variables. |
 | `-m, --mode <mode>` | `string` | `production` | Environment mode to load (e.g. `production`, `staging`). |
 
+### Type-checking on deployment hosts
+Some hosts (Render, Heroku and others) install with `NODE_ENV=production`, which leaves out `devDependencies` such as `@types/node`. When `@types/*` packages listed in your `devDependencies` are not installed, `exisjs build` skips the type-check with a warning and still compiles. To keep the type-check on the host, set the install command to `npm install --include=dev`.
+
 ### Build Outputs
 - Compiles application source code into the specified `outDir`.
 - Emits pre-computed route manifests (`.exis/routes-manifest.js`) for O(1) route discovery at runtime.

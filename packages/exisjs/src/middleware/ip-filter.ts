@@ -8,7 +8,10 @@ export interface IpFilterOptions {
   deny?: string[]
   /** Custom error message when blocked */
   message?: string
-  /** If true, trust X-Forwarded-For header (for apps behind a proxy). Default: true */
+  /**
+   * @deprecated Ignored. The client IP is `req.ip`, which follows the app-level
+   * `trustProxy` setting in `exis.config.ts`.
+   */
   trustProxy?: boolean
 }
 
@@ -53,26 +56,16 @@ function ipMatchesAny(ip: string, rules: string[]): boolean {
   return rules.some((rule) => ipMatchesRule(ip, rule))
 }
 
-/** Resolve the real client IP, respecting X-Forwarded-For when behind a proxy */
-function resolveIp(req: Request, trustProxy: boolean): string {
-  if (trustProxy) {
-    const forwarded = req.get('x-forwarded-for')
-    if (forwarded) {
-      // X-Forwarded-For: client, proxy1, proxy2 — take the leftmost (true client)
-      return forwarded.split(',')[0].trim()
-    }
-  }
-  return req.ip || '127.0.0.1'
-}
-
 export function ipFilterMiddleware(options: IpFilterOptions = {}): Handler {
   const allowRules = options.allow ?? null
   const denyRules = options.deny ?? null
   const message = options.message ?? 'Access Denied'
-  const trustProxy = options.trustProxy !== false // default true
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const ip = resolveIp(req, trustProxy)
+    // req.ip only honours X-Forwarded-For for proxies the app trusts; reading
+    // the header here would let any client claim an allowed address.
+    // An unknown address is '' so it can never match an allow rule.
+    const ip = req.ip || ''
 
     // If allowlist is defined, IP MUST match at least one rule
     if (allowRules !== null) {

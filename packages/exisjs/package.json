@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Fast, lightweight TypeScript backend framework for Node.js with file-system routing, built-in validation, dependency injection and OpenAPI docs",
   "keywords": [
     "exisjs",

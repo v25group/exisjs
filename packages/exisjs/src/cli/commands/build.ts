@@ -162,7 +162,17 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   // ─── TypeScript Type-Check ─────────────────────────────────────────────────
   // Run the TS compiler in check-only mode (no emit) to catch type errors,
   // broken imports, and syntax errors BEFORE esbuild runs.
-  if (process.env.NODE_ENV !== 'test') {
+  // Hosts that install with NODE_ENV=production (Render, Heroku...) leave out
+  // devDependencies, so the @types packages are absent and every Node global
+  // would be reported as a type error. esbuild does not need types to compile.
+  const missingTypes =
+    process.env.NODE_ENV === 'test' ? [] : findMissingTypePackages(cwd)
+  if (missingTypes.length > 0) {
+    process.stdout.write(
+      `\r${c.yellow}↷${c.reset} ${c.dim}type-check skipped: devDependencies are not installed (${missingTypes.join(', ')}).${c.reset}\n` +
+        `${c.dim}  To type-check on this host, install with: npm install --include=dev${c.reset}\n`
+    )
+  } else if (process.env.NODE_ENV !== 'test') {
     process.stdout.write(`${c.dim}type-checking...${c.reset}`)
     const filesToCheck =
       serverEntryPoints.length > 0 ? serverEntryPoints : parsedConfig.fileNames
@@ -202,7 +212,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     process.stdout.write(
       `\r${c.yellow}↷${c.reset} ${c.dim}type-check skipped in test environment.${c.reset}\n`
     )
-  } else {
+  } else if (missingTypes.length === 0) {
     process.stdout.write(
       `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`
     )
@@ -326,6 +336,28 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** `@types/*` packages listed in devDependencies that are not installed. */
+export function findMissingTypePackages(cwd: string): string[] {
+  let devDeps: Record<string, string>
+  try {
+    devDeps =
+      JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'))
+        .devDependencies ?? {}
+  } catch {
+    return []
+  }
+  const req = typeof require !== 'undefined' ? require : eval('require')
+  return Object.keys(devDeps).filter((name) => {
+    if (!name.startsWith('@types/')) return false
+    try {
+      req.resolve(`${name}/package.json`, { paths: [cwd] })
+      return false
+    } catch {
+      return true
+    }
+  })
+}
 
 async function fixPathAliases(cwd: string, outDir: string): Promise<void> {
   try {

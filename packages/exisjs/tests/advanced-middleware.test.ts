@@ -169,6 +169,18 @@ describe('Advanced Middleware', () => {
       expect(err).toBeDefined()
       expect(err.statusCode).toBe(403)
     })
+
+    it('ignores a client-supplied X-Forwarded-For', () => {
+      const middleware = ipFilterMiddleware({ allow: ['192.168.1.1'] })
+      const req = createMockRequest({
+        socket: { remoteAddress: '10.0.0.1' } as any,
+        headers: { 'x-forwarded-for': '192.168.1.1' },
+      })
+
+      let err: any
+      middleware(req, createMockResponse(), (e) => (err = e))
+      expect(err?.statusCode).toBe(403)
+    })
   })
 
   describe('Circuit Breaker', () => {

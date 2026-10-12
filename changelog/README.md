@@ -8,6 +8,7 @@ This directory contains the detailed release notes for every version of ExisJS, 
 changelog/
 ├── README.md               # This navigation guide
 ├── v0.8/                   # 0.8.x Release Series
+│   ├── v0.8.1.md           # ipFilter and serveStatic security fixes, build without devDependencies
 │   └── v0.8.0.md           # Pure TypeScript core (no native engine), performance & security hardening
 └── v0.7/                   # 0.7.x Release Series
     ├── v0.7.14.md          # Windows CLI hardening, route specificity, res.download streams
@@ -35,6 +36,6 @@ changelog/
 
 ## Quick Links
 
-- [Latest Release (v0.8.0)](./v0.8/v0.8.0.md)
+- [Latest Release (v0.8.1)](./v0.8/v0.8.1.md)
 - [Root Changelog](../CHANGELOG.md)
 - [Documentation](../docs/)
