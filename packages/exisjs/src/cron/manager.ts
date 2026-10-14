@@ -1,11 +1,27 @@
 import type { App } from '../server/app'
 import { CronJob } from './job'
-import type { CronJobOptions, CronJobStats, CronContext } from './types'
+import type {
+  CronJobOptions,
+  CronJobStats,
+  CronContext,
+  CronLock,
+} from './types'
 import { every } from './expressions'
 
 export class CronManager {
   private jobs = new Map<string, CronJob>()
   private app: App<any>
+  /**
+   * Whether newly scheduled jobs start running. Off under `NODE_ENV=test`, so
+   * a test run never fires real jobs; tests run one with `trigger(name)` or
+   * opt in with `createTestContext(app, { cron: true })`.
+   */
+  public autoStart = process.env.NODE_ENV !== 'test'
+  /**
+   * Distributed lock for apps running on several instances. Without it,
+   * every instance runs every job (`preventOverlap` only covers one process).
+   */
+  public lock?: CronLock
 
   constructor(app: App<any>) {
     this.app = app
@@ -57,7 +73,10 @@ export class CronManager {
       opts = nameOrOptions
     }
 
-    const job = new CronJob(opts, this.app)
+    const job = new CronJob(
+      this.autoStart ? opts : { ...opts, autoStart: false },
+      this.app
+    )
     if (this.jobs.has(job.name)) {
       this.app.log?.warn(
         { job: job.name },

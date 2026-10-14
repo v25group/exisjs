@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import type { ErrorHandler, Handler } from '../types'
 import { logger } from '../logger'
-import { isSensitiveField } from '../validator/error'
+import { redactReceived } from '../validator/error'
 
 // ─── HttpError ─────────────────────────────────────────────────────────────────
 
@@ -97,7 +97,6 @@ export class HttpError extends Error {
         message: this.message,
         ...(this.details !== undefined && { details: this.details }),
       },
-      ...(this.details && typeof this.details === 'object' ? this.details : {}),
     }
   }
 }
@@ -194,6 +193,10 @@ export class ServiceUnavailableException extends ServiceUnavailableError {}
 export class GatewayTimeoutException extends GatewayTimeoutError {}
 
 // ─── Global Error Handler ─────────────────────────────────────────────────────
+
+// The development error page is self-contained with inline styles
+const DEV_PAGE_CSP =
+  "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'"
 
 function escapeHtml(str: string): string {
   if (typeof str !== 'string') return String(str)
@@ -333,7 +336,20 @@ export function renderValidationTable(
   return [top, headerRow, sep, ...dataRows, bot].join('\n')
 }
 
-export function createErrorHandler(isDev = false): ErrorHandler {
+export interface ErrorHandlerOptions {
+  /**
+   * Also send the pre-0.9 duplicate fields (`message`, `validationErrors`,
+   * `errors`, `details`, `timestamp`) next to `error`. Deprecated; for
+   * clients that have not moved to `error.code` / `error.message` / `error.details` yet.
+   */
+  legacyFields?: boolean
+}
+
+export function createErrorHandler(
+  isDev = false,
+  options: ErrorHandlerOptions = {}
+): ErrorHandler {
+  const legacy = options.legacyFields === true
   return (err, req, res, _next) => {
     if (res.headersSent) return
 
@@ -344,6 +360,7 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         req.headers.accept?.includes('text/html') &&
         err.statusCode >= 500
       ) {
+        res.setHeader('Content-Security-Policy', DEV_PAGE_CSP)
         res.status(err.statusCode).html(renderErrorHtml(err, req))
         return
       }
@@ -532,7 +549,7 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         tableRows.push({
           field,
           // Never echo credentials into logs or error responses
-          received: isSensitiveField(field) ? '[Redacted]' : formattedReceived,
+          received: redactReceived(field, formattedReceived),
           expected: itemDetail?.expected || expectedMsg,
           code: itemDetail?.code,
         })
@@ -588,12 +605,13 @@ export function createErrorHandler(isDev = false): ErrorHandler {
           message: message || 'Validation Error',
           details: responseDetails,
         },
-        // Kept for existing clients: field -> message map and flat details
-        message: message || 'Validation Error',
-        validationErrors: errorsMap,
-        errors: errorsMap,
-        details: responseDetails,
-        timestamp: new Date().toISOString(),
+        ...(legacy && {
+          message: message || 'Validation Error',
+          validationErrors: errorsMap,
+          errors: errorsMap,
+          details: responseDetails,
+          timestamp: new Date().toISOString(),
+        }),
       })
       return
     }
@@ -607,9 +625,11 @@ export function createErrorHandler(isDev = false): ErrorHandler {
           code: 'INVALID_JSON',
           message: 'Invalid JSON in request body',
         },
-        message: 'Invalid JSON in request body',
-        validationErrors: null,
-        timestamp: new Date().toISOString(),
+        ...(legacy && {
+          message: 'Invalid JSON in request body',
+          validationErrors: null,
+          timestamp: new Date().toISOString(),
+        }),
       })
       return
     }
@@ -623,6 +643,7 @@ export function createErrorHandler(isDev = false): ErrorHandler {
     }
 
     if (isDev && req.headers.accept?.includes('text/html')) {
+      res.setHeader('Content-Security-Policy', DEV_PAGE_CSP)
       res
         .status(500)
         .html(
@@ -644,9 +665,11 @@ export function createErrorHandler(isDev = false): ErrorHandler {
         message: internalMessage,
         ...(isDev && { stack: err.stack }),
       },
-      message: internalMessage,
-      validationErrors: null,
-      timestamp: new Date().toISOString(),
+      ...(legacy && {
+        message: internalMessage,
+        validationErrors: null,
+        timestamp: new Date().toISOString(),
+      }),
     })
   }
 }

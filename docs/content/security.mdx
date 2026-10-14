@@ -32,6 +32,8 @@ The following security middlewares are exported from `exisjs/middleware` and can
 
 ## 1. Security Headers (`helmet`)
 
+Helmet is on by default (`helmet: { enabled: true }` in `exis.config.ts`), including a same-origin `Content-Security-Policy`; see [Security Baseline](#11-security-baseline). Use the middleware directly to apply different settings to part of the app.
+
 The `helmet` middleware sets secure response headers to harden the application against cross-site scripting (XSS), clickjacking, and content sniffing:
 
 ```typescript filename="src/http/server.ts"
@@ -69,7 +71,7 @@ export default exis({
   async onStart(app) {
     app.use(
       csrf({
-        secret: process.env.CSRNF_SECRET!, // Must be at least 32 characters
+        secret: process.env.CSRF_SECRET!, // Must be at least 32 characters
         cookieName: 'csrf-token',
         headerName: 'x-csrf-token',
         cookieOptions: {
@@ -103,6 +105,30 @@ export const config = defineBoundary({
   middleware: [limiter],
 })
 ```
+
+The default store counts per process: with two instances each allows `max`, and on serverless the count resets constantly. Pass a shared `store` to enforce one limit everywhere:
+
+```typescript filename="src/http/auth/boundary.ts"
+import { rateLimit, type RateLimitStore } from 'exisjs/middleware'
+import { redis } from '../../lib/redis'
+
+const redisStore: RateLimitStore = {
+  async increment(key, windowMs) {
+    const k = `rl:${key}`
+    const [[, count], [, ttl]] = (await redis
+      .multi()
+      .incr(k)
+      .pexpire(k, windowMs, 'NX')
+      .pttl(k)
+      .exec()) as [unknown, number][]
+    return { count, resetTime: Date.now() + Math.max(ttl, 0) }
+  },
+}
+
+export const loginLimiter = rateLimit({ max: 10, windowMs: 15 * 60_000, store: redisStore })
+```
+
+If the store fails, requests are let through and a warning is logged, so a cache outage does not take the API down.
 
 ### Rate Limit Response Headers
 
@@ -148,6 +174,11 @@ export const config = defineBoundary({
 ## 5. Idempotency Support (`idempotent`)
 
 Prevent duplicate mutations (e.g. double-charging a credit card or duplicate database inserts) by caching responses associated with an `Idempotency-Key` header:
+
+- A repeat with the same key, user, method, path and body gets the first response again (header `Idempotent-Replayed: true`); the handler does not run twice.
+- Keys belong to `req.user.id` (or `sub`), so one client can never receive another client's response. Change this with `scope: (req) => req.tenantId`.
+- The same key with a **different body** is refused with `422 IDEMPOTENCY_KEY_REUSED`; a repeat that arrives while the first is still running gets `409 IDEMPOTENCY_IN_PROGRESS`.
+- Only `2xx`/`3xx` responses are stored, so a failed request can be retried. Pass `store` to share responses between instances.
 
 ```typescript filename="src/http/checkout/route.ts"
 import { controller, route } from 'exisjs/router'
@@ -273,9 +304,9 @@ export function apiKeyGuard(req: any) {
 
 ---
 
-## 10. Role-Based Access Control (RBAC) Decorators
+## 10. Route Authorization (`@Roles`, `@Permissions`, `@Public`)
 
-ExisJS provides declarative security decorators in `exisjs/decorators` for class-based controllers:
+Declare who may call a route; ExisJS checks it against `req.user` before guards, pipes and the handler run. Your authentication middleware (in a boundary or `@Use`) verifies the token and sets `req.user`.
 
 ```typescript filename="src/http/users/controller.ts"
 import { Controller, Get, Post, Roles, Permissions, Public } from 'exisjs/decorators'
@@ -290,9 +321,67 @@ export class UsersController {
   }
 
   @Post('/login')
-  @Public() // Bypasses authentication guards
+  @Public()
   async login() {
     return { token: 'jwt' }
   }
 }
 ```
+
+Functional routes declare the same with `roles`, `permissions` and `public` on the route (or on the whole `controller({...})`):
+
+```typescript filename="src/http/reports/route.ts"
+export default controller({
+  export: route.get('/export', {
+    permissions: ['report:read', 'report:export'],
+    handle: () => buildReport(),
+  }),
+})
+```
+
+| Rule | Behaviour |
+| :--- | :--- |
+| No `req.user` | `401 UNAUTHORIZED` |
+| `@Roles('a', 'b')` | The user needs **one** of the roles, from `user.roles` (array) or `user.role` |
+| `@Permissions('x', 'y')` | The user needs **all** listed permissions in `user.permissions`. A role name never counts as a permission |
+| Rule not met | `403 FORBIDDEN`, standard error envelope |
+| `@Public()` | Wins over `@Roles` / `@Permissions` on the same route; a warning is logged at startup |
+
+There is no built-in "super admin" field. To let some users through every rule, say so explicitly:
+
+```typescript filename="exis.config.ts"
+export default {
+  authorization: { superUser: (user) => user.role === 'owner' },
+}
+```
+
+### Deny by Default
+
+By default a controller route without `@Roles`, `@Permissions` or `@Public` is open, so a forgotten decorator exposes the route. Turn that around and require a signed-in user everywhere except routes marked `@Public()`:
+
+```typescript filename="exis.config.ts"
+export default {
+  authorization: { defaultPolicy: 'authenticated' },
+}
+```
+
+It applies to class and functional controllers; plain `app.get()` routes such as health checks are not affected.
+
+`exisjs routes` prints the rule of every route in its ACCESS column, which is the quickest way to review what is public.
+
+---
+
+## 11. Security Baseline
+
+What a new app sends and hides without extra code:
+
+| Area | Default |
+| :--- | :--- |
+| Headers (`helmet: { enabled: true }`) | `Content-Security-Policy: default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`; no `X-Powered-By`. Set `contentSecurityPolicy` to a string to change the policy or to `false` to send none. A policy set earlier by your own middleware is kept |
+| `/docs` | Sends its own policy allowing the Swagger UI assets from jsDelivr. The project template enables `/docs` outside production only |
+| Errors | Unexpected errors answer `INTERNAL_ERROR` without message or stack outside development |
+| Logs and validation errors | Credentials and connection strings are redacted (see [Errors](/docs/errors)) |
+| Request bodies | Malformed JSON is `400 INVALID_JSON`; `__proto__` / `constructor` keys are stripped |
+
+`tex.string({ preventSql: true, escapeHtml: true })` is input hygiene, not an injection defence: always use parameterised queries, and encode output for the context it is written to (HTML, SQL, shell).
+

@@ -312,7 +312,7 @@ export default class CheckoutController {
   @Post('/')
   @Timeout(15000)
   @Idempotent({ ttlMs: 86400000 })
-  @Dedupe({ ttlMs: 5000 })
+  @Dedupe({ keyGenerator: (req) => req.user?.id ?? req.ip })
   @Compress()
   async processPayment() {
     return { status: 'processed' }
@@ -385,9 +385,9 @@ export default class RolesController {
 
 | Decorator | Target | Description |
 | :--- | :--- | :--- |
-| `@Roles(...roles: string[])` | Class / Method | Stores required role names in route metadata (`ROLES_METADATA`). |
-| `@Permissions(...perms: string[])` | Class / Method | Stores granular required permissions in route metadata (`PERMISSIONS_METADATA`). |
-| `@Public()` / `@IsPublic()` / `@AllowAnonymous()` | Class / Method | Marks route as unauthenticated. |
+| `@Roles(...roles: string[])` | Class / Method | Requires `req.user` to have **one** of the roles (`user.roles` or `user.role`). No user: `401`; wrong role: `403`. |
+| `@Permissions(...perms: string[])` | Class / Method | Requires **all** listed permissions in `req.user.permissions`. A role is never counted as a permission. No user: `401`; missing permission: `403`. |
+| `@Public()` / `@IsPublic()` / `@AllowAnonymous()` | Class / Method | Marks route as unauthenticated. Wins over `@Roles` / `@Permissions` on the same route (a warning is logged at startup). |
 
 ---
 

@@ -7,6 +7,64 @@ export interface RateLimitOptions {
   message?: string // Error message sent to user when max is exceeded
   statusCode?: number // HTTP status code returned when max is exceeded
   keyGenerator?: (req: Request) => string // Function used to generate keys
+  /**
+   * Where hits are counted. The default memory store counts per process, so
+   * with several instances (or serverless) each one allows `max`. Pass a
+   * shared store (Redis, a database) to enforce one limit across instances.
+   */
+  store?: RateLimitStore
+}
+
+export interface RateLimitHit {
+  /** Hits in the current window, including this one */
+  count: number
+  /** When the window ends, in milliseconds since the epoch */
+  resetTime: number
+}
+
+/**
+ * Counts hits per key in fixed windows.
+ *
+ * @example Redis (ioredis or node-redis)
+ * ```ts
+ * const redisStore: RateLimitStore = {
+ *   async increment(key, windowMs) {
+ *     const k = `rl:${key}`
+ *     const [[, count], [, ttl]] = await redis
+ *       .multi().incr(k).pexpire(k, windowMs, 'NX').pttl(k).exec()
+ *     return { count, resetTime: Date.now() + Math.max(ttl, 0) }
+ *   },
+ * }
+ * ```
+ */
+export interface RateLimitStore {
+  increment(key: string, windowMs: number): RateLimitHit | Promise<RateLimitHit>
+}
+
+/** Per-process store; idle keys are dropped once their window ends. */
+export class MemoryRateLimitStore implements RateLimitStore {
+  private hits = new Map<string, RateLimitHit>()
+  private sweep?: NodeJS.Timeout
+
+  increment(key: string, windowMs: number): RateLimitHit {
+    if (!this.sweep) {
+      this.sweep = setInterval(() => {
+        const now = Date.now()
+        for (const [k, data] of this.hits) {
+          if (data.resetTime <= now) this.hits.delete(k)
+        }
+      }, windowMs)
+      this.sweep.unref()
+    }
+    const now = Date.now()
+    let record = this.hits.get(key)
+    if (!record || record.resetTime <= now) {
+      record = { count: 0, resetTime: now + windowMs }
+      this.hits.set(key, record)
+    }
+    record.count += 1
+    return { count: record.count, resetTime: record.resetTime }
+  }
 }
 
 export function rateLimit(options: RateLimitOptions = {}): Handler {
@@ -24,30 +82,14 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
       return req.ip || 'unknown'
     })
 
-  const hits = new Map<string, { count: number; resetTime: number }>()
-
-  // Drop expired windows so idle keys do not accumulate
-  const sweepInterval = setInterval(() => {
-    const now = Date.now()
-    for (const [key, data] of hits.entries()) {
-      if (data.resetTime <= now) {
-        hits.delete(key)
-      }
-    }
-  }, windowMs)
-  sweepInterval.unref()
+  const store = options.store ?? new MemoryRateLimitStore()
 
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const key = keyGenerator(req)
       const now = Date.now()
 
-      let record = hits.get(key)
-      if (!record || record.resetTime <= now) {
-        record = { count: 0, resetTime: now + windowMs }
-        hits.set(key, record)
-      }
-      record.count += 1
+      const record = await store.increment(key, windowMs)
       const currentHits = record.count
 
       // Report when this key's window actually ends, not a full window from now
@@ -76,8 +118,12 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
       }
 
       next()
-    } catch {
-      // In case of unexpected error, bypass rate limiting rather than failing request
+    } catch (err) {
+      // A store outage must not take the API down: let the request through
+      req.log?.warn?.(
+        { err },
+        '[exis] Rate limit store failed; request allowed'
+      )
       next()
     }
   }

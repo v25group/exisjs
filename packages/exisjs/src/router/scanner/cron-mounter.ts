@@ -20,38 +20,57 @@ export async function mountCronJobs(
 ): Promise<void> {
   const cronFiles: string[] = []
 
-  // 1. Scan dedicated src/cron and .exis/server/src/cron directories (all files are cron jobs)
-  const dedicatedCronDirs = [
-    path.join(root, '.exis', 'server', 'src', 'cron'),
-    path.join(root, '.exis', 'src', 'cron'),
-    path.join(root, 'src', 'cron'),
-  ]
-
-  for (const dir of dedicatedCronDirs) {
-    try {
-      const stat = await fs.stat(dir)
-      if (stat.isDirectory()) {
-        const files = await getFilesRecursively(dir)
-        for (const file of files) {
-          if (!cronFiles.includes(file)) {
-            cronFiles.push(file)
-          }
-        }
-      }
-    } catch {
-      // ignore
+  // Source and compiled output hold the same jobs (src/cron/x.ts and
+  // .exis/server/src/cron/x.js), so only one tree is scanned: the compiled
+  // one in production, the source everywhere else. Scanning both registered
+  // and constructed every job twice.
+  const trees =
+    process.env.NODE_ENV === 'production'
+      ? [
+          path.join(root, '.exis', 'server', 'src'),
+          path.join(root, '.exis', 'src'),
+          path.join(root, 'src'),
+        ]
+      : [
+          path.join(root, 'src'),
+          path.join(root, '.exis', 'server', 'src'),
+          path.join(root, '.exis', 'src'),
+        ]
+  let tree: string | undefined
+  for (const candidate of trees) {
+    if (
+      await fs.stat(candidate).then(
+        (s) => s.isDirectory(),
+        () => false
+      )
+    ) {
+      tree = candidate
+      break
     }
   }
 
-  // 2. Scan single-file and colocated cron files in src/http (e.g. src/http/cron.ts)
+  // 1. Dedicated cron folder: every file is a cron job
+  if (tree) {
+    try {
+      const dir = path.join(tree, 'cron')
+      const stat = await fs.stat(dir)
+      if (stat.isDirectory()) {
+        for (const file of await getFilesRecursively(dir)) {
+          if (!cronFiles.includes(file)) cronFiles.push(file)
+        }
+      }
+    } catch {
+      // no cron folder
+    }
+  }
+
+  // 2. Single-file and colocated cron files in the http folder (e.g. src/http/cron.ts)
   const httpDirs =
     allApiDirs && allApiDirs.length > 0
       ? allApiDirs
-      : [
-          path.join(root, '.exis', 'server', 'src', 'http'),
-          path.join(root, '.exis', 'src', 'http'),
-          path.join(root, 'src', 'http'),
-        ]
+      : tree
+        ? [path.join(tree, 'http')]
+        : []
 
   for (const dir of httpDirs) {
     try {

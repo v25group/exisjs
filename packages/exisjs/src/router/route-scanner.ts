@@ -17,6 +17,42 @@ import {
   mountErrorHandlerFromModule,
 } from './scanner'
 
+/** Which controller style a route module exports, if any. */
+export function routeParadigm(mod: any): 'oop' | 'functional' | null {
+  const unwrapped =
+    mod && mod.default && mod.default.default
+      ? mod.default.default
+      : mod && mod.default
+        ? mod.default
+        : mod
+  if (unwrapped && unwrapped.__isController) return 'functional'
+  if (
+    unwrapped &&
+    unwrapped.prototype &&
+    unwrapped.prototype[Symbol.for('exisjs:controller_prefix')] !== undefined
+  ) {
+    return 'oop'
+  }
+  return null
+}
+
+export function mixedParadigmMessage(
+  oopFiles: string[],
+  functionalFiles: string[]
+): string {
+  const cwd = process.cwd()
+  const formatFiles = (files: string[]) =>
+    files
+      .map((f) => `    → ${path.relative(cwd, f).replace(/\\/g, '/')}`)
+      .join('\n')
+  return (
+    `Mixed Paradigm Error: A project can only use one controller paradigm (OOP or Functional). Mixing them is not supported.\n\n` +
+    `Class-Based (OOP) controllers found in:\n${formatFiles(oopFiles)}\n\n` +
+    `Functional controllers found in:\n${formatFiles(functionalFiles)}\n\n` +
+    `Fix: Choose one paradigm and update the files to match.`
+  )
+}
+
 export class RouteScanner {
   public lazyRoutes = new Map<string, { filePath: string; loaded: boolean }>()
   public routeMap = new Map<string, string>()
@@ -256,7 +292,6 @@ export class RouteScanner {
     // Even in dev mode (lazy routes), pre-scan all route files at startup to
     // detect mixed paradigms (OOP + functional) and throw a fatal error immediately.
     if (isDev && this.globalParadigm === null) {
-      const CONTROLLER_PREFIX = Symbol.for('exisjs:controller_prefix')
       const routeFiles = [...this.routeMap.keys()]
       const oopFiles: string[] = []
       const functionalFiles: string[] = []
@@ -269,41 +304,16 @@ export class RouteScanner {
         try {
           const url = pathToFileURL(file).href
           const mod = await dynamicImport(url)
-          const unwrapped =
-            mod && mod.default && mod.default.default
-              ? mod.default.default
-              : mod && mod.default
-                ? mod.default
-                : mod
-
-          if (unwrapped && unwrapped.__isController) {
-            functionalFiles.push(file)
-          } else if (
-            unwrapped &&
-            unwrapped.prototype &&
-            unwrapped.prototype[CONTROLLER_PREFIX] !== undefined
-          ) {
-            oopFiles.push(file)
-          }
+          const paradigm = routeParadigm(mod)
+          if (paradigm === 'functional') functionalFiles.push(file)
+          else if (paradigm === 'oop') oopFiles.push(file)
         } catch {
           // Skip files that fail to import (TS errors will be caught by tsc)
         }
       }
 
       if (oopFiles.length > 0 && functionalFiles.length > 0) {
-        const path = await import('node:path')
-        const cwd = process.cwd()
-        const formatFiles = (files: string[]) =>
-          files
-            .map((f) => `    → ${path.relative(cwd, f).replace(/\\/g, '/')}`)
-            .join('\n')
-
-        this.app.log.error(
-          `Mixed Paradigm Error: A project can only use one controller paradigm (OOP or Functional). Mixing them is not supported.\n\n` +
-            `Class-Based (OOP) controllers found in:\n${formatFiles(oopFiles)}\n\n` +
-            `Functional controllers found in:\n${formatFiles(functionalFiles)}\n\n` +
-            `Fix: Choose one paradigm and update the files to match.`
-        )
+        this.app.log.error(mixedParadigmMessage(oopFiles, functionalFiles))
         process.exit(1)
       }
 

@@ -115,7 +115,12 @@ export class NodeEngine implements HttpEngine {
     })
 
     this.server.listen(port, host, async () => {
-      const address = { port, host }
+      // The bound port: differs from `port` when 0 asked the OS to pick one
+      const bound = this.server.address()
+      const address = {
+        port: bound && typeof bound === 'object' ? bound.port : port,
+        host,
+      }
 
       // --- onReady Hook ---
       for (const hook of this.app.hooks.ready) {

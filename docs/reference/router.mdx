@@ -232,8 +232,6 @@ import {
   Options,
   Head,
   All,
-  Ws,
-  Sse,
   Body,
   Param,
   Query,
@@ -311,8 +309,8 @@ Method decorators attach HTTP handler logic and validation schemas to controller
 - `@Options(path?, schema?)`
 - `@Head(path?, schema?)`
 - `@All(path?, schema?)`
-- `@Sse(path?, schema?)`
-- `@Ws(path?, schema?)`
+
+> Server-Sent Events use a normal `@Get` route that calls `res.sse()`; see [Responses](/docs/responses). WebSocket routes are not part of the class decorators.
 
 ---
 
@@ -361,9 +359,9 @@ getProfile(@CurrentUser() user: any, @CurrentUser('id') userId: string) {
 | Decorator | Target | Description |
 | :--- | :--- | :--- |
 | `@Use(...middlewares)` | Class / Method | Applies middleware functions to the controller or route. |
-| `@Guards(...guards)` | Class / Method | Attaches authorization guards. |
-| `@Filters(...filters)` | Class / Method | Attaches exception filters. |
-| `@Interceptors(...interceptors)` | Class / Method | Attaches response/request interceptors. |
+| `@UseGuards(...guards)` | Class / Method | Attaches authorization guards. |
+| `@UseFilters(...filters)` | Class / Method | Attaches exception filters. |
+| `@UseInterceptors(...interceptors)` | Class / Method | Wraps the handler: each interceptor receives `next.handle()` and its return value becomes the response. |
 | `@HttpCode(status)` | Method | Sets the default HTTP status code for successful responses. |
 | `@Header(name, value)` | Method | Sets static HTTP response headers. |
 | `@Redirect(url, status?)` | Method | Redirects responses to the target URL. |

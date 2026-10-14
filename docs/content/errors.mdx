@@ -139,15 +139,13 @@ Every error response has the same core shape, whatever caused it:
 | `statusCode` | Same as the HTTP status |
 | `error.code` | Stable machine-readable code: `NOT_FOUND`, `UNAUTHORIZED`, `VALIDATION_ERROR`, `INTERNAL_ERROR`... |
 | `error.message` | Human-readable message. For unexpected errors in production it is a generic message; internals are never exposed |
-| `error.details` | Optional extra data (validation issues, or the `details` passed to an `HttpError`) |
+| `error.details` | Optional extra data (validation issues, or the `details` passed to an `HttpError`). Never copied to the top level |
 
-Clients can rely on `error.code` and `error.message` for every failed request.
+Clients can rely on `error.code` and `error.message` for every failed request: thrown errors, validation, `@Roles` / `@Permissions` / guard rejections, `404` and `405` all use this shape. Codes the framework itself sends include `VALIDATION_ERROR`, `INVALID_JSON`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `METHOD_NOT_ALLOWED` (with an `Allow` header), `RATE_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`, `IDEMPOTENCY_IN_PROGRESS` and `INTERNAL_ERROR`. A handler that rejects with `null` or `undefined` is a `500`, never a `404`.
 
 ### Validation Error Responses
 
-When schema validation fails (via `tex`, Zod, or Yup), ExisJS intercepts the validation failure and generates a structured `400 Bad Request` payload containing field-level error mappings:
-
-The top-level `message`, `validationErrors`, `errors` and `details` fields are kept for existing clients; new code should read `error.details`. Values of credential fields (`password`, `token`, `secret`...) are replaced with `[Redacted]` in responses and logs.
+When schema validation fails (via `tex`, Zod, Yup or a DTO's `validate()`), the response is a `400` with **one entry per failing field** in `error.details` (up to 100):
 
 ```json filename="HTTP 400 Validation Error Response"
 {
@@ -155,37 +153,40 @@ The top-level `message`, `validationErrors`, `errors` and `details` fields are k
   "statusCode": 400,
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "Validation Error: email: Invalid email format, age: Minimum age is 18",
-    "details": [ /* same entries as "details" below */ ]
-  },
-  "message": "Validation Error: email: Invalid email format, age: Minimum age is 18",
-  "validationErrors": {
-    "email": "Invalid email format",
-    "age": "Minimum age is 18"
-  },
-  "errors": {
-    "email": "Invalid email format",
-    "age": "Minimum age is 18"
-  },
-  "details": [
-    {
-      "field": "email",
-      "message": "Invalid email format",
-      "expected": "Valid email address",
-      "received": "invalid-email",
-      "code": "INVALID_EMAIL",
-      "httpPart": "body"
-    },
-    {
-      "field": "age",
-      "message": "Minimum age is 18",
-      "expected": ">= 18",
-      "received": "16",
-      "code": "MIN_VALUE",
-      "httpPart": "body"
-    }
-  ],
-  "timestamp": "2026-10-02T12:45:00.000Z"
+    "message": "Validation Error",
+    "details": [
+      {
+        "field": "email",
+        "message": "Must be a valid email address",
+        "expected": "valid email address",
+        "received": "\"invalid-email\"",
+        "code": "INVALID_EMAIL",
+        "httpPart": "body"
+      },
+      {
+        "field": "age",
+        "message": "Must be at least 18",
+        "expected": "must be at least 18",
+        "received": "16",
+        "code": "VALUE_TOO_SMALL",
+        "httpPart": "body"
+      }
+    ]
+  }
+}
+```
+
+`received` never shows secrets: credential fields (`password`, `token`, `secret`, `apiKey`...) and connection settings (`DATABASE_URL`, `REDIS_URI`, `SENTRY_DSN`, `*_CONNECTION`...) are `[Redacted]`, and the password of any `scheme://user:password@host` value is masked as `***`, in responses, logs and `tex.env` startup errors.
+
+**Status codes.** Malformed input that cannot be parsed at all is `400` (`INVALID_JSON` for a broken JSON body); input that parses but breaks the schema is `400` `VALIDATION_ERROR`. Use `HttpError.unprocessable()` (`422`) for business rules that the schema cannot express, such as "this email is already registered".
+
+#### Pre-0.9 duplicate fields
+
+Before 0.9, error bodies also carried `message`, `validationErrors`, `errors`, `details` and `timestamp` at the top level. They are gone by default. Clients that still read them can get them back while they migrate:
+
+```typescript filename="exis.config.ts"
+export default {
+  errors: { legacyFields: true }, // deprecated, removed in 1.0
 }
 ```
 

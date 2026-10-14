@@ -40,6 +40,11 @@ import { RequestHandler } from './request-handler'
 import { ControllerRegistrar } from '../router/controller-registrar'
 import { CronManager } from '../cron/manager'
 
+// Same-origin resources only, no plugins, cannot be framed. Pages that need
+// more (the /docs UI, the dev error page) send their own policy.
+export const DEFAULT_CSP =
+  "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'"
+
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export class App<TRoutes extends Record<string, any> = {}> {
   public bootstrapper!: ServerBootstrapper
@@ -580,10 +585,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
       this.globalMiddleware.push(
         helmet({
           ...rest,
+          // On by default; `contentSecurityPolicy: false` turns it off
           contentSecurityPolicy:
-            rest.contentSecurityPolicy === true
-              ? "default-src 'self'; frame-ancestors 'none'; object-src 'none'"
-              : rest.contentSecurityPolicy || undefined,
+            rest.contentSecurityPolicy === false
+              ? undefined
+              : typeof rest.contentSecurityPolicy === 'string'
+                ? rest.contentSecurityPolicy
+                : DEFAULT_CSP,
           ...(xFrameOptions && { frameguard: { action: xFrameOptions } }),
         })
       )
@@ -637,7 +645,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
     // default error handler
     if (this.errorHandlers.length === 0) {
       this.errorHandlers.push(
-        createErrorHandler(this.options.env === 'development')
+        createErrorHandler(this.options.env === 'development', {
+          legacyFields: this.options.errors?.legacyFields,
+        })
       )
     }
 
@@ -665,6 +675,34 @@ export class App<TRoutes extends Record<string, any> = {}> {
           return res.status(503).json({ status: 'error', message: err.message })
         }
       })
+
+      // Readiness (Kubernetes readinessProbe, load balancer target health)
+      const readyPath = this.options.healthcheck.readyPath ?? '/_ready'
+      if (readyPath) {
+        this.get(readyPath as any, async (_req, res) => {
+          if (this._shuttingDown) {
+            return res.status(503).json({ status: 'shutting_down' })
+          }
+          try {
+            const { DatabaseManager } = await import('../database/lifecycle')
+            const [results, db] = await Promise.all([
+              Promise.all(checks.map((c) => c())),
+              DatabaseManager.size > 0
+                ? DatabaseManager.checkHealth()
+                : { healthy: true, databases: {} },
+            ])
+            const ready = db.healthy && !results.some((r) => r === false)
+            return res.status(ready ? 200 : 503).json({
+              status: ready ? 'ready' : 'not_ready',
+              databases: db.databases,
+            })
+          } catch (err: any) {
+            return res
+              .status(503)
+              .json({ status: 'not_ready', message: err.message })
+          }
+        })
+      }
     }
 
     // Metrics Route
@@ -676,6 +714,8 @@ export class App<TRoutes extends Record<string, any> = {}> {
     headers?: Record<string, string>
     body?: any
     payload?: any
+    /** Fail instead of waiting forever for a handler that never answers */
+    timeoutMs?: number
   }): Promise<import('../testing/client').TestResponse> {
     return this.requestHandler.inject(options)
   }
@@ -802,7 +842,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
     return this
   }
 
+  /** Set once shutdown starts, so readiness probes stop sending traffic */
+  public _shuttingDown = false
+
   close(timeout = 5000, signal?: string): Promise<void> {
+    this._shuttingDown = true
     return this.bootstrapper.close(timeout, signal)
   }
 

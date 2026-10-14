@@ -33,9 +33,9 @@ ExisJS wraps the standard Node.js `IncomingMessage` in an `ExisRequest` instance
 | `req.signal` | `AbortSignal` | Standard `AbortSignal` triggered when client cancels connection |
 | `req.fresh` | `boolean` | `true` if client cache matches current `ETag` or `Last-Modified` |
 | `req.stale` | `boolean` | Inverse of `req.fresh` |
-| `req.user` | `ExisUser` | Authenticated user identity attached by auth guards |
+| `req.user` | `ExisUser` | Authenticated user set by your auth middleware or guard. Type it once with `declare module 'exisjs' { interface ExisUser { id: string; roles: string[]; permissions: string[] } }` |
 | `req.session` | `Record<string, any>` | Session data store when session middleware is enabled |
-| `req.log` | `Logger` | Request-scoped Pino logger with trace metadata |
+| `req.log` | `Logger` | Request-scoped Pino logger; every line carries `requestId` |
 | `req.requestId` | `string` | Unique request identifier header |
 | `req.raw` | `IncomingMessage` | Underlying Node.js `IncomingMessage` stream |
 

@@ -27,6 +27,11 @@ export interface CronJobOptions {
   onOverlap?: OverlapPolicy
   /** Whether the job starts running automatically upon registration. Default: true */
   autoStart?: boolean
+  /**
+   * How long the distributed lock (`app.cron.lock`) is held at most, in ms.
+   * Default: the interval, or 5 minutes for cron patterns.
+   */
+  lockTtlMs?: number
   /** Number of retry attempts if the handler throws an error */
   retries?: number
   /** Backoff strategy between retries in milliseconds */
@@ -80,4 +85,24 @@ export interface TimeoutOptions {
   name?: string
   autoStart?: boolean
   onError?: (err: Error, context: CronContext) => void | Promise<void>
+}
+
+/**
+ * Lets only one instance run a scheduled job when several instances of the
+ * app are running. `acquire` returns false when another instance holds it.
+ *
+ * @example Redis
+ * ```ts
+ * app.cron.lock = {
+ *   acquire: async (job, ttlMs) =>
+ *     (await redis.set(`cron:${job}`, instanceId, 'PX', ttlMs, 'NX')) === 'OK',
+ *   release: async (job) => {
+ *     if ((await redis.get(`cron:${job}`)) === instanceId) await redis.del(`cron:${job}`)
+ *   },
+ * }
+ * ```
+ */
+export interface CronLock {
+  acquire(jobName: string, ttlMs: number): boolean | Promise<boolean>
+  release(jobName: string): void | Promise<void>
 }

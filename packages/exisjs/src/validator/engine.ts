@@ -28,6 +28,153 @@ export class TexEngine<T = any> {
     this.validator = compileSchema(schema, strict)
   }
 
+  // Validators per top-level field, built on the first failed parse
+  private _fieldValidators?: Map<string, (data: any) => any>
+
+  /**
+   * The compiled validator stops at the first problem, which keeps valid
+   * requests fast. Once a parse has failed, every other top-level field is
+   * checked on its own so the response lists all failing fields (capped).
+   */
+  private collectErrors(first: any, data: any): ValidationErrorDescriptor[] {
+    const errors = [this.describeError(first, data)]
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      return errors
+    }
+    const MAX_ERRORS = 100
+    const failed = new Set(errors.map((e) => e.path.split('.')[0]))
+
+    if (this.strict) {
+      for (const key of Object.keys(data)) {
+        if (errors.length >= MAX_ERRORS) return errors
+        if (!(key in this.schema) && !failed.has(key)) {
+          failed.add(key)
+          errors.push({
+            path: key,
+            message: 'Unknown field not allowed in strict mode',
+            expected: 'undefined (field omitted)',
+            received: formatReceivedValue(data[key]),
+            code: 'UNRECOGNIZED_KEYS',
+          })
+        }
+      }
+    }
+
+    this._fieldValidators ??= new Map()
+    for (const key of Object.keys(this.schema)) {
+      if (errors.length >= MAX_ERRORS) break
+      if (failed.has(key)) continue
+      let validate = this._fieldValidators.get(key)
+      if (!validate) {
+        validate = compileSchema({ [key]: this.schema[key] }, false)
+        this._fieldValidators.set(key, validate)
+      }
+      try {
+        validate(data)
+      } catch (err) {
+        errors.push(this.describeError(err, data))
+      }
+    }
+    return errors
+  }
+
+  /** Turns a validator exception into a structured error entry */
+  private describeError(err: any, data: any): ValidationErrorDescriptor {
+    let path = 'root'
+    let message = err.message || 'Validation failed'
+    let expected: string | undefined
+    let code = 'VALIDATION_ERROR'
+
+    if (message.startsWith('Missing required field: ')) {
+      path = message.replace('Missing required field: ', '').trim()
+      message = 'Expected value, received undefined'
+      expected = 'defined'
+      code = 'MISSING_REQUIRED_FIELD'
+    } else if (message.startsWith("Field '")) {
+      const match = message.match(/Field '([^']+)' (.+)/)
+      if (match) {
+        path = match[1]
+        const constraint = match[2]
+        message = constraint.charAt(0).toUpperCase() + constraint.slice(1)
+
+        if (constraint.startsWith('must be a string')) {
+          expected = 'string'
+          code = 'INVALID_TYPE'
+        } else if (constraint.startsWith('must be a number')) {
+          expected = 'number'
+          code = 'INVALID_TYPE'
+        } else if (constraint.startsWith('must be a boolean')) {
+          expected = 'boolean'
+          code = 'INVALID_TYPE'
+        } else if (
+          constraint.startsWith('must be an array') ||
+          constraint.includes('array must have') ||
+          constraint.includes('array exceeds')
+        ) {
+          expected = 'array'
+          code = constraint.includes('array must have')
+            ? 'ARRAY_TOO_SHORT'
+            : constraint.includes('array exceeds')
+              ? 'ARRAY_TOO_LONG'
+              : 'INVALID_TYPE'
+        } else if (constraint.startsWith('must be an object')) {
+          expected = 'object'
+          code = 'INVALID_TYPE'
+        } else if (constraint.startsWith('must be a valid email')) {
+          expected = 'valid email address'
+          code = 'INVALID_EMAIL'
+        } else if (constraint.startsWith('must be one of')) {
+          expected = constraint.replace('must be one of', '').trim()
+          code = 'INVALID_ENUM_VALUE'
+        } else if (
+          constraint.startsWith('must be at least') ||
+          constraint.startsWith('must be >=')
+        ) {
+          expected = constraint
+          code = 'VALUE_TOO_SMALL'
+        } else if (
+          constraint.startsWith('must be at most') ||
+          constraint.startsWith('must be <=')
+        ) {
+          expected = constraint
+          code = 'VALUE_TOO_LARGE'
+        } else if (constraint.startsWith('must contain a number')) {
+          expected = 'must contain at least one digit'
+          code = 'PASSWORD_REQUIRES_NUMBER'
+        } else if (constraint.startsWith('must contain an uppercase')) {
+          expected = 'must contain at least one uppercase letter'
+          code = 'PASSWORD_REQUIRES_UPPERCASE'
+        } else if (constraint.startsWith('must contain a lowercase')) {
+          expected = 'must contain at least one lowercase letter'
+          code = 'PASSWORD_REQUIRES_LOWERCASE'
+        } else if (constraint.startsWith('must contain a symbol')) {
+          expected = 'must contain at least one symbol'
+          code = 'PASSWORD_REQUIRES_SYMBOL'
+        } else {
+          expected = constraint
+        }
+      }
+    } else if (message.startsWith("Strict mode error: Unknown field '")) {
+      const match = message.match(
+        /Strict mode error: Unknown field '([^']+)'(?: at path '([^']*)')?/
+      )
+      if (match) {
+        const key = match[1]
+        const parentPath = match[2]
+        path =
+          parentPath && parentPath.length > 0 ? `${parentPath}.${key}` : key
+        message = 'Unknown field not allowed in strict mode'
+        expected = 'undefined (field omitted)'
+        code = 'UNRECOGNIZED_KEYS'
+      }
+    }
+
+    const receivedRaw = getNestedValue(data, path)
+    const received = formatReceivedValue(receivedRaw)
+
+    return { path, message, expected, received, code }
+  }
+
   getCompiledSchema(): Record<string, string> {
     return this.schema
   }
@@ -164,99 +311,7 @@ export class TexEngine<T = any> {
         return mock as T
       }
 
-      let path = 'root'
-      let message = err.message || 'Validation failed'
-      let expected: string | undefined
-      let code = 'VALIDATION_ERROR'
-
-      if (message.startsWith('Missing required field: ')) {
-        path = message.replace('Missing required field: ', '').trim()
-        message = 'Expected value, received undefined'
-        expected = 'defined'
-        code = 'MISSING_REQUIRED_FIELD'
-      } else if (message.startsWith("Field '")) {
-        const match = message.match(/Field '([^']+)' (.+)/)
-        if (match) {
-          path = match[1]
-          const constraint = match[2]
-          message = constraint.charAt(0).toUpperCase() + constraint.slice(1)
-
-          if (constraint.startsWith('must be a string')) {
-            expected = 'string'
-            code = 'INVALID_TYPE'
-          } else if (constraint.startsWith('must be a number')) {
-            expected = 'number'
-            code = 'INVALID_TYPE'
-          } else if (constraint.startsWith('must be a boolean')) {
-            expected = 'boolean'
-            code = 'INVALID_TYPE'
-          } else if (
-            constraint.startsWith('must be an array') ||
-            constraint.includes('array must have') ||
-            constraint.includes('array exceeds')
-          ) {
-            expected = 'array'
-            code = constraint.includes('array must have')
-              ? 'ARRAY_TOO_SHORT'
-              : constraint.includes('array exceeds')
-                ? 'ARRAY_TOO_LONG'
-                : 'INVALID_TYPE'
-          } else if (constraint.startsWith('must be an object')) {
-            expected = 'object'
-            code = 'INVALID_TYPE'
-          } else if (constraint.startsWith('must be a valid email')) {
-            expected = 'valid email address'
-            code = 'INVALID_EMAIL'
-          } else if (constraint.startsWith('must be one of')) {
-            expected = constraint.replace('must be one of', '').trim()
-            code = 'INVALID_ENUM_VALUE'
-          } else if (
-            constraint.startsWith('must be at least') ||
-            constraint.startsWith('must be >=')
-          ) {
-            expected = constraint
-            code = 'VALUE_TOO_SMALL'
-          } else if (
-            constraint.startsWith('must be at most') ||
-            constraint.startsWith('must be <=')
-          ) {
-            expected = constraint
-            code = 'VALUE_TOO_LARGE'
-          } else if (constraint.startsWith('must contain a number')) {
-            expected = 'must contain at least one digit'
-            code = 'PASSWORD_REQUIRES_NUMBER'
-          } else if (constraint.startsWith('must contain an uppercase')) {
-            expected = 'must contain at least one uppercase letter'
-            code = 'PASSWORD_REQUIRES_UPPERCASE'
-          } else if (constraint.startsWith('must contain a lowercase')) {
-            expected = 'must contain at least one lowercase letter'
-            code = 'PASSWORD_REQUIRES_LOWERCASE'
-          } else if (constraint.startsWith('must contain a symbol')) {
-            expected = 'must contain at least one symbol'
-            code = 'PASSWORD_REQUIRES_SYMBOL'
-          } else {
-            expected = constraint
-          }
-        }
-      } else if (message.startsWith("Strict mode error: Unknown field '")) {
-        const match = message.match(
-          /Strict mode error: Unknown field '([^']+)'(?: at path '([^']*)')?/
-        )
-        if (match) {
-          const key = match[1]
-          const parentPath = match[2]
-          path =
-            parentPath && parentPath.length > 0 ? `${parentPath}.${key}` : key
-          message = 'Unknown field not allowed in strict mode'
-          expected = 'undefined (field omitted)'
-          code = 'UNRECOGNIZED_KEYS'
-        }
-      }
-
-      const receivedRaw = getNestedValue(data, path)
-      const received = formatReceivedValue(receivedRaw)
-
-      throw new ValidatorError([{ path, message, expected, received, code }])
+      throw new ValidatorError(this.collectErrors(err, data))
     }
 
     if (parsedData && typeof parsedData === 'object' && plan.post.length > 0) {

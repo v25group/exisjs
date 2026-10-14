@@ -131,7 +131,7 @@ describe('Validation diagnostics', () => {
     expect(res.status).toBe(400)
     expect(res.text.includes('hunter2')).toBe(false)
     const byField = Object.fromEntries(
-      res.body.details.map((d: any) => [d.field, d.received])
+      res.body.error.details.map((d: any) => [d.field, d.received])
     )
     expect(byField.password).toBe('[Redacted]')
   })

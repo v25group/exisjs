@@ -4,7 +4,14 @@ import { tex } from '../../validator/index'
 import { executionContext } from '../../server/context'
 import type { App } from '../../server/app'
 import { CATCH_EXCEPTIONS_METADATA } from '../../decorators/constants'
-import { DownloadResponse } from '../../server/download'
+import {
+  sendResult,
+  answerIfUnsent,
+  isResponseStarted,
+  toError,
+} from '../send-result'
+import { checkAccess, toAccessList, type AccessRule } from '../authorize'
+import { HttpError } from '../../error/errors'
 
 /**
  * Compiles a modern functional controller configuration object into an ExisJS Router instance.
@@ -91,14 +98,25 @@ export function compileFunctionalController(config: any, app: App): Router {
       ...(rc.pipes ? (Array.isArray(rc.pipes) ? rc.pipes : [rc.pipes]) : []),
     ]
 
+    const routeIsPublic = Boolean(
+      rc.public ?? rc.isPublic ?? config.public ?? config.isPublic ?? false
+    )
+    const accessRule: AccessRule = {
+      isPublic: routeIsPublic,
+      roles: [...toAccessList(config.roles), ...toAccessList(rc.roles)],
+      permissions: [
+        ...toAccessList(config.permissions),
+        ...toAccessList(rc.permissions),
+      ],
+    }
+
     // ─── SUPER HANDLER WRAPPER ───
     const superHandler = async (req: any, res: any, next: any) => {
       if (onResponse) {
         res.raw.on('finish', () => onResponse(req, res))
       }
 
-      const isPublic =
-        rc.public ?? rc.isPublic ?? config.public ?? config.isPublic ?? false
+      const isPublic = routeIsPublic
 
       const executionCtx = {
         req,
@@ -140,107 +158,16 @@ export function compileFunctionalController(config: any, app: App): Router {
             ct.includes('application/json') ||
             ct.includes('application/x-www-form-urlencoded')
           ) {
-            try {
+            if (ct.includes('application/json')) {
               req.body = await req.json()
-            } catch {
-              // Ignore
+            } else {
+              await req.formData()
             }
           }
         }
 
         // 0. Enforce Route Roles and Permissions
-        if (!isPublic) {
-          const isSuper = req.user?.isSuperAdmin === true
-
-          if (rc.roles || config.roles) {
-            const requiredRoles = [
-              ...(config.roles
-                ? Array.isArray(config.roles)
-                  ? config.roles
-                  : [config.roles]
-                : []),
-              ...(rc.roles
-                ? Array.isArray(rc.roles)
-                  ? rc.roles
-                  : [rc.roles]
-                : []),
-            ]
-            if (requiredRoles.length > 0 && !isSuper) {
-              if (!req.user) {
-                res.status(401).json({
-                  success: false,
-                  error: {
-                    code: 'UNAUTHORIZED',
-                    message: 'Unauthorized: User not found on request',
-                  },
-                })
-                return
-              }
-              const userRoles = req.user.roles || req.user.role || []
-              const rolesArray = Array.isArray(userRoles)
-                ? userRoles
-                : [userRoles]
-              const hasRole = requiredRoles.some((r: string) =>
-                rolesArray.includes(r)
-              )
-              if (!hasRole) {
-                res.status(403).json({
-                  success: false,
-                  error: {
-                    code: 'FORBIDDEN',
-                    message: 'Forbidden: Insufficient roles',
-                  },
-                })
-                return
-              }
-            }
-          }
-
-          if (rc.permissions || config.permissions) {
-            const requiredPerms = [
-              ...(config.permissions
-                ? Array.isArray(config.permissions)
-                  ? config.permissions
-                  : [config.permissions]
-                : []),
-              ...(rc.permissions
-                ? Array.isArray(rc.permissions)
-                  ? rc.permissions
-                  : [rc.permissions]
-                : []),
-            ]
-            if (requiredPerms.length > 0 && !isSuper) {
-              if (!req.user) {
-                res.status(401).json({
-                  success: false,
-                  error: {
-                    code: 'UNAUTHORIZED',
-                    message: 'Unauthorized: User not found on request',
-                  },
-                })
-                return
-              }
-              const userPerms =
-                req.user.permissions || req.user.roles || req.user.role || []
-              const permsArray = Array.isArray(userPerms)
-                ? userPerms
-                : [userPerms]
-              const hasPerm = requiredPerms.every((p: string) =>
-                permsArray.includes(p)
-              )
-              if (!hasPerm) {
-                res.status(403).json({
-                  success: false,
-                  error: {
-                    code: 'FORBIDDEN',
-                    message: 'Forbidden: Insufficient permissions',
-                  },
-                })
-                return
-              }
-            }
-          }
-        }
+        checkAccess(req.user, accessRule, app.options.authorization)
 
         // 1. Run Guards
         const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
@@ -263,13 +190,9 @@ export function compileFunctionalController(config: any, app: App): Router {
               : true
 
           if (!allowed) {
-            if (res && !res.headersSent) {
-              res.status(403).json({
-                success: false,
-                error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
-              })
-            }
-            return
+            // A guard may already have answered (for example with 401)
+            if (res && isResponseStarted(res)) return
+            throw new HttpError('Forbidden by Guard', 403, 'FORBIDDEN')
           }
         }
 
@@ -471,33 +394,8 @@ export function compileFunctionalController(config: any, app: App): Router {
             res.status(rc.httpCode)
           }
 
-          if (result !== undefined) {
-            if (result instanceof DownloadResponse) {
-              res.download(result.data, result.filename, result.options)
-            } else if (Buffer.isBuffer(result)) {
-              // Binary payloads are sent as-is, never JSON-encoded
-              res.send(result)
-            } else if (
-              result &&
-              (typeof result.pipe === 'function' ||
-                (typeof result.getReader === 'function' &&
-                  typeof result.tee === 'function') ||
-                (typeof result[Symbol.asyncIterator] === 'function' &&
-                  !Array.isArray(result)))
-            ) {
-              ;(res as any).sendStream(result)
-            } else if (!(
-              result &&
-              typeof (result as any).send === 'function' &&
-              typeof (result as any).onClose === 'function'
-            )) {
-              if (typeof result === 'object' && result !== null) {
-                res.json(result)
-              } else {
-                res.send(String(result))
-              }
-            }
-          }
+          sendResult(result, res)
+          answerIfUnsent(res)
         }
       } catch (err) {
         let handled = false
@@ -567,10 +465,10 @@ export function compileFunctionalController(config: any, app: App): Router {
             try {
               await onError(err, req, res)
             } catch (hookErr) {
-              next(hookErr)
+              next(toError(hookErr))
             }
           } else {
-            next(err) // Hands off to ExisJS global error handler (which handles HttpErrors automatically!)
+            next(toError(err))
           }
         }
       }
@@ -579,7 +477,8 @@ export function compileFunctionalController(config: any, app: App): Router {
     // Mount to router
     const method = rc.method.toLowerCase()
 
-    const schema: any = {}
+    // access is shown by `exisjs routes`
+    const schema: any = { access: accessRule }
 
     const isValidatorOrPipe = (v: any) =>
       v &&

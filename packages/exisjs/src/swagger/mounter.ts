@@ -59,6 +59,11 @@ export function mountDocumentation(
   // Interactive HTML Documentation UI Endpoints
   const htmlHandler = (_req: any, res: any) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    // The UI is loaded from jsDelivr and configured by an inline script
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none'; object-src 'none'"
+    )
     return res.send(getHtml())
   }
 

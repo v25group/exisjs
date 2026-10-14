@@ -50,7 +50,7 @@ ExisJS combines convention-based file routing, built-in standard modules, and a 
 The file-system routing engine scans the `src/http` directory and compiles route paths into a radix tree at startup. Purely static paths resolve through an exact-match table; parameterized paths walk the tree with no per-request parsing of the route definitions.
 
 ### 2. Dual-Paradigm Parity
-ExisJS provides feature parity across both functional and object-oriented paradigms. Both compile down to the same runtime execution pipeline:
+ExisJS supports a functional and a class-based (OOP) paradigm. Both share the router, validation, boundaries, error handling, response handling and route authorization; a project uses **one** of them throughout (`exisjs dev` and `exisjs build` stop with the file names if they are mixed). Class-based controllers add decorator and dependency-injection work per request, so functional routes are somewhat faster.
 - **Functional**: `controller()`, `route.get()`, `route.post()`, `defineBoundary()`, `inject()`.
 - **Class-Based (OOP)**: `@Controller()`, `@Get()`, `@Post()`, `@Boundary()`, `@Injectable()`.
 

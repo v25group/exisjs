@@ -117,7 +117,47 @@ interface DevOptions {
   port?: string
   host?: string
   entry?: string
+  /** Start even if another dev server appears to use the same port */
+  force?: boolean
   _disableWatch?: boolean
+}
+
+/** True when something accepts connections on the port. */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' })
+    socket.setTimeout(500)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('timeout', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', () => resolve(false))
+  })
+}
+
+/**
+ * Another `exisjs dev` holds this lock when its PID is alive AND it still
+ * serves the port it recorded. A PID alone is not enough: after a crash the
+ * OS may hand the same number to an unrelated process.
+ */
+export async function isDevLockHeld(lockFile: string): Promise<boolean> {
+  let lock: { pid?: number; port?: number }
+  try {
+    lock = JSON.parse(fs.readFileSync(lockFile, 'utf-8'))
+  } catch {
+    return false
+  }
+  if (!lock.pid || lock.pid === process.pid || !lock.port) return false
+  try {
+    process.kill(lock.pid, 0)
+  } catch {
+    return false
+  }
+  return isPortInUse(lock.port)
 }
 
 export async function devCommand(options: DevOptions = {}): Promise<void> {
@@ -139,32 +179,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     process.exit(1)
   }
 
-  // 1. Prevent duplicate dev servers using a PID lockfile
   const exisDir = path.join(cwd, '.exis')
-  const pidFile = path.join(exisDir, 'dev.pid')
-
-  if (fs.existsSync(pidFile)) {
-    try {
-      const existingPid = parseInt(fs.readFileSync(pidFile, 'utf-8'), 10)
-      if (existingPid && existingPid !== process.pid) {
-        try {
-          process.kill(existingPid, 0)
-          console.error(
-            '\n\x1b[31m[ExisJS] This application is already running in another terminal.\x1b[0m\n' +
-              'Stop the existing development server before starting a new one.'
-          )
-          process.exit(1)
-        } catch {
-          // Process not running, safe to proceed
-        }
-      }
-    } catch {
-      // Ignore read error
-    }
-  }
-
-  if (!fs.existsSync(exisDir)) fs.mkdirSync(exisDir, { recursive: true })
-  fs.writeFileSync(pidFile, String(process.pid))
 
   // 2. Load .env files early so process.env.PORT is available
   loadEnv(cwd)
@@ -191,7 +206,23 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     })
   }
 
+  // 1. One dev server per port: a second instance on another port (for
+  // example pointed at a test database) is allowed
+  const pidFile = path.join(exisDir, `dev-${startPort}.pid`)
+  if (!options.force && (await isDevLockHeld(pidFile))) {
+    console.error(
+      `\n\x1b[31m[ExisJS] A development server for port ${startPort} is already running in another terminal.\x1b[0m\n` +
+        'Stop it, start this one on another port (--port), or pass --force.'
+    )
+    process.exit(1)
+  }
+
   const actualPort = await findAvailablePort(startPort)
+  if (!fs.existsSync(exisDir)) fs.mkdirSync(exisDir, { recursive: true })
+  fs.writeFileSync(
+    pidFile,
+    JSON.stringify({ pid: process.pid, port: actualPort })
+  )
 
   // Check for tsconfig (only warn for TypeScript projects)
   const tsconfigPath = path.join(cwd, 'tsconfig.json')
@@ -204,11 +235,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     process.env.HOST = options.host
   }
 
-  // Build environment
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    NODE_ENV: 'development',
-    FORCE_COLOR: '1',
+  // Built for every start of the app process, so edits to .env files apply
+  // on the next reload instead of only after restarting `exisjs dev`
+  const buildChildEnv = (): Record<string, string> => {
+    loadEnv(cwd, undefined, true)
+    process.env.PORT = String(actualPort)
+    if (options.host) process.env.HOST = options.host
+    return {
+      ...(process.env as Record<string, string>),
+      NODE_ENV: 'development',
+      FORCE_COLOR: '1',
+    }
   }
 
   let version = '0.0.0'
@@ -400,8 +437,34 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       customPort ??
       (process.env.PORT ? parseInt(process.env.PORT, 10) : configuredPort) ??
       4000
+    // ANSI colour codes belong to the terminal, not to a response
+    const plainMessage = errorMessage.replace(
+      new RegExp(String.fromCharCode(27) + '\\[[0-9;]*[A-Za-z]', 'g'),
+      ''
+    )
     fallbackServer = http.createServer((req, res) => {
-      res.writeHead(500, { 'Content-Type': 'text/html' })
+      // API clients, curl and health checks get the standard JSON error;
+      // only browsers asking for HTML get the page
+      if (!String(req.headers.accept || '').includes('text/html')) {
+        res.writeHead(503, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Retry-After': '1',
+        })
+        res.end(
+          JSON.stringify({
+            success: false,
+            statusCode: 503,
+            error: {
+              code: 'BUILD_ERROR',
+              message:
+                'The app failed to start. Fix the error and save to reload.',
+              details: plainMessage.trim().split('\n').slice(-40),
+            },
+          })
+        )
+        return
+      }
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end(`
 <!DOCTYPE html>
 <html lang="en">
@@ -418,14 +481,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 <body>
   <div class="container">
     <h1>Build/Syntax Error</h1>
-    <div class="code-block">${errorMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+    <div class="code-block">${plainMessage.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
   </div>
 </body>
 </html>
       `)
     })
+    // Same interface as the app itself, never wider
+    const host =
+      options.host || process.env.HOST || userConfig.host || 'localhost'
     fallbackServer
-      .listen(port, () => {
+      .listen(port, host, () => {
         console.log(
           `\n${c.red}[exis] Serving build error on port ${port}${c.reset}`
         )
@@ -536,7 +602,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     child = spawn(runner!.bin, [...runner!.args, startServerPath], {
       cwd,
       env: {
-        ...env,
+        ...buildChildEnv(),
         __EXIS_DEV_SERVER: '1',
         __EXIS_IS_RESTART: (global as any)._hasStartedBefore ? '1' : '',
         EXIS_ENTRY_FILE: entryFile!,
@@ -652,13 +718,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
               'exis.config.mjs',
               'exis.config.cjs',
               'tsconfig.json',
-              '.env',
-              '.env.local',
-              '.env.development',
               'package.json',
             ]
               .map((f) => path.join(cwd, f))
               .filter((f) => fs.existsSync(f)),
+            // Watched even before they exist, so creating one reloads too
+            ...[
+              '.env',
+              '.env.local',
+              '.env.development',
+              '.env.development.local',
+            ].map((f) => path.join(cwd, f)),
           ]
         } else {
           watchPaths = [cwd]

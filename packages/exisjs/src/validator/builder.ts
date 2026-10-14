@@ -12,6 +12,8 @@ import {
   TexAny,
   TexFile,
   ResolveSchema,
+  type WithDefault,
+  type ResolveInput,
 } from './tex-types'
 import type {
   TexBaseOptions,
@@ -44,7 +46,7 @@ export class TexBuilder {
    */
   string<O extends TexStringOptions = TexStringOptions>(
     opts?: O
-  ): TexString<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'string'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
@@ -62,9 +64,7 @@ export class TexBuilder {
     if (opts?.mask) base += ' | mask'
     if (opts?.preventSql) base += ' | preventSql'
     if (opts?.preventTraversal) base += ' | preventTraversal'
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -80,7 +80,7 @@ export class TexBuilder {
    */
   number<O extends TexNumberOptions = TexNumberOptions>(
     opts?: O
-  ): TexNumber<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexNumber<O['optional'] extends true ? true : false>, O> {
     let base = 'number'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
@@ -88,9 +88,7 @@ export class TexBuilder {
     if (opts?.coerce) base += ' | coerce'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
-    return new TexType(base, opts?.default) as unknown as TexNumber<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -106,15 +104,13 @@ export class TexBuilder {
    */
   boolean<O extends TexBooleanOptions = TexBooleanOptions>(
     opts?: O
-  ): TexBoolean<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexBoolean<O['optional'] extends true ? true : false>, O> {
     let base = 'boolean'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.coerce) base += ' | coerce'
-    return new TexType(base, opts?.default) as unknown as TexBoolean<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -130,7 +126,7 @@ export class TexBuilder {
    */
   email<O extends TexStringOptions = TexStringOptions>(
     opts?: O
-  ): TexString<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'email'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
@@ -138,9 +134,7 @@ export class TexBuilder {
     if (opts?.trim) base += ' | trim'
     if (opts?.toLowerCase) base += ' | lowercase'
     if (opts?.mask) base += ' | mask'
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -153,15 +147,15 @@ export class TexBuilder {
     O extends TexStringOptions & { version?: 1 | 4 } = TexStringOptions & {
       version?: 1 | 4
     },
-  >(opts?: O): TexString<O['optional'] extends true ? true : false> {
+  >(
+    opts?: O
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'uuid'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.version) base += ` | version:${opts.version}`
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -169,14 +163,12 @@ export class TexBuilder {
    */
   cuid<O extends TexStringOptions = TexStringOptions>(
     opts?: O
-  ): TexString<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'cuid'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -184,15 +176,13 @@ export class TexBuilder {
    */
   creditCard<O extends TexStringOptions = TexStringOptions>(
     opts?: O
-  ): TexString<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'creditcard'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.mask) base += ' | mask'
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -213,7 +203,7 @@ export class TexBuilder {
    */
   password<O extends TexPasswordOptions = TexPasswordOptions>(
     opts?: O
-  ): TexString<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
     let base = 'password'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
@@ -224,9 +214,7 @@ export class TexBuilder {
     if (opts?.requireSymbols) base += ' | requireSymbols'
     if (opts?.requireUppercase) base += ' | requireUppercase'
     if (opts?.requireLowercase) base += ' | requireLowercase'
-    return new TexType(base, opts?.default) as unknown as TexString<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -244,7 +232,7 @@ export class TexBuilder {
   array<T, O extends TexArrayOptions<T> = TexArrayOptions<T>>(
     schema: T,
     opts?: O
-  ): TexArray<T, O['optional'] extends true ? true : false> {
+  ): WithDefault<TexArray<T, O['optional'] extends true ? true : false>, O> {
     let resolvedItem = schema as any
     if (
       typeof schema === 'object' &&
@@ -269,10 +257,7 @@ export class TexBuilder {
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
     if (opts?.dedupe) base += ' | dedupe'
     if (opts?.coerce) base += ' | coerce'
-    const res = new TexType(base, opts?.default) as unknown as TexArray<
-      T,
-      O['optional'] extends true ? true : false
-    >
+    const res = new TexType(base, opts?.default) as any
     ;(res as any)._item = resolvedItem
     return res
   }
@@ -290,17 +275,14 @@ export class TexBuilder {
    * ```
    */
   enum<T extends string, O extends TexEnumOptions<T> = TexEnumOptions<T>>(
-    values: T[],
+    values: readonly T[],
     opts?: O
-  ): TexEnum<T, O['optional'] extends true ? true : false> {
+  ): WithDefault<TexEnum<T, O['optional'] extends true ? true : false>, O> {
     let base = `enum:${values.join(',')}`
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    return new TexType(base, opts?.default) as unknown as TexEnum<
-      T,
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -359,7 +341,7 @@ export class TexBuilder {
    */
   date<O extends TexDateOptions = TexDateOptions>(
     opts?: O
-  ): TexDate<O['optional'] extends true ? true : false> {
+  ): WithDefault<TexDate<O['optional'] extends true ? true : false>, O> {
     let base = 'date'
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
@@ -367,9 +349,7 @@ export class TexBuilder {
     if (opts?.coerce) base += ' | coerce'
     if (opts?.minDate) base += ` | minDate:${opts.minDate}`
     if (opts?.maxDate) base += ` | maxDate:${opts.maxDate}`
-    return new TexType(base, opts?.default) as unknown as TexDate<
-      O['optional'] extends true ? true : false
-    >
+    return new TexType(base, opts?.default) as any
   }
 
   /**
@@ -483,7 +463,7 @@ export class TexBuilder {
   object<T extends Record<string, any>>(
     schema: T,
     opts?: TexObjectOptions
-  ): TexEngine<ResolveSchema<T>> {
+  ): TexEngine<ResolveSchema<T>> & { readonly _input: ResolveInput<T> } {
     const compiledSchema: Record<string, string> = {}
     for (const [key, value] of Object.entries(schema)) {
       if (value instanceof TexEngine) {
@@ -495,7 +475,7 @@ export class TexBuilder {
         compiledSchema[key] = value as string
       }
     }
-    return new TexEngine(compiledSchema, schema, opts?.strict)
+    return new TexEngine(compiledSchema, schema, opts?.strict) as any
   }
 
   /**

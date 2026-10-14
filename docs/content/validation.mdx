@@ -78,7 +78,7 @@ All primitive builders accept modifier options directly in their configuration a
 | **Optional** | `{ optional: true }` | `.optional()` | Allows `undefined`. |
 | **Nullable** | `{ nullable: true }` | `.nullable()` | Allows `null`. |
 | **Nullish** | `{ nullish: true }` | `.nullish()` | Allows both `null` and `undefined`. |
-| **Default** | `{ default: value \| () => value }` | N/A | Evaluates static value or dynamic factory function when field is missing. Automatically marks the field optional in schemas. |
+| **Default** | `{ default: value \| () => value }` | N/A | Used when the field is missing. A client may omit the field, and after parsing it always has a value. |
 
 ```typescript filename="example.ts"
 import { tex } from 'exisjs/validator'
@@ -91,6 +91,26 @@ const Schema = tex.object({
   createdAt: tex.date({ default: () => new Date() }),
 })
 ```
+
+### Input and Output Types
+
+A field with a `default` may be left out of a request but is always present after parsing, so the two sides have different types:
+
+```typescript filename="src/http/reports/schema.ts"
+import { tex, type ResolveInput, type ResolveOutput } from 'exisjs/validator'
+
+export const MODULES = ['ALL', 'EV', 'PV'] as const // readonly arrays work in tex.enum
+
+export const ReportQuery = tex.object({
+  module: tex.enum(MODULES, { default: 'ALL' }),
+  search: tex.string({ optional: true }),
+})
+
+type Query = ResolveOutput<typeof ReportQuery> // what the handler gets: module is 'ALL' | 'EV' | 'PV'
+type QueryInput = ResolveInput<typeof ReportQuery> // what a client sends: module may be omitted
+```
+
+`ResolveSchema` is the same as `ResolveOutput`. Validation reports every failing field, not only the first.
 
 > [!NOTE]
 > **Empty String Normalization**: When query parameters or form submissions supply empty strings `""` for fields marked `.optional()`, `.nullable()`, or `.nullish()`, ExisJS converts them to `undefined` or `null` before validation to avoid type conversion errors.

@@ -522,6 +522,7 @@ export function validate(schema: ValidateSchema): Handler {
       if (err instanceof NewValidatorError) {
         res.status(400).json({
           success: false,
+          statusCode: 400,
           error: {
             code: 'VALIDATION_ERROR',
             message: 'Invalid request data',

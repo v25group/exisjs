@@ -26,10 +26,11 @@ npx exisjs dev [options]
 | `-p, --port <port>` | `number` | `3000` | Port to listen on (overrides `.env` and `exis.config.ts`). |
 | `-H, --host <host>` | `string` | `localhost` | Host address to bind to. |
 | `-e, --entry <file>` | `string` | `src/http/server.ts` | Custom entry file path to bootstrap the application. |
+| `--force` | `boolean` | `false` | Start even if a dev server for the same port appears to be running. |
 
 ### Behavior
 - **Port Collision Detection**: If the specified port is in use, the CLI automatically increments to the next open port.
-- **PID Lockfile**: Manages `.exis/dev.pid` to prevent duplicate dev server processes in the same workspace.
+- **One server per port**: `.exis/dev-<port>.pid` stops a second `exisjs dev` on the same port. A second instance on another port (`--port 4010`, for example against a test database) is allowed. A lock left by a crashed process is ignored once its port is free; `--force` skips the check.
 
 ---
 

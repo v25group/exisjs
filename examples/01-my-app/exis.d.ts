@@ -1,3 +1,4 @@
+/* eslint-disable */
 /// <reference types="exisjs" />
 
 // NOTE: This file should not be edited

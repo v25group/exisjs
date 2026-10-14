@@ -47,7 +47,7 @@ export interface Logger {
 
 export interface HelmetConfig {
   enabled?: boolean
-  /** `true` applies a strict default policy; a string is used verbatim (may contain `{nonce}`) */
+  /** On by default (same-origin policy). A string is used verbatim (may contain `{nonce}`); `false` sends none. */
   contentSecurityPolicy?: boolean | string
   xFrameOptions?: 'DENY' | 'SAMEORIGIN'
   hsts?: boolean | { maxAge: number; includeSubDomains: boolean }
@@ -76,7 +76,13 @@ export interface MetricsConfig {
 
 export interface HealthCheckConfig {
   enabled: boolean
-  path?: string // default '/_health'
+  /** Liveness: the process answers. Default '/_health' */
+  path?: string
+  /**
+   * Readiness: `checks` pass, registered databases are healthy and the app is
+   * not shutting down; 503 otherwise. Default '/_ready'; `false` disables it.
+   */
+  readyPath?: string | false
   checks?: (() => Promise<boolean>)[]
 }
 
@@ -124,6 +130,10 @@ export interface ExisConfig {
   swagger?: SwaggerConfig | boolean
   helmet?: HelmetConfig | boolean
   trustProxy?: boolean | number
+  /** Route access rules (`@Roles`, `@Permissions`, functional `roles` / `permissions`) */
+  authorization?: import('../router/authorize').AuthorizationConfig
+  /** Error response options */
+  errors?: import('../error/errors').ErrorHandlerOptions
   bodyLimit?: number // bytes, default 10mb
   env?: 'development' | 'production' | 'test'
   compression?: boolean

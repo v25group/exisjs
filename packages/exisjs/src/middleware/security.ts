@@ -53,12 +53,13 @@ export function helmet(options: HelmetOptions = {}): Handler {
     staticHeaders['X-Frame-Options'] = action
   }
 
-  if (
+  // Not in staticHeaders: a policy set earlier (another helmet(), a route)
+  // is kept rather than overwritten
+  const staticCsp =
     options.contentSecurityPolicy &&
     !options.contentSecurityPolicy.includes('{nonce}')
-  ) {
-    staticHeaders['Content-Security-Policy'] = options.contentSecurityPolicy
-  }
+      ? options.contentSecurityPolicy
+      : undefined
 
   const hidePoweredBy = options.hidePoweredBy !== false
   const headerKeys = Object.keys(staticHeaders)
@@ -73,10 +74,11 @@ export function helmet(options: HelmetOptions = {}): Handler {
     ) {
       const nonce = crypto.randomBytes(16).toString('base64url')
       ;(req as any).cspNonce = nonce
-      res.setHeader(
-        'Content-Security-Policy',
-        options.contentSecurityPolicy.replace(/\{nonce\}/g, nonce)
-      )
+      if (!res.hasHeader('Content-Security-Policy'))
+        res.setHeader(
+          'Content-Security-Policy',
+          options.contentSecurityPolicy.replace(/\{nonce\}/g, nonce)
+        )
     }
 
     if (hidePoweredBy) {
@@ -86,6 +88,9 @@ export function helmet(options: HelmetOptions = {}): Handler {
     // Indexed loop — avoids allocating an iterator object on every request
     for (let i = 0; i < headerCount; i++) {
       res.setHeader(headerKeys[i], headerValues[i])
+    }
+    if (staticCsp !== undefined && !res.hasHeader('Content-Security-Policy')) {
+      res.setHeader('Content-Security-Policy', staticCsp)
     }
     next()
   }
@@ -254,6 +259,7 @@ export function timeout(msOrOptions?: number | TimeoutOptions): Handler {
         if (!res.headersSent) {
           res.status(statusCode).json({
             success: false,
+            statusCode,
             error: {
               code: 'TIMEOUT',
               message,

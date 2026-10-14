@@ -25,6 +25,7 @@ program
   .option('-p, --port <port>', 'Port to listen on')
   .option('-H, --host <host>', 'Host to bind to')
   .option('-e, --entry <file>', 'Custom entry file path')
+  .option('--force', 'Start even if a dev server for this port is running')
   .action(async (options) => {
     await devCommand(options)
   })

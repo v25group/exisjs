@@ -335,6 +335,44 @@ describe('Framework Conventions: src/http/error.ts & Boundary Hooks', () => {
       expect(allowedRes.body.secret).toBe(42)
     })
 
+    it('keeps the response a beforeHandle hook wrote before returning false (T-09)', async () => {
+      const lockedDir = path.join(tmpDir, 'src', 'http', 'locked')
+      await fs.mkdir(lockedDir, { recursive: true })
+
+      await fs.writeFile(
+        path.join(lockedDir, 'boundary.js'),
+        `
+        const { defineBoundary } = require('${routerPath}')
+        exports.config = defineBoundary({
+          beforeHandle(req, res) {
+            res.status(401).json({ success: false, error: { code: 'NO_TOKEN', message: 'Sign in' } })
+            return false
+          }
+        })
+        // A pipeline wrapper used to swallow the 401 and let the 403 through
+        exports.default = async function (ctx, next) {
+          return next()
+        }
+        `
+      )
+      await fs.writeFile(
+        path.join(lockedDir, 'route.js'),
+        `
+        const { controller, route } = require('${routerPath}')
+        exports.default = controller({
+          data: route.get('/data', { handle: () => ({ secret: 42 }) })
+        })
+        `
+      )
+
+      app = new App()
+      await app.autoMountRoutes(tmpDir)
+
+      const res = await createTestApp(app).get('/locked/data')
+      expect(res.status).toBe(401)
+      expect(res.body.error.code).toBe('NO_TOKEN')
+    })
+
     it('executes afterHandle to transform response payload and perform auditing', async () => {
       const httpDir = path.join(tmpDir, 'src', 'http')
       const productsDir = path.join(httpDir, 'products')

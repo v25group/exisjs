@@ -59,5 +59,14 @@ export type {
   HookRequest,
 } from './types'
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface ExisUser {}
+/**
+ * The authenticated user on `req.user`. Describe your own with module
+ * augmentation:
+ *
+ * ```ts
+ * declare module 'exisjs' {
+ *   interface ExisUser { id: string; roles: string[]; permissions: string[] }
+ * }
+ * ```
+ */
+export type { ExisUser } from './router/types'

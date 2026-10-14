@@ -1,4 +1,12 @@
-import { BadRequestException } from '../error'
+import { validationFailed } from '../decorators/pipes'
+import { HttpError } from '../error/errors'
+import { checkAccess, toAccessList, type AccessRule } from './authorize'
+import {
+  sendResult,
+  isResponseStarted,
+  answerIfUnsent,
+  toError,
+} from './send-result'
 import type { App } from '../server/app'
 import { executionContext } from '../server/context'
 
@@ -58,116 +66,116 @@ export class ControllerRegistrar {
       for (const route of routes) {
         const method = route.method.toLowerCase() as any
 
+        // Everything below depends only on the route, so it is computed once
+        // at registration instead of on every request
+        const handlerFn = ControllerClass.prototype[route.handlerName]
+        const routeMetadata = routeMetadataMap[route.handlerName] || {}
+        const isPublic = Boolean(
+          routeMetadata.isPublic ||
+          ControllerClass.prototype[IS_PUBLIC_METADATA] ||
+          handlerFn?.[IS_PUBLIC_METADATA]
+        )
+        const accessRule: AccessRule = {
+          isPublic,
+          permissions: [
+            ...toAccessList(ControllerClass.prototype[PERMISSIONS_METADATA]),
+            ...toAccessList(routeMetadata.permissions),
+            ...toAccessList(handlerFn?.[PERMISSIONS_METADATA]),
+          ],
+          roles: [
+            ...toAccessList(ControllerClass.prototype[ROLES_METADATA]),
+            ...toAccessList(routeMetadata.roles),
+            ...toAccessList(handlerFn?.[ROLES_METADATA]),
+          ],
+        }
+        if (
+          isPublic &&
+          (accessRule.roles.length > 0 || accessRule.permissions.length > 0)
+        ) {
+          this.app.log.warn(
+            `[exis] ${ControllerClass.name}.${String(route.handlerName)} is @Public() and also declares roles or permissions; @Public() wins and the route is open.`
+          )
+        }
+
+        const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
+        const guards = [
+          ...(lifecycleMetadataMap._classGuards || []),
+          ...(routeLifecycle.guards || []),
+        ]
+        const interceptors = [
+          ...(lifecycleMetadataMap._classInterceptors || []),
+          ...(routeLifecycle.interceptors || []),
+        ]
+        const declaredParams: any[] =
+          paramMetadataMap[route.handlerName] ||
+          handlerFn?.[PARAM_METADATA_PROP] ||
+          []
+        // A handler that can reach the response may send it later (callback
+        // style); one that cannot must be answered when it settles.
+        const ownsResponse =
+          method === 'ws' ||
+          method === 'sse' ||
+          (declaredParams.length === 0
+            ? (handlerFn?.length ?? 0) >= 2
+            : declaredParams.some(
+                (p: any) => p && (p.type === 'res' || p.type === 'next')
+              ))
+
+        const combinedMethodPipes: any[] = [
+          ...(ControllerClass.prototype[PIPES_METADATA] || []),
+          ...(handlerFn?.[PIPES_METADATA] || []),
+        ]
+        const reflectedTypes: any[] =
+          (typeof (globalThis as any).Reflect?.getMetadata === 'function'
+            ? (globalThis as any).Reflect.getMetadata(
+                'design:paramtypes',
+                ControllerClass.prototype,
+                route.handlerName
+              )
+            : undefined) || []
+
         const executeCore = async (
           req: import('../types').Request,
           res: import('../types').Response,
           next: import('../types').NextFunction,
           streamOrSocket?: any
         ) => {
-          let instance: any
           try {
-            instance = this.app.container.resolve(ControllerClass)
-          } catch {
-            instance = this.app.container.instantiateClass(ControllerClass)
-            this.app.container.provide(ControllerClass, { useValue: instance })
-          }
-
-          try {
-            // 0. Enforce Route Security & Permissions (Role / Permissions / Public)
-            const routeMetadata = routeMetadataMap[route.handlerName] || {}
-            const isPublic =
-              routeMetadata.isPublic ||
-              ControllerClass.prototype[IS_PUBLIC_METADATA] ||
-              (ControllerClass.prototype[route.handlerName] &&
-                ControllerClass.prototype[route.handlerName][
-                  IS_PUBLIC_METADATA
-                ])
-            ;(req as any).isPublic = isPublic
-
-            const permissions = [
-              ...(ControllerClass.prototype[PERMISSIONS_METADATA] || []),
-              ...(routeMetadata.permissions || []),
-              ...(ControllerClass.prototype[route.handlerName]?.[
-                PERMISSIONS_METADATA
-              ] || []),
-            ]
-
-            const roles = [
-              ...(ControllerClass.prototype[ROLES_METADATA] || []),
-              ...(routeMetadata.roles || []),
-              ...(ControllerClass.prototype[route.handlerName]?.[
-                ROLES_METADATA
-              ] || []),
-            ]
-
-            const isSuperAdmin = Boolean(req.user?.isSuperAdmin)
-
-            if (!isSuperAdmin && permissions.length > 0) {
-              const userPerms =
-                req.user?.permissions || (req.user?.role ? [req.user.role] : [])
-              const hasPermission = permissions.some((p: string) =>
-                userPerms.includes(p)
+            // Resolved per request so request-scoped dependencies are fresh;
+            // singleton controllers come straight from the container cache
+            const instance: any =
+              this.app.container.peekSingleton(ControllerClass) ??
+              this.app.container.resolve(
+                ControllerClass,
+                (req as any)?._diCache ?? new Map()
               )
-              if (!hasPermission) {
-                if (res) {
-                  res.status(403).json({
-                    success: false,
-                    error: {
-                      code: 'FORBIDDEN',
-                      message:
-                        'Insufficient permissions to access this resource',
-                    },
-                  })
-                }
-                return
-              }
-            }
 
-            if (!isSuperAdmin && roles.length > 0) {
-              const userRoles = Array.isArray(req.user?.roles)
-                ? req.user.roles
-                : req.user?.role
-                  ? [req.user.role]
-                  : []
-              const hasRole = roles.some((r: string) => userRoles.includes(r))
-              if (!hasRole) {
-                if (res) {
-                  res.status(403).json({
-                    success: false,
-                    error: {
-                      code: 'FORBIDDEN',
-                      message: 'Insufficient role to access this resource',
-                    },
-                  })
-                }
-                return
-              }
-            }
+            ;(req as any).isPublic = isPublic
+            checkAccess(req.user, accessRule, this.app.options.authorization)
+
+            // Built only for guards and interceptors
+            let executionCtx: any
+            const getExecutionCtx = () =>
+              (executionCtx ??= Object.assign(Object.create(req), {
+                req,
+                res,
+                next,
+                app: this.app,
+                state:
+                  executionContext.getStore()?.state ||
+                  (req as any).state ||
+                  {},
+                getClass: () => ControllerClass,
+                getHandler: () => ControllerClass.prototype[route.handlerName],
+                getType: () => (method === 'ws' ? 'ws' : 'http'),
+                switchToHttp: () => ({
+                  getRequest: () => req,
+                  getResponse: () => res,
+                  getNext: () => next,
+                }),
+              }))
 
             // 1. Run Guards
-            const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
-            const guards = [
-              ...(lifecycleMetadataMap._classGuards || []),
-              ...(routeLifecycle.guards || []),
-            ]
-
-            const executionCtx = Object.assign(Object.create(req), {
-              req,
-              res,
-              next,
-              app: this.app,
-              state:
-                executionContext.getStore()?.state || (req as any).state || {},
-              getClass: () => ControllerClass,
-              getHandler: () => ControllerClass.prototype[route.handlerName],
-              getType: () => (method === 'ws' ? 'ws' : 'http'),
-              switchToHttp: () => ({
-                getRequest: () => req,
-                getResponse: () => res,
-                getNext: () => next,
-              }),
-            })
-
             for (const guard of guards) {
               let allowed = false
               if (typeof guard === 'function') {
@@ -179,47 +187,20 @@ export class ControllerRegistrar {
                   if (!guardInstance) {
                     guardInstance = new (guard as any)()
                   }
-                  allowed = await guardInstance.canActivate(executionCtx)
+                  allowed = await guardInstance.canActivate(getExecutionCtx())
                 } else {
-                  allowed = await guard(executionCtx)
+                  allowed = await guard(getExecutionCtx())
                 }
               }
               if (!allowed) {
-                if (res) {
-                  res.status(403).json({
-                    success: false,
-                    error: { code: 'FORBIDDEN', message: 'Forbidden by Guard' },
-                  })
-                }
-                return
+                // A guard may already have answered (for example with 401)
+                if (res && isResponseStarted(res)) return
+                throw new HttpError('Forbidden by Guard', 403, 'FORBIDDEN')
               }
             }
 
             // 2. Resolve parameters & pipes
-            const classPipes: any[] =
-              ControllerClass.prototype[PIPES_METADATA] || []
-            const methodPipes: any[] =
-              (ControllerClass.prototype[route.handlerName] &&
-                ControllerClass.prototype[route.handlerName][PIPES_METADATA]) ||
-              []
-            const combinedMethodPipes = [...classPipes, ...methodPipes]
-
-            const reflectedTypes: any[] =
-              (typeof (globalThis as any).Reflect?.getMetadata === 'function'
-                ? (globalThis as any).Reflect.getMetadata(
-                    'design:paramtypes',
-                    ControllerClass.prototype,
-                    route.handlerName
-                  )
-                : undefined) || []
-
-            const paramMetadata =
-              paramMetadataMap[route.handlerName] ||
-              (ControllerClass.prototype[route.handlerName] &&
-                ControllerClass.prototype[route.handlerName][
-                  PARAM_METADATA_PROP
-                ]) ||
-              []
+            const paramMetadata = declaredParams
             const args: any[] = []
 
             if (paramMetadata.length === 0) {
@@ -250,13 +231,9 @@ export class ControllerRegistrar {
                     ) {
                       const contentType = req.headers['content-type'] || ''
                       if (contentType.includes('json')) {
-                        await req.json().catch(() => {
-                          /* noop */
-                        })
+                        await req.json()
                       } else if (contentType.includes('form')) {
-                        await req.formData().catch(() => {
-                          /* noop */
-                        })
+                        await req.formData()
                       }
                     }
                     rawArg = param.name
@@ -442,10 +419,7 @@ export class ControllerRegistrar {
                           ? errors.length > 0
                           : Boolean(errors))
                       ) {
-                        throw new BadRequestException('Validation Failed', {
-                          statusCode: 400,
-                          validationErrors: errors,
-                        })
+                        throw validationFailed(errors)
                       }
                       rawArg = instance
                     } else if (typeof pipe === 'function') {
@@ -469,78 +443,71 @@ export class ControllerRegistrar {
               }
             }
 
-            // 3. Execute Custom Interceptors
-            const interceptors = [
-              ...(lifecycleMetadataMap._classInterceptors || []),
-              ...(routeLifecycle.interceptors || []),
-            ]
-            for (const interceptor of interceptors) {
-              if (typeof interceptor === 'function') {
+            // 3. Interceptors wrap the handler: each receives next.handle(),
+            // and what it returns is the route's result
+            let invoke = async () => instance[route.handlerName](...args)
+            for (let i = interceptors.length - 1; i >= 0; i--) {
+              const interceptor = interceptors[i]
+              const inner = invoke
+              invoke = async () => {
                 if (
-                  interceptor.prototype &&
-                  typeof interceptor.prototype.intercept === 'function'
+                  typeof interceptor === 'function' &&
+                  typeof interceptor.prototype?.intercept === 'function'
                 ) {
-                  let interceptorInstance: any =
-                    this.app.container.resolve(interceptor)
-                  if (!interceptorInstance) {
-                    interceptorInstance = new (interceptor as any)()
-                  }
-                  await interceptorInstance.intercept(executionCtx, {
-                    handle: async () => instance[route.handlerName](...args),
+                  const interceptorInstance: any =
+                    this.app.container.resolve(
+                      interceptor,
+                      (req as any)?._diCache
+                    ) || new (interceptor as any)()
+                  return interceptorInstance.intercept(getExecutionCtx(), {
+                    handle: inner,
                   })
-                } else {
-                  await interceptor(executionCtx, res)
                 }
+                if (
+                  interceptor &&
+                  typeof interceptor === 'object' &&
+                  typeof interceptor.intercept === 'function'
+                ) {
+                  return interceptor.intercept(getExecutionCtx(), {
+                    handle: inner,
+                  })
+                }
+                if (typeof interceptor === 'function') {
+                  if (interceptor.length >= 2) {
+                    return interceptor(getExecutionCtx(), { handle: inner })
+                  }
+                  await interceptor(getExecutionCtx())
+                }
+                return inner()
               }
             }
 
             // 4. Invoke the method
-            const result = await instance[route.handlerName](...args)
+            const result = await invoke()
 
-            if (res && !res.headersSent) {
-              const routeMeta = routeMetadataMap[route.handlerName] || {}
-
-              if (routeMeta.redirect) {
+            if (res && !isResponseStarted(res)) {
+              if (routeMetadata.redirect) {
                 res.redirect(
-                  routeMeta.redirect.url,
-                  routeMeta.redirect.statusCode
+                  routeMetadata.redirect.url,
+                  routeMetadata.redirect.statusCode
                 )
                 return
               }
-
-              // Apply custom headers
-              if (routeMeta.headers) {
-                for (const [name, val] of Object.entries(routeMeta.headers)) {
+              if (routeMetadata.headers) {
+                for (const [name, val] of Object.entries(
+                  routeMetadata.headers
+                )) {
                   res.setHeader(name, val as string)
                 }
               }
-              // Apply custom HTTP Code
-              if (routeMeta.httpCode) {
-                res.status(routeMeta.httpCode)
+              if (routeMetadata.httpCode) {
+                res.status(routeMetadata.httpCode)
               }
-
-              if (result !== undefined) {
-                if (
-                  result &&
-                  (typeof result.pipe === 'function' ||
-                    (typeof result.getReader === 'function' &&
-                      typeof result.tee === 'function') ||
-                    (typeof result[Symbol.asyncIterator] === 'function' &&
-                      !Array.isArray(result)))
-                ) {
-                  ;(res as any).sendStream(result)
-                } else if (!(
-                  result &&
-                  typeof (result as any).send === 'function' &&
-                  typeof (result as any).onClose === 'function'
-                )) {
-                  res.json(result)
-                }
-              }
+              sendResult(result, res)
+              if (!ownsResponse) answerIfUnsent(res)
             }
           } catch (err) {
             let handled = false
-            const routeLifecycle = lifecycleMetadataMap[route.handlerName] || {}
             const filters = [
               ...(lifecycleMetadataMap._classFilters || []),
               ...(routeLifecycle.filters || []),
@@ -606,7 +573,7 @@ export class ControllerRegistrar {
               }
             }
             if (!handled) {
-              if (next) next(err as Error)
+              if (next) next(toError(err))
               else
                 this.app.log.error({ err, method }, '[Exis Controller Error]')
             }
@@ -704,6 +671,8 @@ export class ControllerRegistrar {
         ]
 
         schema = schema || {}
+        // Shown by `exisjs routes`
+        schema.access = accessRule
         schema.paramMetadata = paramMetadata
         if (finalHost) schema.host = finalHost
 

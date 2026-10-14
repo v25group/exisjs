@@ -151,6 +151,8 @@ describe('Cron Execution, Overlap Prevention & Resilience', () => {
   describe('Interval and Timeout Task Helpers', () => {
     it('runs one-time timeout task', async () => {
       let timeoutRan = false
+      // Jobs do not start under NODE_ENV=test unless asked to
+      app.cron.autoStart = true
       app.cron.timeout('one-time-task', 15, async () => {
         timeoutRan = true
       })
@@ -161,6 +163,8 @@ describe('Cron Execution, Overlap Prevention & Resilience', () => {
 
     it('runs recurring interval task', async () => {
       let tickCount = 0
+      // Jobs do not start under NODE_ENV=test unless asked to
+      app.cron.autoStart = true
       app.cron.interval('recurring-interval', 25, async () => {
         tickCount++
       })
@@ -177,5 +181,58 @@ describe('Cron Execution, Overlap Prevention & Resilience', () => {
       expect(def.options.schedule).toBe('0 0 * * *')
       expect(typeof def.handler).toBe('function')
     })
+  })
+})
+
+describe('Cron jobs under NODE_ENV=test (BUG-05)', () => {
+  it('registers jobs without starting them, and trigger() runs one on demand', async () => {
+    const app = new App()
+    let runs = 0
+    app.cron.interval('quiet', 5, () => {
+      runs++
+    })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(runs).toBe(0)
+    expect(app.cron.has('quiet')).toBe(true)
+
+    await app.cron.trigger('quiet')
+    expect(runs).toBe(1)
+    app.cron.stopAll()
+  })
+})
+
+describe('Distributed cron lock (ENT-1)', () => {
+  it('runs a scheduled job only on the instance that acquires the lock', async () => {
+    const held = new Set<string>()
+    const lock = {
+      acquire: (job: string) => {
+        if (held.has(job)) return false
+        held.add(job)
+        return true
+      },
+      release: (job: string) => {
+        held.delete(job)
+      },
+    }
+    let runs = 0
+    const instances = [new App(), new App()]
+    for (const app of instances) {
+      app.cron.autoStart = true
+      app.cron.lock = lock
+      app.cron.interval(
+        'report',
+        20,
+        async () => {
+          runs++
+          // Holds the lock well past the other instance's ticks
+          await new Promise((r) => setTimeout(r, 300))
+        },
+        { preventOverlap: true }
+      )
+    }
+    await new Promise((r) => setTimeout(r, 150))
+    for (const app of instances) app.cron.stopAll()
+    // Both instances tick every 20ms; only the lock holder runs the job
+    expect(runs).toBe(1)
   })
 })

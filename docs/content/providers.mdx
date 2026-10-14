@@ -199,6 +199,8 @@ export class RequestContextService {
 ```
 
 > [!WARNING]
+> **Scopes propagate**: a controller or service that depends on a request-scoped provider is itself created per request, so it can never keep one request's instance for the next. `transient` providers get a new instance for every injection.
+
 > **Request Scope Lifecycle**: Request-scoped providers can only be resolved within an active HTTP request context. Attempting to resolve a request-scoped provider during boot scripts, background cron tasks, or standalone worker processes will throw a container error.
 
 ---

@@ -30,6 +30,8 @@ export class ExisResponse<TResponse = any> {
   public _onFinish: (() => void)[] = []
   public _serializer?: (data: unknown) => string
   public _onDone?: () => void
+  /** Set while a stream or file is being sent asynchronously */
+  public _pending = false
 
   constructor(public raw: ServerResponse) {}
 
@@ -371,6 +373,7 @@ export class ExisResponse<TResponse = any> {
   sendStream(
     readable: NodeJS.ReadableStream | ReadableStream | AsyncIterable<any>
   ): void {
+    this._pending = true
     streamToResponse(
       this.raw,
       readable,
@@ -573,6 +576,7 @@ export class ExisResponse<TResponse = any> {
       if (!this.isWritable) return
       ;(this as ExisResponse<any>).status(404).json({
         success: false,
+        statusCode: 404,
         error: { code: 'NOT_FOUND', message: 'File not found' },
       })
     }
@@ -591,8 +595,10 @@ export class ExisResponse<TResponse = any> {
 
     // Headers are only set once the file is known to exist, so a 404 does
     // not carry attachment headers
+    this._pending = true
     fs.stat(full, (err, stat) => {
       if (err || !stat.isFile()) {
+        this._pending = false
         notFound()
         return
       }

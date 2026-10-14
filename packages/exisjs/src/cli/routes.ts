@@ -17,6 +17,8 @@ export interface ExtractedRoute {
   path: string
   handlersCount: number
   sourceFile: string | null
+  /** `public`, `roles: a|b`, `perms: x+y`, or `-` when the route declares none */
+  access?: string
 }
 
 export async function routesCommand(
@@ -162,6 +164,7 @@ export async function routesCommand(
       method: r.method,
       path: r.path,
       middlewares: Math.max(0, r.handlersCount - 1),
+      access: r.access ?? '-',
       sourceFile: r.sourceFile
         ? path.relative(cwd, r.sourceFile).replace(/\\/g, '/')
         : null,
@@ -208,6 +211,10 @@ export async function routesCommand(
   // Compute column widths
   const renderedPaths = routes.map((r) => r.path)
   const maxPathLen = Math.max(20, ...renderedPaths.map((p) => p.length))
+  const maxAccessLen = Math.max(
+    6,
+    ...routes.map((r) => (r.access ?? '-').length)
+  )
   const maxSourceLen = Math.max(
     15,
     ...routes.map((r) => {
@@ -219,13 +226,13 @@ export async function routesCommand(
 
   // Table Header
   console.log(
-    `  ${dim}┌───────┬─${'─'.repeat(maxPathLen)}─┬────────────┬─${'─'.repeat(maxSourceLen)}─┐${reset}`
+    `  ${dim}┌───────┬─${'─'.repeat(maxPathLen)}─┬────────────┬─${'─'.repeat(maxAccessLen)}─┬─${'─'.repeat(maxSourceLen)}─┐${reset}`
   )
   console.log(
-    `  ${dim}│${reset} ${bold}METHOD${reset} ${dim}│${reset} ${bold}${'PATH'.padEnd(maxPathLen)}${reset} ${dim}│${reset} ${bold}MIDDLEWARES${reset}  ${dim}│${reset} ${bold}${'SOURCE'.padEnd(maxSourceLen)}${reset} ${dim}│${reset}`
+    `  ${dim}│${reset} ${bold}METHOD${reset} ${dim}│${reset} ${bold}${'PATH'.padEnd(maxPathLen)}${reset} ${dim}│${reset} ${bold}MIDDLEWARES${reset}  ${dim}│${reset} ${bold}${'ACCESS'.padEnd(maxAccessLen)}${reset} ${dim}│${reset} ${bold}${'SOURCE'.padEnd(maxSourceLen)}${reset} ${dim}│${reset}`
   )
   console.log(
-    `  ${dim}├───────┼─${'─'.repeat(maxPathLen)}─┼────────────┼─${'─'.repeat(maxSourceLen)}─┤${reset}`
+    `  ${dim}├───────┼─${'─'.repeat(maxPathLen)}─┼────────────┼─${'─'.repeat(maxAccessLen)}─┼─${'─'.repeat(maxSourceLen)}─┤${reset}`
   )
 
   const methodCounts: Record<string, number> = {}
@@ -251,6 +258,15 @@ export async function routesCommand(
       Math.max(0, 10 - (mwCount > 0 ? (mwCount > 9 ? 8 : 7) : 4))
     )
 
+    const access = route.access ?? '-'
+    const accessStr =
+      access === 'public'
+        ? `${yellow}${access}${reset}`
+        : access === '-'
+          ? `${dim}${access}${reset}`
+          : `${cyan}${access}${reset}`
+    const accessPadding = ' '.repeat(Math.max(0, maxAccessLen - access.length))
+
     let relSource = '-'
     if (route.sourceFile) {
       relSource = path.relative(cwd, route.sourceFile).replace(/\\/g, '/')
@@ -260,12 +276,12 @@ export async function routesCommand(
     )
 
     console.log(
-      `  ${dim}│${reset} ${badge}${methodPadding} ${dim}│${reset} ${highlightedPath}${pathPadding} ${dim}│${reset} ${mwStr}${mwPadding} ${dim}│${reset} ${dim}${relSource}${reset}${sourcePadding} ${dim}│${reset}`
+      `  ${dim}│${reset} ${badge}${methodPadding} ${dim}│${reset} ${highlightedPath}${pathPadding} ${dim}│${reset} ${mwStr}${mwPadding} ${dim}│${reset} ${accessStr}${accessPadding} ${dim}│${reset} ${dim}${relSource}${reset}${sourcePadding} ${dim}│${reset}`
     )
   }
 
   console.log(
-    `  ${dim}└───────┴─${'─'.repeat(maxPathLen)}─┴────────────┴─${'─'.repeat(maxSourceLen)}─┘${reset}`
+    `  ${dim}└───────┴─${'─'.repeat(maxPathLen)}─┴────────────┴─${'─'.repeat(maxAccessLen)}─┴─${'─'.repeat(maxSourceLen)}─┘${reset}`
   )
 
   // Summary Card

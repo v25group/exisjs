@@ -117,6 +117,11 @@ const res = await api
   .execute()
 ```
 
+Two more builder methods:
+
+- `.query({ page: 2, tags: ['a', 'b'] })` appends a query string.
+- `.timeout(ms)` fails the request after `ms` milliseconds (default 5000, or `EXIS_TEST_TIMEOUT`; `0` waits forever). A handler that never answers fails its own test with the route in the message instead of hanging the whole run.
+
 ### Response Object Properties
 
 The returned `TestResponse` contains:
@@ -131,6 +136,39 @@ export interface TestResponse {
 ```
 
 ---
+
+## Testing Over Real Sockets (`startTestServer`)
+
+In-memory requests cover most tests. For what only a real connection shows (CORS and security headers as a browser sees them, keep-alive, malformed HTTP), start the app on a free port:
+
+```typescript filename="tests/headers.test.ts"
+import { describe, it, expect, startTestServer } from 'exisjs/testing'
+import app from '../src/http/server'
+
+describe('headers', () => {
+  it('sends a Content-Security-Policy', async () => {
+    const server = await startTestServer(app)
+    try {
+      const res = await server.request('/health')
+      expect(res.headers.get('content-security-policy')).toBeDefined()
+    } finally {
+      await server.close()
+    }
+  })
+})
+```
+
+`exisjs test` runs your source files. To test the production build itself, run `exisjs build`, then start it with `exisjs start` (which always sets `NODE_ENV=production`) and send requests to it.
+
+## Cron Jobs in Tests
+
+Under `NODE_ENV=test` (what `exisjs test` sets) cron jobs and timeout tasks are registered but **never started**, so a test run cannot fire a real job. Run one on demand, or opt in for a test file:
+
+```typescript
+await app.cron.trigger('daily-cleanup') // runs it once, now
+
+const api = createTestContext(app, { cron: true }) // schedules jobs as in production
+```
 
 ## Unit Testing Controllers & Middlewares
 

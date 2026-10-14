@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { describeAccess } from '../router/authorize'
 
 async function inspect() {
   const entryFile = process.env.EXIS_ENTRY_FILE
@@ -108,6 +109,7 @@ async function inspect() {
       path: r.path,
       handlersCount: r.handlers ? r.handlers.length : 1,
       sourceFile: r.sourceFile || null,
+      access: describeAccess(r.schema?.access),
     }))
 
     // Send the extracted routes via IPC if available, otherwise print serialized payload marker

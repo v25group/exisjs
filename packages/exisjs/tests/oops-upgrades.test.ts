@@ -88,15 +88,18 @@ describe('ExisJS Enterprise OOP Architecture Upgrades', () => {
     expect(resPublic.status).toBe(200)
     expect(resPublic.body.status).toBe('public_ok')
 
-    // 2. Roles-only route returns 403 when user does not have required role
+    // 2. Roles-only route returns 401 when nobody is signed in
     const resRoleFail = await client.get('/admin/roles-only')
-    expect(resRoleFail.status).toBe(403)
+    expect(resRoleFail.status).toBe(401)
 
-    // 3. Permissions route succeeds for user with matching permission
+    // 3. Every listed permission is required
+    currentUser = { role: 'admin', permissions: ['users:write'] }
+    const resPermPartial = await client.post('/admin/manage')
+    expect(resPermPartial.status).toBe(403)
+
     currentUser = {
       role: 'admin',
-      permissions: ['users:write'],
-      isSuperAdmin: false,
+      permissions: ['users:write', 'users:delete'],
     }
 
     const resRolePass = await client.get('/admin/roles-only')
@@ -525,9 +528,10 @@ describe('ExisJS Enterprise OOP Architecture Upgrades', () => {
     expect(valRes.status).toBe(400)
     expect(valRes.body.success).toBe(false)
     expect(valRes.body.statusCode).toBe(400)
-    expect(valRes.body.validationErrors).toBeDefined()
-    expect(valRes.body.validationErrors.email).toBeDefined()
-    expect(typeof valRes.body.timestamp).toBe('string')
+    expect(valRes.body.error.code).toBe('VALIDATION_ERROR')
+    expect(
+      valRes.body.error.details.some((d: any) => d.field === 'email')
+    ).toBe(true)
   })
 
   it('supports Class Controller Inheritance (Base and Abstract Controller Support)', async () => {
@@ -1015,10 +1019,10 @@ describe('ExisJS Enterprise OOP Architecture Upgrades', () => {
       quantity: -5,
     })
     expect(failRes.status).toBe(400)
-    expect(failRes.body.validationErrors).toBeDefined()
-    expect(failRes.body.validationErrors.item).toBe(
-      'Item must be at least 3 characters'
+    const itemError = failRes.body.error.details.find(
+      (d: any) => d.field === 'item'
     )
+    expect(itemError.message).toBe('Item must be at least 3 characters')
 
     // 2. Valid payload -> 200 OK + instantiated DTO instance
     const passRes = await client.post('/dto-test/order', {

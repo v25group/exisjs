@@ -21,6 +21,7 @@ export class TestRequest {
   private _expectedStatus?: number
   private _expectedHeaders: Record<string, string | RegExp> = {}
   private _expectedBody?: unknown
+  private _timeoutMs = Number(process.env.EXIS_TEST_TIMEOUT) || 5000
 
   constructor(app: App | ExisAppDefinition, method: string, path: string) {
     this._appSource = app
@@ -30,6 +31,31 @@ export class TestRequest {
 
   send(body: unknown): this {
     this._body = body
+    return this
+  }
+
+  /** Adds query-string parameters: `.query({ page: 2, tags: ['a', 'b'] })` */
+  query(
+    params: Record<string, string | number | boolean | (string | number)[]>
+  ): this {
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(params)) {
+      for (const v of Array.isArray(value) ? value : [value]) {
+        search.append(key, String(v))
+      }
+    }
+    const qs = search.toString()
+    if (qs) this._path += (this._path.includes('?') ? '&' : '?') + qs
+    return this
+  }
+
+  /**
+   * Fails the request after `ms` (default 5000, or `EXIS_TEST_TIMEOUT`),
+   * so a handler that never answers fails its test instead of hanging the run.
+   * `0` waits forever.
+   */
+  timeout(ms: number): this {
+    this._timeoutMs = ms
     return this
   }
 
@@ -100,6 +126,7 @@ export class TestRequest {
         url: this._path,
         headers: this._headers,
         body: payload,
+        timeoutMs: this._timeoutMs,
       })
 
       this.assertResponse(res)
@@ -264,5 +291,64 @@ export function createTestApp(app: App | ExisAppDefinition | any): TestApp {
       applyRequestOptions(new TestRequest(finalApp, 'CONNECT', path), opts),
     request: (method, path, opts) =>
       applyRequestOptions(new TestRequest(finalApp, method, path), opts),
+  }
+}
+
+export interface TestServer {
+  /** Base URL, e.g. `http://127.0.0.1:53211` */
+  url: string
+  port: number
+  /** `fetch` against the running server: `server.request('/health')` */
+  request(path: string, init?: RequestInit): Promise<Response>
+  /** Runs graceful shutdown (onClose hooks, database disconnects) */
+  close(): Promise<void>
+}
+
+/**
+ * Starts the app on a free port on 127.0.0.1 and talks to it over real
+ * sockets. Use it for what in-memory requests cannot show: CORS and
+ * security headers as a browser sees them, keep-alive, malformed HTTP.
+ * Set `NODE_ENV=production` before calling it to test production behaviour.
+ *
+ * @example
+ * ```ts
+ * const server = await startTestServer(app)
+ * const res = await server.request('/health')
+ * await server.close()
+ * ```
+ */
+export async function startTestServer(
+  source: App | ExisAppDefinition
+): Promise<TestServer> {
+  let app: App
+  if (
+    (source as any)._isExisAppDefinition ||
+    typeof (source as any).boot === 'function'
+  ) {
+    const definition = source as any
+    if (!definition._bootPromise) definition._bootPromise = definition.boot()
+    app = await definition._bootPromise
+  } else {
+    app = source as App
+    if (!(app as any)._routesMounted && typeof app.create === 'function') {
+      await app.create()
+    }
+  }
+
+  const port = await new Promise<number>((resolve, reject) => {
+    const server: any = app.listen({
+      port: 0,
+      host: '127.0.0.1',
+      onListen: (address) => resolve(address.port),
+    })
+    server?.once?.('error', reject)
+  })
+
+  const url = `http://127.0.0.1:${port}`
+  return {
+    url,
+    port,
+    request: (path, init) => fetch(url + path, init),
+    close: () => app.close(),
   }
 }

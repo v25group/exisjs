@@ -41,11 +41,29 @@ export function formatReceivedValue(val: any): string {
 }
 
 // Field names whose values must not appear in logs or responses
+// Connection settings (DATABASE_URL, REDIS_URI, SENTRY_DSN, MONGO_CONNECTION...)
+// usually carry a password, so the whole value is hidden
 const SENSITIVE_FIELD =
-  /pass(word|wd|phrase)?|secret|token|authorization|api[-_]?key|credential|card|cvv|cvc|ssn|\bpin\b|otp/i
+  /pass(word|wd|phrase)?|secret|token|authorization|api[-_]?key|credential|card|cvv|cvc|ssn|\bpin\b|otp|_(url|uri|dsn)$|^dsn$|connection|conn_?str/i
 
 export function isSensitiveField(name: string): boolean {
   return SENSITIVE_FIELD.test(name)
+}
+
+// scheme://user:password@host -> scheme://user:***@host
+const URL_CREDENTIALS =
+  /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/?#@:"']*:)[^\s/?#@"']+@/gi
+
+/** Hides the password of any `scheme://user:password@host` inside a value. */
+export function maskCredentials<T>(value: T): T {
+  return typeof value === 'string'
+    ? (value.replace(URL_CREDENTIALS, '$1***@') as unknown as T)
+    : value
+}
+
+/** The value that is safe to show in logs and responses for a field. */
+export function redactReceived(field: string, value: string): string {
+  return isSensitiveField(field) ? '[Redacted]' : maskCredentials(value)
 }
 
 export class ValidatorError extends Error {
@@ -64,9 +82,9 @@ export class ValidatorError extends Error {
     // Received values end up in logs, error responses and (for tex.env) the
     // startup crash output, so credentials are masked at the source
     this.errors = errors.map((e) =>
-      e.received !== undefined && isSensitiveField(e.path)
-        ? { ...e, received: '[Redacted]' }
-        : e
+      e.received === undefined
+        ? e
+        : { ...e, received: redactReceived(e.path, e.received) }
     )
   }
 }

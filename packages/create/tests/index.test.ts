@@ -118,7 +118,7 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.8.1')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.9.0')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 
@@ -197,5 +197,17 @@ describe('create-exis scaffolding', () => {
     expect(funcBoundary.includes('export const config = defineBoundary(')).toBe(
       true
     )
+
+    // 11. Production defaults: no framework advertising, no public API docs
+    for (const t of [oopBoundary, funcBoundary]) {
+      expect(t.includes('X-Powered-By')).toBe(false)
+    }
+    for (const ts of [true, false]) {
+      expect(
+        templates
+          .exisConfigTemplate(ts)
+          .includes("docs: { enabled: process.env.NODE_ENV !== 'production' }")
+      ).toBe(true)
+    }
   })
 })

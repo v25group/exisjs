@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.9.0`** | 2026-10-14 | Minor (breaking): Correctness & Security | Request-scoped DI and `@Idempotent` cross-user leaks fixed, hung requests answered, class controllers handle `res.json()`/`download()`/Buffers and `@UseInterceptors`, safe RBAC (401, all-of permissions, no `isSuperAdmin`), one error envelope, default CSP, readiness endpoint, shared rate-limit and cron-lock stores | [**Read v0.9.0 Notes →**](./changelog/v0.9/v0.9.0.md) |
 | **`v0.8.1`** | 2026-10-12 | Patch: Security & Build | `ipFilter` X-Forwarded-For bypass fixed, `serveStatic` sibling-directory traversal fixed, `exisjs build` works on hosts without `devDependencies` | [**Read v0.8.1 Notes →**](./changelog/v0.8/v0.8.1.md) |
 | **`v0.8.0`** | 2026-10-09 | Major: Pure TS Core, Perf & Security | `@exisjs/rs` removed (pure TypeScript core), ~50% less framework overhead per request, compiled `tex` validator, upload/IP-spoofing/cross-request security fixes, Node.js 20+ | [**Read v0.8.0 Notes →**](./changelog/v0.8/v0.8.0.md) |
 | **`v0.7.14`** | 2026-10-05 | Stability & Hardening | Windows path quoting fix for `exis run`, FS route specificity sorting, binary/stream `res.download()`, Windows libuv shutdown `UV_HANDLE_CLOSING` & `EPIPE` resolution, type inference strictness | [**Read v0.7.14 Notes →**](./changelog/v0.7/v0.7.14.md) |
@@ -31,7 +32,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.8.1] - 2026-10-12
+## Current Release: [0.9.0] - 2026-10-14
+
+> **Breaking changes before 1.0.** Fixes from two production field reports. Read the upgrade guide in [**`changelog/v0.9/v0.9.0.md`**](./changelog/v0.9/v0.9.0.md).
+
+### ⚠️ Breaking Changes
+- **`@Permissions` requires all listed permissions**; a role is never counted as a permission.
+- **Anonymous callers get `401`** on routes with roles or permissions (was `403`).
+- **`req.user.isSuperAdmin` no longer bypasses checks**; use `authorization.superUser`.
+- **One error envelope** `{ success, statusCode, error: { code, message, details? } }`; the legacy top-level fields are removed (`errors.legacyFields: true` restores them for now) and `HttpError` details are no longer spread to the top level.
+- **Cron jobs are not started under `NODE_ENV=test`**; use `app.cron.trigger(name)` or `createTestContext(app, { cron: true })`.
+- **Helmet sends a default Content-Security-Policy.**
+- **Return values**: `undefined` → `204`, `null` → JSON `null`, strings → `text/plain` in both paradigms.
+- **Malformed JSON → `400 INVALID_JSON`** in class controllers and functional routes.
+
+### Security
+- Request-scoped providers were shared between requests; `@Injectable({ scope })` was ignored at boot.
+- `@Idempotent` replayed one user's response to another and ignored a changed body (now `422`).
+- Connection strings (`*_URL`, `*_URI`, `*_DSN`, `user:password@`) are redacted in validation errors and logs.
+- A `beforeHandle` hook's `401` was overwritten with `403`.
+
+### Fixed
+- Class controllers: returned `res.json()` / `res.send()` / `download()` / `Buffer`, `@UseInterceptors` (handler ran twice, result ignored), rejections with `null` (were `404`).
+- `HEAD` served by `GET` routes; `405` + `Allow` for a wrong method.
+- Validation reports every failing field; functional validation logs show the mounted path.
+- Cron jobs registered twice; dev error page (JSON for API clients, no ANSI, configured host, `.env` reload); dev lock per port; `tex.enum` readonly arrays; `default` fields typed as present after parsing; mixed paradigms fail `exisjs build`; template lint and broken functional guard template; `ExisUser` augmentation.
+
+### Added
+- `authorization.defaultPolicy: 'authenticated'` (deny by default), `authorization.superUser`, `errors.legacyFields`, `rateLimit({ store })`, `app.cron.lock`, `/_ready`, `requestId` on every `req.log` line, `ResolveInput` / `ResolveOutput`, ACCESS column in `exisjs routes`, test client `.query()` / `.timeout()`, `startTestServer()`, `exisjs dev --force`.
+
+### Changed
+- Class controllers do per-route work once at registration; their CPU cost per request is now close to functional routes.
+
+### Tooling
+- npm provenance on publish, `npm audit` gate in CI, scaffolded projects are linted by `verify:examples`.
+
+---
+
+## Previous Release: [0.8.1] - 2026-10-12
 
 > **Security patch.** Upgrade if you use `ipFilter` or `serveStatic`. Details in [**`changelog/v0.8/v0.8.1.md`**](./changelog/v0.8/v0.8.1.md).
 

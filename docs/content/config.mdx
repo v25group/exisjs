@@ -147,7 +147,9 @@ export default defineConfig({
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `cors` | `boolean \| CorsConfig` | `{ origin: '*' }` | Global CORS policy. Can be overridden in boundaries or routes. `credentials: true` requires explicit origins: with `origin: '*'` it is ignored and a warning is logged, because browsers reject that combination. |
-| `helmet` | `boolean \| HelmetConfig` | `{ enabled: true }` | Security headers (CSP, X-Frame-Options, HSTS). |
+| `helmet` | `boolean \| HelmetConfig` | `{ enabled: true }` | Security headers, including a same-origin `Content-Security-Policy`. `contentSecurityPolicy: false` sends no CSP; a string replaces the default. |
+| `authorization` | `AuthorizationConfig` | `{}` | `defaultPolicy: 'authenticated'` closes controller routes that declare no rule unless they are `@Public()`. `superUser: (user) => boolean` lets matching users pass every `@Roles` / `@Permissions` rule. |
+| `errors` | `{ legacyFields?: boolean }` | `{}` | `legacyFields: true` adds the pre-0.9 duplicate fields to error bodies. Deprecated. |
 | `compression` | `boolean` | `false` | Gzip/Brotli HTTP response compression. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum request payload body size in bytes. |
 | `blockSuspiciousProbes` | `boolean \| BlockProbesOptions` | `false` | Blocks known vulnerability scanners and malicious probes (`.php`, `wp-admin`). |
@@ -161,8 +163,8 @@ export default defineConfig({
 | `logger` | `boolean \| LoggerConfig` | `false` | Pino logger settings (`level`, `pretty`, `redact`). |
 | `debugRouting` | `boolean` | `false` | Outputs detailed route resolution logs per request in development. |
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
-| `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; use `enabled: process.env.NODE_ENV !== 'production'` to hide it in production. |
-| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | System health endpoint (`path: '/_health'`). |
+| `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; the project template uses `enabled: process.env.NODE_ENV !== 'production'` so published API docs do not help attackers. |
+| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. |
 | `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false }` | OpenTelemetry tracing and metrics export. |
 

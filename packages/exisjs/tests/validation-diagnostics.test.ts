@@ -10,6 +10,9 @@ import { Router } from '../src/router/router'
 import { tex } from '../src/validator/tex'
 import { requestLogger } from '../src/middleware/middleware'
 
+const fieldMessages = (body: any): Record<string, string> =>
+  Object.fromEntries(body.error.details.map((d: any) => [d.field, d.message]))
+
 describe('Validation Error Diagnostic Visibility', () => {
   it('formats Tex ValidatorError with structured errors and diagnostic log', () => {
     const handler = createErrorHandler(true)
@@ -40,7 +43,7 @@ describe('Validation Error Diagnostic Visibility', () => {
     const body = getResponseBody<any>(res)
     expect(body.statusCode).toBe(400)
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.errors).toEqual({
+    expect(fieldMessages(body)).toEqual({
       visitDate: 'Expected date string',
       visitorName: 'Required field missing',
     })
@@ -85,7 +88,7 @@ describe('Validation Error Diagnostic Visibility', () => {
 
     expect(res.statusCode).toBe(400)
     const body = getResponseBody<any>(res)
-    expect(body.errors).toEqual({
+    expect(fieldMessages(body)).toEqual({
       'profile.age': 'Expected number, received string',
       email: 'Invalid email address',
     })
@@ -421,12 +424,11 @@ describe('Validation Error Diagnostic Visibility', () => {
     const body = getResponseBody<any>(res)
     expect(body.statusCode).toBe(400)
     expect(body.error.code).toBe('VALIDATION_ERROR')
-    expect(body.errors).toEqual({
+    expect(fieldMessages(body)).toEqual({
       username: 'Must be at least 4 characters',
     })
-    expect(body.details).toBeDefined()
-    expect(Array.isArray(body.details)).toBe(true)
-    expect(body.details[0]).toEqual({
+    expect(Array.isArray(body.error.details)).toBe(true)
+    expect(body.error.details[0]).toEqual({
       field: 'username',
       message: 'Must be at least 4 characters',
       expected: 'must be at least 4 characters',

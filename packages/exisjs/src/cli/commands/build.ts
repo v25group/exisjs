@@ -225,6 +225,9 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     await esbuild.build({
       entryPoints,
       outdir: path.join(cwd, outDir),
+      // Keep the project layout (src/http/... -> outDir/src/http/...) even
+      // when every entry point sits in one sub-folder
+      outbase: cwd,
       platform: 'node',
       format: format as 'cjs' | 'esm',
       bundle: false,
@@ -300,7 +303,25 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
           'specifier',
           'return import(specifier)'
         )
-        await dynamicImport(pathToFileURL(manifestPath).href)
+        const built = await dynamicImport(pathToFileURL(manifestPath).href)
+
+        // One controller style per project: fail the build, not the deploy
+        const { routeParadigm, mixedParadigmMessage } =
+          await import('../../router/route-scanner.js')
+        const oopFiles: string[] = []
+        const functionalFiles: string[] = []
+        for (const entry of built.manifest ?? []) {
+          const paradigm = routeParadigm(entry.module)
+          if (paradigm === 'oop') oopFiles.push(entry.filePath)
+          else if (paradigm === 'functional')
+            functionalFiles.push(entry.filePath)
+        }
+        if (oopFiles.length > 0 && functionalFiles.length > 0) {
+          console.error('')
+          error(mixedParadigmMessage(oopFiles, functionalFiles))
+          process.exit(1)
+        }
+
         process.stdout.write(
           `\r${c.green}✓${c.reset} ${c.dim}all routes validated.${c.reset}\n`
         )

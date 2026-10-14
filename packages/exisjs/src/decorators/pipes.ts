@@ -1,6 +1,45 @@
-import { BadRequestException } from '../error'
+import { HttpError } from '../error/errors'
 import { PIPES_METADATA } from './constants'
 import { MetadataEngine } from './core/metadata'
+
+/**
+ * Normalizes DTO / Standard Schema / class-validator style errors into the
+ * `error.details` list every validation response uses.
+ */
+function toFieldErrors(
+  errors: unknown
+): { field: string; message: string; code: string }[] {
+  const list: any[] = Array.isArray(errors)
+    ? errors
+    : errors && typeof errors === 'object'
+      ? Object.entries(errors).map(([field, message]) => ({ field, message }))
+      : [String(errors)]
+  return list.map((e) => {
+    if (typeof e === 'string') {
+      return { field: 'general', message: e, code: 'VALIDATION_ERROR' }
+    }
+    const field = Array.isArray(e.path)
+      ? e.path.map((p: any) => (typeof p === 'object' ? p.key : p)).join('.')
+      : (e.field ?? e.property ?? e.path)
+    const message =
+      e.message ??
+      (e.constraints ? Object.values(e.constraints).join(', ') : String(e))
+    return {
+      field: String(field ?? 'general'),
+      message: String(message),
+      code: 'VALIDATION_ERROR',
+    }
+  })
+}
+
+export function validationFailed(errors: unknown, statusCode = 400): HttpError {
+  return new HttpError(
+    'Validation Failed',
+    statusCode,
+    'VALIDATION_ERROR',
+    toFieldErrors(errors)
+  )
+}
 
 export interface ArgumentMetadata {
   type: 'body' | 'query' | 'param' | 'custom' | 'header' | string
@@ -49,7 +88,7 @@ export class ParseIntPipe implements PipeTransform<string | number, number> {
       return this.options.exceptionFactory(msg)
     }
     const status = this.options?.errorHttpStatusCode || 400
-    return new BadRequestException(msg, { statusCode: status })
+    return new HttpError(msg, status, 'BAD_REQUEST')
   }
 }
 
@@ -90,7 +129,7 @@ export class ParseFloatPipe implements PipeTransform<string | number, number> {
       return this.options.exceptionFactory(msg)
     }
     const status = this.options?.errorHttpStatusCode || 400
-    return new BadRequestException(msg, { statusCode: status })
+    return new HttpError(msg, status, 'BAD_REQUEST')
   }
 }
 
@@ -115,7 +154,7 @@ export class ParseBoolPipe implements PipeTransform<any, boolean> {
       throw this.options.exceptionFactory(msg)
     }
     const status = this.options?.errorHttpStatusCode || 400
-    throw new BadRequestException(msg, { statusCode: status })
+    throw new HttpError(msg, status, 'BAD_REQUEST')
   }
 }
 
@@ -148,7 +187,7 @@ export class ParseUUIDPipe implements PipeTransform<string, string> {
       throw this.options.exceptionFactory(msg)
     }
     const status = this.options?.errorHttpStatusCode || 400
-    throw new BadRequestException(msg, { statusCode: status })
+    throw new HttpError(msg, status, 'BAD_REQUEST')
   }
 }
 
@@ -211,7 +250,7 @@ export class ParseArrayPipe implements PipeTransform<any, any[]> {
       return this.options.exceptionFactory(msg)
     }
     const status = this.options?.errorHttpStatusCode || 400
-    return new BadRequestException(msg, { statusCode: status })
+    return new HttpError(msg, status, 'BAD_REQUEST')
   }
 }
 
@@ -253,10 +292,7 @@ export class ValidationPipe implements PipeTransform<any, any> {
       const result = await (metatype as any)['~standard'].validate(value)
       if (result.issues && result.issues.length > 0) {
         const status = this.options?.errorHttpStatusCode || 400
-        throw new BadRequestException('Validation Failed', {
-          statusCode: status,
-          validationErrors: result.issues,
-        })
+        throw validationFailed(result.issues, status)
       }
       return result.value
     }
@@ -282,10 +318,7 @@ export class ValidationPipe implements PipeTransform<any, any> {
             throw this.options.exceptionFactory(errors)
           }
           const status = this.options?.errorHttpStatusCode || 400
-          throw new BadRequestException('Validation Failed', {
-            statusCode: status,
-            validationErrors: errors,
-          })
+          throw validationFailed(errors, status)
         }
       } else if (typeof instance.validateSync === 'function') {
         const errors = instance.validateSync()
@@ -297,10 +330,7 @@ export class ValidationPipe implements PipeTransform<any, any> {
             throw this.options.exceptionFactory(errors)
           }
           const status = this.options?.errorHttpStatusCode || 400
-          throw new BadRequestException('Validation Failed', {
-            statusCode: status,
-            validationErrors: errors,
-          })
+          throw validationFailed(errors, status)
         }
       }
 

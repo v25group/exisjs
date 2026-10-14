@@ -54,8 +54,41 @@ describe('Error responses share one core shape', () => {
   it('validation errors carry field details inside error', async () => {
     const res = await client.post('/validate').send({ name: 'ab' })
     expect(res.body.error.details[0].field).toBe('name')
-    // Field map kept for existing clients
+    // One envelope: no duplicated legacy fields at the top level
+    expect(Object.keys(res.body).sort()).toEqual([
+      'error',
+      'statusCode',
+      'success',
+    ])
+  })
+
+  it('sends the legacy fields only when errors.legacyFields is set', async () => {
+    const legacyApp = new App({ errors: { legacyFields: true } })
+    legacyApp.post(
+      '/validate',
+      { body: tex.object({ name: tex.string({ min: 3 }) }) },
+      (_req, res) => res.json({ ok: true })
+    )
+    const res = await createTestApp(legacyApp)
+      .post('/validate')
+      .send({ name: 'ab' })
     expect(Object.keys(res.body.validationErrors)).toEqual(['name'])
+    expect(res.body.details[0].field).toBe('name')
+  })
+
+  it('never copies HttpError details to the top level', async () => {
+    const detailApp = new App()
+    detailApp.get('/teapot', () => {
+      throw new HttpError('Short and stout', 418, 'TEAPOT', {
+        success: true,
+        statusCode: 200,
+      })
+    })
+    const res = await createTestApp(detailApp).get('/teapot')
+    expect(res.status).toBe(418)
+    expect(res.body.success).toBe(false)
+    expect(res.body.statusCode).toBe(418)
+    expect(res.body.error.details).toEqual({ success: true, statusCode: 200 })
   })
 })
 

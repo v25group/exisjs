@@ -266,18 +266,55 @@ export type IsNullable<T> = T extends { __isNullable: true } ? true : false
 export type ApplyNullable<T, Type> =
   IsNullable<T> extends true ? Type | null : Type
 
+/**
+ * Marks a field built with `default`: a client may omit it, but after
+ * parsing it always has a value.
+ */
+export type WithDefault<T, O> = O extends { default: infer D }
+  ? undefined extends D
+    ? T
+    : T & { __hasDefault: true }
+  : T
+
+export type HasDefault<T> = T extends { __hasDefault: true } ? true : false
+
+// Optional after parsing: declared optional and without a default
+type IsOutputOptional<T> =
+  IsOptional<T> extends true
+    ? HasDefault<T> extends true
+      ? false
+      : true
+    : false
+
+// Optional in a request: declared optional, or filled in by a default
+type IsInputOptional<T> = IsOptional<T> extends true ? true : HasDefault<T>
+
+/** The parsed value: what a handler receives after validation. */
 export type ResolveSchema<T extends Record<string, any>> = {
-  // Required fields
-  [K in keyof T as IsOptional<T[K]> extends false ? K : never]: ApplyNullable<
-    T[K],
-    ResolveTexType<T[K]>
-  >
+  [
+    K in keyof T as IsOutputOptional<T[K]> extends false ? K : never
+  ]: ApplyNullable<T[K], ResolveTexType<T[K]>>
 } & {
-  // Optional fields
-  [K in keyof T as IsOptional<T[K]> extends true ? K : never]?: ApplyNullable<
-    T[K],
-    ResolveTexType<T[K]>
-  >
+  [
+    K in keyof T as IsOutputOptional<T[K]> extends true ? K : never
+  ]?: ApplyNullable<T[K], ResolveTexType<T[K]>>
+}
+
+/** Same as `ResolveSchema`: the type after parsing (like `z.output`). */
+export type ResolveOutput<T extends Record<string, any>> = ResolveSchema<T>
+
+/**
+ * What a client may send (like `z.input`): fields with a `default` may be
+ * omitted. Nested objects are described by their parsed type.
+ */
+export type ResolveInput<T extends Record<string, any>> = {
+  [
+    K in keyof T as IsInputOptional<T[K]> extends false ? K : never
+  ]: ApplyNullable<T[K], ResolveTexType<T[K]>>
+} & {
+  [
+    K in keyof T as IsInputOptional<T[K]> extends true ? K : never
+  ]?: ApplyNullable<T[K], ResolveTexType<T[K]>>
 }
 
 export type Infer<T extends { _type: any }> = T['_type']

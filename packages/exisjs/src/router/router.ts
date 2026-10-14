@@ -9,8 +9,8 @@ import type {
   Response,
 } from '../types'
 import { RadixTree } from './radix'
-import { SSEStream } from '../server/sse'
-import { DownloadResponse } from '../server/download'
+import { sendResult } from './send-result'
+import { HttpError } from '../error/errors'
 import { fileUpload, parseSizeToBytes } from '../middleware/upload'
 import { routeTimeout } from '../middleware/security'
 import { cors } from '../middleware/middleware'
@@ -207,14 +207,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
               files: req.files,
               fields: req.fields,
             }
-            const result = await (h as any).handle(ctx)
-            if (result !== undefined && !res.headersSent) {
-              if (typeof result === 'object' && result !== null) {
-                return res.json(result)
-              } else {
-                return res.send(result)
-              }
-            }
+            sendResult(await (h as any).handle(ctx), res)
           })
         }
       } else if (typeof h === 'function') {
@@ -257,7 +250,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'body'
             err.received = body
-            err.routePath = fullPath
+            err.routePath = req.routePath ?? fullPath
             err.routeMethod = method
           }
           next(err as Error)
@@ -285,7 +278,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'query'
             err.received = req.query
-            err.routePath = fullPath
+            err.routePath = req.routePath ?? fullPath
             err.routeMethod = method
           }
           next(err as Error)
@@ -313,7 +306,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
           if (err && typeof err === 'object') {
             err.httpPart = 'params'
             err.received = req.params
-            err.routePath = fullPath
+            err.routePath = req.routePath ?? fullPath
             err.routeMethod = method
           }
           next(err as Error)
@@ -555,7 +548,28 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   // ─── Match ────────────────────────────────────────────────────────────────────
 
   match(method: string, path: string, host?: string): RouteMatch | null {
-    return this.tree.search(method, path, host)
+    const matched = this.tree.search(method, path, host)
+    // RFC 9110: a server answers HEAD wherever it answers GET; Node drops the body
+    if (matched === null && method === 'HEAD') {
+      return this.tree.search('GET', path, host)
+    }
+    return matched
+  }
+
+  /** Methods that have a route for this path (for 405 and OPTIONS). */
+  allowedMethods(path: string, host?: string): string[] {
+    const allowed: string[] = []
+    const seen = new Set<string>()
+    for (const route of this.routes) {
+      const m = route.method
+      if (seen.has(m) || m === 'ALL') continue
+      seen.add(m)
+      if (this.tree.search(m, path, host) !== null) allowed.push(m)
+    }
+    if (allowed.includes('GET') && !allowed.includes('HEAD')) {
+      allowed.push('HEAD')
+    }
+    return allowed
   }
 
   // ─── Handler Execution ────────────────────────────────────────────────────────
@@ -576,11 +590,30 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     const matched = this.match(req.method, req.path, host)
 
     if (!matched) {
+      // Only on a miss: is the path known under another method?
+      const allowed = this.allowedMethods(req.path, host)
+      if (allowed.length > 0) {
+        res.setHeader('Allow', allowed.join(', '))
+        if (req.method === 'OPTIONS') {
+          res.status(204).end()
+          return
+        }
+        const err = new HttpError(
+          `Method ${req.method} is not allowed for ${req.path}`,
+          405,
+          'METHOD_NOT_ALLOWED'
+        )
+        if (fallthrough) fallthrough(err)
+        else res.status(405).json(err.toJSON())
+        return
+      }
       if (fallthrough) fallthrough()
       return
     }
 
     req.params = matched.params
+    // The pattern as mounted (with every prefix), for logs and errors
+    ;(req as any).routePath = matched.route.path
 
     // Attach pre-compiled serializer to response for fast JSON output
     if (matched.route._serializer) {
@@ -628,30 +661,6 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   }
 }
 
-function isStreamLike(val: any): boolean {
-  if (val === null || val === undefined || typeof val !== 'object') return false
-  if (val instanceof SSEStream) return false
-  return (
-    typeof val.pipe === 'function' ||
-    (typeof val.getReader === 'function' && typeof val.tee === 'function') ||
-    (typeof val[Symbol.asyncIterator] === 'function' && !Array.isArray(val))
-  )
-}
-
-function handleReturnedData(data: unknown, res: Response): void {
-  if (data === undefined || data === res || res.headersSent) return
-  if (data instanceof DownloadResponse) {
-    res.download(data.data, data.filename, data.options)
-  } else if (Buffer.isBuffer(data)) {
-    // Binary payloads are sent as-is, never JSON-encoded
-    res.send(data)
-  } else if (isStreamLike(data)) {
-    ;(res as any).sendStream(data)
-  } else if (!(data instanceof SSEStream)) {
-    res.json(data)
-  }
-}
-
 export function runHandlers(
   handlers: Handler<any, any, any>[],
   req: Request,
@@ -682,14 +691,14 @@ export function runHandlers(
     if (result instanceof Promise) {
       result.then(
         (data: unknown) => {
-          handleReturnedData(data, res)
+          sendResult(data, res)
         },
         (e: unknown) => {
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
     } else {
-      handleReturnedData(result, res)
+      sendResult(result, res)
     }
     return
   }
@@ -756,14 +765,14 @@ export function runHandlers(
     if (result instanceof Promise) {
       result.then(
         (data: unknown) => {
-          handleReturnedData(data, res)
+          sendResult(data, res)
         },
         (e: unknown) => {
           safeNext(e instanceof Error ? e : new Error(String(e)))
         }
       )
     } else {
-      handleReturnedData(result, res)
+      sendResult(result, res)
     }
   }
 

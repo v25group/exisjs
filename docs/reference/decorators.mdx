@@ -25,8 +25,6 @@ import {
   Options,
   Head,
   All,
-  Ws,
-  Sse,
 
   // Parameter Injection
   Body,
@@ -152,8 +150,8 @@ Method decorators register class methods as HTTP route handlers and attach valid
 | `@Options(path?, schema?)` | `OPTIONS` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
 | `@Head(path?, schema?)` | `HEAD` | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
 | `@All(path?, schema?)` | Any Method | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
-| `@Sse(path?, schema?)` | SSE Stream | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
-| `@Ws(path?, schema?)` | WebSocket | `(path?: string, schema?: MethodSchemaInput) => MethodDecorator` |
+
+> Server-Sent Events use a normal `@Get` route that calls `res.sse()`; see [Responses](/docs/responses). WebSocket routes are not part of the class decorators.
 
 ---
 

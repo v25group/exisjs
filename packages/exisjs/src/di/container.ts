@@ -61,6 +61,48 @@ export class Container {
   private providers = new Map<any, any>()
   private singletonCache = new Map<any, any>()
   private inFlight = new Set<any>()
+  // One frame per class being built. A frame is marked when anything built
+  // inside it is request-scoped, so the class holding it is request-scoped
+  // too instead of a singleton that keeps the first request's instance.
+  private scopeFrames: { request: boolean }[] = []
+
+  private markRequestScoped(): void {
+    const frame = this.scopeFrames[this.scopeFrames.length - 1]
+    if (frame) frame.request = true
+  }
+
+  private build<V>(create: () => V): { value: V; dependsOnRequest: boolean } {
+    const frame = { request: false }
+    this.scopeFrames.push(frame)
+    try {
+      return { value: create(), dependsOnRequest: frame.request }
+    } finally {
+      this.scopeFrames.pop()
+    }
+  }
+
+  private store(
+    token: any,
+    value: any,
+    scope: 'singleton' | 'request' | 'transient',
+    dependsOnRequest: boolean,
+    requestCache?: Map<any, any>
+  ): void {
+    if (scope === 'request' || dependsOnRequest) this.markRequestScoped()
+    if (scope === 'transient') return
+    if (scope === 'request' || dependsOnRequest) {
+      if (!requestCache) {
+        throw new Error(
+          `Cannot resolve request-scoped provider '${String(
+            token
+          )}' outside of a request context. This usually happens if you try to resolve a request-scoped dependency during app startup, inside a background job, or without passing the request context cache.`
+        )
+      }
+      requestCache.set(token, value)
+      return
+    }
+    this.singletonCache.set(token, value)
+  }
 
   provide<T>(
     tokenOrProvider: ProviderToken<T> | CustomProvider<T>,
@@ -87,6 +129,11 @@ export class Container {
       : tokenOrProvider
     this.providers.set(unwrappedToken, provider)
     this.singletonCache.delete(unwrappedToken)
+  }
+
+  /** The cached singleton for a token, without building anything. */
+  peekSingleton<T>(token: ProviderToken<T>): T | undefined {
+    return this.singletonCache.get(token)
   }
 
   clearCache(): void {
@@ -265,6 +312,7 @@ export class Container {
 
     // 2. Check request cache
     if (requestCache && requestCache.has(unwrappedToken)) {
+      this.markRequestScoped()
       return requestCache.get(unwrappedToken)
     }
 
@@ -301,27 +349,19 @@ export class Container {
         try {
           const scope =
             unwrappedToken.prototype?.[SCOPE_METADATA] || 'singleton'
-          const instance = this.instantiateClass(
-            unwrappedToken as new (...args: any[]) => T,
+          const { value: instance, dependsOnRequest } = this.build(() =>
+            this.instantiateClass(
+              unwrappedToken as new (...args: any[]) => T,
+              requestCache
+            )
+          )
+          this.store(
+            unwrappedToken,
+            instance,
+            scope,
+            dependsOnRequest,
             requestCache
           )
-
-          if (scope === 'transient') {
-            return instance
-          }
-
-          if (scope === 'request') {
-            if (!requestCache) {
-              throw new Error(
-                `Cannot resolve request-scoped provider '${String(
-                  unwrappedToken
-                )}' outside of a request context. This usually happens if you try to resolve a request-scoped dependency during app startup, inside a background job, or without passing the request context cache.`
-              )
-            }
-            requestCache.set(unwrappedToken, instance)
-          } else {
-            this.singletonCache.set(unwrappedToken, instance)
-          }
           return instance
         } catch (err: any) {
           const innerMsg = err instanceof Error ? err.message : String(err)
@@ -339,66 +379,62 @@ export class Container {
       throw new Error('Provider not found for token: ' + String(unwrappedToken))
     }
 
-    let resolvedValue: any
     let scope: 'singleton' | 'request' | 'transient' = 'singleton'
 
     this.inFlight.add(unwrappedToken)
     try {
-      if (typeof provider === 'function') {
-        const classScope =
-          (provider as any).prototype?.[SCOPE_METADATA] || 'singleton'
-        scope = classScope
-        resolvedValue = this.instantiateClass(provider as any, requestCache)
-      } else if (provider && typeof provider === 'object') {
-        if ('scope' in provider && provider.scope) {
-          scope = provider.scope
+      const { value: resolvedValue, dependsOnRequest } = this.build(() => {
+        if (typeof provider === 'function') {
+          scope = (provider as any).prototype?.[SCOPE_METADATA] || 'singleton'
+          return this.instantiateClass(provider as any, requestCache)
         }
-
-        if ('useValue' in provider) {
-          resolvedValue = (provider as ValueProvider<T>).useValue
-        } else if ('useExisting' in provider) {
-          resolvedValue = this.resolve(
-            (provider as ExistingProvider<T>).useExisting,
-            requestCache
-          )
-        } else if ('useFactory' in provider) {
-          const factoryProv = provider as FactoryProvider<T>
-          const injectTokens = Array.isArray(factoryProv.inject)
-            ? factoryProv.inject
-            : []
-          const injectedDeps = injectTokens.map((depToken) =>
-            this.resolve(depToken, requestCache)
-          )
-          resolvedValue = factoryProv.useFactory(...injectedDeps)
-        } else if ('useClass' in provider) {
-          resolvedValue = this.instantiateClass(
-            (provider as ClassProvider<T>).useClass,
-            requestCache
-          )
-        } else {
-          resolvedValue = provider
+        if (provider && typeof provider === 'object') {
+          if ('scope' in provider && provider.scope) {
+            scope = provider.scope
+          }
+          if ('useValue' in provider) {
+            return (provider as ValueProvider<T>).useValue
+          }
+          if ('useExisting' in provider) {
+            return this.resolve(
+              (provider as ExistingProvider<T>).useExisting,
+              requestCache
+            )
+          }
+          if ('useFactory' in provider) {
+            const factoryProv = provider as FactoryProvider<T>
+            const injectTokens = Array.isArray(factoryProv.inject)
+              ? factoryProv.inject
+              : []
+            const injectedDeps = injectTokens.map((depToken) =>
+              this.resolve(depToken, requestCache)
+            )
+            return factoryProv.useFactory(...injectedDeps)
+          }
+          if ('useClass' in provider) {
+            // Without an explicit scope, the class's @Injectable({ scope }) applies
+            if (!('scope' in provider && provider.scope)) {
+              scope =
+                (provider as ClassProvider<T>).useClass.prototype?.[
+                  SCOPE_METADATA
+                ] || 'singleton'
+            }
+            return this.instantiateClass(
+              (provider as ClassProvider<T>).useClass,
+              requestCache
+            )
+          }
         }
-      } else {
-        resolvedValue = provider
-      }
+        return provider
+      })
 
-      if (scope === 'transient') {
-        return resolvedValue
-      }
-
-      if (scope === 'request') {
-        if (!requestCache) {
-          throw new Error(
-            `Cannot resolve request-scoped provider '${String(
-              unwrappedToken
-            )}' outside of a request context. This usually happens if you try to resolve a request-scoped dependency during app startup, inside a background job, or without passing the request context cache.`
-          )
-        }
-        requestCache.set(unwrappedToken, resolvedValue)
-      } else {
-        this.singletonCache.set(unwrappedToken, resolvedValue)
-      }
-
+      this.store(
+        unwrappedToken,
+        resolvedValue,
+        scope,
+        dependsOnRequest,
+        requestCache
+      )
       return resolvedValue
     } finally {
       this.inFlight.delete(unwrappedToken)

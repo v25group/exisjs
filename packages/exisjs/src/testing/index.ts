@@ -1,6 +1,7 @@
 export * from './mocks'
 export type { TestResponse, TestApp } from './client'
-export { TestRequest, createTestApp } from './client'
+export { TestRequest, createTestApp, startTestServer } from './client'
+export type { TestServer } from './client'
 
 import * as _nodeTest from 'node:test'
 import _assert from 'node:assert'
@@ -159,7 +160,18 @@ export { expect } from './expect'
 
 import { App } from '../server/app'
 
-export function createTestContext(appInput: any): TestApp {
+export interface TestContextOptions {
+  /**
+   * Start the app's cron jobs during the tests. Off by default so a test run
+   * never fires real jobs; run one on demand with `app.cron.trigger(name)`.
+   */
+  cron?: boolean
+}
+
+export function createTestContext(
+  appInput: any,
+  options: TestContextOptions = {}
+): TestApp {
   let app = appInput
 
   // Handle plain ExisConfig or options object
@@ -234,6 +246,11 @@ export function createTestContext(appInput: any): TestApp {
       if (typeof app.onStartHook === 'function') {
         await app.onStartHook(app)
       }
+    }
+
+    if (options.cron && app?.cron) {
+      app.cron.autoStart = true
+      app.cron.startAll()
     }
 
     try {

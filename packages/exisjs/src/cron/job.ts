@@ -4,6 +4,7 @@ import type {
   CronJobStatus,
   CronJobStats,
   CronContext,
+  CronLock,
 } from './types'
 import {
   parseCronExpression,
@@ -37,7 +38,10 @@ export class CronJob {
   private onErrorHook?: (err: Error, ctx: CronContext) => void | Promise<void>
   private app: App<any>
 
+  private lockTtlMs?: number
+
   constructor(options: CronJobOptions, app: App<any>) {
+    this.lockTtlMs = options.lockTtlMs
     this.app = app
     this.name =
       options.name || `job_${Math.random().toString(36).substring(2, 9)}`
@@ -199,7 +203,7 @@ export class CronJob {
   /**
    * Executes the handler inside an isolated error sandbox with overlap prevention.
    */
-  private async execute(_triggerSource: string): Promise<any> {
+  private async execute(triggerSource: string): Promise<any> {
     if (this.status === 'running' && this.preventOverlap) {
       this.app.log?.warn(
         { job: this.name },
@@ -208,6 +212,41 @@ export class CronJob {
       return
     }
 
+    // Scheduled runs take the cross-instance lock; trigger() runs on demand
+    const lock = (this.app as any).cron?.lock as CronLock | undefined
+    const useLock = lock !== undefined && triggerSource !== 'manual'
+    if (useLock) {
+      const ttlMs =
+        this.lockTtlMs ?? this.intervalMs ?? this.timeoutMs ?? 5 * 60 * 1000
+      let acquired: boolean
+      try {
+        acquired = await lock.acquire(this.name, ttlMs)
+      } catch (err: any) {
+        this.app.log?.error(
+          { err: err?.message, job: this.name },
+          `[exis:cron] Could not acquire the lock for "${this.name}"; skipped`
+        )
+        return
+      }
+      if (!acquired) return
+    }
+    try {
+      return await this.runOnce()
+    } finally {
+      if (useLock) {
+        try {
+          await lock.release(this.name)
+        } catch (err: any) {
+          this.app.log?.error(
+            { err: err?.message, job: this.name },
+            `[exis:cron] Could not release the lock for "${this.name}"`
+          )
+        }
+      }
+    }
+  }
+
+  private async runOnce(): Promise<any> {
     const previousStatus = this.status
     this.status = 'running'
     this.abortController = new AbortController()

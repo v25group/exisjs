@@ -41,7 +41,27 @@ export class ExisRequest<
   public rawBody?: string
   private _rawBuffer?: Buffer
   public user!: import('../types').ExisUser & Record<string, any>
-  public log!: Logger
+  private _baseLog?: Logger
+  private _log?: Logger
+
+  /**
+   * Logger for this request. Every line it writes carries `requestId`, so a
+   * request can be followed across log lines. Created on first use.
+   */
+  get log(): Logger {
+    if (this._log !== undefined) return this._log
+    const base = this._baseLog as any
+    if (base && this.requestId && typeof base.child === 'function') {
+      this._log = base.child({ requestId: this.requestId })
+      return this._log!
+    }
+    return base
+  }
+
+  set log(logger: Logger) {
+    this._baseLog = logger
+    this._log = undefined
+  }
   public session?: Record<string, any> | any
   public requestId?: string
   public tenantId?: string
@@ -336,7 +356,7 @@ export class ExisRequest<
       this.body = secureJsonParse(this.rawBody)
       return this.body as unknown as T
     } catch {
-      throw HttpError.badRequest('Invalid JSON body')
+      throw new HttpError('Invalid JSON body', 400, 'INVALID_JSON')
     }
   }
 

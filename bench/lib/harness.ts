@@ -31,6 +31,12 @@ export const TARGETS: Target[] = [
     validation: 'tex schema',
   },
   {
+    id: 'exis-class',
+    name: 'ExisJS (node, class controllers)',
+    file: 'exis-class.js',
+    validation: 'tex schema',
+  },
+  {
     id: 'exis-uws',
     name: 'ExisJS (uws)',
     file: 'exis.js',

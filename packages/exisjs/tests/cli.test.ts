@@ -178,6 +178,57 @@ describe('CLI Commands', () => {
       expect(fs.existsSync(path.join(tmpDir, 'dist'))).toBe(true)
     })
 
+    it('fails the build when class and functional controllers are mixed (T-25)', async () => {
+      const src = (p: string) =>
+        path.join(__dirname, '../src', p).replace(/\\/g, '/')
+      // Own folder: the shared one holds other tests' build output
+      const dir = createTempDir('exis-mixed-')
+      const sharedCwd = process.cwd
+      process.cwd = () => dir
+      writeTempFile(
+        dir,
+        'tsconfig.json',
+        JSON.stringify({
+          compilerOptions: {
+            module: 'commonjs',
+            target: 'es2022',
+            experimentalDecorators: true,
+          },
+          include: ['src/**/*.ts'],
+        })
+      )
+      writeTempFile(
+        dir,
+        'src/http/fn/route.ts',
+        `const { controller, route } = require('${src('router/index')}')
+module.exports = controller({ a: route.get('/', { handle: () => ({}) }) })`
+      )
+      writeTempFile(
+        dir,
+        'src/http/oop/route.ts',
+        `const { Controller, Get } = require('${src('decorators/index')}')
+class OopController { list() { return {} } }
+Get('/')(OopController.prototype, 'list', Object.getOwnPropertyDescriptor(OopController.prototype, 'list'))
+module.exports = Controller('/')(OopController) || OopController`
+      )
+
+      const errors: string[] = []
+      const origError = console.error
+      console.error = (...args: any[]) => {
+        errors.push(args.join(' '))
+      }
+      try {
+        await expect(buildCommand({ outDir: '.exis/server' })).rejects.toThrow(
+          'ProcessExited: 1'
+        )
+      } finally {
+        console.error = origError
+        process.cwd = sharedCwd
+        cleanupTempDir(dir)
+      }
+      expect(errors.join('\n')).toContain('Mixed Paradigm Error')
+    })
+
     it('rejects if esbuild fails', async () => {
       writeTempFile(
         tmpDir,
@@ -513,5 +564,33 @@ describe('CLI Commands', () => {
         }
       }
     })
+  })
+})
+
+describe('dev lock (BUG-06)', () => {
+  it('is held only while the recorded process still serves its port', async () => {
+    const { isDevLockHeld } = await import('../src/cli/commands/dev')
+    const net = await import('node:net')
+    const dir = createTempDir('exis-lock-')
+    const lockFile = path.join(dir, 'dev-4000.pid')
+    const server = net.createServer().listen(0, '127.0.0.1')
+    await new Promise((r) => server.once('listening', r))
+    const port = (server.address() as any).port
+    try {
+      // A live PID that serves the recorded port: held
+      fs.writeFileSync(lockFile, JSON.stringify({ pid: process.ppid, port }))
+      expect(await isDevLockHeld(lockFile)).toBe(true)
+
+      // Same PID, port no longer served (crash, PID reused): stale
+      await new Promise((r) => server.close(r))
+      expect(await isDevLockHeld(lockFile)).toBe(false)
+
+      // Old-format or unreadable lock: ignored
+      fs.writeFileSync(lockFile, '12345')
+      expect(await isDevLockHeld(lockFile)).toBe(false)
+    } finally {
+      if (server.listening) server.close()
+      cleanupTempDir(dir)
+    }
   })
 })

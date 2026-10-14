@@ -15,9 +15,9 @@ const config: ExisConfig = {
   helmet: { enabled: true },
   compression: true,
 
-  // Swagger UI at /docs. Use `enabled: !isProduction` to hide it in production.
+  // Swagger UI at /docs; development only
   docs: {
-    enabled: true,
+    enabled: process.env.NODE_ENV !== 'production',
     title: 'Bookstore API',
     version: '1.0.0',
     description: 'Class-based ExisJS example with MongoDB',

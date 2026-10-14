@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const EXIS = path.join(ROOT, 'packages', 'exisjs', 'bin', 'exis.js')
 const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
+const ESLINT = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
 const CREATE = path.join(ROOT, 'packages', 'create', 'bin', 'create-exis.js')
 const JWT_SECRET = 'verify-examples-secret-0123456789abcdef'
 
@@ -116,12 +117,13 @@ function verifyScaffold(paradigm) {
       '-y',
       '--ts',
       `--${paradigm}`,
-      '--no-eslint',
       '--skip-install',
       '--skip-git',
     ])
     if (!ok) return
     step('type-check', cwd, [TSC, '--noEmit', '-p', '.'])
+    // A fresh project must pass its own lint config
+    step('lint', cwd, [ESLINT, '.'])
     step('tests', cwd, [EXIS, 'test'])
     step('build', cwd, [EXIS, 'build'])
   } finally {
@@ -140,7 +142,8 @@ await verifyExample('01-my-app', {
   checks: [
     ['GET', '/', 200],
     ['GET', '/health', 200],
-    ['GET', '/docs/json', 200],
+    // API docs are not published in production
+    ['GET', '/docs/json', 404],
     // Protected by src/http/users/boundary.ts: must hold in production too
     ['GET', '/users', 401],
     ['POST', '/auth/register', 400, json({ email: 'not-an-email' })],
@@ -170,7 +173,7 @@ if (process.env.SKIP_MONGO === '1') {
       ['GET', '/api/auth/me', 401],
       // Authentication is checked before the body is validated
       ['POST', '/api/books', 401, json({})],
-      ['GET', '/docs/json', 200],
+      ['GET', '/docs/json', 404],
     ],
   })
 }

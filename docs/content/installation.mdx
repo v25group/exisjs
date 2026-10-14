@@ -205,9 +205,8 @@ const config: ExisConfig = {
   helmet: { enabled: true },
   compression: true,
 
-  // Swagger UI at /docs; set enabled to
-  // process.env.NODE_ENV !== 'production' to hide it in production
-  docs: { enabled: true },
+  // Swagger UI at /docs, development only
+  docs: { enabled: process.env.NODE_ENV !== 'production' },
 }
 
 export default config
@@ -283,7 +282,7 @@ npm run dev
 Output:
 
 ```text filename="Terminal"
-[exis] starting development server (v0.8.1)...
+[exis] starting development server (v0.9.0)...
 EXIS ready in 125 ms
 
 → Local:   http://localhost:4000/

@@ -239,13 +239,37 @@ CronExpression.EVERY_YEAR              // '0 0 1 1 *'
 ### 1. Overlap Prevention (`preventOverlap: true`)
 If a job takes longer than its scheduling frequency (for example, a database migration running for 90 seconds on a 60-second interval), standard Node.js timers cause overlapping concurrent runs. ExisJS locks execution during active runs and skips overlapping ticks until the current run completes.
 
+`preventOverlap` works inside one process. When the app runs on several instances, every instance runs every job; set `app.cron.lock` so only the instance holding the lock runs each tick:
+
+```typescript filename="src/http/server.ts"
+import { randomUUID } from 'node:crypto'
+const instanceId = randomUUID()
+
+export default exis({
+  async onStart(app) {
+    app.cron.lock = {
+      acquire: async (job, ttlMs) =>
+        (await redis.set(`cron:${job}`, instanceId, 'PX', ttlMs, 'NX')) === 'OK',
+      release: async (job) => {
+        if ((await redis.get(`cron:${job}`)) === instanceId) await redis.del(`cron:${job}`)
+      },
+    }
+  },
+})
+```
+
+The lock is held for at most `lockTtlMs` (default: the interval, or 5 minutes for cron patterns). A Postgres advisory lock (`pg_try_advisory_lock`) works the same way. `app.cron.trigger(name)` runs a job without the lock.
+
 ### 2. Isolated Error Sandbox
 Exceptions thrown inside cron handlers are caught within an isolated execution boundary. An uncaught error in a background task will never crash the HTTP server or prevent subsequent scheduled runs. Errors are logged with execution duration and forwarded to your `onError` handler.
 
 ### 3. Accurate Timezone & DST Calculation
 Cron schedules evaluate IANA timezones (e.g. `'America/Chicago'`, `'Europe/Berlin'`, `'UTC'`) using native `Intl.DateTimeFormat` evaluations, adjusting accurately for Daylight Saving Time (DST) transitions.
 
-### 4. Graceful Shutdown & Drain Window
+### 4. Quiet Under Tests
+Under `NODE_ENV=test` jobs are registered but not started; see [Testing](/docs/testing). Each job file is loaded once: from `src/` during development and tests, and from the compiled `.exis/server/src/` in production.
+
+### 5. Graceful Shutdown & Drain Window
 When the server receives `SIGTERM` or `SIGINT`:
 1. The scheduler halts all future timer registrations.
 2. Active timers are unreferenced (`timer.unref()`).

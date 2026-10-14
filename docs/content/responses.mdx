@@ -51,6 +51,24 @@ export default class UsersController {
 }
 ```
 
+### What a Return Value Becomes
+
+Both paradigms answer the same way:
+
+| Handler returns | Response |
+| :--- | :--- |
+| Object, array, number, boolean, `null` | JSON (`null` is the JSON value `null`) |
+| String | `text/plain` |
+| `Buffer` / `Uint8Array` | `application/octet-stream` (set `Content-Type` first to change it) |
+| Stream or async iterable | Streamed |
+| `download(data, name)` | Attachment |
+| `res`, or the result of `res.json()` / `res.send()` | Nothing more: the response was already sent |
+| `undefined`, nothing sent | `204 No Content` (or the status set with `@HttpCode` / `res.status()`, with an empty body) |
+
+Prefer returning a value. Call `res.json()` / `res.send()` yourself only when you need to, and do not do both. A handler that receives the response object (`@Res()`, or `(req, res)` with no decorators) may also answer later, for example from a callback; it is then responsible for sending exactly one response.
+
+`HEAD` is answered by the matching `GET` route without a body. A path that exists under other methods answers `405 METHOD_NOT_ALLOWED` with an `Allow` header instead of `404`.
+
 ---
 
 ## Response Envelope Builders (`exisjs/response`)

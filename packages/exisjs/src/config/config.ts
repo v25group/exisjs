@@ -20,6 +20,8 @@ export type ResolvedConfig = Omit<
   | 'transformResponse'
   | 'blockProbes'
   | 'blockSuspiciousProbes'
+  | 'authorization'
+  | 'errors'
 > & {
   ssl?: ExisConfig['ssl']
   queue?: ExisConfig['queue']
@@ -28,6 +30,8 @@ export type ResolvedConfig = Omit<
   transformResponse?: ExisConfig['transformResponse']
   blockProbes?: ExisConfig['blockProbes']
   blockSuspiciousProbes?: ExisConfig['blockSuspiciousProbes']
+  authorization?: ExisConfig['authorization']
+  errors?: ExisConfig['errors']
 }
 
 export const defaultConfig: ResolvedConfig = {

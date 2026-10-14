@@ -45,6 +45,8 @@ export class RequestHandler {
     headers?: Record<string, string>
     body?: any
     payload?: any
+    /** Fail instead of waiting forever for a handler that never answers */
+    timeoutMs?: number
   }): Promise<import('../testing/client').TestResponse> {
     if (!(this.app as any)._routesMounted) {
       if (typeof this.app.create === 'function') await this.app.create()
@@ -125,6 +127,17 @@ export class RequestHandler {
           server.close(() => reject(err))
         })
 
+        if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
+          req.setTimeout(options.timeoutMs, () => {
+            const err = new Error(
+              `${method} ${path} did not respond within ${options.timeoutMs}ms. ` +
+                'Does the handler return a value or send a response on every path?'
+            )
+            req.destroy(err)
+            server.closeAllConnections?.()
+          })
+        }
+
         if (bodyStr) {
           req.write(bodyStr)
         }
@@ -145,7 +158,8 @@ export class RequestHandler {
         req: req as unknown as import('../types').Request,
         res: res as unknown as import('../types').Response,
         app: this.app as any,
-        diCache: new Map(),
+        // Same cache as req._diCache, so inject() and ctx.resolve() agree
+        diCache: (req as any)._diCache,
       }
 
       const doCleanup = () => {
@@ -295,7 +309,8 @@ export class RequestHandler {
 
     const { createErrorHandler } = await import('../error/errors')
     const defaultHandler = createErrorHandler(
-      this.app.options.env === 'development'
+      this.app.options.env === 'development',
+      { legacyFields: this.app.options.errors?.legacyFields }
     )
     await defaultHandler(err, req as any, res as any, () => {
       /* noop */

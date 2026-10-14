@@ -19,10 +19,9 @@ export default defineConfig({
 
   healthcheck: { enabled: true },
 
-  // Swagger UI at /docs, OpenAPI JSON at /docs/json.
-  // Use `enabled: !isProduction` to hide the docs in production.
+  // Swagger UI at /docs, OpenAPI JSON at /docs/json; development only
   docs: {
-    enabled: true,
+    enabled: !isProduction,
     path: '/docs',
     title: '01-My-App API',
     version: '1.0.0',

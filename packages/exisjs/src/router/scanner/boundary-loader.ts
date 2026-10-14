@@ -2,6 +2,8 @@ import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import type { App } from '../../server/app'
+import { HttpError } from '../../error/errors'
+import { isResponseStarted } from '../send-result'
 
 export interface LoadedBoundaryPipeline {
   activeBoundaries: string[]
@@ -291,6 +293,8 @@ export async function loadActiveBoundaries(
             res.json = function (body: any) {
               if (!handledByRoute) {
                 handledByRoute = true
+                // Sent later by the wrapper; nothing else may answer meanwhile
+                res._pending = true
                 nextResolve(body)
               } else {
                 return originalJson(body)
@@ -300,6 +304,8 @@ export async function loadActiveBoundaries(
             res.send = function (body: any) {
               if (!handledByRoute) {
                 handledByRoute = true
+                // Sent later by the wrapper; nothing else may answer meanwhile
+                res._pending = true
                 nextResolve(body)
               } else {
                 return originalSend(body)
@@ -429,19 +435,18 @@ export async function loadActiveBoundaries(
               for (const hook of beforeHooks) {
                 try {
                   const result = await hook(req, res)
+                  // A hook that already answered (for example with 401)
+                  // keeps its response
+                  if (isResponseStarted(res)) return
                   if (result === false) {
-                    if (!res.headersSent) {
-                      res.status(403).json({
-                        success: false,
-                        error: {
-                          code: 'FORBIDDEN',
-                          message: 'Forbidden by boundary guard',
-                        },
-                      })
-                    }
-                    return
+                    return next(
+                      new HttpError(
+                        'Forbidden by boundary guard',
+                        403,
+                        'FORBIDDEN'
+                      )
+                    )
                   }
-                  if (res.headersSent) return
                 } catch (err) {
                   return next(err)
                 }
@@ -458,6 +463,8 @@ export async function loadActiveBoundaries(
               res.json = function (body: any) {
                 if (handled) return originalJson(body)
                 handled = true
+                // Sent once the afterHandle hooks finish
+                res._pending = true
 
                 const runAfterHooks = async () => {
                   let currentData = body
@@ -480,6 +487,8 @@ export async function loadActiveBoundaries(
               res.send = function (body: any) {
                 if (handled) return originalSend(body)
                 handled = true
+                // Sent once the afterHandle hooks finish
+                res._pending = true
 
                 const runAfterHooks = async () => {
                   let currentData = body
@@ -517,6 +526,7 @@ export async function loadActiveBoundaries(
                   if (!res.headersSent) {
                     res.status(408).json({
                       success: false,
+                      statusCode: 408,
                       error: {
                         code: 'REQUEST_TIMEOUT',
                         message: 'Request Timeout',
