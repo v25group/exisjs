@@ -14,7 +14,7 @@
     "bcryptjs": "^3.0.3",
     "exisjs": "*",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.24.4"
+    "mongoose": "^8.24.5"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.1",
