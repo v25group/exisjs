@@ -118,7 +118,7 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.9.0')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.9.1')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 
@@ -209,5 +209,17 @@ describe('create-exis scaffolding', () => {
           .includes("docs: { enabled: process.env.NODE_ENV !== 'production' }")
       ).toBe(true)
     }
+  })
+
+  it('points AGENTS.md at the docs folder the exisjs build ships', async () => {
+    const templates = await import('../src/templates')
+    const agents = templates.agentsTemplate()
+    expect(agents.includes('node_modules/exisjs/dist/docs/')).toBe(true)
+    // The exisjs postbuild step copies the repo docs to dist/docs
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '../../exisjs/package.json'), 'utf8')
+    )
+    expect(pkg.scripts.postbuild.includes("'./dist/docs'")).toBe(true)
+    expect(pkg.files.includes('dist')).toBe(true)
   })
 })

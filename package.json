@@ -1,6 +1,6 @@
 {
   "name": "exis",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "description": "ExisJS monorepo: exisjs, create-exisjs and @exisjs/fetch",
   "homepage": "https://github.com/v25group/exisjs#readme",
@@ -35,6 +35,7 @@
     "bench:quick": "npm run build --workspace=packages/exisjs && tsx bench/http.ts --quick",
     "bench:router": "tsx bench/micro/router.ts",
     "bench:validation": "tsx bench/micro/validation.ts",
+    "bench:pipeline": "npm run build --workspace=packages/exisjs && node bench/micro/pipeline.js",
     "bench:profile": "npm run build --workspace=packages/exisjs && tsx bench/profile.ts"
   },
   "lint-staged": {
@@ -53,8 +54,8 @@
     "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "@types/node": "^26.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.71.0",
-    "@typescript-eslint/parser": "^8.71.0",
+    "@typescript-eslint/eslint-plugin": "^8.71.1",
+    "@typescript-eslint/parser": "^8.71.1",
     "autocannon": "^8.0.0",
     "cross-env": "^10.1.0",
     "eslint": "^10.9.1",
@@ -62,14 +63,14 @@
     "express": "^5.2.1",
     "fastify": "^5.12.5",
     "find-my-way": "^9.9.0",
-    "hono": "^4.13.11",
+    "hono": "^4.13.13",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "mitata": "^1.0.34",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.0"
+    "typescript-eslint": "^8.71.1"
   },
   "overrides": {
     "hyperid": "^4.0.0"

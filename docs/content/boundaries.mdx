@@ -148,6 +148,8 @@ export default class AdminBoundary {
 }
 ```
 
+`next()` resolves with what the route sent. Returning that value (or returning nothing) sends the route's response exactly as the route sent it, with the same type and `Content-Type`; a `Buffer` stays binary. Returning a different value replaces the response, and that value is sent like a handler's return value.
+
 ---
 
 ## Boundary Cascading & Execution Order

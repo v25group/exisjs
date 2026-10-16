@@ -2,7 +2,7 @@ import { App } from '../src/server/app'
 import { defineBoundary, controller, route } from '../src/router/index'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import { createTestApp } from '../src/testing/client'
+import { createTestApp, startTestServer } from '../src/testing/client'
 import { describe, it, expect, beforeEach, afterEach, ex } from '../src/testing'
 import os from 'node:os'
 
@@ -288,5 +288,98 @@ describe('Boundary & Enhanced Pipeline', () => {
     } finally {
       await fs.rm(testDir, { recursive: true, force: true })
     }
+  })
+})
+
+// E-01: a pass-through wrapper must not change how the route's answer is sent
+describe('Boundary wrapper keeps the route response', () => {
+  let tmpDir: string
+  let app: App
+
+  async function mount(wrapper: string) {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'exis-wrapper-test-'))
+    const httpDir = path.join(tmpDir, 'src', 'http')
+    await fs.mkdir(httpDir, { recursive: true })
+    const routerPath = path
+      .join(__dirname, '../src/router/index')
+      .replace(/\\/g, '/')
+    await fs.writeFile(
+      path.join(httpDir, 'boundary.js'),
+      `exports.default = ${wrapper}`
+    )
+    await fs.writeFile(
+      path.join(httpDir, 'route.js'),
+      `
+      const { controller, route } = require('${routerPath}')
+      exports.default = controller({
+        buffer: route.get('/buffer', { handle: () => Buffer.from('binary-data') }),
+        text: route.get('/text', { handle: () => 'plain' }),
+        num: route.get('/num', { handle: ({ res }) => res.json(5) }),
+        nil: route.get('/nil', { handle: () => null }),
+        obj: route.get('/obj', { handle: () => ({ ok: true }) }),
+      })
+      `
+    )
+    app = new App({ env: 'production', server: 'node' })
+    app.apiDir = httpDir
+    const routes = await (app as any).routeScanner.scanDirectory(httpDir)
+    for (const { filePath, routePath } of routes) {
+      if (filePath.endsWith('route.js')) {
+        await (app as any).routeScanner.mountRouteFile(filePath, routePath)
+      }
+    }
+    return createTestApp(app)
+  }
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
+  for (const [name, wrapper] of [
+    ['returns next()', 'async (ctx, next) => next()'],
+    ['returns nothing', 'async (ctx, next) => { await next() }'],
+  ]) {
+    it(`sends each type unchanged when the wrapper ${name}`, async () => {
+      const client = await mount(wrapper)
+
+      const buf = await client.get('/buffer')
+      expect(buf.headers['content-type']).toBe('application/octet-stream')
+      expect(buf.text).toBe('binary-data')
+
+      const text = await client.get('/text')
+      expect(String(text.headers['content-type'])).toContain('text/plain')
+      expect(text.text).toBe('plain')
+
+      const num = await client.get('/num')
+      expect(String(num.headers['content-type'])).toContain('application/json')
+      expect(num.text).toBe('5')
+
+      const nil = await client.get('/nil')
+      expect(String(nil.headers['content-type'])).toContain('application/json')
+      expect(nil.text).toBe('null')
+
+      expect((await client.get('/obj')).body).toEqual({ ok: true })
+    })
+  }
+
+  it('sends a returned Buffer as binary on a real socket', async () => {
+    await mount('async (ctx, next) => next()')
+    const server = await startTestServer(app)
+    try {
+      const res = await server.request('/buffer')
+      expect(res.headers.get('content-type')).toBe('application/octet-stream')
+      expect(await res.text()).toBe('binary-data')
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('sends a Buffer the wrapper returns as binary', async () => {
+    const client = await mount(
+      `async (ctx, next) => { await next(); return Buffer.from('replaced') }`
+    )
+    const res = await client.get('/obj')
+    expect(res.headers['content-type']).toBe('application/octet-stream')
+    expect(res.text).toBe('replaced')
   })
 })

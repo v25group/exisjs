@@ -28,7 +28,7 @@ All standard middlewares can be imported directly from `exisjs/middleware`. Cust
 | `idempotent` | `idempotent(options?)` | Duplicate mutation caching keyed by `Idempotency-Key` headers. |
 | `dedupe` | `dedupe(options)` | Merges simultaneous identical in-flight `GET` requests into a single operation. |
 | `backpressure` | `backpressure(options?)` | Queues requests during high load and sheds excess traffic with `503 Service Unavailable`. |
-| `serveStatic` | `serveStatic(root, options?)` | Serves static assets from disk with strong ETags and Brotli/Gzip pre-compression. |
+| `serveStatic` | `serveStatic(root, options?)` | Serves static assets from disk with ETag / Last-Modified revalidation and Brotli/Gzip pre-compression. |
 | `timeout` | `timeout(ms \| options)` | Terminates requests exceeding the duration limit with `503 Service Unavailable`. |
 | `fileUpload` | `fileUpload(options?)` | Streaming multipart/form-data parser supporting disk/memory storage and MIME checks. |
 | `fromExpress` | `fromExpress(middleware)` | Connect/Express bridge adapter running third-party middleware (e.g. Multer) directly. |
@@ -150,6 +150,8 @@ export const requireAuth = defineMiddleware<AuthContext>(async (req, res, next) 
   next()
 })
 ```
+
+Middleware may be `async`. ExisJS awaits the returned promise. If it throws, or rejects with an `HttpError` (such as `UnauthorizedException` above), that error becomes the response through the error handler, with the standard error envelope. You don't need to catch it and call `next(err)` yourself.
 
 ### 2. Using Typed Middleware in Functional Routes
 
@@ -287,4 +289,4 @@ export default exis({
 })
 ```
 
-`serveStatic` automatically handles MIME detection, conditional `If-None-Match` 304 caching, and serves pre-compressed `.br` or `.gz` files if present on disk.
+`serveStatic` handles MIME detection and serves a pre-compressed `.br` or `.gz` file when one exists and the client accepts that encoding (`br;q=0` counts as a refusal). Every file gets an `ETag` (from its size and modification time; each encoded file has its own) and `Last-Modified`, and conditional requests are answered with `304` or `412` as described in [Caching & Conditional Requests](/docs/responses#caching--conditional-requests-etag-304-412). `Vary: Accept-Encoding` is always sent so shared caches keep the variants apart.

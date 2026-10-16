@@ -4,6 +4,7 @@ import type { ExisResponse } from './response'
 import { HttpError } from '../error/errors'
 import { secureJsonParse, stripPrototype } from './helpers/json'
 import { parseCookies } from './helpers/cookie'
+import { evaluatePreconditions, toHttpTime } from './helpers/conditional'
 import {
   resolveIps,
   resolveProtocol,
@@ -15,8 +16,6 @@ import {
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const accepts = require('accepts')
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const fresh = require('fresh')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const qs = require('fast-querystring')
 
@@ -38,8 +37,22 @@ export class ExisRequest<
     this._file = val
   }
 
-  public rawBody?: string
+  // The body as received; the text form is decoded from it on first use
   private _rawBuffer?: Buffer
+  private _rawText?: string
+
+  /** The request body as UTF-8 text, once it has been read. */
+  get rawBody(): string | undefined {
+    if (this._rawText === undefined && this._rawBuffer !== undefined) {
+      this._rawText = this._rawBuffer.toString('utf8')
+    }
+    return this._rawText
+  }
+
+  set rawBody(text: string | undefined) {
+    this._rawText = text
+    this._rawBuffer = undefined
+  }
   public user!: import('../types').ExisUser & Record<string, any>
   private _baseLog?: Logger
   private _log?: Logger
@@ -116,36 +129,6 @@ export class ExisRequest<
 
   private _onClose?: () => void
 
-  public cleanup(): void {
-    if (this._abortController && this._onClose) {
-      if (typeof this.raw?.removeListener === 'function') {
-        this.raw.removeListener('close', this._onClose)
-      } else if (typeof this.raw?.off === 'function') {
-        this.raw.off('close', this._onClose)
-      }
-      this._abortController = undefined
-      this._signal = undefined
-    }
-    this._diCacheMap?.clear()
-    this.user = undefined as any
-    this.session = undefined
-    this.body = undefined as any
-    this.params = undefined as any
-    this.files = []
-    this._file = undefined
-    this.rawBody = undefined
-    this.requestId = undefined
-    this.tenantId = undefined
-    this._path = undefined
-    this._query = undefined
-    this._cookies = undefined
-    this._ips = undefined
-    this._ip = undefined
-    this._protocol = undefined
-    this._hostname = undefined
-    this._method = undefined
-  }
-
   constructor(
     public raw: IncomingMessage,
     public res: ExisResponse,
@@ -154,44 +137,6 @@ export class ExisRequest<
   ) {
     this._urlStr = raw.url ?? '/'
     this._qIdx = this._urlStr.indexOf('?')
-  }
-
-  public init(
-    raw: IncomingMessage,
-    res: ExisResponse,
-    trustProxy: boolean | number = false,
-    bodyLimit = 10485760 // 10MB
-  ): this {
-    this.cleanup()
-    this.raw = raw
-    this.res = res
-    this.trustProxy = trustProxy
-    this.bodyLimit = bodyLimit
-
-    this.params = undefined as any
-    this.body = undefined as any
-    this.files = []
-    this.rawBody = undefined
-    this.user = undefined as any
-    this.log = undefined as any
-    this.session = undefined
-    this.requestId = undefined
-    this.tenantId = undefined
-
-    this._diCacheMap?.clear()
-
-    this._urlStr = raw.url ?? '/'
-    this._qIdx = this._urlStr.indexOf('?')
-    this._path = undefined
-    this._query = undefined
-    this._cookies = undefined
-    this._ips = undefined
-    this._ip = undefined
-    this._protocol = undefined
-    this._hostname = undefined
-    this._method = undefined
-
-    return this
   }
 
   get method(): string {
@@ -311,17 +256,28 @@ export class ExisRequest<
     return accept.languages(...languages)
   }
 
+  /**
+   * True when the client's cached copy is current: a GET/HEAD whose
+   * conditional headers match the response's `ETag` / `Last-Modified`
+   * (so a 304 would be the right answer).
+   */
   get fresh(): boolean {
     const method = this.method
     const s = this.res.statusCode
     if (method !== 'GET' && method !== 'HEAD') return false
-    if ((s >= 200 && s < 300) || s === 304) {
-      return fresh(this.headers, {
-        etag: this.res.getHeader('ETag'),
-        'last-modified': this.res.getHeader('Last-Modified'),
-      })
-    }
-    return false
+    if (!((s >= 200 && s < 300) || s === 304)) return false
+    const etag = this.res.getHeader('ETag')
+    const lastModified = this.res.getHeader('Last-Modified')
+    if (etag === undefined && lastModified === undefined) return false
+    return (
+      evaluatePreconditions(method, this.headers, {
+        etag: etag === undefined ? undefined : String(etag),
+        lastModified:
+          lastModified === undefined
+            ? undefined
+            : toHttpTime(String(lastModified)),
+      }) === 'not-modified'
+    )
   }
 
   get stale(): boolean {
@@ -329,20 +285,17 @@ export class ExisRequest<
   }
 
   async text(): Promise<string> {
-    if (this.rawBody !== undefined) return this.rawBody
-    await this._parseBody()
-    return this.rawBody!
+    if (this.rawBody === undefined) await this._parseBody()
+    return this.rawBody ?? ''
   }
 
+  /** The request body as received, byte for byte (binary-safe). */
   async buffer(): Promise<Buffer> {
     if (this._rawBuffer !== undefined) return this._rawBuffer
-    if (this.rawBody !== undefined) {
-      this._rawBuffer = Buffer.from(this.rawBody, 'utf8')
-      return this._rawBuffer
-    }
+    // A body set as text (by middleware or a test)
+    if (this._rawText !== undefined) return Buffer.from(this._rawText, 'utf8')
     await this._parseBody()
-    this._rawBuffer = Buffer.from(this.rawBody || '', 'utf8')
-    return this._rawBuffer
+    return this._rawBuffer!
   }
 
   async json<T = unknown>(): Promise<T> {
@@ -425,17 +378,19 @@ export class ExisRequest<
     return this
   }
 
-  private async _parseBody(): Promise<void> {
-    const contentType = this.get('content-type') ?? ''
-    const bodyStr = await parseRawBody(
+  // One read of the stream, shared by concurrent text() / buffer() / json()
+  private _bodyRead?: Promise<void>
+
+  private _parseBody(): Promise<void> {
+    return (this._bodyRead ??= parseRawBody(
       this.raw,
       this.bodyLimit,
-      contentType,
+      this.get('content-type') ?? '',
       this.method
-    )
-    if (bodyStr !== undefined) {
-      this.rawBody = bodyStr
-    }
+    ).then((buf) => {
+      this._rawBuffer = buf
+      this._rawText = undefined
+    }))
   }
 
   async streamUpload(destDir: string): Promise<{

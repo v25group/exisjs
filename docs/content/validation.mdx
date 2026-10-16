@@ -92,6 +92,19 @@ const Schema = tex.object({
 })
 ```
 
+Nested object schemas take the same modifiers as methods: `.optional()`, `.nullable()` and `.nullish()`. A plain object literal is also a nested object:
+
+```typescript filename="src/http/leads/schema.ts"
+const Address = tex.object({ city: tex.string(), pin: tex.string({ optional: true }) })
+
+export const UpdateLead = tex.object({
+  status: tex.enum(['new', 'won', 'lost']),
+  address: Address.optional(), // may be left out
+  billing: Address.nullish(), // may be left out or sent as null to clear it
+  meta: { source: tex.string() }, // same as tex.object({ source: tex.string() })
+})
+```
+
 ### Input and Output Types
 
 A field with a `default` may be left out of a request but is always present after parsing, so the two sides have different types:

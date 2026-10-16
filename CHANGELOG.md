@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.9.1`** | 2026-10-16 | Patch: Bug Fixes | RFC 9110 conditional requests (`res.checkPreconditions()`, 304/412/428), binary request bodies kept intact, boundary wrappers keep a returned `Buffer` binary, nested `tex.object` `.optional()` honoured, `.nullable()` / `.nullish()` on object schemas, clear error for a missing field schema, AGENTS.md docs path | [**Read v0.9.1 Notes →**](./changelog/v0.9/v0.9.1.md) |
 | **`v0.9.0`** | 2026-10-14 | Minor (breaking): Correctness & Security | Request-scoped DI and `@Idempotent` cross-user leaks fixed, hung requests answered, class controllers handle `res.json()`/`download()`/Buffers and `@UseInterceptors`, safe RBAC (401, all-of permissions, no `isSuperAdmin`), one error envelope, default CSP, readiness endpoint, shared rate-limit and cron-lock stores | [**Read v0.9.0 Notes →**](./changelog/v0.9/v0.9.0.md) |
 | **`v0.8.1`** | 2026-10-12 | Patch: Security & Build | `ipFilter` X-Forwarded-For bypass fixed, `serveStatic` sibling-directory traversal fixed, `exisjs build` works on hosts without `devDependencies` | [**Read v0.8.1 Notes →**](./changelog/v0.8/v0.8.1.md) |
 | **`v0.8.0`** | 2026-10-09 | Major: Pure TS Core, Perf & Security | `@exisjs/rs` removed (pure TypeScript core), ~50% less framework overhead per request, compiled `tex` validator, upload/IP-spoofing/cross-request security fixes, Node.js 20+ | [**Read v0.8.0 Notes →**](./changelog/v0.8/v0.8.0.md) |
@@ -32,7 +33,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.9.0] - 2026-10-14
+## Current Release: [0.9.1] - 2026-10-16
+
+> Bug fixes for 0.9.0, no breaking changes. Details in [**`changelog/v0.9/v0.9.1.md`**](./changelog/v0.9/v0.9.1.md).
+
+### Fixed
+- A boundary `handle(ctx, next)` wrapper re-sent the route's response with `res.json`, so a returned `Buffer` became JSON and `res.json(5)` became text; a wrapper that returned nothing left the request open.
+- `.optional()` on a nested `tex.object` was ignored (also through `partial()`, `extend()` and array items); `partial()` skipped nested objects; plain nested shapes crashed; array item errors were listed twice.
+- `tex.object({ field: undefined })` now names the field in its error.
+- The generated `AGENTS.md` points to `node_modules/exisjs/dist/docs/`; reference index links are relative; the `03-all-features` example no longer sends `X-Powered-By`.
+- Binary request bodies (`req.buffer()`, `@RawBody()`) are kept byte for byte; `@RawBody()` answers `413` over the limit; the test client sends Buffers as bytes; `res.html()` sets `Content-Length`; the development-only `X-Set-Cookie` header (which exposed `httpOnly` cookies to scripts) is removed.
+
+### Database
+- `@Transactional` no longer exposes a transaction to concurrent requests on the same service (it now uses `AsyncLocalStorage`).
+- `connectAll()` connects in parallel and reports every failure; health checks run in parallel with a per-database timeout (`healthTimeoutMs`) and shared in-flight checks.
+
+### Conditional Requests
+- New `res.checkPreconditions()` for `304` from a version column and `412` / `428` against lost updates.
+- One RFC 9110 evaluator for automatic ETags, `serveStatic`, `res.download(path)` and `req.fresh`: `If-Match`, `If-Unmodified-Since`, `If-None-Match` (lists, weak tags, `*`), `If-Modified-Since`; `Last-Modified` on files; clean `304` headers; `Cache-Control: no-cache` no longer disables revalidation; `br;q=0` honoured; no `existsSync` in `serveStatic`; `fresh` dependency dropped.
+
+### Changed
+- 404s no longer scan every route; functional controllers precompute per-route work; `fast-json-stringify` loads on first use; unused pooling code removed; new `npm run bench:pipeline`.
+
+### Added
+- `.nullable()` and `.nullish()` on object schemas.
+
+---
+
+## Previous Release: [0.9.0] - 2026-10-14
 
 > **Breaking changes before 1.0.** Fixes from two production field reports. Read the upgrade guide in [**`changelog/v0.9/v0.9.0.md`**](./changelog/v0.9/v0.9.0.md).
 

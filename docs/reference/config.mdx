@@ -175,7 +175,7 @@ The root configuration schema accepted by `exis.config.ts`:
 | `trustProxy` | `boolean \| number` | `false` | `true`: trust all proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`). `N`: trust only the N closest hops in `X-Forwarded-For`, counting the socket peer; CDN headers are ignored. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum payload size in bytes for JSON and URL-encoded request bodies. |
 | `compression` | `boolean` | `false` | Enables gzip and Brotli response compression. |
-| `etag` | `boolean` | `false` | Enables ETag computation for dynamic responses. |
+| `etag` | `boolean` | `false` | Weak ETags on successful GET/HEAD responses, and `304` for a matching `If-None-Match`. |
 | `debugRouting` | `boolean` | `false` | Logs the matched file-system route file and applied boundaries for every request. |
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
 | `transformResponse` | `boolean \| ((data: any, req: any, res: any) => any)` | `false` | Global transformation function to wrap route responses in a standardized envelope. |

@@ -1,4 +1,5 @@
 import { describe, expect, it } from '../src/testing'
+import { Transactional } from '../src/decorators'
 import {
   DatabaseManager,
   registerDatabase,
@@ -297,5 +298,198 @@ describe('Modern Mongoose Options & Helpers', () => {
     const custom = mongoPoolOptions({ maxPoolSize: 25 })
     expect(custom.maxPoolSize).toBe(25)
     expect(custom.minPoolSize).toBe(2)
+  })
+})
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+describe('Database connect and health speed', () => {
+  it('connects databases in parallel', async () => {
+    DatabaseManager.clear()
+    for (const name of ['mongo', 'redis', 'postgres']) {
+      registerDatabase({
+        name,
+        connect: () => sleep(150),
+        disconnect: () => {},
+      })
+    }
+    const start = Date.now()
+    await DatabaseManager.connectAll()
+    // Sequential would take 450 ms
+    expect(Date.now() - start).toBeLessThan(400)
+    DatabaseManager.clear()
+  })
+
+  it('names every database that failed, and retries only those', async () => {
+    DatabaseManager.clear()
+    let okConnects = 0
+    let flaky = true
+    registerDatabase({
+      name: 'ok',
+      connect: () => {
+        okConnects++
+      },
+      disconnect: () => {},
+    })
+    registerDatabase({
+      name: 'cache',
+      connect: () => {
+        if (flaky) throw new Error('ECONNREFUSED')
+      },
+      disconnect: () => {},
+    })
+    registerDatabase({
+      name: 'search',
+      connect: () => {
+        throw new Error('timeout')
+      },
+      disconnect: () => {},
+    })
+
+    await expect(DatabaseManager.connectAll()).rejects.toThrow(
+      '[ExisJS Database] Failed to connect database "cache": ECONNREFUSED; "search": timeout'
+    )
+    flaky = false
+    await expect(DatabaseManager.connectAll()).rejects.toThrow('"search"')
+    expect(okConnects).toBe(1)
+    DatabaseManager.clear()
+  })
+
+  it('reports a hanging health check as an error after its timeout', async () => {
+    DatabaseManager.clear()
+    registerDatabase({
+      name: 'stuck',
+      connect: () => {},
+      disconnect: () => {},
+      isHealthy: () => new Promise<boolean>(() => {}),
+      healthTimeoutMs: 50,
+    })
+    registerDatabase({
+      name: 'fine',
+      connect: () => {},
+      disconnect: () => {},
+      isHealthy: () => true,
+    })
+    const start = Date.now()
+    const health = await DatabaseManager.checkHealth()
+    expect(Date.now() - start).toBeLessThan(1000)
+    expect(health.healthy).toBe(false)
+    expect(health.databases.stuck.status).toBe('error')
+    expect(health.databases.stuck.error).toBe(
+      'Health check timed out after 50ms'
+    )
+    expect(health.databases.fine.status).toBe('connected')
+    DatabaseManager.clear()
+  })
+
+  it('checks databases in parallel and shares one check between concurrent probes', async () => {
+    DatabaseManager.clear()
+    let pings = 0
+    for (const name of ['a', 'b', 'c']) {
+      registerDatabase({
+        name,
+        connect: () => {},
+        disconnect: () => {},
+        isHealthy: async () => {
+          pings++
+          await sleep(100)
+          return true
+        },
+      })
+    }
+    const start = Date.now()
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => DatabaseManager.checkHealth())
+    )
+    expect(Date.now() - start).toBeLessThan(280)
+    expect(pings).toBe(3)
+    expect(results.every((r) => r.healthy)).toBe(true)
+    // The next probe runs a fresh check
+    await DatabaseManager.checkHealth()
+    expect(pings).toBe(6)
+    DatabaseManager.clear()
+  })
+})
+
+describe('@Transactional isolation', () => {
+  // A client whose transaction stays open for a while, like a real one
+  // waiting on the database
+  const createClient = () => {
+    const client: any = {
+      label: 'pool',
+      async transaction(cb: (tx: any) => Promise<any>) {
+        const tx = { label: 'tx', transaction: client.transaction }
+        await sleep(20)
+        const result = await cb(tx)
+        await sleep(20)
+        return result
+      },
+    }
+    return client
+  }
+
+  it("does not hand one call's transaction to concurrent calls on the same service", async () => {
+    class OrderService {
+      db = createClient()
+
+      @Transactional()
+      async place() {
+        const before = this.db.label
+        await sleep(40)
+        return [before, this.db.label]
+      }
+
+      async read() {
+        return this.db.label
+      }
+    }
+    const service = new OrderService()
+    const placing = service.place()
+    await sleep(30) // inside the transaction now
+    const seenByOtherRequest = await service.read()
+    expect(seenByOtherRequest).toBe('pool')
+    expect(await placing).toEqual(['tx', 'tx'])
+    expect(service.db.label).toBe('pool')
+  })
+
+  it('runs nested calls in the same transaction and keeps #private fields working', async () => {
+    class LedgerService {
+      #audit: string[] = []
+      prisma: any = {
+        label: 'client',
+        async $transaction(cb: (tx: any) => Promise<any>) {
+          return cb({ label: 'tx' })
+        },
+      }
+
+      @Transactional()
+      async transfer() {
+        this.#audit.push(this.prisma.label)
+        return this.record()
+      }
+
+      async record() {
+        this.#audit.push(this.prisma.label)
+        return [...this.#audit]
+      }
+    }
+    const service = new LedgerService()
+    expect(await service.transfer()).toEqual(['tx', 'tx'])
+    expect(service.prisma.label).toBe('client')
+  })
+
+  it('lets the service replace its client afterwards', async () => {
+    class Service {
+      db = createClient()
+
+      @Transactional()
+      async run() {
+        return this.db.label
+      }
+    }
+    const service = new Service()
+    expect(await service.run()).toBe('tx')
+    service.db = { label: 'replaced' }
+    expect(service.db.label).toBe('replaced')
   })
 })

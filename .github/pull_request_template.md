@@ -10,6 +10,7 @@
 
 ## Checklist
 - [ ] I have read the [CONTRIBUTING](CONTRIBUTING.md) guide.
-- [ ] I have run `npx changeset` and committed the resulting changeset file.
-- [ ] My code passes `npm run lint` and `npm run test`
+- [ ] My code passes `npm run lint`, `npm run typecheck` and `npm test`
+- [ ] I have updated the documentation in `docs/` (if behaviour or a public API changed).
+- [ ] Performance-sensitive changes include benchmark numbers (see CONTRIBUTING).
 - [ ] I have added tests to cover my changes (if applicable).

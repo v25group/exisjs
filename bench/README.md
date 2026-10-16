@@ -9,6 +9,7 @@ This folder measures ExisJS against plain `node:http`, Fastify, Hono and Express
 | `npm run bench -- --write` | Full run, then regenerates [`docs/BENCHMARKS.md`](../docs/BENCHMARKS.md) | ~45 min |
 | `npm run bench:router` | Route lookup micro-benchmark vs find-my-way and Hono | ~1 min |
 | `npm run bench:validation` | `tex` vs Ajv micro-benchmark | ~1 min |
+| `npm run bench:pipeline` | Framework cost per request without the network: ExisJS targets vs a `node:http` handler on in-memory sockets | ~3 min |
 | `npm run bench:profile` | CPU profile of one server under load, with a hotspot summary | ~1 min |
 
 `bench`, `bench:quick` and `bench:profile` build `packages/exisjs` first. Every script refuses to run against a missing or out-of-date `dist`, so results always reflect the code users install.
@@ -82,6 +83,21 @@ Targets: `raw-node`, `exis-node`, `exis-uws`, `fastify`, `hono`, `express`.
 `bench:router` and `bench:validation` use [mitata](https://github.com/evanwashere/mitata). Every result passes through `do_not_optimize()` so V8 cannot delete a call whose result is unused, a classic source of impossible "3 ns" numbers. The router table holds 1,000 static routes plus the routes under test, and covers static, param, wildcard and miss (404) lookups.
 
 Micro-benchmarks show the cost of one component in isolation. They answer "is this function fast?" but not "is the server fast?", because routing or validation is only a small slice of a full request. Use them to check an optimization, and the HTTP benchmark to judge its real effect.
+
+### Pipeline harness
+
+`bench:pipeline` feeds the same five requests (`json`, `params`, `echo`, `validate`, a 404) to each target's request handler through in-memory sockets, so the network, the kernel and the load generator drop out. Before measuring, it checks that every target answers each request with the same status and body as the `node:http` handler. It then reports µs per request, as the median of 5 interleaved rounds. Differences under ~0.2 µs are noise.
+
+Targets: `node:http` (hand-written handler), `exis-fn` (`app.get`), `exis-class` (decorated controller), `exis-ctrl` (`controller({ ... })`, as in `route.ts` files) and `exis-dflt` (default configuration: helmet, CORS and request id, logger off).
+
+```bash
+npm run bench:pipeline                              # 100,000 requests per cell
+node bench/micro/pipeline.js 200000 json miss       # more requests, some scenarios
+TARGET=exis-fn node --cpu-prof bench/micro/pipeline.js   # profile one target
+EXIS_DIST=/path/to/other/dist node bench/micro/pipeline.js   # compare another build
+```
+
+Use it to check a change to routing, request or response code: it shows sub-microsecond differences that HTTP runs on a laptop hide.
 
 ## Profiling
 

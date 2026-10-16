@@ -78,8 +78,8 @@ export default defineConfig(
     },
   },
   {
-    // Benchmark servers are plain CommonJS scripts run directly by Node
-    files: ['bench/servers/*.js'],
+    // Benchmark servers and the pipeline harness are CommonJS scripts run by Node
+    files: ['bench/servers/*.js', 'bench/micro/*.js'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: {

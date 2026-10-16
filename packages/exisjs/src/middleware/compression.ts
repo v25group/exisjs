@@ -1,5 +1,6 @@
 import zlib from 'node:zlib'
 import type { Handler, Request, Response } from '../types'
+import { acceptsEncoding } from '../server/helpers/conditional'
 
 /**
  * Compression middleware — optimized to avoid monkey-patching ServerResponse methods.
@@ -26,13 +27,13 @@ const GZIP_OPTIONS: zlib.ZlibOptions = { level: 6 }
 
 export function compression(): Handler {
   return (req: Request, res: Response, next) => {
-    const acceptEncoding = (req.headers['accept-encoding'] as string) || ''
+    const acceptEncoding = req.headers['accept-encoding'] as string | undefined
 
-    // Determine encoding
+    // Best encoding the client accepts; `br;q=0` is a refusal, not a match
     let encoding: 'br' | 'gzip' | 'deflate' | null = null
-    if (acceptEncoding.includes('br')) encoding = 'br'
-    else if (acceptEncoding.includes('gzip')) encoding = 'gzip'
-    else if (acceptEncoding.includes('deflate')) encoding = 'deflate'
+    if (acceptsEncoding(acceptEncoding, 'br')) encoding = 'br'
+    else if (acceptsEncoding(acceptEncoding, 'gzip')) encoding = 'gzip'
+    else if (acceptsEncoding(acceptEncoding, 'deflate')) encoding = 'deflate'
 
     if (!encoding || req.method === 'HEAD') {
       return next()

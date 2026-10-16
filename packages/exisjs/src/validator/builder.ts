@@ -27,7 +27,7 @@ import type {
   TexPasswordOptions,
   TexDateOptions,
 } from './types'
-import { TexEngine, TexDiscriminatedUnionEngine } from './engine'
+import { TexEngine, TexDiscriminatedUnionEngine, fieldRule } from './engine'
 
 /**
  * Declarative schema builder; each schema compiles once into plain JS checks.
@@ -243,13 +243,7 @@ export class TexBuilder {
       resolvedItem = this.object(schema as any)
     }
 
-    const itemSchema =
-      resolvedItem instanceof TexEngine
-        ? `object<${JSON.stringify(resolvedItem.getCompiledSchema())}>`
-        : resolvedItem instanceof TexType
-          ? resolvedItem._raw
-          : (resolvedItem as string)
-    let base = `array<${itemSchema}>`
+    let base = `array<${fieldRule('[item]', resolvedItem)}>`
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
@@ -465,17 +459,18 @@ export class TexBuilder {
     opts?: TexObjectOptions
   ): TexEngine<ResolveSchema<T>> & { readonly _input: ResolveInput<T> } {
     const compiledSchema: Record<string, string> = {}
+    const shape: Record<string, any> = {}
     for (const [key, value] of Object.entries(schema)) {
-      if (value instanceof TexEngine) {
-        compiledSchema[key] =
-          `object<${JSON.stringify(value.getCompiledSchema())}>`
-      } else if (value instanceof TexType) {
-        compiledSchema[key] = value._raw
-      } else {
-        compiledSchema[key] = value as string
-      }
+      // A plain nested shape ({ city: tex.string() }) is an object schema
+      shape[key] =
+        value !== null &&
+        typeof value === 'object' &&
+        Object.getPrototypeOf(value) === Object.prototype
+          ? this.object(value)
+          : value
+      compiledSchema[key] = fieldRule(key, shape[key])
     }
-    return new TexEngine(compiledSchema, schema, opts?.strict) as any
+    return new TexEngine(compiledSchema, shape, opts?.strict) as any
   }
 
   /**

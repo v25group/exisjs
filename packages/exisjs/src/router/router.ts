@@ -9,17 +9,24 @@ import type {
   Response,
 } from '../types'
 import { RadixTree } from './radix'
-import { sendResult } from './send-result'
+import { sendResult, toError } from './send-result'
 import { HttpError } from '../error/errors'
 import { fileUpload, parseSizeToBytes } from '../middleware/upload'
 import { routeTimeout } from '../middleware/security'
 import { cors } from '../middleware/middleware'
+// Loaded on first use: only routes with a response schema need it, and it
+// pulls in its own Ajv (startup time and memory for every app otherwise)
 let fastJsonStringify: any
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  fastJsonStringify = require('fast-json-stringify')
-} catch {
-  // fast-json-stringify is optional
+function loadFastJsonStringify(): any {
+  if (fastJsonStringify === undefined) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      fastJsonStringify = require('fast-json-stringify')
+    } catch {
+      fastJsonStringify = null // optional dependency
+    }
+  }
+  return fastJsonStringify
 }
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
@@ -161,9 +168,21 @@ export class Router<TRoutes extends Record<string, any> = {}> {
 
   private rebuildTree() {
     this.tree = new RadixTree()
-    for (const route of this.routes) {
-      this.tree.insert(route.method, route.path, route)
-    }
+    this.methods.clear()
+    for (const route of this.routes) this.insert(route)
+  }
+
+  // Methods that have at least one route, for 405 / OPTIONS on a miss
+  private methods = new Set<string>()
+
+  private insert(route: Route): void {
+    this.tree.insert(route.method, route.path, route)
+    if (route.method !== 'ALL') this.methods.add(route.method)
+  }
+
+  private register(route: Route): void {
+    this.routes.push(route)
+    this.insert(route)
   }
 
   // ─── Middleware ─────────────────────────────────────────────────────────────
@@ -389,19 +408,20 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       const isZodLike = typeof schema.response.parse === 'function'
       const isExisValidator = typeof schema.response.toOpenApi === 'function'
 
-      const stringifier =
-        fastJsonStringify && (isExisValidator || !isZodLike)
-          ? (() => {
-              try {
-                const jsonSchema = isExisValidator
-                  ? schema.response.toOpenApi()
-                  : schema.response
-                return fastJsonStringify(jsonSchema)
-              } catch {
-                return JSON.stringify
-              }
-            })()
-          : JSON.stringify
+      const compile =
+        isExisValidator || !isZodLike ? loadFastJsonStringify() : null
+      const stringifier = compile
+        ? (() => {
+            try {
+              const jsonSchema = isExisValidator
+                ? schema.response.toOpenApi()
+                : schema.response
+              return compile(jsonSchema)
+            } catch {
+              return JSON.stringify
+            }
+          })()
+        : JSON.stringify
 
       if (isZodLike && !isExisValidator) {
         const parser = schema.response.parse.bind(schema.response)
@@ -413,8 +433,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       }
     }
 
-    this.routes.push(routeInfo)
-    this.tree.insert(method, fullPath, routeInfo)
+    this.register(routeInfo)
 
     return this
   }
@@ -537,10 +556,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
     nested.middlewares = [...this.middlewares]
     callback(nested)
 
-    for (const r of nested.getRoutes()) {
-      this.routes.push(r)
-      this.tree.insert(r.method, r.path, r)
-    }
+    for (const r of nested.getRoutes()) this.register(r)
 
     return this
   }
@@ -559,11 +575,7 @@ export class Router<TRoutes extends Record<string, any> = {}> {
   /** Methods that have a route for this path (for 405 and OPTIONS). */
   allowedMethods(path: string, host?: string): string[] {
     const allowed: string[] = []
-    const seen = new Set<string>()
-    for (const route of this.routes) {
-      const m = route.method
-      if (seen.has(m) || m === 'ALL') continue
-      seen.add(m)
+    for (const m of this.methods) {
       if (this.tree.search(m, path, host) !== null) allowed.push(m)
     }
     if (allowed.includes('GET') && !allowed.includes('HEAD')) {
@@ -620,30 +632,19 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       res._serializer = matched.route._serializer
     }
 
-    if (fallthrough) {
-      runHandlers(
-        matched.route.handlers,
-        req,
-        res,
-        fallthrough,
-        matched.route.schema?.filters
-      )
-    } else {
-      runHandlers(
-        matched.route.handlers,
-        req,
-        res,
-        undefined,
-        matched.route.schema?.filters
-      )
-    }
+    runHandlers(
+      matched.route.handlers,
+      req,
+      res,
+      fallthrough,
+      matched.route.schema?.filters
+    )
   }
 
   // ─── Internal ─────────────────────────────────────────────────────────────────
 
   addRawRoute(route: Route): void {
-    this.routes.push(route)
-    this.tree.insert(route.method, route.path, route)
+    this.register(route)
   }
 
   getMiddlewares(): Handler[] {
@@ -684,7 +685,7 @@ export function runHandlers(
     try {
       result = handler(req, res, safeNext)
     } catch (e) {
-      safeNext(e instanceof Error ? e : new Error(String(e)))
+      safeNext(toError(e))
       return
     }
 
@@ -694,7 +695,7 @@ export function runHandlers(
           sendResult(data, res)
         },
         (e: unknown) => {
-          safeNext(e instanceof Error ? e : new Error(String(e)))
+          safeNext(toError(e))
         }
       )
     } else {
@@ -758,7 +759,7 @@ export function runHandlers(
     try {
       result = handler(req, res, safeNext)
     } catch (e) {
-      safeNext(e instanceof Error ? e : new Error(String(e)))
+      safeNext(toError(e))
       return
     }
 
@@ -768,7 +769,7 @@ export function runHandlers(
           sendResult(data, res)
         },
         (e: unknown) => {
-          safeNext(e instanceof Error ? e : new Error(String(e)))
+          safeNext(toError(e))
         }
       )
     } else {

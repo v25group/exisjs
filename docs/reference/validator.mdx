@@ -168,6 +168,9 @@ All `TexType` instances provide fluent modifier and documentation methods:
 
 | Method | Signature | Description |
 | :--- | :--- | :--- |
+| `optional()` | `() => TexEngine<T \| undefined>` | Used as a field of another object: the field may be left out. |
+| `nullable()` | `() => TexEngine<T \| null>` | Used as a field of another object: the field may be `null`. |
+| `nullish()` | `() => TexEngine<T \| null \| undefined>` | Used as a field of another object: the field may be left out or `null`. |
 | `partial()` | `() => TexEngine<Partial<T>>` | Returns a copy of the schema with all fields marked optional. |
 | `pick(keys)` | `<K extends keyof T>(keys: K[]) => TexEngine<Pick<T, K>>` | Creates a new schema containing only the specified keys. |
 | `omit(keys)` | `<K extends keyof T>(keys: K[]) => TexEngine<Omit<T, K>>` | Creates a new schema omitting the specified keys. |

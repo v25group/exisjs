@@ -32,7 +32,7 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.9.0',
+      exisjs: '^0.9.1',
     },
   }
 
@@ -454,7 +454,7 @@ This repository uses **ExisJS**, an efficient, lightweight TypeScript backend fr
 ExisJS has highly specific architectural conventions, built-in subsystems, and routing paradigms that differ significantly from Express, NestJS, or traditional Node.js setups. 
 
 Before writing any code or suggesting third-party libraries for Database, ORM, or Authentication:
-1. Read the relevant official documentation located locally at \`node_modules/exisjs/docs/\`.
+1. Read the relevant official documentation located locally at \`node_modules/exisjs/dist/docs/\` (guides in \`content/\`, API reference in \`reference/\`).
 2. Familiarize yourself with the two supported routing paradigms: **Functional** (\`exisjs/router\`) and **Class-Based OOP** (\`exisjs/decorators\`). Always respect the paradigm currently established in the file.
 3. Databases: ExisJS has no ORM. Use the project's ORM or driver (Drizzle, Prisma, Mongoose...) and register the connection with \`registerDatabase()\` so ExisJS connects it at startup, reports it on \`/_ready\` and disconnects it on shutdown.
 4. Authentication: ExisJS does not issue or verify tokens. Verify them in a boundary or guard (for example with \`jose\`), put the user on \`req.user\`, and declare access with \`@Roles\` / \`@Permissions\` / \`@Public\` (or \`roles\` / \`permissions\` / \`public\` on functional routes).

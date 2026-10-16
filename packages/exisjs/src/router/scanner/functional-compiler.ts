@@ -110,46 +110,50 @@ export function compileFunctionalController(config: any, app: App): Router {
       ],
     }
 
+    // Fixed per route, so worked out once here rather than on every request
+    const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
+    const routeInterceptors = [
+      ...(config.interceptors || []),
+      ...(rc.interceptors || []),
+    ]
+    const routeTimeoutVal =
+      rc.timeoutMs !== undefined ? rc.timeoutMs : rc.timeout
+    const timeoutMs: number | undefined =
+      typeof routeTimeoutVal === 'number'
+        ? routeTimeoutVal
+        : routeTimeoutVal?.ms
+
     // ─── SUPER HANDLER WRAPPER ───
     const superHandler = async (req: any, res: any, next: any) => {
       if (onResponse) {
         res.raw.on('finish', () => onResponse(req, res))
       }
 
-      const isPublic = routeIsPublic
-
-      const executionCtx = {
-        req,
-        res,
-        next,
-        app,
-        isPublic,
-        state: executionContext.getStore()?.state || (req as any).state || {},
-        getClass: () => Object as any,
-        getHandler: () => rc.handle,
-        switchToHttp: () => ({
-          getRequest: () => req,
-          getResponse: () => res,
-          getNext: () => next,
-        }),
-      }
+      const store = executionContext.getStore()
+      // Only guards and interceptors read it; most routes have neither
+      let executionCtx: any
+      const getExecutionCtx = () =>
+        (executionCtx ??= {
+          req,
+          res,
+          next,
+          app,
+          isPublic: routeIsPublic,
+          state: store?.state || (req as any).state || {},
+          getClass: () => Object as any,
+          getHandler: () => rc.handle,
+          switchToHttp: () => ({
+            getRequest: () => req,
+            getResponse: () => res,
+            getNext: () => next,
+          }),
+        })
 
       try {
-        // Dynamic Route Timeout Override
-        const routeTimeoutVal =
-          rc.timeoutMs !== undefined ? rc.timeoutMs : rc.timeout
-        if (
-          routeTimeoutVal !== undefined &&
-          typeof req.setTimeout === 'function'
-        ) {
-          const ms =
-            typeof routeTimeoutVal === 'number'
-              ? routeTimeoutVal
-              : routeTimeoutVal?.ms
-          if (typeof ms === 'number') {
-            if (ms <= 0) req.clearTimeout?.()
-            else req.setTimeout(ms)
-          }
+        // Route timeout override
+        if (timeoutMs !== undefined && typeof req.setTimeout === 'function') {
+          if (timeoutMs <= 0) req.clearTimeout?.()
+          else req.setTimeout(timeoutMs)
         }
 
         if (req.body === undefined && typeof req.json === 'function') {
@@ -170,7 +174,6 @@ export function compileFunctionalController(config: any, app: App): Router {
         checkAccess(req.user, accessRule, app.options.authorization)
 
         // 1. Run Guards
-        const routeGuards = [...(config.guards || []), ...(rc.guards || [])]
         for (const guard of routeGuards) {
           let guardInstance: any
           if (typeof guard === 'function' && guard.prototype?.canActivate) {
@@ -184,9 +187,9 @@ export function compileFunctionalController(config: any, app: App): Router {
           }
 
           const allowed = guardInstance
-            ? await guardInstance.canActivate(executionCtx)
+            ? await guardInstance.canActivate(getExecutionCtx())
             : typeof guard === 'function'
-              ? await guard(executionCtx)
+              ? await guard(getExecutionCtx())
               : true
 
           if (!allowed) {
@@ -323,7 +326,7 @@ export function compileFunctionalController(config: any, app: App): Router {
           resolve: <T>(token: any): T =>
             app.resolve(token, (req as any)._diCache),
           socket: (req as any).ws,
-          state: executionContext.getStore()?.state || {},
+          state: store?.state || {},
         }
         if (req.user !== undefined) ctx.user = req.user
         if ((req as any).session !== undefined) {
@@ -331,11 +334,6 @@ export function compileFunctionalController(config: any, app: App): Router {
         }
 
         // 3. Run Interceptors wrapping the handler
-        const routeInterceptors = [
-          ...(config.interceptors || []),
-          ...(rc.interceptors || []),
-        ]
-
         let currentHandler = async () => rc.handle(ctx)
         for (let i = routeInterceptors.length - 1; i >= 0; i--) {
           const interceptor = routeInterceptors[i]
@@ -357,14 +355,14 @@ export function compileFunctionalController(config: any, app: App): Router {
             }
 
             if (interceptorInstance) {
-              return interceptorInstance.intercept(executionCtx, {
+              return interceptorInstance.intercept(getExecutionCtx(), {
                 handle: nextFn,
               })
             } else if (typeof interceptor === 'function') {
               if (interceptor.length >= 2) {
-                return interceptor(executionCtx, { handle: nextFn })
+                return interceptor(getExecutionCtx(), { handle: nextFn })
               } else {
-                await interceptor(executionCtx, res)
+                await interceptor(getExecutionCtx(), res)
                 return nextFn()
               }
             }

@@ -7,22 +7,25 @@ import { safeUploadPath, DEFAULT_UPLOAD_LIMITS } from './upload-name'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
 
+const EMPTY = Buffer.alloc(0)
+
 export async function parseRawBody(
   raw: IncomingMessage,
   bodyLimit: number,
   contentType: string,
   method: string
-): Promise<string> {
+): Promise<Buffer> {
   if (
-    ['GET', 'HEAD', 'OPTIONS'].includes(method) ||
+    method === 'GET' ||
+    method === 'HEAD' ||
+    method === 'OPTIONS' ||
     contentType.includes('multipart/form-data')
   ) {
-    return ''
+    return EMPTY
   }
 
   if (typeof (raw as any).readBody === 'function') {
-    const buf = await (raw as any).readBody(bodyLimit)
-    return buf ? buf.toString('utf8') : ''
+    return (await (raw as any).readBody(bodyLimit)) || EMPTY
   }
 
   return new Promise((resolve, reject) => {
@@ -57,8 +60,8 @@ export async function parseRawBody(
     }
     const onEnd = () => {
       if (settled) return
-      const rawBody = Buffer.concat(chunks).toString('utf8')
-      done(undefined, rawBody)
+      // Bytes, not text: binary bodies must survive (req.buffer(), @RawBody)
+      done(undefined, chunks.length === 1 ? chunks[0] : Buffer.concat(chunks))
     }
 
     const cleanup = () => {
@@ -69,12 +72,12 @@ export async function parseRawBody(
       raw.removeListener('end', onEnd)
     }
 
-    const done = (err?: Error, result?: string) => {
+    const done = (err?: Error, result?: Buffer) => {
       if (settled) return
       settled = true
       cleanup()
       if (err) reject(err)
-      else resolve(result ?? '')
+      else resolve(result ?? EMPTY)
     }
 
     const contentLengthStr = raw.headers['content-length']

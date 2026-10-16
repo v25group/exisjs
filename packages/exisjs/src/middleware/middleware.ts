@@ -11,6 +11,7 @@ import {
   ValidatorError as NewValidatorError,
 } from '../validator/tex'
 import { createLogger, isLogger } from '../utils/logger'
+import { acceptsEncoding, fileETag } from '../server/helpers/conditional'
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 
@@ -423,74 +424,82 @@ export function serveStatic(
         return next()
       }
 
-      const acceptEncoding = (req.headers['accept-encoding'] as string) || ''
+      // Precompressed siblings (file.br, file.gz) the client accepts, best first
+      const acceptEncoding = req.headers['accept-encoding'] as
+        string | undefined
+      const negotiates = options.brotli !== false || options.gzip !== false
+      const candidates: [path: string, encoding: string | null][] = []
+      if (options.brotli !== false && acceptsEncoding(acceptEncoding, 'br')) {
+        candidates.push([filePath + '.br', 'br'])
+      }
+      if (options.gzip !== false && acceptsEncoding(acceptEncoding, 'gzip')) {
+        candidates.push([filePath + '.gz', 'gzip'])
+      }
+      candidates.push([filePath, null])
 
-      // Check for pre-compressed Brotli or Gzip static file if supported
-      let targetPath = filePath
-      let contentEncoding: string | null = null
-
-      if (
-        options.brotli !== false &&
-        acceptEncoding.includes('br') &&
-        fs.existsSync(filePath + '.br')
-      ) {
-        targetPath = filePath + '.br'
-        contentEncoding = 'br'
-      } else if (
-        options.gzip !== false &&
-        acceptEncoding.includes('gzip') &&
-        fs.existsSync(filePath + '.gz')
-      ) {
-        targetPath = filePath + '.gz'
-        contentEncoding = 'gzip'
+      // Async stat of each candidate in turn: no blocking existsSync on the
+      // request path
+      const tryCandidate = (index: number): void => {
+        const [targetPath, contentEncoding] = candidates[index]
+        fs.stat(
+          targetPath,
+          (
+            err: NodeJS.ErrnoException | null,
+            stat: import('node:fs').Stats
+          ) => {
+            if (err || !stat.isFile()) {
+              if (index + 1 < candidates.length) return tryCandidate(index + 1)
+              return next()
+            }
+            serve(targetPath, contentEncoding, stat)
+          }
+        )
       }
 
-      fs.stat(
-        targetPath,
-        (err: NodeJS.ErrnoException | null, stat: import('node:fs').Stats) => {
-          if (err || !stat.isFile()) {
-            return next()
-          }
-
-          const ext = path.extname(filePath).toLowerCase()
-          const mime = mimeTypes[ext] || 'application/octet-stream'
-
-          res.set('Content-Type', mime)
-          res.set('Content-Length', String(stat.size))
-
-          if (contentEncoding) {
-            res.set('Content-Encoding', contentEncoding)
-            res.set('Vary', 'Accept-Encoding')
-          }
-
-          if (options.maxAge !== undefined) {
-            res.set('Cache-Control', `public, max-age=${options.maxAge}`)
-          }
-
-          if (options.etag !== false) {
-            // Strong ETag based on mtime and size
-            const etag = `"${stat.size.toString(16)}-${stat.mtime.getTime().toString(16)}"`
-            res.set('ETag', etag)
-
-            if (req.headers['if-none-match'] === etag) {
-              res.status(304).send('')
-              return
-            }
-          }
-
-          if (req.method === 'HEAD') {
-            res.status(200).send('')
-            return
-          }
-
-          const sendStream = fs.createReadStream(targetPath)
-          const abortHandler = () => sendStream.destroy()
-          req.raw.on('aborted', abortHandler)
-          req.raw.on('close', abortHandler)
-          res.raw.on('close', abortHandler)
-          res.status(200).sendStream(sendStream)
+      const serve = (
+        targetPath: string,
+        contentEncoding: string | null,
+        stat: import('node:fs').Stats
+      ): void => {
+        // The response depends on Accept-Encoding whenever variants may
+        // exist, including when the plain file is chosen
+        if (negotiates) res.vary('Accept-Encoding')
+        if (options.maxAge !== undefined) {
+          res.set('Cache-Control', `public, max-age=${options.maxAge}`)
         }
-      )
+
+        // Each encoded file has its own size and mtime, so its own ETag
+        if (options.etag !== false) {
+          try {
+            const validators = {
+              etag: fileETag(stat.size, stat.mtimeMs),
+              lastModified: stat.mtime,
+            }
+            if (res.checkPreconditions(validators)) return
+          } catch (err) {
+            return next(err as Error)
+          }
+        }
+
+        const ext = path.extname(filePath).toLowerCase()
+        res.set('Content-Type', mimeTypes[ext] || 'application/octet-stream')
+        res.set('Content-Length', String(stat.size))
+        if (contentEncoding) res.set('Content-Encoding', contentEncoding)
+
+        if (req.method === 'HEAD') {
+          res.status(200).end()
+          return
+        }
+
+        const sendStream = fs.createReadStream(targetPath)
+        const abortHandler = () => sendStream.destroy()
+        req.raw.on('aborted', abortHandler)
+        req.raw.on('close', abortHandler)
+        res.raw.on('close', abortHandler)
+        res.status(200).sendStream(sendStream)
+      }
+
+      tryCandidate(0)
     } catch {
       next()
     }

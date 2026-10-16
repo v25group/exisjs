@@ -153,7 +153,7 @@ export default defineConfig({
 | `compression` | `boolean` | `false` | Gzip/Brotli HTTP response compression. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum request payload body size in bytes. |
 | `blockSuspiciousProbes` | `boolean \| BlockProbesOptions` | `false` | Blocks known vulnerability scanners and malicious probes (`.php`, `wp-admin`). |
-| `etag` | `boolean` | `false` | Generates weak ETags for cache validation on responses. |
+| `etag` | `boolean` | `false` | Weak ETags on successful GET/HEAD responses, with `304 Not Modified` for a matching `If-None-Match`. See [Caching & Conditional Requests](/docs/responses#caching--conditional-requests-etag-304-412). |
 | `transformResponse` | `boolean \| Function` | `false` | Standardizes handler response payload envelopes. |
 
 ### Logging & Diagnostics

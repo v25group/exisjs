@@ -21,6 +21,7 @@ import {
   Permissions,
   Roles,
   Public,
+  RawBody,
   type Interceptor,
   type ExecutionContext,
   type CallHandler,
@@ -625,6 +626,104 @@ describe('BUG-01 / BUG-02: validator types', () => {
   })
 })
 
+describe('REPORT2 #1-#3: nested object modifiers', () => {
+  const Address = tex.object({ city: tex.string({ optional: true }) })
+  const bodyWith = (address: any) => tex.object({ name: tex.string(), address })
+
+  it('#1 keeps .optional() on a nested object', () => {
+    for (const address of [
+      Address.optional(),
+      Address.partial().optional(),
+      tex.object({ city: tex.string() }).extend({}).optional(),
+    ]) {
+      expect(bodyWith(address).parse({ name: 'x' })).toEqual({ name: 'x' })
+      expect(() => bodyWith(address).parse({ name: 'x', address: 5 })).toThrow(
+        /address: Must be an object/
+      )
+    }
+    // Required by default
+    expect(() => bodyWith(Address).parse({ name: 'x' })).toThrow(/address/)
+  })
+
+  it('#1 keeps the modifier through extend(), partial() and array items', () => {
+    const extended = tex
+      .object({ name: tex.string() })
+      .extend({ address: Address.optional() })
+    expect(extended.parse({ name: 'x' })).toEqual({ name: 'x' })
+    // partial() reaches a nested object whose own fields are optional
+    expect(tex.object({ address: Address }).partial().parse({})).toEqual({})
+    const list = tex.object({ list: tex.array(Address.nullable()) })
+    expect(list.parse({ list: [null, { city: 'a' }] }).list).toEqual([
+      null,
+      { city: 'a' },
+    ])
+  })
+
+  it('#2 objects support .nullable() and .nullish()', () => {
+    const nullable = bodyWith(Address.nullable())
+    expect(nullable.parse({ name: 'x', address: null }).address).toBe(null)
+    expect(() => nullable.parse({ name: 'x' })).toThrow(/address/)
+    const nullish = bodyWith(Address.nullish())
+    expect(nullish.parse({ name: 'x', address: null }).address).toBe(null)
+    expect(nullish.parse({ name: 'x' })).toEqual({ name: 'x' })
+    // The modifier survives pick()
+    expect(
+      tex
+        .object({ a: tex.string(), address: Address.nullable() })
+        .pick(['address'])
+        .parse({ address: null })
+    ).toEqual({ address: null })
+  })
+
+  it('#1 OpenAPI and runtime agree on optional nested objects', () => {
+    const schema = tex.object({
+      address: Address.optional(),
+      required: Address,
+    })
+    expect(schema.toOpenApi().required).toEqual(['required'])
+  })
+
+  it('#3 names the field when its schema is missing', () => {
+    expect(() =>
+      tex.object({ name: tex.string(), address: undefined as any })
+    ).toThrow('tex.object(): field "address" has no schema (got undefined)')
+  })
+
+  it('accepts a plain nested shape, as its type says', () => {
+    const schema = tex.object({ address: { city: tex.string() } })
+    expect(schema.parse({ address: { city: 'c' } })).toEqual({
+      address: { city: 'c' },
+    })
+    expect(() => schema.parse({ address: { city: 1 } })).toThrow(
+      /address\.city/
+    )
+  })
+
+  it('reports an array item error once', () => {
+    try {
+      tex.object({ list: tex.array(Address) }).parse({ list: [null] })
+      throw new Error('should fail')
+    } catch (err: any) {
+      expect(err.errors.length).toBe(1)
+    }
+  })
+
+  it('types optional and nullable nested objects', () => {
+    const schema = tex.object({
+      a: Address.optional(),
+      b: Address.nullable(),
+      c: Address.nullish(),
+    })
+    type Out = ResolveOutput<typeof schema>
+    type Addr = ResolveOutput<typeof Address>
+    assertType<Equal<Out['a'], Addr | undefined>>()
+    assertType<Equal<Out['b'], Addr | null>>()
+    assertType<Equal<Out['c'], Addr | null | undefined>>()
+    const minimal: Out = { b: null }
+    expect(schema.parse(minimal)).toEqual({ b: null })
+  })
+})
+
 describe('T-19 / BUG-09: every decorator named in the docs exists', () => {
   it('exports each `@Name(` used in the decorator and router references', async () => {
     const fs = await import('node:fs')
@@ -813,5 +912,90 @@ describe('ENT-3: request id on log lines', () => {
       .get('/log')
       .set('x-request-id', 'req-123')
     expect(res.body.bindings).toEqual({ requestId: 'req-123' })
+  })
+})
+
+describe('Request bodies are binary-safe', () => {
+  // Every byte value, including ones that are not valid UTF-8
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i))
+
+  @Controller('/raw')
+  class RawController {
+    @Post('/buffer')
+    buffer(@RawBody() body: Buffer) {
+      return { isBuffer: Buffer.isBuffer(body), bytes: [...body] }
+    }
+  }
+
+  const createApp = (options: any = {}) => {
+    const app = new App(options)
+    app.registerControllers([RawController])
+    app.post('/fn', async (req: any) => [...(await req.buffer())])
+    app.post('/both', async (req: any) => {
+      const [text, buf] = await Promise.all([req.text(), req.buffer()])
+      return { text, size: buf.length }
+    })
+    return createTestApp(app)
+  }
+
+  it('req.buffer() returns the bytes the client sent', async () => {
+    const res = await createApp().post('/fn').send(bytes)
+    expect(res.body).toEqual([...bytes])
+  })
+
+  it('@RawBody() returns the bytes the client sent', async () => {
+    const res = await createApp().post('/raw/buffer').send(bytes)
+    expect(res.body.isBuffer).toBe(true)
+    expect(res.body.bytes).toEqual([...bytes])
+  })
+
+  it('@RawBody() answers 413 for a body over the limit, not an empty body', async () => {
+    const res = await createApp({ bodyLimit: 100 })
+      .post('/raw/buffer')
+      .send(bytes)
+    expect(res.status).toBe(413)
+  })
+
+  it('text() and buffer() together read the body once', async () => {
+    const res = await createApp()
+      .post('/both')
+      .set('content-type', 'text/plain')
+      .send('hello')
+    expect(res.body).toEqual({ text: 'hello', size: 5 })
+  })
+})
+
+describe('Response helpers', () => {
+  it('res.html() sets Content-Length', async () => {
+    const app = new App()
+    app.get('/page', (_req: any, res: any) => res.html('<p>hi</p>'))
+    const res = await createTestApp(app).get('/page')
+    expect(res.headers['content-length']).toBe('9')
+    expect(String(res.headers['content-type'])).toContain('text/html')
+  })
+
+  it('cookies are not copied into a header scripts can read', async () => {
+    const env = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
+    try {
+      const app = new App()
+      app.get('/login', (_req: any, res: any) =>
+        res.cookie('sid', 'secret', { httpOnly: true }).json({ ok: true })
+      )
+      const res = await createTestApp(app).get('/login')
+      expect(res.headers['x-set-cookie']).toBeUndefined()
+    } finally {
+      process.env.NODE_ENV = env
+    }
+  })
+
+  it('405 lists methods from routes added through a group', async () => {
+    const app = new App()
+    app.getRouter().group('/g', (r) => {
+      r.post('/item', () => ({ ok: true }))
+    })
+    const res = await createTestApp(app).get('/g/item')
+    expect(res.status).toBe(405)
+    expect(res.headers['allow']).toBe('POST')
   })
 })

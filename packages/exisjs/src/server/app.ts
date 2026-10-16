@@ -39,6 +39,7 @@ import { RouteScanner } from '../router/route-scanner'
 import { RequestHandler } from './request-handler'
 import { ControllerRegistrar } from '../router/controller-registrar'
 import { CronManager } from '../cron/manager'
+import { withTimeout } from '../database/lifecycle'
 
 // Same-origin resources only, no plugins, cannot be framed. Pages that need
 // more (the /docs UI, the dev error page) send their own policy.
@@ -659,11 +660,14 @@ export class App<TRoutes extends Record<string, any> = {}> {
     ) {
       const hcPath = this.options.healthcheck.path || '/_health'
       const checks = this.options.healthcheck.checks || []
+      // A hanging check must fail the probe, not hang it
+      const runCheck = (check: () => unknown) =>
+        withTimeout(check(), 5000, 'Health check timed out after 5000ms')
 
       this.get(hcPath as any, async (req, res) => {
         try {
           if (checks.length > 0) {
-            const results = await Promise.all(checks.map((c) => c()))
+            const results = await Promise.all(checks.map(runCheck))
             if (results.some((r) => r === false)) {
               return res
                 .status(503)
@@ -686,7 +690,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
           try {
             const { DatabaseManager } = await import('../database/lifecycle')
             const [results, db] = await Promise.all([
-              Promise.all(checks.map((c) => c())),
+              Promise.all(checks.map(runCheck)),
               DatabaseManager.size > 0
                 ? DatabaseManager.checkHealth()
                 : { healthy: true, databases: {} },

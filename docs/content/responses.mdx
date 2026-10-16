@@ -451,6 +451,60 @@ export default controller({
 })
 ```
 
+## Caching & Conditional Requests (ETag, 304, 412)
+
+ExisJS follows the conditional request rules of RFC 9110 §13 everywhere: for automatic ETags, in `res.checkPreconditions()`, for `serveStatic` and for `res.download(path)`.
+
+| Request header | Checked against | Result when it does not hold |
+| :--- | :--- | :--- |
+| `If-Match` | `ETag`, strong comparison | `412 Precondition Failed` |
+| `If-Unmodified-Since` (only without `If-Match`) | `Last-Modified` | `412 Precondition Failed` |
+| `If-None-Match` | `ETag`, weak comparison; lists and `*` supported | Matches: `304` for GET/HEAD, `412` for writes |
+| `If-Modified-Since` (only without `If-None-Match`, GET/HEAD) | `Last-Modified` | Unchanged: `304 Not Modified` |
+
+A `304` carries the `ETag`, `Last-Modified`, `Cache-Control` and `Vary` of the `200` it replaces, and no body or `Content-Type`. Errors use the standard envelope (`PRECONDITION_FAILED`, `PRECONDITION_REQUIRED`).
+
+### Automatic ETags
+
+With `etag: true` in `exis.config.ts` (or `conditionalGet()` on some routes), every successful `GET`/`HEAD` response sent with `res.json()`, `res.send()` or a returned value gets a weak ETag hashed from its body, and a matching `If-None-Match` is answered with `304`. The handler still runs, so this saves bandwidth, not work. Writes and error responses get no ETag.
+
+### Validators from your data: `res.checkPreconditions()`
+
+When the resource has a version or update time, check it **before** doing the work. On reads this skips the query for the body and serialization; on writes it prevents lost updates: a client that edited an old copy gets `412` instead of overwriting someone else's change.
+
+```typescript filename="src/http/documents/[id]/route.ts"
+import { controller, route } from 'exisjs/router'
+
+export default controller({
+  read: route.get('/', {
+    async handle({ params, res }) {
+      const meta = await documents.meta(params.id) // cheap: version + updatedAt
+      // Sets ETag / Last-Modified; answers 304 and returns true when current
+      if (res.checkPreconditions({ etag: `v${meta.version}`, lastModified: meta.updatedAt })) return
+      return documents.find(params.id)
+    },
+  }),
+
+  update: route.put('/', {
+    async handle({ params, body, res }) {
+      const current = await documents.meta(params.id)
+      // 412 if the client's If-Match is stale; 428 if it sent no precondition
+      res.checkPreconditions({ etag: `v${current.version}` }, { required: true })
+      const updated = await documents.update(params.id, body)
+      res.setHeader('ETag', `"v${updated.version}"`) // the new state
+      return updated
+    },
+  }),
+})
+```
+
+- `etag` may be bare (`v3` is sent as `"v3"`) or a full tag (`W/"v3"`). Use a value that changes whenever the representation changes: a version column, a hash, `updatedAt`.
+- `lastModified` takes a `Date`, a timestamp or an HTTP date. It is rounded to whole seconds, and a time in the future is capped at the current time.
+- For "create only if absent" (`PUT` with `If-None-Match: *`), pass `exists: false` when the resource does not exist yet; an existing one answers `412`.
+- On writes, the old validators are not sent back. Set the new `ETag` after the change, as above.
+
+`req.fresh` (and `req.stale`) apply the same rules to the response headers set so far.
+
 ---
 
 ## Next Steps

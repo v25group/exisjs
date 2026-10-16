@@ -475,7 +475,7 @@ export class OrderService implements OnInit, OnDestroy {
 | :--- | :--- | :--- |
 | `@Cacheable(options?)` | Method | Caches return value. Options: `{ ttl?: number, key?: string \| ((...args) => string) }`. |
 | `@CacheEvict(options)` | Method | Evicts cache keys on method completion. Options: `{ key: string \| ((...args) => string) }`. |
-| `@Transactional(options?)` | Method | Wraps execution in a database transaction (Prisma, Mongoose, Drizzle, SQL). |
+| `@Transactional(options?)` | Method | Wraps execution in a database transaction (Prisma, Drizzle, Knex, SQL). Inside the call, the service's client property (`db`, `database`, `prisma`, `dataSource` or `connection`) is the transaction, including in methods it calls; concurrent requests using the same service keep the normal client. |
 | `@Profile(options?)` | Method | Measures execution time using `performance.now()`. |
 | `OnInit` (`onInit()`) | Class Interface | Invoked once after service instantiation. |
 | `OnDestroy` (`onDestroy()`) | Class Interface | Invoked once during graceful shutdown. |

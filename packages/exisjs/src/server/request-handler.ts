@@ -74,13 +74,19 @@ export class RequestHandler {
           }
         }
 
-        let bodyStr: string | undefined
+        let bodyStr: string | Uint8Array | undefined
 
         if (payload && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+          // Bytes go out as they are; other objects as JSON
+          const isBytes = payload instanceof Uint8Array
           bodyStr =
-            typeof payload === 'string' ? payload : JSON.stringify(payload)
+            typeof payload === 'string' || isBytes
+              ? payload
+              : JSON.stringify(payload)
           if (typeof payload === 'object' && !headers['content-type']) {
-            headers['content-type'] = 'application/json'
+            headers['content-type'] = isBytes
+              ? 'application/octet-stream'
+              : 'application/json'
           }
           headers['content-length'] = Buffer.byteLength(bodyStr).toString()
         }
@@ -120,6 +126,10 @@ export class RequestHandler {
                 text,
               })
             })
+            // The response is complete; close the client's keep-alive
+            // socket now instead of waiting for it to time out (~4 s after
+            // a piped response with Content-Length)
+            server.closeAllConnections?.()
           })
         })
 

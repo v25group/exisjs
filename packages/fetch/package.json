@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/fetch",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "End-to-end type-safe HTTP client for ExisJS APIs",
   "keywords": [
     "exisjs",

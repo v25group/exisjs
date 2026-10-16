@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import type { App } from '../../server/app'
 import { HttpError } from '../../error/errors'
-import { isResponseStarted } from '../send-result'
+import { isResponseStarted, sendResult } from '../send-result'
 
 export interface LoadedBoundaryPipeline {
   activeBoundaries: string[]
@@ -288,30 +288,21 @@ export async function loadActiveBoundaries(
             // Intercept response methods to catch handler return values
             const originalJson = res.json.bind(res)
             const originalSend = res.send.bind(res)
-            let handledByRoute = false
+            // What the route sent, and through which method, so it can be
+            // replayed unchanged (a Buffer stays binary, json('x') stays JSON)
+            let captured: { send: (body: any) => any; body: any } | undefined
 
-            res.json = function (body: any) {
-              if (!handledByRoute) {
-                handledByRoute = true
+            const capture = (send: (body: any) => any) =>
+              function (this: any, body: any) {
+                if (captured) return send(body)
+                captured = { send, body }
                 // Sent later by the wrapper; nothing else may answer meanwhile
                 res._pending = true
                 nextResolve(body)
-              } else {
-                return originalJson(body)
+                return this
               }
-              return this
-            }
-            res.send = function (body: any) {
-              if (!handledByRoute) {
-                handledByRoute = true
-                // Sent later by the wrapper; nothing else may answer meanwhile
-                res._pending = true
-                nextResolve(body)
-              } else {
-                return originalSend(body)
-              }
-              return this
-            }
+            res.json = capture(originalJson)
+            res.send = capture(originalSend)
 
             const ctx = {
               req,
@@ -329,16 +320,22 @@ export async function loadActiveBoundaries(
               return nextPromise
             })
               .then((wrapperResult: any) => {
-                if (wrapperResult !== undefined && !res.headersSent) {
+                res.json = originalJson
+                res.send = originalSend
+                if (res.headersSent) return
+                if (captured) {
+                  res._pending = false
+                  // The wrapper passed the route's response through (or
+                  // returned nothing): send it exactly as the route did
                   if (
-                    typeof wrapperResult === 'object' &&
-                    wrapperResult !== null
+                    wrapperResult === undefined ||
+                    wrapperResult === captured.body
                   ) {
-                    originalJson(wrapperResult)
-                  } else {
-                    originalSend(String(wrapperResult))
+                    return captured.send(captured.body)
                   }
                 }
+                // The wrapper answered with its own value
+                sendResult(wrapperResult, res)
               })
               .catch((wrapperErr: any) => {
                 next(wrapperErr)

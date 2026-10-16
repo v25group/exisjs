@@ -241,11 +241,8 @@ export class ControllerRegistrar {
                       : req.body
                     break
                   case 'rawBody': {
-                    if (req.rawBody === undefined) {
-                      await req.text().catch(() => {
-                        /* noop */
-                      })
-                    }
+                    // A read error (body over the limit, client abort) must
+                    // reach the error handler, not become an empty body
                     const isStringEncoding =
                       param.name === 'string' ||
                       param.name === 'utf8' ||
@@ -254,8 +251,8 @@ export class ControllerRegistrar {
                         param.name !== null &&
                         param.name.encoding === 'utf8')
                     rawArg = isStringEncoding
-                      ? (req.rawBody ?? '')
-                      : Buffer.from(req.rawBody ?? '', 'utf8')
+                      ? await req.text()
+                      : await req.buffer()
                     break
                   }
                   case 'param':

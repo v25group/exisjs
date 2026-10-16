@@ -3,6 +3,34 @@ import { TexType, type ResolveSchema } from './tex-types'
 import { ValidatorError, getNestedValue, formatReceivedValue } from './error'
 import type { ValidationErrorDescriptor } from './types'
 
+function engineModifiers(engine: TexEngine<any>): string {
+  return (
+    (engine._isOptional ? ' | optional' : '') +
+    (engine._isNullable ? ' | nullable' : '')
+  )
+}
+
+/**
+ * The rule string for one field of an object schema. Shared by `tex.object`,
+ * `tex.array` and `extend` so a nested schema keeps its `optional()` /
+ * `nullable()` modifiers on every path.
+ */
+export function fieldRule(key: string, value: unknown): string {
+  if (value instanceof TexEngine) {
+    return `object<${JSON.stringify(value.getCompiledSchema())}>${engineModifiers(value)}`
+  }
+  if (value instanceof TexType) return value._raw
+  if (typeof value === 'string') return value
+  if (value === undefined || value === null) {
+    throw new TypeError(
+      `tex.object(): field "${key}" has no schema (got ${value})`
+    )
+  }
+  throw new TypeError(
+    `tex.object(): field "${key}" is not a field schema (got ${(value as any)?.constructor?.name ?? typeof value}); use tex.object(), tex.array() or a tex.* field`
+  )
+}
+
 export class TexEngine<T = any> {
   private schema: Record<string, string>
   private rawSchema: Record<string, any>
@@ -11,6 +39,7 @@ export class TexEngine<T = any> {
 
   public readonly _type!: T
   public _isOptional = false
+  public _isNullable = false
   // Per-field work list, built on first parse so builder mutations made
   // before then (refine, sanitize) are included
   private _plan?: ParsePlan
@@ -42,7 +71,7 @@ export class TexEngine<T = any> {
       return errors
     }
     const MAX_ERRORS = 100
-    const failed = new Set(errors.map((e) => e.path.split('.')[0]))
+    const failed = new Set(errors.map((e) => e.path.split(/[.[]/)[0]))
 
     if (this.strict) {
       for (const key of Object.keys(data)) {
@@ -179,15 +208,48 @@ export class TexEngine<T = any> {
     return this.schema
   }
 
-  optional(): TexEngine<T | undefined> {
-    return new TexEngine(this.schema, this.rawSchema, this.strict, true) as any
+  /** A copy with another shape that keeps strictness and modifiers */
+  private derive(
+    schema: Record<string, string>,
+    rawSchema: Record<string, any>
+  ): TexEngine<any> {
+    const engine = new TexEngine(
+      schema,
+      rawSchema,
+      this.strict,
+      this._isOptional
+    )
+    engine._isNullable = this._isNullable
+    return engine
+  }
+
+  /** The field may be left out. */
+  optional(): TexEngine<T | undefined> & { readonly __isOptional: true } {
+    const engine = this.derive(this.schema, this.rawSchema)
+    engine._isOptional = true
+    return engine as any
+  }
+
+  /** The field may be `null`. */
+  nullable(): TexEngine<T | null> {
+    const engine = this.derive(this.schema, this.rawSchema)
+    engine._isNullable = true
+    return engine
+  }
+
+  /** The field may be left out or be `null`. */
+  nullish(): TexEngine<T | null | undefined> & {
+    readonly __isOptional: true
+  } {
+    return this.optional().nullable() as any
   }
 
   partial(): TexEngine<Partial<T>> {
     const newSchema: Record<string, string> = {}
     const newRaw: Record<string, any> = {}
     for (const [key, val] of Object.entries(this.schema)) {
-      newSchema[key] = val.includes('?') ? val : `${val}?`
+      // Not `val.includes('?')`: a nested rule contains its children's `?`
+      newSchema[key] = `${val} | optional`
       const rawVal = this.rawSchema[key]
       if (rawVal instanceof TexType) {
         newRaw[key] = new TexType(newSchema[key])
@@ -199,7 +261,7 @@ export class TexEngine<T = any> {
         newRaw[key] = newSchema[key]
       }
     }
-    return new TexEngine(newSchema, newRaw, this.strict, this._isOptional)
+    return this.derive(newSchema, newRaw)
   }
 
   extend<E extends Record<string, any>>(
@@ -208,34 +270,16 @@ export class TexEngine<T = any> {
     const newSchema: Record<string, string> = { ...this.schema }
     const newRaw: Record<string, any> = { ...this.rawSchema }
     for (const [key, val] of Object.entries(extension)) {
-      if (val instanceof TexEngine) {
-        newSchema[key] = `object<${JSON.stringify(val.getCompiledSchema())}>`
-        newRaw[key] = val
-      } else if (val instanceof TexType) {
-        newSchema[key] = val._raw
-        newRaw[key] = val
-      } else {
-        newSchema[key] = val as string
-        newRaw[key] = val
-      }
+      newSchema[key] = fieldRule(key, val)
+      newRaw[key] = val
     }
-    return new TexEngine(
-      newSchema,
-      newRaw,
-      this.strict,
-      this._isOptional
-    ) as any
+    return this.derive(newSchema, newRaw)
   }
 
   merge<Other>(other: TexEngine<Other>): TexEngine<T & Other> {
     const newSchema = { ...this.schema, ...other.getCompiledSchema() }
     const newRaw = { ...this.rawSchema, ...(other as any).rawSchema }
-    return new TexEngine(
-      newSchema,
-      newRaw,
-      this.strict,
-      this._isOptional
-    ) as any
+    return this.derive(newSchema, newRaw)
   }
 
   transform<Out>(fn: (val: T) => Out): TexTransformedEngine<T, Out> {
@@ -251,12 +295,7 @@ export class TexEngine<T = any> {
         newRaw[key] = this.rawSchema[key]
       }
     }
-    return new TexEngine(
-      newSchema,
-      newRaw,
-      this.strict,
-      this._isOptional
-    ) as any
+    return this.derive(newSchema, newRaw)
   }
 
   omit<K extends keyof T>(keys: K[]): TexEngine<Omit<T, K>> {
@@ -268,12 +307,7 @@ export class TexEngine<T = any> {
         newRaw[key] = this.rawSchema[key]
       }
     }
-    return new TexEngine(
-      newSchema,
-      newRaw,
-      this.strict,
-      this._isOptional
-    ) as any
+    return this.derive(newSchema, newRaw)
   }
 
   parse(data: any): T {
@@ -436,10 +470,11 @@ export class TexEngine<T = any> {
     for (const [key, rawVal] of Object.entries(this.rawSchema)) {
       const rawDef = this.schema[key] || ''
       const typeStr = rawDef.split('|')[0].trim()
+      // A nested rule's text includes its children's modifiers
       const isOptional =
-        typeStr.endsWith('?') ||
-        rawDef.includes('optional') ||
-        (rawVal as any)?._isOptional
+        rawVal instanceof TexEngine
+          ? rawVal._isOptional
+          : typeStr.endsWith('?') || rawDef.includes('optional')
 
       let prop: any
       if (rawVal && typeof rawVal.toOpenApi === 'function') {
@@ -735,7 +770,12 @@ function buildPlan(rawSchema: Record<string, any>): FieldPlan[] {
   for (const key of Object.keys(rawSchema)) {
     const val = rawSchema[key]
     const tex = val instanceof TexType ? val : null
-    const raw = tex ? tex._raw : String(val)
+    // A nested schema contributes only its own modifiers, not its children's
+    const raw = tex
+      ? tex._raw
+      : val instanceof TexEngine
+        ? engineModifiers(val)
+        : String(val)
     // Unions coerce per alternative inside the compiled rule
     const plain = tex !== null && !raw.includes('||')
     const coerce = raw.includes('coerce')
@@ -744,13 +784,7 @@ function buildPlan(rawSchema: Record<string, any>): FieldPlan[] {
     const optional = raw.includes('optional')
 
     let emptyString: FieldPlan['emptyString'] = 'keep'
-    if (
-      optional ||
-      nullable ||
-      nullish ||
-      raw.includes('?') ||
-      val?._isOptional
-    ) {
+    if (optional || nullable || nullish || raw.includes('?')) {
       emptyString = nullable && !optional && !nullish ? 'null' : 'delete'
     }
 

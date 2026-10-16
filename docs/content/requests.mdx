@@ -106,6 +106,8 @@ const data = await req.json<{ username: string }>()
 const { fields, files } = await req.formData()
 ```
 
+The body is read from the network once; these methods share the result. `req.buffer()` returns the bytes exactly as the client sent them, so binary payloads (images, protobuf, compressed or signed data) are safe. A body over `bodyLimit` makes these calls fail with `413 Payload Too Large`.
+
 ### Webhooks with `@RawBody()` (Class Controllers)
 
 In class-based controllers, use the `@RawBody()` parameter decorator to inject the raw `Buffer` or decoded string directly:

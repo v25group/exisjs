@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+
 export interface TransactionalOptions {
   /** Optional named database connection */
   connection?: string
@@ -26,6 +28,59 @@ export interface TransactionalOptions {
  * }
  * ```
  */
+// Instance properties that may hold the database client, in lookup order
+const DB_KEYS = ['db', 'database', 'prisma', 'dataSource', 'connection']
+
+// Services are usually shared singletons, so the transaction must not be
+// written onto the instance: a concurrent request using the same service
+// would run its queries inside this request's transaction. Instead the
+// database property becomes a getter that returns the transaction only
+// within the async context of the @Transactional call (and anything it
+// awaits or calls, which therefore joins the transaction).
+const activeTransactions = new AsyncLocalStorage<Map<object, any>>()
+const BOUND = Symbol('exis.transactionalProperty')
+
+function bindDbProperty(self: any, key: string): boolean {
+  const own = Object.getOwnPropertyDescriptor(self, key)
+  if (own?.get && (own.get as any)[BOUND]) return true
+  // An inherited or hand-written accessor cannot be wrapped safely
+  if (own === undefined ? key in self : own.get || own.set) return false
+  if (own !== undefined && !own.configurable) return false
+
+  let value = own?.value
+  const get = function () {
+    const tx = activeTransactions.getStore()?.get(self)
+    return tx !== undefined ? tx : value
+  }
+  ;(get as any)[BOUND] = true
+  Object.defineProperty(self, key, {
+    configurable: true,
+    enumerable: own?.enumerable ?? true,
+    get,
+    set(next: any) {
+      value = next
+    },
+  })
+  return true
+}
+
+function runWithTransaction<T>(
+  self: any,
+  key: string,
+  tx: any,
+  fn: (target: any) => T
+): T {
+  if (bindDbProperty(self, key)) {
+    const store = new Map(activeTransactions.getStore())
+    store.set(self, tx)
+    return activeTransactions.run(store, () => fn(self))
+  }
+  // Fallback for accessor-defined clients: a per-call view of the instance
+  const scoped = Object.create(self)
+  scoped[key] = tx
+  return fn(scoped)
+}
+
 export function Transactional(
   _options: TransactionalOptions = {}
 ): MethodDecorator {
@@ -38,41 +93,23 @@ export function Transactional(
 
     descriptor.value = async function (...args: any[]) {
       const self = this as any
-      const db =
-        self.db ||
-        self.database ||
-        self.prisma ||
-        self.dataSource ||
-        self.connection ||
-        (globalThis as any).__EXIS_DB__
+      const key = DB_KEYS.find((k) => self[k])
+      const db = key ? self[key] : (globalThis as any).__EXIS_DB__
 
       if (db) {
+        const runInTransaction = (tx: any) =>
+          runWithTransaction(self, key ?? 'db', tx, (target) =>
+            originalMethod.apply(target, args)
+          )
+
         // 1. Functional transaction wrapper: db.transaction((tx) => ...)
         if (typeof db.transaction === 'function') {
-          return db.transaction(async (tx: any) => {
-            const originalDb = self.db
-            try {
-              self.db = tx
-              return await originalMethod.apply(self, args)
-            } finally {
-              self.db = originalDb
-            }
-          })
+          return db.transaction(runInTransaction)
         }
 
         // 2. Prisma-style $transaction: db.$transaction(async (tx) => ...)
         if (typeof db.$transaction === 'function') {
-          return db.$transaction(async (tx: any) => {
-            const originalPrisma = self.prisma || self.db
-            try {
-              if (self.prisma) self.prisma = tx
-              if (self.db) self.db = tx
-              return await originalMethod.apply(self, args)
-            } finally {
-              if (self.prisma) self.prisma = originalPrisma
-              if (self.db) self.db = originalPrisma
-            }
-          })
+          return db.$transaction(runInTransaction)
         }
 
         // 3. Imperative beginTransaction / commit / rollback

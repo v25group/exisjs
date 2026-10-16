@@ -8,7 +8,8 @@ export {
 
 export { serializeCookie, serializeClearCookie, parseCookies } from './cookie'
 
-export { generateETag, nativeStringify } from './etag'
+export { nativeStringify } from './etag'
+export * from './conditional'
 
 export { streamToResponse } from './stream'
 

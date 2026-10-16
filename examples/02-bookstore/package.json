@@ -1,6 +1,6 @@
 {
   "name": "02-bookstore",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,14 +14,14 @@
     "bcryptjs": "^3.0.3",
     "exisjs": "*",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.24.4"
+    "mongoose": "^8.24.5"
   },
   "devDependencies": {
     "@eslint/js": "^8.57.1",
     "@types/node": "^20.19.43",
     "eslint": "^8.57.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.0",
+    "typescript-eslint": "^8.71.1",
     "tsx": "^4.23.15",
     "@types/jsonwebtoken": "^9.0.10"
   }

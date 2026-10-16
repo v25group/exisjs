@@ -4,7 +4,6 @@ import { intercept } from 'exisjs/middleware'
 
 export const config = defineBoundary({
   cors: { origin: '*' },
-  headers: { 'X-Powered-By': 'ExisJS' },
   middleware: [
     requestId(),
     requestLogger(),

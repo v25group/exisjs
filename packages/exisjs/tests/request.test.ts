@@ -462,7 +462,7 @@ describe('Request ID Generation', () => {
   it('generates a new requestId if not provided', () => {
     const raw = buildRawRequest({ headers: {} })
     const res = createMockResponse()
-    const req = new ExisRequest(raw, res).init(raw, res)
+    const req = new ExisRequest(raw, res)
 
     // requestId is now handled by a middleware, not the constructor
     requestId()(req, res, () => {})
@@ -478,7 +478,7 @@ describe('Request ID Generation', () => {
       headers: { 'x-request-id': 'custom-id-123' },
     })
     const res = createMockResponse()
-    const req = new ExisRequest(raw, res).init(raw, res)
+    const req = new ExisRequest(raw, res)
 
     requestId()(req, res, () => {})
 
@@ -491,7 +491,7 @@ describe('URL Path Normalization', () => {
   it('collapses multiple slashes', () => {
     const raw = buildRawRequest({ url: '//api///v1//users//' })
     const res = createMockResponse()
-    const req = new ExisRequest(raw, res).init(raw, res)
+    const req = new ExisRequest(raw, res)
 
     expect(req.path).toBe('/api/v1/users/')
   })
@@ -499,7 +499,7 @@ describe('URL Path Normalization', () => {
   it('does not affect query parameters', () => {
     const raw = buildRawRequest({ url: '//api//v1//search?query=//test//' })
     const res = createMockResponse()
-    const req = new ExisRequest(raw, res).init(raw, res)
+    const req = new ExisRequest(raw, res)
 
     expect(req.path).toBe('/api/v1/search')
     expect(req.query).toEqual({ query: '//test//' })

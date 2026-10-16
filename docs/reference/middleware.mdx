@@ -317,6 +317,6 @@ app.use(fromExpress(morgan('combined')))
 | `requestId()` | `() => Handler` | Injects a unique `X-Request-Id` into request and response headers. |
 | `requestLogger(options?)` | `(options?: LoggerConfig) => Handler` | Formats and logs request completion timings and status codes. |
 | `serveStatic(root, options?)` | `(root: string, options?: StaticOptions) => Handler` | Serves static assets from disk with caching headers and streaming backpressure. |
-| `conditionalGet()` | `() => Handler` | Enables ETag validation and `304 Not Modified` responses. |
+| `conditionalGet()` | `() => Handler` | Turns on automatic ETags and `304 Not Modified` for the routes it is applied to (as `etag: true` does app-wide). |
 | `validate(schema)` | `(schema: ValidateSchema) => Handler` | Validates request parameters against a `TexEngine` schema. |
 

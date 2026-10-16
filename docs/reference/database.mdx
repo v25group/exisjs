@@ -59,6 +59,7 @@ function registerDatabase(
 | `connect` | `() => Promise<void> \| void` | Asynchronous callback establishing client connection pools. |
 | `disconnect` | `() => Promise<void> \| void` | Asynchronous callback to safely terminate open sockets and pools. |
 | `healthCheck` / `isHealthy` | `() => Promise<boolean \| DatabaseHealthInfo> \| boolean \| DatabaseHealthInfo` | Optional callback returning health status boolean or detailed metrics. |
+| `healthTimeoutMs` | `number` | How long the health check may take before it is reported as `status: 'error'`, so an unresponsive database fails `/_ready` instead of hanging it. Default `5000`. |
 
 #### Example: Prisma Lifecycle Registration
 
@@ -97,9 +98,9 @@ Static singleton registry coordinating all registered database adapters.
 | Method | Signature | Description |
 | :--- | :--- | :--- |
 | `register(db)` | `(db: DatabaseRegistration) => void` | Adds a database adapter to the manager. |
-| `connectAll()` | `() => Promise<void>` | Connects all registered database instances concurrently. |
+| `connectAll()` | `() => Promise<void>` | Connects all registered databases in parallel, so boot waits for the slowest one rather than the sum. If any fail, the error names each failed database (`error.failures` lists them); the others stay connected and a later call retries only the failed ones. |
 | `disconnectAll()` | `() => Promise<void>` | Closes all database connections gracefully using `Promise.allSettled`. |
-| `checkHealth()` | `() => Promise<{ healthy: boolean; databases: Record<string, DatabaseHealthInfo> }>` | Executes health checks across all registered databases and aggregates results. |
+| `checkHealth()` | `() => Promise<{ healthy: boolean; databases: Record<string, DatabaseHealthInfo> }>` | Runs every database's health check in parallel, each limited by its `healthTimeoutMs`. Calls made while a check is running share its result, so frequent probes from several load balancers cost one round of pings. |
 | `clear()` | `() => void` | Clears all registered database adapters (useful for test tear-downs). |
 
 #### Health Output Structures

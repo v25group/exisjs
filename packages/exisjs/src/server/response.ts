@@ -8,10 +8,19 @@ import type { DownloadOptions } from './download'
 import {
   serializeCookie,
   serializeClearCookie,
-  generateETag,
   nativeStringify,
   streamToResponse,
 } from './helpers'
+import {
+  generateETag,
+  fileETag,
+  formatETag,
+  toHttpTime,
+  evaluatePreconditions,
+  hasPreconditions,
+  type Validators,
+} from './helpers/conditional'
+import { HttpError } from '../error/errors'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const contentDispositionLib = require('content-disposition')
@@ -34,16 +43,6 @@ export class ExisResponse<TResponse = any> {
   public _pending = false
 
   constructor(public raw: ServerResponse) {}
-
-  public init(raw: ServerResponse): this {
-    this.raw = raw
-    this.req = undefined
-    this.etagEnabled = false
-    this._onFinish.length = 0
-    this._serializer = undefined
-    this._onDone = undefined
-    return this
-  }
 
   get headersSent(): boolean {
     return this.raw.headersSent
@@ -103,22 +102,168 @@ export class ExisResponse<TResponse = any> {
     })
   }
 
-  // 304 only applies to conditional requests; check the cheap request
-  // headers first so ordinary responses skip two hasHeader() calls
-  private _isNotModified(): boolean {
-    const req = this.req
-    if (req === undefined) return false
-    const h = req.headers
-    if (
-      h === undefined ||
-      (h['if-none-match'] === undefined && h['if-modified-since'] === undefined)
-    ) {
-      return false
+  // Whether this response is a successful read, the only kind that gets an
+  // automatic ETag and is revalidated after the handler ran. Unsafe methods
+  // check preconditions before acting, with checkPreconditions().
+  private _isCacheableRead(): boolean {
+    const method = this.req?.method
+    const s = this.raw.statusCode
+    return (method === 'GET' || method === 'HEAD') && s >= 200 && s < 300
+  }
+
+  /**
+   * Content-Length, automatic ETag and conditional GET for a finished body.
+   * Shared by send() and json().
+   */
+  private _sendBody(body: string | Buffer): void {
+    const length =
+      typeof body === 'string' ? Buffer.byteLength(body) : body.length
+    const read = this._isCacheableRead()
+    if (read && this.etagEnabled && !this.raw.hasHeader('ETag')) {
+      this.raw.setHeader('ETag', generateETag(body, length))
     }
-    return (
-      (this.raw.hasHeader('ETag') || this.raw.hasHeader('Last-Modified')) &&
-      req.fresh
+    // The request headers are the cheap check; most requests stop here
+    if (read && this.req !== undefined && hasPreconditions(this.req.headers)) {
+      const etag = this.raw.getHeader('ETag')
+      const lastModified = this.raw.getHeader('Last-Modified')
+      if (etag !== undefined || lastModified !== undefined) {
+        const outcome = evaluatePreconditions(
+          this.req.method,
+          this.req.headers,
+          {
+            etag: etag === undefined ? undefined : String(etag),
+            lastModified:
+              lastModified === undefined
+                ? undefined
+                : toHttpTime(String(lastModified)),
+          }
+        )
+        if (outcome === 'not-modified') return this._sendNotModified()
+        if (outcome === 'failed') return this._sendPreconditionFailed()
+      }
+    }
+    if (!this.raw.hasHeader('Content-Length')) {
+      this.raw.setHeader('Content-Length', length)
+    }
+    this.end(body)
+  }
+
+  // 304 carries the validators and caching headers of the 200 it stands
+  // for, but no content and no content metadata (RFC 9110 §15.4.5)
+  private _sendNotModified(): void {
+    this.raw.statusCode = 304
+    this.raw.removeHeader('Content-Type')
+    this.raw.removeHeader('Content-Length')
+    this.raw.removeHeader('Content-Encoding')
+    this.raw.removeHeader('Transfer-Encoding')
+    this.end()
+  }
+
+  private _sendPreconditionFailed(): void {
+    const body = JSON.stringify(
+      new HttpError(
+        'Precondition failed: the resource has changed',
+        412,
+        'PRECONDITION_FAILED'
+      ).toJSON()
     )
+    this.raw.statusCode = 412
+    this.raw.removeHeader('ETag')
+    this.raw.removeHeader('Last-Modified')
+    this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
+    this.raw.setHeader('Content-Length', Buffer.byteLength(body))
+    this.end(body)
+  }
+
+  /**
+   * Checks the request's conditional headers against the current state of
+   * the resource (RFC 9110 §13), before a handler reads or changes it.
+   *
+   * - **Reads (GET/HEAD):** sets `ETag` / `Last-Modified`, and answers
+   *   `304 Not Modified` when the client's copy is current. Returns `true`
+   *   when it answered, so the handler can stop.
+   * - **Writes (PUT/PATCH/DELETE/POST):** throws `412 Precondition Failed`
+   *   when `If-Match` / `If-Unmodified-Since` no longer match (another
+   *   client changed the resource), or when `If-None-Match: *` targets a
+   *   resource that exists. With `{ required: true }`, a write without any
+   *   precondition is refused with `428 Precondition Required`.
+   *
+   * @param validators The resource's current `etag` (quoted or not),
+   *   `lastModified`, and `exists: false` when it does not exist yet
+   *
+   * @example
+   * ```ts
+   * // GET: revalidate cheaply from a version column
+   * const user = await users.find(id)
+   * if (res.checkPreconditions({ etag: `v${user.version}`, lastModified: user.updatedAt })) return
+   * return user
+   *
+   * // PUT: refuse lost updates
+   * const current = await users.find(id)
+   * res.checkPreconditions({ etag: `v${current.version}` }, { required: true })
+   * const updated = await users.update(id, body)
+   * res.setHeader('ETag', `"v${updated.version}"`)
+   * return updated
+   * ```
+   */
+  checkPreconditions(
+    validators: Validators,
+    options: { required?: boolean } = {}
+  ): boolean {
+    const method = this.req?.method ?? 'GET'
+    const headers = this.req?.headers ?? {}
+    const isRead = method === 'GET' || method === 'HEAD'
+    const etag =
+      validators.etag === undefined ? undefined : formatETag(validators.etag)
+    const time =
+      validators.lastModified === undefined
+        ? undefined
+        : toHttpTime(validators.lastModified)
+    // A Last-Modified in the future would make clients cache wrongly
+    const lastModified =
+      time === undefined
+        ? undefined
+        : Math.min(time, Math.floor(Date.now() / 1000) * 1000)
+
+    if (
+      options.required &&
+      !isRead &&
+      headers['if-match'] === undefined &&
+      headers['if-unmodified-since'] === undefined &&
+      headers['if-none-match'] === undefined
+    ) {
+      throw new HttpError(
+        'This request must be conditional: send If-Match with the ETag you last received',
+        428,
+        'PRECONDITION_REQUIRED'
+      )
+    }
+
+    const outcome = evaluatePreconditions(method, headers, {
+      etag,
+      lastModified,
+      exists: validators.exists,
+    })
+    if (outcome === 'failed') {
+      throw new HttpError(
+        'Precondition failed: the resource has changed',
+        412,
+        'PRECONDITION_FAILED'
+      )
+    }
+    // On a write the response describes the new state, so the old
+    // validators are not sent; set the new ETag after the change
+    if (isRead && validators.exists !== false) {
+      if (etag !== undefined) this.setHeader('ETag', etag)
+      if (lastModified !== undefined) {
+        this.setHeader('Last-Modified', new Date(lastModified).toUTCString())
+      }
+    }
+    if (outcome === 'not-modified') {
+      this._sendNotModified()
+      return true
+    }
+    return false
   }
 
   private _markDone(): void {
@@ -229,26 +374,7 @@ export class ExisResponse<TResponse = any> {
       )
     }
 
-    if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
-      const buf = isBuffer
-        ? (body as Buffer)
-        : Buffer.from(body as string, 'utf8')
-      this.raw.setHeader('ETag', generateETag(buf))
-    }
-
-    if (this._isNotModified()) {
-      this.statusCode = 304
-      this.end()
-      return
-    }
-
-    if (!this.raw.hasHeader('Content-Length')) {
-      const len = isBuffer
-        ? (body as Buffer).length
-        : Buffer.byteLength(body as string)
-      this.raw.setHeader('Content-Length', len)
-    }
-    this.end(body)
+    this._sendBody(body as string | Buffer)
   }
 
   /**
@@ -299,27 +425,7 @@ export class ExisResponse<TResponse = any> {
       this.raw.setHeader('Content-Type', 'application/json; charset=utf-8')
     }
 
-    if (!this.raw.hasHeader('Content-Length')) {
-      const len = Buffer.isBuffer(payload)
-        ? payload.length
-        : Buffer.byteLength(payload)
-      this.raw.setHeader('Content-Length', len)
-    }
-
-    if (this.etagEnabled && !this.raw.hasHeader('ETag')) {
-      const buf = Buffer.isBuffer(payload)
-        ? payload
-        : Buffer.from(payload, 'utf8')
-      this.raw.setHeader('ETag', generateETag(buf))
-    }
-
-    if (this._isNotModified()) {
-      this.statusCode = 304
-      this.end()
-      return
-    }
-
-    this.end(payload)
+    this._sendBody(payload)
   }
 
   /**
@@ -337,7 +443,8 @@ export class ExisResponse<TResponse = any> {
     if (!this.hasHeader('Content-Type')) {
       this.setHeader('Content-Type', 'text/html; charset=utf-8')
     }
-    this.end(content)
+    // send() adds Content-Length, ETag and 304 handling
+    this.send(content)
   }
 
   /**
@@ -603,6 +710,17 @@ export class ExisResponse<TResponse = any> {
         return
       }
       if (!this.isWritable) return
+      try {
+        const validators = {
+          etag: fileETag(stat.size, stat.mtimeMs),
+          lastModified: stat.mtime,
+        }
+        if (this.checkPreconditions(validators)) return
+      } catch {
+        // Only a failed If-Match / If-Unmodified-Since throws here
+        this._sendPreconditionFailed()
+        return
+      }
       this._setDownloadHeaders(filename || path.basename(full), options)
       this.setHeader('Content-Length', stat.size)
       this.sendStream(fs.createReadStream(full))
@@ -682,12 +800,7 @@ export class ExisResponse<TResponse = any> {
    * ```
    */
   cookie(name: string, value: string, options: CookieOptions = {}): this {
-    const serialized = serializeCookie(name, value, options)
-    this.append('Set-Cookie', serialized)
-    if (process.env.NODE_ENV === 'development') {
-      this.append('X-Set-Cookie', serialized)
-    }
-    return this
+    return this.append('Set-Cookie', serializeCookie(name, value, options))
   }
 
   /**
@@ -702,11 +815,6 @@ export class ExisResponse<TResponse = any> {
    * ```
    */
   clearCookie(name: string, options: CookieOptions = {}): this {
-    const serialized = serializeClearCookie(name, options)
-    this.append('Set-Cookie', serialized)
-    if (process.env.NODE_ENV === 'development') {
-      this.append('X-Set-Cookie', serialized)
-    }
-    return this
+    return this.append('Set-Cookie', serializeClearCookie(name, options))
   }
 }

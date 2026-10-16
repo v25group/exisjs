@@ -546,11 +546,12 @@ describe('serveStatic()', () => {
       const req = createMockRequest({ method: 'HEAD', url: '/test.txt' })
       const res = createMockResponse()
 
-      res.send = ex.fn(() => {
+      // A HEAD answer ends the response without a body
+      res.end = ex.fn(() => {
         expect(res.statusCode).toBe(200)
         expect(getResponseHeader(res, 'content-type')).toBe('text/plain')
+        expect(getResponseHeader(res, 'content-length')).toBe('11')
         resolve()
-        return res
       })
 
       handler(req, res, createMockNext())
