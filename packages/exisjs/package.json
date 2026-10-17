@@ -186,7 +186,7 @@
   "devDependencies": {
     "@types/accepts": "^1.3.7",
     "@types/bun": "^1.4.2",
-    "@types/busboy": "^1.5.4",
+    "@types/busboy": "^1.5.5",
     "@types/content-disposition": "^0.5.9",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.4.0",
