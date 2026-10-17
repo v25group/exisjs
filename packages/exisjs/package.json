@@ -190,7 +190,7 @@
     "@types/content-disposition": "^0.5.9",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.4.0",
-    "fast-json-stringify": "^7.0.1",
+    "fast-json-stringify": "^7.1.0",
     "zod": "^4.6.5"
   },
   "publishConfig": {
