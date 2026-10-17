@@ -72,7 +72,8 @@ export const defaultConfig: ResolvedConfig = {
   helmet: { enabled: true },
   trustProxy: false,
   bodyLimit: 10 * 1024 * 1024,
-  env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'development',
+  // Only an explicit NODE_ENV=development exposes error details; `exisjs dev` sets it
+  env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'production',
   compression: false,
   keepAlive: false,
   server: 'auto' as 'auto' | 'node' | 'bun' | 'uws', // Auto-detect backend

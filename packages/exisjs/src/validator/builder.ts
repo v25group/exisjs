@@ -26,8 +26,20 @@ import type {
   TexFileOptions,
   TexPasswordOptions,
   TexDateOptions,
+  TexUrlOptions,
 } from './types'
 import { TexEngine, TexDiscriminatedUnionEngine, fieldRule } from './engine'
+import { formatEnumValues } from './rules'
+
+// `length` and `pattern` for string-like schemas
+function textChecks(opts?: { length?: number; pattern?: RegExp }): string {
+  let out = ''
+  if (opts?.length !== undefined) out += ` | length:${opts.length}`
+  if (opts?.pattern) {
+    out += ` | pattern:${JSON.stringify([opts.pattern.source, opts.pattern.flags])}`
+  }
+  return out
+}
 
 /**
  * Declarative schema builder; each schema compiles once into plain JS checks.
@@ -64,7 +76,33 @@ export class TexBuilder {
     if (opts?.mask) base += ' | mask'
     if (opts?.preventSql) base += ' | preventSql'
     if (opts?.preventTraversal) base += ' | preventTraversal'
-    return new TexType(base, opts?.default) as any
+    return new TexType(base + textChecks(opts), opts?.default) as any
+  }
+
+  /**
+   * Defines an absolute URL schema. Only `http` and `https` are accepted
+   * unless `protocols` says otherwise.
+   *
+   * @example
+   * ```ts
+   * const website = tex.url({ trim: true })
+   * const callback = tex.url({ protocols: ['https'] })
+   * ```
+   */
+  url<O extends TexUrlOptions = TexUrlOptions>(
+    opts?: O
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
+    let base = 'url'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
+    if (opts?.nullable) base += ' | nullable'
+    if (opts?.nullish) base += ' | nullish'
+    if (opts?.trim) base += ' | trim'
+    if (opts?.protocols?.length) {
+      base += ` | protocols:${opts.protocols.map((p) => p.replace(/:$/, '')).join(',')}`
+    }
+    if (opts?.min !== undefined) base += ` | min:${opts.min}`
+    if (opts?.max !== undefined) base += ` | max:${opts.max}`
+    return new TexType(base + textChecks(opts), opts?.default) as any
   }
 
   /**
@@ -86,6 +124,7 @@ export class TexBuilder {
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
     if (opts?.coerce) base += ' | coerce'
+    if (opts?.int) base += ' | int'
     if (opts?.min !== undefined) base += ` | min:${opts.min}`
     if (opts?.max !== undefined) base += ` | max:${opts.max}`
     return new TexType(base, opts?.default) as any
@@ -272,7 +311,7 @@ export class TexBuilder {
     values: readonly T[],
     opts?: O
   ): WithDefault<TexEnum<T, O['optional'] extends true ? true : false>, O> {
-    let base = `enum:${values.join(',')}`
+    let base = `enum:${formatEnumValues(values)}`
     if (opts?.optional || opts?.default !== undefined) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
@@ -289,7 +328,8 @@ export class TexBuilder {
     value: T,
     opts?: O
   ): TexLiteral<T, O['optional'] extends true ? true : false> {
-    let base = `literal:${value}`
+    // JSON keeps the type: literal(42) is the number, literal('42') the text
+    let base = `literal:${JSON.stringify(value)}`
     if (opts?.optional) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
@@ -311,15 +351,14 @@ export class TexBuilder {
     schemas: T,
     opts?: O
   ): TexUnion<T, O['optional'] extends true ? true : false> {
-    const items = schemas.map((s) => (s instanceof TexType ? s._raw : s))
+    const items = schemas.map((s) => fieldRule('[option]', s))
     let base = items.join(' || ')
     if (opts?.optional) base = `(${base})?`
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    return new TexType(base) as unknown as TexUnion<
-      T,
-      O['optional'] extends true ? true : false
-    >
+    const res = new TexType(base) as any
+    res._options = schemas
+    return res as TexUnion<T, O['optional'] extends true ? true : false>
   }
 
   /**
@@ -353,15 +392,13 @@ export class TexBuilder {
     schema: T,
     opts?: O
   ): TexRecord<T, O['optional'] extends true ? true : false> {
-    const itemSchema = schema instanceof TexType ? schema._raw : schema
-    let base = `record<${itemSchema as string}>`
+    let base = `record<${fieldRule('[value]', schema)}>`
     if (opts?.optional) base += '?'
     if (opts?.nullable) base += ' | nullable'
     if (opts?.nullish) base += ' | nullish'
-    return new TexType(base) as unknown as TexRecord<
-      T,
-      O['optional'] extends true ? true : false
-    >
+    const res = new TexType(base) as any
+    res._value = schema
+    return res as TexRecord<T, O['optional'] extends true ? true : false>
   }
 
   /**
@@ -499,24 +536,16 @@ export class TexBuilder {
     const coercedSchema: Record<string, any> = {}
     for (const [key, value] of Object.entries(schema)) {
       if (value instanceof TexType) {
-        let raw = value._raw
+        const raw = value._raw
         // Auto-inject coercion if not already present
-        if (
+        coercedSchema[key] =
           (raw.startsWith('number') ||
             raw.startsWith('boolean') ||
             raw.startsWith('date') ||
             raw.startsWith('array<')) &&
           !raw.includes('coerce')
-        ) {
-          raw = `${raw} | coerce`
-        }
-        const cloned = new TexType(raw, value.defaultValue)
-        cloned.sanitizers = [...value.sanitizers]
-        cloned.refinements = [...value.refinements]
-        if ((value as any)._item) {
-          ;(cloned as any)._item = (value as any)._item
-        }
-        coercedSchema[key] = cloned
+            ? value._withModifier('coerce')
+            : value
       } else if (value instanceof TexEngine) {
         coercedSchema[key] = value
       } else if (typeof value === 'string') {

@@ -21,16 +21,17 @@ import { sanitize } from 'exisjs/sanitize'
 
 ## 1. Security Sanitizers
 
-The SQL and path traversal checks reject common probe strings; they complement, and never replace, parameterized queries and resolved-path checks.
+The SQL and path traversal checks reject common probe strings; they complement, and never replace, parameterized queries and resolved-path checks. A sanitizer that throws inside `.sanitize()` becomes a `400` validation error for that field (code `SANITIZATION_FAILED`).
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
-| `sanitize.escapeHtml` | `(val: string) => string` | Escapes `&`, `<`, `>`, `"`, and `'` into HTML entity equivalents. |
-| `sanitize.stripHtml` | `(val: string) => string` | Strips all HTML tags and markup characters from the string. |
-| `sanitize.preventSql` | `(val: string) => string` | Neutralizes common SQL injection sequences and comment tokens. |
-| `sanitize.preventTraversal` | `(val: string) => string` | Strips directory traversal sequences (`../`, `..\\`, null bytes). |
+| `sanitize.escapeHtml` | `(val: string) => string` | Escapes `&`, `<`, `>`, `"`, and `'` into HTML entities. Use it for text shown in HTML. |
+| `sanitize.stripHtml` | `(val: string) => string` | Removes tags, comments, and `<script>` / `<style>` elements with their content. A `<` that does not start a tag (`a < b`) is kept. |
+| `sanitize.stripControlChars` | `(val: string) => string` | Removes invisible control characters (keeps tab and line breaks) and the bidirectional overrides used to disguise text. |
+| `sanitize.preventSql` | `(val: string) => string` | Throws on common SQL injection probes (`' or 1=1`, `union select`, ...). |
+| `sanitize.preventTraversal` | `(val: string) => string` | Throws on a `..` path segment (also `\` separators and percent-encoded forms such as `%2e%2e%2f`) and on NUL bytes. `report..final.pdf` is allowed. |
 | `sanitize.maskEmail` | `(val: string) => string` | Obfuscates email addresses (e.g., `al***@example.com`). |
-| `sanitize.maskString` | `(val: string) => string` | Masks sensitive string segments for logging or auditing. |
+| `sanitize.maskString` | `(val: string) => string` | Keeps the first and last two characters (`ab****yz`). |
 
 ---
 
@@ -42,34 +43,27 @@ The SQL and path traversal checks reject common probe strings; they complement, 
 | `sanitize.toLowerCase` | `(val: string) => string` | Converts all characters to lowercase. |
 | `sanitize.toUpperCase` | `(val: string) => string` | Converts all characters to uppercase. |
 | `sanitize.collapseWhitespace`| `(val: string) => string` | Collapses consecutive whitespace, tabs, and newlines into a single space. |
-| `sanitize.normalizeUnicode` | `(val: string) => string` | Normalizes Unicode characters to Canonical Decomposition followed by Canonical Composition (NFC). |
-| `sanitize.slugify` | `(val: string) => string` | Converts strings into clean URL-friendly slugs (`"Hello World!"` $\to$ `"hello-world"`). |
-| `sanitize.truncate(length)` | `(length: number) => (val: string) => string` | Truncates strings exceeding the specified maximum length. |
-| `sanitize.removeNonAlphanumeric` | `(val: string) => string` | Strips all characters except standard ASCII letters and numbers. |
-| `sanitize.normalizeLineEndings` | `(val: string) => string` | Converts Windows CRLF (`\r\n`) to POSIX LF (`\n`). |
+| `sanitize.normalizeUnicode` | `(val: string) => string` | Normalizes to Unicode NFC, so visually equal strings compare equal. |
+| `sanitize.normalizeEmail` | `(val: string) => string` | Trims and lowercases an email address. |
+| `sanitize.slugify` | `(val: string) => string` | URL-friendly slug; accented letters keep their base letter (`"Café Crème"` $	o$ `"cafe-creme"`). |
+| `sanitize.truncate(length)` | `(length: number) => (val: string) => string` | Shortens to `length` characters without splitting an emoji in two. |
+| `sanitize.removeNonAlphanumeric` | `(val: string) => string` | Strips all characters except ASCII letters and digits. |
+| `sanitize.normalizeLineEndings` | `(val: string) => string` | Converts `
+` and lone `` to `
+`. |
 
 ---
 
-## 3. Numbers & Dates
-
-### Number Transforms
+## 3. Numbers
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
-| `sanitize.round` | `(val: number) => number` | Rounds a float to the nearest integer. |
-| `sanitize.clamp(min, max)` | `(min: number, max: number) => (val: number) => number` | Constrains numeric input to fall within `[min, max]`. |
-| `sanitize.defaultIfNaN(fallback)` | `(fallback: number) => (val: number) => number` | Returns the fallback number if input evaluates to `NaN`. |
-
-### Date Transforms
-
-| Function | Signature | Description |
-| :--- | :--- | :--- |
-| `sanitize.normalizeToIsoString` | `(val: Date) => string` | Formats a Date object into an ISO 8601 string representation. |
-| `sanitize.stripTime` | `(val: Date) => Date` | Resets hours, minutes, seconds, and milliseconds to `00:00:00.000`. |
+| `sanitize.round(decimals?)` | `(decimals = 0) => (val: number) => number` | Rounds to `decimals` places. |
+| `sanitize.clamp(min, max)` | `(min: number, max: number) => (val: number) => number` | Constrains a number to `[min, max]`. |
 
 ---
 
-## 4. Arrays & Complex Objects
+## 4. Arrays & Objects
 
 ### Array Transforms
 
@@ -77,17 +71,18 @@ The SQL and path traversal checks reject common probe strings; they complement, 
 | :--- | :--- | :--- |
 | `sanitize.dedupe` | `<T>(val: T[]) => T[]` | Removes duplicate values preserving first-seen ordering. |
 | `sanitize.compact` | `<T>(val: T[]) => T[]` | Removes `null`, `undefined`, and empty strings (`""`). |
-| `sanitize.trimElements` | `(val: string[]) => string[]` | Trims whitespace from all string elements in an array. |
-| `sanitize.limitLength(n)` | `<T>(length: number) => (val: T[]) => T[]` | Slices an array to at most `length` elements. |
+| `sanitize.trimElements` | `(val: string[]) => string[]` | Trims every string item. |
+| `sanitize.limitLength(n)` | `(length: number) => <T>(val: T[]) => T[]` | Keeps the first `length` items. |
 
 ### Object Transforms
 
 | Function | Signature | Description |
 | :--- | :--- | :--- |
-| `sanitize.stripUnknownKeys(keys)` | `<T>(allowedKeys: (keyof T)[]) => (val: T) => T` | Strips unlisted properties from an object. |
-| `sanitize.deepTrimStringValues` | `<T>(val: T) => T` | Recursively walks an object graph and trims all nested string properties. |
-| `sanitize.omit(keys)` | `<T, K extends keyof T>(keys: K[]) => (val: T) => Omit<T, K>` | Removes specified keys from an object. |
-| `sanitize.pick(keys)` | `<T, K extends keyof T>(keys: K[]) => (val: T) => Pick<T, K>` | Returns an object containing only the specified keys. |
+| `sanitize.pick(keys)` | `<T, K extends keyof T>(keys: K[]) => (val: T) => Pick<T, K>` | Keeps only the listed keys the object itself has (never inherited ones such as `constructor`). |
+| `sanitize.omit(keys)` | `<T, K extends keyof T>(keys: K[]) => (val: T) => Omit<T, K>` | Removes the listed keys. |
+| `sanitize.deepTrim` | `<T>(val: T) => T` | Trims every string in a nested object or array. |
+
+Every sanitizer passes values of another type through unchanged (a string sanitizer returns a number as is, an array sanitizer returns a non-array as is), so they are safe on optional and nullable fields.
 
 ---
 

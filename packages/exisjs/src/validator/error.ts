@@ -66,6 +66,8 @@ export function redactReceived(field: string, value: string): string {
   return isSensitiveField(field) ? '[Redacted]' : maskCredentials(value)
 }
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
 export class ValidatorError extends Error {
   public readonly errors: ValidationErrorDescriptor[]
   public httpPart?: string
@@ -74,10 +76,15 @@ export class ValidatorError extends Error {
   public received?: any
 
   constructor(errors: ValidationErrorDescriptor[]) {
+    // A rejected request is routine; in production its stack (always inside
+    // the validator) costs more than the rest of the failure path together
+    const limit = Error.stackTraceLimit
+    if (IS_PRODUCTION) Error.stackTraceLimit = 0
     super(
       'Validation Error: ' +
         errors.map((e) => `${e.path}: ${e.message}`).join(', ')
     )
+    Error.stackTraceLimit = limit
     this.name = 'ValidatorError'
     // Received values end up in logs, error responses and (for tex.env) the
     // startup crash output, so credentials are masked at the source

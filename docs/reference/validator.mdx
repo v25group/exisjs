@@ -55,8 +55,9 @@ The `tex` instance exposes factory functions for all standard primitives, comple
 
 | Method | Return Type | Options Interface | Description |
 | :--- | :--- | :--- | :--- |
-| `tex.string(options?)` | `TexType<string>` | `TexStringOptions` | String validation with trimming, HTML escaping, min/max bounds, masking, coercion, and injection checks. |
-| `tex.number(options?)` | `TexType<number>` | `TexNumberOptions` | Number validation with optional string coercion (`coerce: true`) and min/max limits. |
+| `tex.string(options?)` | `TexType<string>` | `TexStringOptions` | String validation with trimming, HTML escaping, min/max/exact `length`, `pattern` (RegExp), masking, coercion, and injection checks. |
+| `tex.number(options?)` | `TexType<number>` | `TexNumberOptions` | Number validation with optional string coercion (`coerce: true`), whole numbers (`int: true`) and min/max limits. |
+| `tex.url(options?)` | `TexType<string>` | `TexUrlOptions` | Absolute URL; `http` / `https` only unless `protocols` lists others. |
 | `tex.boolean(options?)` | `TexType<boolean>` | `TexBooleanOptions` | Boolean validation with string/numeric coercion (`"true"`, `"1"` -> `true`). |
 | `tex.email(options?)` | `TexType<string>` | `TexStringOptions` | Standard RFC 5322 email format validation. |
 | `tex.uuid(options?)` | `TexType<string>` | `{ version?: 1 \| 4 }` | Validates UUID strings (v1 or v4). |
@@ -160,6 +161,8 @@ All `TexType` instances provide fluent modifier and documentation methods:
 | `.transform(fn)` | `<Out>(fn: (val: T) => Out) => TexTransformed<Out>` | Applies a synchronous transformation to validated field data. |
 | `.toOpenApi()` | `() => Record<string, any>` | Converts the type definition into an OpenAPI 3.1 schema object. |
 
+Every method returns a new schema and leaves the original unchanged, so one field schema can be reused in several objects.
+
 ---
 
 ## `TexEngine` Schema Object Methods
@@ -176,10 +179,12 @@ All `TexType` instances provide fluent modifier and documentation methods:
 | `omit(keys)` | `<K extends keyof T>(keys: K[]) => TexEngine<Omit<T, K>>` | Creates a new schema omitting the specified keys. |
 | `extend(shape)` | `<E>(extension: E) => TexEngine<T & ResolveSchema<E>>` | Merges additional or overridden fields into the existing schema. |
 | `merge(other)` | `<U>(other: TexEngine<U>) => TexEngine<T & U>` | Deeply merges two `TexEngine` schemas into a combined validator. |
+| `refine(fn, opts?)` | `(fn: (data: T) => boolean, opts?: string \| { message?, path? }) => TexEngine<T>` | A check across fields, run once every field is valid; the error is reported on `path`. |
 | `transform(fn)` | `<Out>(fn: (data: T) => Out) => TexTransformedEngine<T, Out>` | Applies post-validation data reshaping to the entire schema output. |
 | `parse(data)` | `(data: unknown) => T` | Synchronously parses and validates data, throwing `ValidatorError` on failure. |
 | `parseAsync(data)` | `(data: unknown) => Promise<T>` | Asynchronously parses and validates data, evaluating async refinements. |
-| `safeParse(data)` | `(data: unknown) => { success: true, data: T } \| { success: false, error: ValidatorError }` | Validates data without throwing exceptions. |
+| `safeParse(data)` | `(data: unknown) => { success: true, data: T } \| { success: false, errors, error: ValidatorError }` | Validates data without throwing; `errors` is the list of `{ path, message, code, ... }`. |
+| `safeParseAsync(data)` | `(data: unknown) => Promise<SafeParseResult<T>>` | `safeParse` that also runs async refinements. |
 | `toOpenApi()` | `() => Record<string, any>` | Translates the schema into an OpenAPI 3.1 JSON schema representation. |
 
 ---

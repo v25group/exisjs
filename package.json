@@ -1,6 +1,6 @@
 {
   "name": "exis",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "description": "ExisJS monorepo: exisjs, create-exisjs and @exisjs/fetch",
   "homepage": "https://github.com/v25group/exisjs#readme",

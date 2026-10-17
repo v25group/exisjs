@@ -152,6 +152,7 @@ export default defineConfig({
 | `errors` | `{ legacyFields?: boolean }` | `{}` | `legacyFields: true` adds the pre-0.9 duplicate fields to error bodies. Deprecated. |
 | `compression` | `boolean` | `false` | Gzip/Brotli HTTP response compression. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum request payload body size in bytes. |
+| `env` | `'development' \| 'production' \| 'test'` | `NODE_ENV`, else `'production'` | Only `development` sends error messages and stack traces to clients and loads routes lazily. `exisjs dev` sets it; a server started with plain `node` or `tsx` and no `NODE_ENV` runs as production. |
 | `blockSuspiciousProbes` | `boolean \| BlockProbesOptions` | `false` | Blocks known vulnerability scanners and malicious probes (`.php`, `wp-admin`). |
 | `etag` | `boolean` | `false` | Weak ETags on successful GET/HEAD responses, with `304 Not Modified` for a matching `If-None-Match`. See [Caching & Conditional Requests](/docs/responses#caching--conditional-requests-etag-304-412). |
 | `transformResponse` | `boolean \| Function` | `false` | Standardizes handler response payload envelopes. |
@@ -200,7 +201,8 @@ export default defineConfig({
 
   dev: {
     usePolling: false, // Set to true for network mounts or WSL
-    interval: 100
+    interval: 100,
+    lazyRoutes: true // false loads every route at startup, as in production
   }
 })
 ```

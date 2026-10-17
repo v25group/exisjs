@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.9.2`** | 2026-10-17 | Patch: Bug Fixes & Security | Development server: no `404` for concurrent first requests, a route that fails to load answers `500`, route files run once, `dev.lazyRoutes`; `env` defaults to `production` so a server started without `NODE_ENV` no longer sends error details; validator: nested rules, immutable schemas, `safeParse`, `pattern` / `url` / `int`, 4-10x faster; sanitizer fixes | [**Read v0.9.2 Notes →**](./changelog/v0.9/v0.9.2.md) |
 | **`v0.9.1`** | 2026-10-16 | Patch: Bug Fixes | RFC 9110 conditional requests (`res.checkPreconditions()`, 304/412/428), binary request bodies kept intact, boundary wrappers keep a returned `Buffer` binary, nested `tex.object` `.optional()` honoured, `.nullable()` / `.nullish()` on object schemas, clear error for a missing field schema, AGENTS.md docs path | [**Read v0.9.1 Notes →**](./changelog/v0.9/v0.9.1.md) |
 | **`v0.9.0`** | 2026-10-14 | Minor (breaking): Correctness & Security | Request-scoped DI and `@Idempotent` cross-user leaks fixed, hung requests answered, class controllers handle `res.json()`/`download()`/Buffers and `@UseInterceptors`, safe RBAC (401, all-of permissions, no `isSuperAdmin`), one error envelope, default CSP, readiness endpoint, shared rate-limit and cron-lock stores | [**Read v0.9.0 Notes →**](./changelog/v0.9/v0.9.0.md) |
 | **`v0.8.1`** | 2026-10-12 | Patch: Security & Build | `ipFilter` X-Forwarded-For bypass fixed, `serveStatic` sibling-directory traversal fixed, `exisjs build` works on hosts without `devDependencies` | [**Read v0.8.1 Notes →**](./changelog/v0.8/v0.8.1.md) |
@@ -33,7 +34,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.9.1] - 2026-10-16
+## Current Release: [0.9.2] - 2026-10-17
+
+> Development server fixes, a safe default environment, and a reworked validator and sanitizer module. Details in [**`changelog/v0.9/v0.9.2.md`**](./changelog/v0.9/v0.9.2.md).
+
+### Fixed
+- In `exisjs dev`, concurrent first requests to a route that had not loaded yet could get `404`; they now all wait for the same load.
+- A route file that fails to load answers `500` with the error instead of leaving the request open, and the next request tries again.
+- Route files no longer run twice when the dev server starts.
+
+### Security
+- `env` defaults to `'production'` when `NODE_ENV` is not set, so a server started with `node`, `tsx` or a process manager no longer sends error messages and stack traces to clients.
+
+### Validator and sanitizers
+- Nested objects, array items, records and unions get every rule a top-level field gets: sanitizers, refinements (sync and async), defaults, dates and strict mode.
+- Schema methods (`optional`, `refine`, `sanitize`, ...) return copies, so shared field schemas no longer affect each other; `parse()` no longer modifies its input.
+- A throwing sanitizer answers `400`, not `500`; `tex.literal(42)` no longer accepts `"42"`; enum values with commas work; `tex.date()` rejects unparsable values and always returns a `Date`; errors list every bad array item and nested field.
+- New: `pattern`, `length`, `int`, `tex.url()`, `safeParse()`, object `.refine(fn, { path })`, `.default()`; sanitizers `stripControlChars`, `normalizeEmail`, `round`, `clamp`, `trimElements`, `limitLength`, `deepTrim`.
+- `stripHtml` removes script content and keeps `a < b`; `preventTraversal` catches encoded `..`; `slugify` keeps accented letters.
+- 4-5x faster for schemas with defaults or refinements, about 10x faster on invalid input.
+
+### Added
+- `dev.lazyRoutes: false` loads every route at startup in development.
+
+---
+
+## Previous Release: [0.9.1] - 2026-10-16
 
 > Bug fixes for 0.9.0, no breaking changes. Details in [**`changelog/v0.9/v0.9.1.md`**](./changelog/v0.9/v0.9.1.md).
 

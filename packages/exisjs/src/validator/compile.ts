@@ -5,27 +5,34 @@
 // become nested blocks and loops, and the result is built as a single object
 // literal. V8 optimizes this far better than a loop over check closures.
 //
-// Rules that are rare or involved (unions, records, passwords, text
+// Rules that are rare or involved (unions, records, passwords, dates, text
 // sanitizers...) are not inlined; the generated code calls the closure from
-// rules.ts for them, so behavior is defined in exactly one place.
+// rules.ts for them, so behavior is defined in exactly one place. Sanitizers,
+// refinements and transforms are closures too, called around the inlined
+// type check.
 //
 // Only schema authors' data reaches the generated source, and every string
-// from it is embedded with JSON.stringify. Request data is never part of the
-// code. Where `new Function` is unavailable (strict CSP, some edge runtimes)
-// the closure-based validator from rules.ts is used instead.
+// from it is embedded with JSON.stringify. Request data and default values are
+// never part of the code. Where `new Function` is unavailable (strict CSP,
+// some edge runtimes) the closure-based validator from rules.ts is used.
 
 import {
   RuleError,
   EMAIL,
-  compileRule,
+  PATTERN_FAILED,
+  coerceArrayInput,
+  coerceBoolean,
+  compileFields,
   compileSchema as compileSchemaInterpreted,
   dedupeItems,
   normalizeArrayInput,
   parseJsonString,
-  toLegacyError,
+  prefixErrors,
+  resolveDefault,
   type FieldRule,
   type Modifiers,
 } from './rules'
+import { ValidatorError } from './error'
 
 type Path = string[] // JS source fragments: '"items"', 'i3', ...
 
@@ -33,7 +40,7 @@ class Generator {
   private id = 0
   /** Closures called from generated code as c[n](value) */
   readonly checks: ((v: any) => any)[] = []
-  /** Regexes and Sets referenced from generated code as x[n] */
+  /** Regexes, Sets and default values referenced as x[n] */
   readonly refs: unknown[] = []
 
   private next(prefix: string): string {
@@ -49,16 +56,24 @@ class Generator {
     return `E("field",${JSON.stringify(constraint)},[${path.join(',')}])`
   }
 
+  /** Calls closure `fn` on `v`, attaching the path to what it throws */
+  private call(fn: (v: any) => any, v: string, path: Path): string {
+    this.checks.push(fn)
+    return `try{${v}=c[${this.checks.length - 1}](${v})}catch(e){P(e,[${path.join(',')}])}`
+  }
+
   /** Validates the object in `src` and assigns the cleaned copy to `dest` */
   object(
     schema: Record<string, string>,
     strict: boolean,
     src: string,
     dest: string,
-    path: Path
+    path: Path,
+    raw?: Record<string, any>,
+    query = false
   ): string {
     const keys = Object.keys(schema)
-    const rules = keys.map((k) => compileRule(schema[k]))
+    const rules = compileFields(schema, raw, query)
     let code = ''
 
     if (strict) {
@@ -76,22 +91,35 @@ class Generator {
       const v = this.next('v')
       results.push(r)
 
-      const canBeAbsent = rule.optional && rule.defaultValue === undefined
+      const hasDefault =
+        rule.defaultRef !== undefined || rule.defaultValue !== undefined
+      const canBeAbsent = rule.optional && !hasDefault
       if (canBeAbsent) anyAbsent = true
 
       let body = `let ${v}=${src}[${key}];`
-      let onMissing: string
-      if (rule.defaultValue !== undefined) {
-        onMissing = `${v}=${JSON.stringify(rule.defaultValue)};`
-      } else if (rule.optional) {
-        onMissing = ''
-      } else {
-        onMissing = `E("missing","",[${fieldPath.join(',')}]);`
+      // A blank form field counts as left out (or null when only nullable)
+      if (rule.optional || rule.nullable) {
+        const blank = rule.nullable && !rule.optional ? 'null' : 'undefined'
+        body += `if(typeof ${v}==="string"&&${v}.trim()==="")${v}=${blank};`
       }
-      const check = `${this.value(rule, v, fieldPath)}${r}=${v};`
+      if (hasDefault) {
+        const missing = rule.nullable
+          ? `${v}===undefined`
+          : `${v}===undefined||${v}===null`
+        const value = rule.defaultRef
+          ? `R(${this.ref(rule.defaultRef.value)})`
+          : JSON.stringify(rule.defaultValue)
+        body += `if(${missing})${v}=${value};`
+      }
+      if (rule.pre) {
+        body += `if(${v}!==undefined&&${v}!==null){${this.call(rule.pre, v, fieldPath)}}`
+      }
+
+      const check = `${this.value(rule, v, fieldPath, false)}${r}=${v};`
+      const missing = `E("missing","",[${fieldPath.join(',')}]);`
       const present = canBeAbsent
         ? `if(${v}!==undefined&&${v}!==null){${check}}`
-        : `if(${v}===undefined||${v}===null){${onMissing}}${check}`
+        : `if(${v}===undefined||${v}===null){${missing}}${check}`
       body += rule.nullable
         ? `if(${v}===null)${r}=null;else{${present}}`
         : present
@@ -106,7 +134,9 @@ class Generator {
       for (let i = 0; i < keys.length; i++) {
         const assign = `${dest}[${JSON.stringify(keys[i])}]=${results[i]};`
         const optional =
-          rules[i].optional && rules[i].defaultValue === undefined
+          rules[i].optional &&
+          rules[i].defaultRef === undefined &&
+          rules[i].defaultValue === undefined
         code += optional ? `if(${results[i]}!==undefined)${assign}` : assign
       }
     }
@@ -114,10 +144,22 @@ class Generator {
   }
 
   /** Validates the non-null value held in variable `v`, updating it in place */
-  private value(rule: FieldRule, v: string, path: Path): string {
-    const gen = rule.gen
-    if (!gen) return this.delegate(rule, v, path)
+  private value(
+    rule: FieldRule,
+    v: string,
+    path: Path,
+    withPre = true
+  ): string {
+    let code = withPre && rule.pre ? this.call(rule.pre, v, path) : ''
+    code += rule.gen
+      ? this.inline(rule, v, path)
+      : this.call(rule.base, v, path)
+    if (rule.post) code += this.call(rule.post, v, path)
+    return code
+  }
 
+  private inline(rule: FieldRule, v: string, path: Path): string {
+    const gen = rule.gen!
     switch (gen.kind) {
       case 'pass':
         return ''
@@ -130,6 +172,9 @@ class Generator {
           code += `if(typeof ${v}==="string"&&${v}.trim()!==""){const n=Number(${v});if(Number.isFinite(n))${v}=n}`
         }
         code += `if(typeof ${v}!=="number"||!Number.isFinite(${v}))${this.fail('must be a number', path)};`
+        if (m.int) {
+          code += `if(!Number.isInteger(${v}))E("field","must be an integer",[${path.join(',')}],"INVALID_TYPE","integer");`
+        }
         if (m.min !== undefined) {
           code += `if(${v}<${m.min})${this.fail(`must be >= ${m.min}`, path)};`
         }
@@ -139,17 +184,14 @@ class Generator {
         return code
       }
       case 'boolean': {
-        let code = ''
-        if (gen.m.coerce) {
-          code += `if(${v}==="true"||${v}==="1"||${v}===1)${v}=true;else if(${v}==="false"||${v}==="0"||${v}===0)${v}=false;`
-        }
+        const code = gen.m.coerce ? `${v}=B(${v});` : ''
         return (
           code +
           `if(typeof ${v}!=="boolean")${this.fail('must be a boolean', path)};`
         )
       }
       case 'email': {
-        if (gen.m.mask) return this.delegate(rule, v, path)
+        if (gen.m.mask) return this.call(rule.base, v, path)
         let code = `if(typeof ${v}!=="string")${this.fail('must be a string', path)};`
         if (gen.m.trim) code += `${v}=${v}.trim();`
         if (gen.m.lowercase) code += `${v}=${v}.toLowerCase();`
@@ -170,7 +212,7 @@ class Generator {
         return (
           `if(typeof ${v}==="string")${v}=J(${v},"{","}");` +
           `if(${v}===null||typeof ${v}!=="object"||Array.isArray(${v}))${this.fail('must be an object', path)};` +
-          `let ${out};${this.object(gen.schema, false, v, out, path)}${v}=${out};`
+          `let ${out};${this.object(gen.schema, gen.strict, v, out, path, gen.raw)}${v}=${out};`
         )
       }
       case 'array': {
@@ -179,7 +221,7 @@ class Generator {
         const i = this.next('i')
         const el = this.next('e')
         let code =
-          `if(!Array.isArray(${v}))${v}=A(${v});` +
+          `if(!Array.isArray(${v}))${v}=${m.coerce ? 'C' : 'A'}(${v});` +
           `if(!Array.isArray(${v}))${this.fail('must be an array', path)};`
         if (m.min !== undefined) {
           code += `if(${v}.length<${m.min})${this.fail(`array must have at least ${m.min} items`, path)};`
@@ -211,8 +253,9 @@ class Generator {
       m.preventTraversal ||
       m.mask
     ) {
-      return this.delegate(rule, v, path)
+      return this.call(rule.base, v, path)
     }
+    const p = `[${path.join(',')}]`
     let code = ''
     if (m.coerce) {
       code += `if(typeof ${v}==="number"||typeof ${v}==="boolean")${v}=String(${v});`
@@ -227,13 +270,13 @@ class Generator {
     if (m.max !== undefined) {
       code += `if(${v}.length>${m.max})${this.fail(`must be at most ${m.max} characters`, path)};`
     }
+    if (m.length !== undefined) {
+      code += `if(${v}.length!==${m.length})E("field",${JSON.stringify(`must be exactly ${m.length} characters`)},${p},"INVALID_LENGTH");`
+    }
+    if (m.pattern !== undefined) {
+      code += `if(!${this.ref(m.pattern)}.test(${v}))E("field",${JSON.stringify(PATTERN_FAILED)},${p},"INVALID_FORMAT",${JSON.stringify(`match ${m.pattern}`)});`
+    }
     return code
-  }
-
-  private delegate(rule: FieldRule, v: string, path: Path): string {
-    this.checks.push(rule.check)
-    const n = this.checks.length - 1
-    return `try{${v}=c[${n}](${v})}catch(e){P(e,[${path.join(',')}])}`
   }
 }
 
@@ -242,25 +285,42 @@ class Generator {
 function throwRuleError(
   kind: 'field' | 'missing' | 'strict',
   detail: string,
-  path: (string | number)[]
+  path: (string | number)[],
+  code?: string,
+  expected?: string
 ): never {
-  const err = new RuleError(kind, detail)
+  const err = new RuleError(kind, detail, code, expected)
   err.path.push(...path)
   throw err
 }
 
 function prefixAndRethrow(err: unknown, path: (string | number)[]): never {
   if (err instanceof RuleError) err.path.unshift(...path)
+  else if (err instanceof ValidatorError) prefixErrors(err, path)
   throw err
 }
 
 function generate(
   schema: Record<string, string>,
-  strict: boolean
+  strict: boolean,
+  raw: Record<string, any> | undefined,
+  query: boolean
 ): (data: any) => any {
   const g = new Generator()
-  const body = `"use strict";return function texValidate(d){let o;${g.object(schema, strict, 'd', 'o', [])}return o}`
-  const factory = new Function('c', 'x', 'E', 'P', 'J', 'A', 'D', body)
+  const body = `"use strict";return function texValidate(d){let o;${g.object(schema, strict, 'd', 'o', [], raw, query)}return o}`
+  const factory = new Function(
+    'c',
+    'x',
+    'E',
+    'P',
+    'J',
+    'A',
+    'C',
+    'D',
+    'B',
+    'R',
+    body
+  )
   return factory(
     g.checks,
     g.refs,
@@ -268,7 +328,10 @@ function generate(
     prefixAndRethrow,
     parseJsonString,
     normalizeArrayInput,
-    dedupeItems
+    coerceArrayInput,
+    dedupeItems,
+    coerceBoolean,
+    resolveDefault
   )
 }
 
@@ -280,26 +343,31 @@ function mentionsProto(schema: Record<string, string>): boolean {
   )
 }
 
-/** Builds the validator TexEngine calls for every parse */
+/**
+ * Builds the validator TexEngine calls for every parse. `raw` holds the
+ * schema objects the rules were built from (sanitizers, refinements,
+ * defaults, nested schemas); `query` converts top-level number and boolean
+ * fields from text.
+ */
 export function compileSchema(
   schema: Record<string, string>,
-  strict: boolean
+  strict: boolean,
+  raw?: Record<string, any>,
+  query = false
 ): (data: any) => any {
   let validate: (data: any) => any
   try {
-    if (mentionsProto(schema)) return compileSchemaInterpreted(schema, strict)
-    validate = generate(schema, strict)
+    if (mentionsProto(schema)) {
+      return compileSchemaInterpreted(schema, strict, raw, query)
+    }
+    validate = generate(schema, strict, raw, query)
   } catch {
-    return compileSchemaInterpreted(schema, strict)
+    return compileSchemaInterpreted(schema, strict, raw, query)
   }
   return (data) => {
     if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-      throw new Error('Input must be a JSON object')
+      throw new RuleError('input', 'Input must be a JSON object')
     }
-    try {
-      return validate(data)
-    } catch (err) {
-      throw err instanceof RuleError ? toLegacyError(err) : err
-    }
+    return validate(data)
   }
 }

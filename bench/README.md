@@ -8,7 +8,7 @@ This folder measures ExisJS against plain `node:http`, Fastify, Hono and Express
 | `npm run bench:quick` | Same, 1 round with short runs (sanity check) | ~3 min |
 | `npm run bench -- --write` | Full run, then regenerates [`docs/BENCHMARKS.md`](../docs/BENCHMARKS.md) | ~45 min |
 | `npm run bench:router` | Route lookup micro-benchmark vs find-my-way and Hono | ~1 min |
-| `npm run bench:validation` | `tex` vs Ajv micro-benchmark | ~1 min |
+| `npm run bench:validation` | `tex` vs Ajv micro-benchmark: valid payloads, field options, query coercion and rejection (`EXIS_DIST=<dist>` measures another build) | ~1 min |
 | `npm run bench:pipeline` | Framework cost per request without the network: ExisJS targets vs a `node:http` handler on in-memory sockets | ~3 min |
 | `npm run bench:profile` | CPU profile of one server under load, with a hotspot summary | ~1 min |
 

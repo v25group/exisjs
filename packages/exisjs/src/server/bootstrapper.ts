@@ -7,6 +7,9 @@ import { BunEngine } from './engines/bun-engine'
 import { UwsEngine } from './engines/uws-engine'
 import type { HttpEngine } from './engines/engine'
 
+// Only present under the Bun runtime; typed locally so the file compiles without @types/bun
+declare const Bun: unknown
+
 export class ServerBootstrapper {
   private app: App<any>
   public engine: HttpEngine
@@ -149,7 +152,7 @@ export class ServerBootstrapper {
 
     const readyMs = Math.round(process.uptime() * 1000)
     const displayEnv =
-      this.app.options.env || process.env.NODE_ENV || 'development'
+      this.app.options.env || process.env.NODE_ENV || 'production'
     const workerCount = process.env.__EXIS_CLUSTER_WORKERS
 
     const cluster = await import('node:cluster')

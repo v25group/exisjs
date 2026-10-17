@@ -22,10 +22,26 @@ export interface TexStringOptions extends TexBaseOptions {
   mask?: boolean
   preventSql?: boolean
   preventTraversal?: boolean
+  /** Exact length in characters */
+  length?: number
+  /** The value must match (after trim / case changes) */
+  pattern?: RegExp
+  default?: TexDefaultValue<string>
+}
+
+export interface TexUrlOptions extends TexBaseOptions {
+  /** Allowed schemes, default `['http', 'https']` */
+  protocols?: string[]
+  trim?: boolean
+  min?: number
+  max?: number
+  pattern?: RegExp
   default?: TexDefaultValue<string>
 }
 
 export interface TexNumberOptions extends TexBaseOptions {
+  /** Whole numbers only */
+  int?: boolean
   min?: number
   max?: number
   coerce?: boolean

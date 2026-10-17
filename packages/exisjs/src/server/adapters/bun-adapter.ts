@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 
+// Only present under the Bun runtime; typed locally so the file compiles without @types/bun
+declare const Bun: any
+
 /**
  * Mocks Node.js IncomingMessage for Bun's Web Standard Request
  */

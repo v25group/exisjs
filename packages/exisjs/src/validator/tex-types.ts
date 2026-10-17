@@ -1,3 +1,9 @@
+import { parseEnumValues, parseLiteral, ruleBase, ruleParts } from './rules'
+
+/**
+ * A field schema. Every method returns a new schema, so one schema can be
+ * reused in several objects without them affecting each other.
+ */
 export class TexType<IsOpt extends boolean = false> {
   declare readonly __isOptional: IsOpt
   public sanitizers: ((val: any) => any)[] = []
@@ -18,109 +24,140 @@ export class TexType<IsOpt extends boolean = false> {
     this.defaultValue = defaultValue
   }
 
+  /** A copy that shares nothing mutable with this schema */
+  private _copy(): this {
+    const copy = Object.assign(Object.create(Object.getPrototypeOf(this)), this)
+    copy.sanitizers = [...this.sanitizers]
+    copy.transformations = [...this.transformations]
+    copy.refinements = [...this.refinements]
+    return copy
+  }
+
   describe(description: string): this {
-    this.description = description
-    return this
+    const copy = this._copy()
+    copy.description = description
+    return copy
   }
 
   example(example: any): this {
-    this.exampleValue = example
-    return this
+    const copy = this._copy()
+    copy.exampleValue = example
+    return copy
   }
 
   setExample(example: any): this {
-    this.exampleValue = example
-    return this
+    return this.example(example)
   }
 
+  /** Functions that clean the value before it is validated. */
   sanitize(...fns: ((val: any) => any)[]): this {
-    this.sanitizers.push(...fns)
-    return this
+    const copy = this._copy()
+    copy.sanitizers.push(...fns)
+    return copy
   }
 
   transform<Out>(fn: (val: any) => Out): TexTransformed<Out, IsOpt> {
-    const clone = new TexType(this._raw, this.defaultValue) as any
-    clone.sanitizers = [...this.sanitizers]
-    clone.transformations = [...this.transformations, fn]
-    clone.refinements = [...this.refinements]
-    clone.description = this.description
-    clone.exampleValue = this.exampleValue
-    clone.__kind = 'TexTransformed'
-    return clone
+    const copy = this._copy() as any
+    copy.transformations.push(fn)
+    copy.__kind = 'TexTransformed'
+    return copy
   }
 
+  /** A custom check; `message` is used when `fn` returns false. */
   refine(
     fn: (val: any) => boolean,
     message?: string | ((val: any) => string)
   ): this {
-    this.refinements.push({ async: false, fn, message })
-    return this
+    const copy = this._copy()
+    copy.refinements.push({ async: false, fn, message })
+    return copy
   }
 
+  /** An async custom check, run by `parseAsync()` (and route validation). */
   refineAsync(
     fn: (val: any) => Promise<boolean>,
     message?: string | ((val: any) => string)
   ): this {
-    this.refinements.push({ async: true, fn, message })
-    return this
+    const copy = this._copy()
+    copy.refinements.push({ async: true, fn, message })
+    return copy
+  }
+
+  /** Used when the field is missing; a factory runs on every parse. */
+  default(value: any): this & { __hasDefault: true } {
+    const copy = this._copy()
+    copy.defaultValue = value
+    const parts = ruleParts(copy._raw)
+    if (!parts[0].endsWith('?') && !parts.includes('optional')) {
+      copy._raw += ' | optional'
+    }
+    return copy as any
+  }
+
+  /** @internal A copy with one more rule modifier */
+  _withModifier(modifier: string): any {
+    const copy = this._copy()
+    copy._raw += ` | ${modifier}`
+    return copy
   }
 
   nullable(): Omit<this, '__isNullable'> & { readonly __isNullable: true } {
-    this._raw += ' | nullable'
-    return this as any
+    return this._withModifier('nullable')
   }
 
   optional(): Omit<this, '__isOptional'> & { readonly __isOptional: true } {
-    this._raw += ' | optional'
-    return this as any
+    return this._withModifier('optional')
   }
 
   nullish(): Omit<this, '__isOptional' | '__isNullable'> & {
     readonly __isOptional: true
     readonly __isNullable: true
   } {
-    this._raw += ' | nullish'
-    return this as any
+    return this._withModifier('nullish')
   }
 
   toOpenApi(): Record<string, any> {
-    const raw: string = this._raw.split('|')[0].trim()
-    const isNullable =
-      this._raw.includes('nullable') || this._raw.includes('nullish')
-    const base = raw.replace('?', '')
+    const parts = ruleParts(this._raw)
+    const base = ruleBase(this._raw)
+    const mods = new Map<string, string>()
+    for (const p of parts.slice(1)) {
+      const colon = p.indexOf(':')
+      if (colon === -1) mods.set(p, '')
+      else mods.set(p.slice(0, colon), p.slice(colon + 1))
+    }
+    const num = (name: string): number | undefined => {
+      const v = mods.get(name)
+      return v !== undefined && v !== '' && Number.isFinite(Number(v))
+        ? Number(v)
+        : undefined
+    }
+    const isNullable = mods.has('nullable') || mods.has('nullish')
 
     let schema: Record<string, any> = { type: 'string' }
 
-    if (base.startsWith('number')) {
-      schema = { type: 'number' }
-      const minMatch = this._raw.match(/min:(-?\d+(\.\d+)?)/)
-      if (minMatch) schema.minimum = parseFloat(minMatch[1])
-      const maxMatch = this._raw.match(/max:(-?\d+(\.\d+)?)/)
-      if (maxMatch) schema.maximum = parseFloat(maxMatch[1])
-    } else if (base.startsWith('boolean')) {
+    if (base === 'number') {
+      schema = { type: mods.has('int') ? 'integer' : 'number' }
+      if (num('min') !== undefined) schema.minimum = num('min')
+      if (num('max') !== undefined) schema.maximum = num('max')
+    } else if (base === 'boolean') {
       schema = { type: 'boolean' }
-    } else if (base.startsWith('date')) {
+    } else if (base === 'date') {
       schema = { type: 'string', format: 'date-time' }
-    } else if (base.startsWith('email')) {
+    } else if (base === 'email') {
       schema = { type: 'string', format: 'email' }
-    } else if (base.startsWith('uuid')) {
+    } else if (base === 'url') {
+      schema = { type: 'string', format: 'uri' }
+    } else if (base === 'uuid') {
       schema = { type: 'string', format: 'uuid' }
-    } else if (base.startsWith('cuid')) {
+    } else if (base === 'cuid') {
       schema = { type: 'string' }
-    } else if (base.startsWith('password')) {
+    } else if (base === 'password') {
       schema = { type: 'string', format: 'password' }
     } else if (base.startsWith('literal:')) {
-      const val = base.replace('literal:', '')
-      if (val === 'true' || val === 'false') {
-        schema = { type: 'boolean', enum: [val === 'true'] }
-      } else if (!isNaN(Number(val))) {
-        schema = { type: 'number', enum: [Number(val)] }
-      } else {
-        schema = { type: 'string', enum: [val] }
-      }
+      const val = parseLiteral(base.slice(8))
+      schema = { type: typeof val, enum: [val] }
     } else if (base.startsWith('enum:')) {
-      const vals = base.replace('enum:', '').split(',')
-      schema = { type: 'string', enum: vals }
+      schema = { type: 'string', enum: parseEnumValues(base.slice(5)) }
     } else if (base.startsWith('array<')) {
       const inner = (this as any)._item
       const itemSchema =
@@ -128,14 +165,42 @@ export class TexType<IsOpt extends boolean = false> {
           ? inner.toOpenApi()
           : { type: 'string' }
       schema = { type: 'array', items: itemSchema }
-      const minMatch = this._raw.match(/min:(\d+)/)
-      if (minMatch) schema.minItems = parseInt(minMatch[1], 10)
-      const maxMatch = this._raw.match(/max:(\d+)/)
-      if (maxMatch) schema.maxItems = parseInt(maxMatch[1], 10)
+      if (num('min') !== undefined) schema.minItems = num('min')
+      if (num('max') !== undefined) schema.maxItems = num('max')
     } else if (base.startsWith('record<')) {
-      schema = { type: 'object', additionalProperties: true }
-    } else if (base.startsWith('file')) {
+      const value = (this as any)._value
+      schema = {
+        type: 'object',
+        additionalProperties:
+          value && typeof value.toOpenApi === 'function'
+            ? value.toOpenApi()
+            : true,
+      }
+    } else if (base === 'file') {
       schema = { type: 'string', format: 'binary' }
+    } else if (base.includes('||')) {
+      const options: any[] = (this as any)._options ?? []
+      schema = {
+        anyOf: options.map((o) =>
+          o && typeof o.toOpenApi === 'function' ? o.toOpenApi() : {}
+        ),
+      }
+    }
+
+    if (schema.type === 'string' && base !== 'password') {
+      if (num('min') !== undefined) schema.minLength = num('min')
+      if (num('max') !== undefined) schema.maxLength = num('max')
+      if (num('length') !== undefined) {
+        schema.minLength = schema.maxLength = num('length')
+      }
+      const pattern = mods.get('pattern')
+      if (pattern) {
+        try {
+          schema.pattern = JSON.parse(pattern)[0]
+        } catch {
+          // not a builder-made pattern
+        }
+      }
     }
 
     if (this.description) schema.description = this.description

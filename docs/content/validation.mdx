@@ -45,15 +45,16 @@ ExisJS provides type-safe primitives that accept modifier options and configurat
 
 | Primitive | Signature | Description |
 | :--- | :--- | :--- |
-| `tex.string()` | `tex.string(options?)` | Validates strings. Supports `{ min, max, trim, toLowerCase, toUpperCase, collapseWhitespace, escapeHtml, stripHtml, slugify, mask, preventSql, preventTraversal, coerce, default }`. |
-| `tex.number()` | `tex.number(options?)` | Validates numbers. Supports `{ min, max, coerce, default }`. |
-| `tex.boolean()` | `tex.boolean(options?)` | Validates booleans. Supports `{ coerce, default }`. Coerces `"true"`, `"false"`, `"1"`, `"0"`. |
+| `tex.string()` | `tex.string(options?)` | Validates strings. Supports `{ min, max, length, pattern, trim, toLowerCase, toUpperCase, collapseWhitespace, escapeHtml, stripHtml, slugify, mask, preventSql, preventTraversal, coerce, default }`. `pattern` is a `RegExp` checked after trimming and case changes. |
+| `tex.number()` | `tex.number(options?)` | Validates finite numbers. Supports `{ int, min, max, coerce, default }`; `int: true` accepts whole numbers only. |
+| `tex.boolean()` | `tex.boolean(options?)` | Validates booleans. Supports `{ coerce, default }`. Coerces `"true"`, `"false"`, `"1"`, `"0"` (any case, surrounding spaces ignored) and `1` / `0`. |
 | `tex.email()` | `tex.email(options?)` | Validates RFC-compliant email formatting. Supports `{ trim, toLowerCase, mask, default }`. |
+| `tex.url()` | `tex.url(options?)` | Validates absolute URLs. Only `http` and `https` unless `{ protocols: ['https'] }` says otherwise, so `javascript:` links are rejected. Supports `{ trim, min, max, pattern, default }`. |
 | `tex.uuid()` | `tex.uuid(options?)` | Validates UUID strings. Supports `{ version: 1 \| 4, default }`. |
 | `tex.cuid()` | `tex.cuid(options?)` | Validates CUID identifiers. Supports `{ default }`. |
 | `tex.password()` | `tex.password(options?)` | Validates password complexity. Supports `{ min, max, requireNumbers, requireSymbols, requireUppercase, requireLowercase }`. |
 | `tex.creditCard()` | `tex.creditCard(options?)` | Validates credit card numbers using the Luhn algorithm. Supports `{ mask: true }`. |
-| `tex.date()` | `tex.date(options?)` | Validates JavaScript `Date` instances or ISO strings with `{ coerce: true, minDate, maxDate, default }`. |
+| `tex.date()` | `tex.date(options?)` | Validates a `Date`, a date string or a timestamp, with `{ coerce, minDate, maxDate, default }`. An unparsable value is rejected, and the parsed value is always a `Date` (`coerce` is accepted but no longer needed). |
 | `tex.array()` | `tex.array(schema, options?)` | Validates arrays of items. Accepts primitive schemas, `tex.object(...)`, or shorthand `{ ... }`. Supports `{ min, max, dedupe, coerce, default }`. |
 | `tex.enum()` | `tex.enum(values, options?)` | Validates against an allowed list of string literals. Supports `{ default }`. |
 | `tex.literal()` | `tex.literal(value, options?)` | Validates against an exact primitive value (`string \| number \| boolean`). |
@@ -78,7 +79,7 @@ All primitive builders accept modifier options directly in their configuration a
 | **Optional** | `{ optional: true }` | `.optional()` | Allows `undefined`. |
 | **Nullable** | `{ nullable: true }` | `.nullable()` | Allows `null`. |
 | **Nullish** | `{ nullish: true }` | `.nullish()` | Allows both `null` and `undefined`. |
-| **Default** | `{ default: value \| () => value }` | N/A | Used when the field is missing. A client may omit the field, and after parsing it always has a value. |
+| **Default** | `{ default: value \| () => value }` | `.default(value)` | Used when the field is missing (or blank, for a form field). A client may omit the field, and after parsing it always has a value. Object and array defaults are copied, so parses never share them. |
 
 ```typescript filename="example.ts"
 import { tex } from 'exisjs/validator'
@@ -91,6 +92,8 @@ const Schema = tex.object({
   createdAt: tex.date({ default: () => new Date() }),
 })
 ```
+
+Every method returns a new schema, so a field schema can be shared between objects: `Name.optional()` in one object does not make `Name` optional anywhere else. `parse()` never modifies the object it is given; it returns a new one.
 
 Nested object schemas take the same modifiers as methods: `.optional()`, `.nullable()` and `.nullish()`. A plain object literal is also a nested object:
 
@@ -314,20 +317,27 @@ export function sanitizeTitle(input: string): string {
 | Category | Function | Description |
 | :--- | :--- | :--- |
 | **Security** | `sanitize.escapeHtml(val)` | Escapes HTML entities (`&`, `<`, `>`, `"`, `'`). |
-| **Security** | `sanitize.stripHtml(val)` | Removes HTML tags and element markup. |
-| **Security** | `sanitize.preventSql(val)` | Neutralizes common SQL injection sequences. |
-| **Security** | `sanitize.preventTraversal(val)` | Strips directory traversal sequences (`../`, `..\\`). |
-| **Masking** | `sanitize.maskEmail(val)` | Masks email local-parts (e.g. `u***r@example.com`). |
+| **Security** | `sanitize.stripHtml(val)` | Removes tags, comments, and `<script>` / `<style>` elements with their content. |
+| **Security** | `sanitize.stripControlChars(val)` | Removes invisible control characters and bidirectional overrides. |
+| **Security** | `sanitize.preventSql(val)` | Rejects common SQL injection probes (the field fails validation). |
+| **Security** | `sanitize.preventTraversal(val)` | Rejects `..` path segments, also percent-encoded, and NUL bytes. |
+| **Masking** | `sanitize.maskEmail(val)` | Masks email local-parts (e.g. `us***@example.com`). |
 | **Masking** | `sanitize.maskString(val)` | Masks characters leaving only boundary characters visible. |
 | **Formatting** | `sanitize.trim(val)` | Trims leading and trailing whitespace. |
 | **Formatting** | `sanitize.toLowerCase(val)` | Converts string to lowercase. |
 | **Formatting** | `sanitize.toUpperCase(val)` | Converts string to uppercase. |
 | **Formatting** | `sanitize.collapseWhitespace(val)` | Replaces consecutive whitespace with a single space. |
 | **Formatting** | `sanitize.slugify(val)` | Converts string into URL-friendly slug format. |
-| **Formatting** | `sanitize.truncate(length)(val)` | Truncates string to specified maximum length. |
+| **Formatting** | `sanitize.normalizeEmail(val)` | Trims and lowercases an email address. |
+| **Formatting** | `sanitize.truncate(length)(val)` | Truncates to `length` characters without splitting an emoji. |
+| **Numbers** | `sanitize.round(decimals)(val)`, `sanitize.clamp(min, max)(val)` | Rounds; limits to a range. |
 | **Arrays & Objects** | `sanitize.dedupe(array)` | Removes duplicate elements using a `Set`. |
 | **Arrays & Objects** | `sanitize.compact(array)` | Removes `null`, `undefined`, and empty string values. |
-| **Arrays & Objects** | `sanitize.omit(keys)(obj)` | Omits specified keys from an object. |
+| **Arrays & Objects** | `sanitize.trimElements(array)`, `sanitize.limitLength(n)(array)` | Trims string items; keeps the first `n` items. |
+| **Arrays & Objects** | `sanitize.pick(keys)(obj)`, `sanitize.omit(keys)(obj)` | Keeps or removes keys (`pick` ignores inherited keys). |
+| **Arrays & Objects** | `sanitize.deepTrim(value)` | Trims every string in a nested object or array. |
+
+Sanitizers run before the field's type check. One that throws, such as `preventSql`, fails that field with a `400` (code `SANITIZATION_FAILED`) instead of crashing the request.
 
 ---
 
@@ -351,6 +361,16 @@ export const RegisterSchema = tex.object({
   message: 'Passwords must match',
   path: 'confirmPassword',
 })
+```
+
+A field's `.refine()` and `.sanitize()` run wherever the field is: in nested objects, array items and record values too. An object's `.refine(fn, { message, path })` runs once all its fields are valid and reports the error on `path`. `parseAsync()` (used for route validation) also runs `.refineAsync()` rules at every depth.
+
+To handle failures without `try` / `catch`, use `safeParse()`:
+
+```typescript
+const result = RegisterSchema.safeParse(input)
+if (!result.success) return { errors: result.errors } // [{ path, message, code, ... }]
+const user = result.data
 ```
 
 ---
@@ -645,6 +665,8 @@ When incoming requests fail validation, ExisJS returns an HTTP `400 Bad Request`
   ]
 }
 ```
+
+Every failing value is listed: each bad item of an array, each bad field of a nested object, up to 100 entries. Common `code` values: `MISSING_REQUIRED_FIELD`, `INVALID_TYPE`, `VALUE_TOO_SMALL`, `VALUE_TOO_LARGE`, `INVALID_LENGTH`, `INVALID_FORMAT` (pattern), `INVALID_EMAIL`, `INVALID_URL`, `INVALID_ENUM_VALUE`, `INVALID_DATE`, `DATE_TOO_EARLY`, `DATE_TOO_LATE`, `ARRAY_TOO_SHORT`, `ARRAY_TOO_LONG`, `UNRECOGNIZED_KEYS` (strict mode), `CUSTOM_VALIDATION` (`refine`), `SANITIZATION_FAILED`.
 
 In development mode (`NODE_ENV=development`), ExisJS also outputs a tabular summary of the failed validation constraints to the terminal.
 

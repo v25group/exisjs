@@ -1,7 +1,50 @@
 import { compileSchema } from './compile'
 import { TexType, type ResolveSchema } from './tex-types'
 import { ValidatorError, getNestedValue, formatReceivedValue } from './error'
+import {
+  RuleError,
+  formatPath,
+  parseEnumValues,
+  parseLiteral,
+  refinementMessage,
+  ruleBase,
+  ruleParts,
+} from './rules'
 import type { ValidationErrorDescriptor } from './types'
+
+/** Result of `safeParse()`: the data, or the errors instead of a throw. */
+export type SafeParseResult<T> =
+  | { success: true; data: T; errors?: undefined; error?: undefined }
+  | {
+      success: false
+      data?: undefined
+      errors: ValidationErrorDescriptor[]
+      error: ValidatorError
+    }
+
+function safely<T>(run: () => T): SafeParseResult<T> {
+  try {
+    return { success: true, data: run() }
+  } catch (err) {
+    if (err instanceof ValidatorError) {
+      return { success: false, errors: err.errors, error: err }
+    }
+    throw err
+  }
+}
+
+async function safelyAsync<T>(
+  run: () => Promise<T>
+): Promise<SafeParseResult<T>> {
+  try {
+    return { success: true, data: await run() }
+  } catch (err) {
+    if (err instanceof ValidatorError) {
+      return { success: false, errors: err.errors, error: err }
+    }
+    throw err
+  }
+}
 
 function engineModifiers(engine: TexEngine<any>): string {
   return (
@@ -12,13 +55,17 @@ function engineModifiers(engine: TexEngine<any>): string {
 
 /**
  * The rule string for one field of an object schema. Shared by `tex.object`,
- * `tex.array` and `extend` so a nested schema keeps its `optional()` /
- * `nullable()` modifiers on every path.
+ * `tex.array`, `tex.record`, `tex.union` and `extend` so a nested schema
+ * keeps its `optional()` / `nullable()` modifiers on every path.
  */
 export function fieldRule(key: string, value: unknown): string {
   if (value instanceof TexEngine) {
     return `object<${JSON.stringify(value.getCompiledSchema())}>${engineModifiers(value)}`
   }
+  if (value instanceof TexTransformedEngine) {
+    return fieldRule(key, value.inner)
+  }
+  if (value instanceof TexDiscriminatedUnionEngine) return 'object'
   if (value instanceof TexType) return value._raw
   if (typeof value === 'string') return value
   if (value === undefined || value === null) {
@@ -31,18 +78,172 @@ export function fieldRule(key: string, value: unknown): string {
   )
 }
 
+// Error code and expected value for a constraint text ("must be a string")
+function describeConstraint(constraint: string): {
+  code: string
+  expected: string
+} {
+  if (constraint.startsWith('must be a string')) {
+    return { code: 'INVALID_TYPE', expected: 'string' }
+  }
+  if (constraint.startsWith('must be a number')) {
+    return { code: 'INVALID_TYPE', expected: 'number' }
+  }
+  if (constraint.startsWith('must be a boolean')) {
+    return { code: 'INVALID_TYPE', expected: 'boolean' }
+  }
+  if (constraint.startsWith('must be an array')) {
+    return { code: 'INVALID_TYPE', expected: 'array' }
+  }
+  if (constraint.includes('array must have')) {
+    return { code: 'ARRAY_TOO_SHORT', expected: 'array' }
+  }
+  if (constraint.includes('array exceeds')) {
+    return { code: 'ARRAY_TOO_LONG', expected: 'array' }
+  }
+  if (constraint.startsWith('must be an object')) {
+    return { code: 'INVALID_TYPE', expected: 'object' }
+  }
+  if (constraint.startsWith('must be a valid email')) {
+    return { code: 'INVALID_EMAIL', expected: 'valid email address' }
+  }
+  if (constraint.startsWith('must be one of')) {
+    return {
+      code: 'INVALID_ENUM_VALUE',
+      expected: constraint.replace('must be one of', '').trim(),
+    }
+  }
+  if (
+    constraint.startsWith('must be at least') ||
+    constraint.startsWith('must be >=')
+  ) {
+    return { code: 'VALUE_TOO_SMALL', expected: constraint }
+  }
+  if (
+    constraint.startsWith('must be at most') ||
+    constraint.startsWith('must be <=')
+  ) {
+    return { code: 'VALUE_TOO_LARGE', expected: constraint }
+  }
+  if (constraint.startsWith('must contain a number')) {
+    return {
+      code: 'PASSWORD_REQUIRES_NUMBER',
+      expected: 'must contain at least one digit',
+    }
+  }
+  if (constraint.startsWith('must contain an uppercase')) {
+    return {
+      code: 'PASSWORD_REQUIRES_UPPERCASE',
+      expected: 'must contain at least one uppercase letter',
+    }
+  }
+  if (constraint.startsWith('must contain a lowercase')) {
+    return {
+      code: 'PASSWORD_REQUIRES_LOWERCASE',
+      expected: 'must contain at least one lowercase letter',
+    }
+  }
+  if (constraint.startsWith('must contain a symbol')) {
+    return {
+      code: 'PASSWORD_REQUIRES_SYMBOL',
+      expected: 'must contain at least one symbol',
+    }
+  }
+  return { code: 'VALIDATION_ERROR', expected: constraint }
+}
+
+/** Turns a failed rule into a structured error entry */
+function describeRuleError(
+  err: RuleError,
+  data: any
+): ValidationErrorDescriptor {
+  let path = formatPath(err.path)
+  let message: string
+  let expected: string | undefined
+  let code: string
+
+  switch (err.kind) {
+    case 'missing':
+      message = 'Expected value, received undefined'
+      expected = 'defined'
+      code = 'MISSING_REQUIRED_FIELD'
+      break
+    case 'strict':
+      path = path ? `${path}.${err.detail}` : err.detail
+      message = 'Unknown field not allowed in strict mode'
+      expected = 'undefined (field omitted)'
+      code = 'UNRECOGNIZED_KEYS'
+      break
+    case 'input':
+      message = err.detail
+      code = 'VALIDATION_ERROR'
+      break
+    case 'custom':
+      message = err.detail
+      expected = err.expected
+      code = err.code ?? 'CUSTOM_VALIDATION'
+      break
+    default: {
+      message = err.detail.charAt(0).toUpperCase() + err.detail.slice(1)
+      if (err.code) {
+        code = err.code
+        expected = err.expected ?? err.detail
+      } else {
+        ;({ code, expected } = describeConstraint(err.detail))
+      }
+    }
+  }
+  if (path === '') path = 'root'
+  const received = formatReceivedValue(getNestedValue(data, path))
+  return { path, message, expected, received, code }
+}
+
+const MAX_ERRORS = 100
+
+interface ObjectRule {
+  fn: (data: any) => boolean
+  message?: string | ((data: any) => string)
+  path?: string
+}
+
+/** Runs object-level `refine()` rules on a validated object */
+function objectRulesCheck(rules: ObjectRule[]): (v: any) => any {
+  return (v) => {
+    for (const r of rules) {
+      if (!r.fn(v)) {
+        const message =
+          typeof r.message === 'function'
+            ? r.message(v)
+            : r.message || 'Invalid value'
+        const err = new RuleError(
+          'custom',
+          message,
+          'CUSTOM_VALIDATION',
+          'custom refinement rule'
+        )
+        if (r.path) err.path.push(...r.path.split('.'))
+        throw err
+      }
+    }
+    return v
+  }
+}
+
 export class TexEngine<T = any> {
   private schema: Record<string, string>
   private rawSchema: Record<string, any>
   private validator: (data: any) => any
   private strict: boolean
+  // Query strings and path params: number and boolean fields convert from text
+  private _queryValidator?: (data: any) => any
 
   public readonly _type!: T
   public _isOptional = false
   public _isNullable = false
-  // Per-field work list, built on first parse so builder mutations made
-  // before then (refine, sanitize) are included
-  private _plan?: ParsePlan
+  // Object-level refine() rules, run once every field is valid
+  private _objectRules: ObjectRule[] = []
+  /** @internal Read by the rule compiler when this schema is nested */
+  _objectCheck?: (v: any) => any
 
   constructor(
     schema: Record<string, string>,
@@ -54,7 +255,7 @@ export class TexEngine<T = any> {
     this.rawSchema = rawSchema
     this.strict = strict
     this._isOptional = isOptional
-    this.validator = compileSchema(schema, strict)
+    this.validator = compileSchema(schema, strict, rawSchema)
   }
 
   // Validators per top-level field, built on the first failed parse
@@ -62,22 +263,36 @@ export class TexEngine<T = any> {
 
   /**
    * The compiled validator stops at the first problem, which keeps valid
-   * requests fast. Once a parse has failed, every other top-level field is
-   * checked on its own so the response lists all failing fields (capped).
+   * requests fast. Once a parse has failed, every field is checked on its
+   * own, descending into nested objects, array items and record values, so
+   * the response lists every failing value (capped).
    */
-  private collectErrors(first: any, data: any): ValidationErrorDescriptor[] {
-    const errors = [this.describeError(first, data)]
+  private collectErrors(
+    first: unknown,
+    data: any,
+    query: boolean
+  ): ValidationErrorDescriptor[] {
+    const firstErrors: ValidationErrorDescriptor[] =
+      first instanceof ValidatorError
+        ? [...first.errors]
+        : [describeRuleError(first as RuleError, data)]
     if (data === null || typeof data !== 'object' || Array.isArray(data)) {
-      return errors
+      return firstErrors
     }
-    const MAX_ERRORS = 100
-    const failed = new Set(errors.map((e) => e.path.split(/[.[]/)[0]))
+    const errors = this._collectFields(data, query)
+    // Empty when only an object-level refine() failed
+    return errors.length > 0 ? errors : firstErrors
+  }
 
+  /** @internal Checks each field on its own; used after a failed parse */
+  _collectFields(
+    data: Record<string, any>,
+    query = false
+  ): ValidationErrorDescriptor[] {
+    const errors: ValidationErrorDescriptor[] = []
     if (this.strict) {
       for (const key of Object.keys(data)) {
-        if (errors.length >= MAX_ERRORS) return errors
-        if (!(key in this.schema) && !failed.has(key)) {
-          failed.add(key)
+        if (!(key in this.schema)) {
           errors.push({
             path: key,
             message: 'Unknown field not allowed in strict mode',
@@ -92,116 +307,26 @@ export class TexEngine<T = any> {
     this._fieldValidators ??= new Map()
     for (const key of Object.keys(this.schema)) {
       if (errors.length >= MAX_ERRORS) break
-      if (failed.has(key)) continue
-      let validate = this._fieldValidators.get(key)
+      const cacheKey = query ? `?${key}` : key
+      let validate = this._fieldValidators.get(cacheKey)
       if (!validate) {
-        validate = compileSchema({ [key]: this.schema[key] }, false)
-        this._fieldValidators.set(key, validate)
+        validate = compileSchema(
+          { [key]: this.schema[key] },
+          false,
+          { [key]: this.rawSchema[key] },
+          query
+        )
+        this._fieldValidators.set(cacheKey, validate)
       }
-      try {
-        validate(data)
-      } catch (err) {
-        errors.push(this.describeError(err, data))
-      }
+      const found = errorsOf(validate, data)
+      if (found.length === 0) continue
+      // The failure is inside a nested object or array: list every part
+      const inner = found.some((e) => e.path !== key)
+        ? collectInner(this.rawSchema[key], data[key], key)
+        : []
+      errors.push(...(inner.length > 0 ? inner : found))
     }
-    return errors
-  }
-
-  /** Turns a validator exception into a structured error entry */
-  private describeError(err: any, data: any): ValidationErrorDescriptor {
-    let path = 'root'
-    let message = err.message || 'Validation failed'
-    let expected: string | undefined
-    let code = 'VALIDATION_ERROR'
-
-    if (message.startsWith('Missing required field: ')) {
-      path = message.replace('Missing required field: ', '').trim()
-      message = 'Expected value, received undefined'
-      expected = 'defined'
-      code = 'MISSING_REQUIRED_FIELD'
-    } else if (message.startsWith("Field '")) {
-      const match = message.match(/Field '([^']+)' (.+)/)
-      if (match) {
-        path = match[1]
-        const constraint = match[2]
-        message = constraint.charAt(0).toUpperCase() + constraint.slice(1)
-
-        if (constraint.startsWith('must be a string')) {
-          expected = 'string'
-          code = 'INVALID_TYPE'
-        } else if (constraint.startsWith('must be a number')) {
-          expected = 'number'
-          code = 'INVALID_TYPE'
-        } else if (constraint.startsWith('must be a boolean')) {
-          expected = 'boolean'
-          code = 'INVALID_TYPE'
-        } else if (
-          constraint.startsWith('must be an array') ||
-          constraint.includes('array must have') ||
-          constraint.includes('array exceeds')
-        ) {
-          expected = 'array'
-          code = constraint.includes('array must have')
-            ? 'ARRAY_TOO_SHORT'
-            : constraint.includes('array exceeds')
-              ? 'ARRAY_TOO_LONG'
-              : 'INVALID_TYPE'
-        } else if (constraint.startsWith('must be an object')) {
-          expected = 'object'
-          code = 'INVALID_TYPE'
-        } else if (constraint.startsWith('must be a valid email')) {
-          expected = 'valid email address'
-          code = 'INVALID_EMAIL'
-        } else if (constraint.startsWith('must be one of')) {
-          expected = constraint.replace('must be one of', '').trim()
-          code = 'INVALID_ENUM_VALUE'
-        } else if (
-          constraint.startsWith('must be at least') ||
-          constraint.startsWith('must be >=')
-        ) {
-          expected = constraint
-          code = 'VALUE_TOO_SMALL'
-        } else if (
-          constraint.startsWith('must be at most') ||
-          constraint.startsWith('must be <=')
-        ) {
-          expected = constraint
-          code = 'VALUE_TOO_LARGE'
-        } else if (constraint.startsWith('must contain a number')) {
-          expected = 'must contain at least one digit'
-          code = 'PASSWORD_REQUIRES_NUMBER'
-        } else if (constraint.startsWith('must contain an uppercase')) {
-          expected = 'must contain at least one uppercase letter'
-          code = 'PASSWORD_REQUIRES_UPPERCASE'
-        } else if (constraint.startsWith('must contain a lowercase')) {
-          expected = 'must contain at least one lowercase letter'
-          code = 'PASSWORD_REQUIRES_LOWERCASE'
-        } else if (constraint.startsWith('must contain a symbol')) {
-          expected = 'must contain at least one symbol'
-          code = 'PASSWORD_REQUIRES_SYMBOL'
-        } else {
-          expected = constraint
-        }
-      }
-    } else if (message.startsWith("Strict mode error: Unknown field '")) {
-      const match = message.match(
-        /Strict mode error: Unknown field '([^']+)'(?: at path '([^']*)')?/
-      )
-      if (match) {
-        const key = match[1]
-        const parentPath = match[2]
-        path =
-          parentPath && parentPath.length > 0 ? `${parentPath}.${key}` : key
-        message = 'Unknown field not allowed in strict mode'
-        expected = 'undefined (field omitted)'
-        code = 'UNRECOGNIZED_KEYS'
-      }
-    }
-
-    const receivedRaw = getNestedValue(data, path)
-    const received = formatReceivedValue(receivedRaw)
-
-    return { path, message, expected, received, code }
+    return errors.length > MAX_ERRORS ? errors.slice(0, MAX_ERRORS) : errors
   }
 
   getCompiledSchema(): Record<string, string> {
@@ -223,17 +348,53 @@ export class TexEngine<T = any> {
     return engine
   }
 
+  /** A copy with the same shape, keeping refine() rules */
+  private copy(): TexEngine<any> {
+    const engine = this.derive(this.schema, this.rawSchema)
+    engine._objectRules = this._objectRules
+    engine._objectCheck = this._objectCheck
+    return engine
+  }
+
   /** The field may be left out. */
   optional(): TexEngine<T | undefined> & { readonly __isOptional: true } {
-    const engine = this.derive(this.schema, this.rawSchema)
+    const engine = this.copy()
     engine._isOptional = true
     return engine as any
   }
 
   /** The field may be `null`. */
   nullable(): TexEngine<T | null> {
-    const engine = this.derive(this.schema, this.rawSchema)
+    const engine = this.copy()
     engine._isNullable = true
+    return engine
+  }
+
+  /**
+   * A check across fields, run once every field is valid. `path` names the
+   * field the error is reported on (default: the object itself).
+   *
+   * @example
+   * ```ts
+   * tex.object({ password: tex.string(), confirm: tex.string() })
+   *   .refine((d) => d.password === d.confirm, { message: 'Passwords must match', path: 'confirm' })
+   * ```
+   */
+  refine(
+    fn: (data: T) => boolean,
+    message?:
+      | string
+      | ((data: T) => string)
+      | { message?: string | ((data: T) => string); path?: string }
+  ): TexEngine<T> {
+    const opts =
+      message !== null && typeof message === 'object' ? message : { message }
+    const engine = this.copy()
+    engine._objectRules = [
+      ...this._objectRules,
+      { fn, message: opts.message, path: opts.path },
+    ]
+    engine._objectCheck = objectRulesCheck(engine._objectRules)
     return engine
   }
 
@@ -251,12 +412,10 @@ export class TexEngine<T = any> {
       // Not `val.includes('?')`: a nested rule contains its children's `?`
       newSchema[key] = `${val} | optional`
       const rawVal = this.rawSchema[key]
-      if (rawVal instanceof TexType) {
-        newRaw[key] = new TexType(newSchema[key])
-        newRaw[key].sanitizers = rawVal.sanitizers
-        newRaw[key].refinements = rawVal.refinements
-      } else if (rawVal instanceof TexEngine) {
+      if (rawVal instanceof TexType || rawVal instanceof TexEngine) {
         newRaw[key] = rawVal.optional()
+      } else if (rawVal !== null && typeof rawVal === 'object') {
+        newRaw[key] = rawVal
       } else {
         newRaw[key] = newSchema[key]
       }
@@ -310,23 +469,28 @@ export class TexEngine<T = any> {
     return this.derive(newSchema, newRaw)
   }
 
+  /**
+   * Validates `data` and returns a new object with the declared fields only.
+   * The input is never modified. Throws `ValidatorError` listing every
+   * failing field.
+   */
   parse(data: any): T {
-    const plan =
-      this._plan || (this._plan = splitPlan(buildPlan(this.rawSchema)))
-    const coerceScalars = Boolean((this as any)._isQueryOrParam)
-
-    // 1. Defaults, empty-string handling, coercion and sanitizers. Only
-    // fields that need any of it are visited.
-    if (data && typeof data === 'object') {
-      const prep = coerceScalars ? plan.prepQuery : plan.prep
-      for (const f of prep) prepareField(data, f, coerceScalars)
-    }
-
-    // 2. Type validation (compiled once per schema)
-    let parsedData: any
+    const query = Boolean((this as any)._isQueryOrParam)
+    const validate = query
+      ? (this._queryValidator ??= compileSchema(
+          this.schema,
+          this.strict,
+          this.rawSchema,
+          true
+        ))
+      : this.validator
     try {
-      parsedData = this.validator(data)
+      const result = validate(data)
+      return this._objectCheck ? this._objectCheck(result) : result
     } catch (err: any) {
+      if (!(err instanceof RuleError) && !(err instanceof ValidatorError)) {
+        throw err
+      }
       if (
         data === process.env &&
         (process.env.__EXIS_SKIP_ENV_CHECK === 'true' ||
@@ -345,91 +509,25 @@ export class TexEngine<T = any> {
         return mock as T
       }
 
-      throw new ValidatorError(this.collectErrors(err, data))
+      throw new ValidatorError(this.collectErrors(err, data, query))
     }
-
-    if (parsedData && typeof parsedData === 'object' && plan.post.length > 0) {
-      const errors: ValidationErrorDescriptor[] = []
-      for (const f of plan.post) {
-        const key = f.key
-
-        // Preserve Date objects and ensure defaults are applied
-        if (
-          parsedData[key] === undefined &&
-          f.tex?.defaultValue !== undefined
-        ) {
-          parsedData[key] = resolveDefault(f.tex.defaultValue)
-        }
-        if (f.isDate && data && data[key] instanceof Date) {
-          parsedData[key] = data[key]
-        }
-
-        // 3. Post-validation synchronous refinements
-        if (f.hasRefinements && parsedData[key] !== undefined) {
-          if (!(parsedData[key] === null && f.isNullable)) {
-            runSyncRefinements(f, parsedData[key], errors)
-          }
-        }
-      }
-
-      if (errors.length > 0) throw new ValidatorError(errors)
-
-      // 4. Post-validation field transformations
-      for (const f of plan.post) {
-        if (f.tex && f.tex.transformations.length > 0) {
-          const key = f.key
-          if (parsedData[key] !== undefined) {
-            for (const t of f.tex.transformations) {
-              parsedData[key] = t(parsedData[key])
-            }
-          }
-        }
-      }
-    }
-
-    return parsedData
   }
 
+  /** Like `parse()`, but returns `{ success, data }` or `{ success, errors }`. */
+  safeParse(data: any): SafeParseResult<T> {
+    return safely(() => this.parse(data))
+  }
+
+  /** Runs `parse()`, then every `refineAsync()` rule, nested ones included. */
   async parseAsync(data: any): Promise<T> {
-    const parsed = this.parse(data) // Handles sync sanitizers + rust + sync refine + transformations
-
-    const errors: ValidationErrorDescriptor[] = []
-    if (parsed && typeof parsed === 'object') {
-      await Promise.all(
-        Object.entries(this.rawSchema).map(async ([key, val]) => {
-          const valData = parsed[key as keyof T]
-          const isNullableField =
-            val instanceof TexType &&
-            (val._raw.includes('nullable') || val._raw.includes('nullish'))
-          if (valData === null && isNullableField) return
-
-          if (
-            valData !== undefined &&
-            val instanceof TexType &&
-            val.refinements.length > 0
-          ) {
-            for (const r of val.refinements) {
-              if (r.async && !(await r.fn(valData))) {
-                const msg =
-                  typeof r.message === 'function'
-                    ? r.message(valData)
-                    : r.message || 'Invalid value'
-                errors.push({
-                  path: key,
-                  message: msg,
-                  expected: 'custom async refinement rule',
-                  received: formatReceivedValue(valData),
-                  code: 'CUSTOM_VALIDATION',
-                })
-              }
-            }
-          }
-        })
-      )
-    }
-
+    const parsed = this.parse(data)
+    const errors = await runAsyncRefinements(this, parsed)
     if (errors.length > 0) throw new ValidatorError(errors)
     return parsed
+  }
+
+  safeParseAsync(data: any): Promise<SafeParseResult<T>> {
+    return safelyAsync(() => this.parseAsync(data))
   }
 
   toMongoSchema(): Record<string, any> {
@@ -443,6 +541,7 @@ export class TexEngine<T = any> {
       if (
         baseType.startsWith('string') ||
         baseType.startsWith('email') ||
+        baseType.startsWith('url') ||
         baseType.startsWith('uuid') ||
         baseType.startsWith('cuid') ||
         baseType.startsWith('password')
@@ -471,16 +570,18 @@ export class TexEngine<T = any> {
       const rawDef = this.schema[key] || ''
       const typeStr = rawDef.split('|')[0].trim()
       // A nested rule's text includes its children's modifiers
+      const engine =
+        rawVal instanceof TexTransformedEngine ? rawVal.inner : rawVal
       const isOptional =
-        rawVal instanceof TexEngine
-          ? rawVal._isOptional
+        engine instanceof TexEngine
+          ? engine._isOptional || / \| optional$/.test(rawDef)
           : typeStr.endsWith('?') || rawDef.includes('optional')
 
       let prop: any
       if (rawVal && typeof rawVal.toOpenApi === 'function') {
         prop = rawVal.toOpenApi()
       } else {
-        const baseType = typeStr.replace('?', '')
+        const baseType = ruleBase(rawDef)
         prop = {}
         if (
           baseType.startsWith('string') ||
@@ -492,6 +593,9 @@ export class TexEngine<T = any> {
         } else if (baseType.startsWith('email')) {
           prop.type = 'string'
           prop.format = 'email'
+        } else if (baseType.startsWith('url')) {
+          prop.type = 'string'
+          prop.format = 'uri'
         } else if (baseType.startsWith('number')) {
           prop.type = 'number'
         } else if (baseType.startsWith('boolean')) {
@@ -503,7 +607,7 @@ export class TexEngine<T = any> {
           prop.type = 'array'
         } else if (baseType.startsWith('enum:')) {
           prop.type = 'string'
-          prop.enum = baseType.replace('enum:', '').split(',')
+          prop.enum = parseEnumValues(baseType.slice(5))
         } else {
           prop.type = 'object'
         }
@@ -514,6 +618,7 @@ export class TexEngine<T = any> {
     }
     const result: any = { type: 'object', properties }
     if (required.length > 0) result.required = required
+    if (this.strict) result.additionalProperties = false
     return result
   }
 }
@@ -531,9 +636,17 @@ export class TexTransformedEngine<In, Out> {
     return this.transformFn(validated)
   }
 
+  safeParse(data: any): SafeParseResult<Out> {
+    return safely(() => this.parse(data))
+  }
+
   async parseAsync(data: any): Promise<Out> {
     const validated = await this.inner.parseAsync(data)
     return this.transformFn(validated)
+  }
+
+  safeParseAsync(data: any): Promise<SafeParseResult<Out>> {
+    return safelyAsync(() => this.parseAsync(data))
   }
 
   toOpenApi(): Record<string, any> {
@@ -547,6 +660,8 @@ export class TexDiscriminatedUnionEngine<
 > {
   public readonly _type!: Variants[number]['_type']
   private engines: TexEngine<any>[]
+  // The discriminator value(s) each variant accepts
+  private tags: (string | number | boolean)[][]
 
   constructor(
     public readonly discriminator: Discriminator,
@@ -557,19 +672,32 @@ export class TexDiscriminatedUnionEngine<
         ? v
         : new TexEngine(
             Object.fromEntries(
-              Object.entries(v).map(([k, val]) => [
-                k,
-                val instanceof TexType ? val._raw : String(val),
-              ])
+              Object.entries(v).map(([k, val]) => [k, fieldRule(k, val)])
             ),
             v
           )
     )
+    this.tags = this.engines.map((engine) => {
+      const rule = engine.getCompiledSchema()[discriminator]
+      if (rule === undefined) return []
+      const base = ruleBase(rule)
+      if (base.startsWith('literal:')) return [parseLiteral(base.slice(8))]
+      if (base.startsWith('enum:')) return parseEnumValues(base.slice(5))
+      return []
+    })
   }
 
-  parse(data: any): Variants[number]['_type'] {
+  /** The variant whose discriminator matches `data`, if any */
+  variantFor(data: any): TexEngine<any> | undefined {
+    if (!data || typeof data !== 'object') return undefined
+    const tag = data[this.discriminator]
+    const i = this.tags.findIndex((tags) => tags.includes(tag))
+    return i === -1 ? undefined : this.engines[i]
+  }
+
+  private noMatch(data: any): ValidatorError {
     if (!data || typeof data !== 'object') {
-      throw new ValidatorError([
+      return new ValidatorError([
         {
           path: '',
           message: 'Expected an object for discriminated union payload',
@@ -579,10 +707,9 @@ export class TexDiscriminatedUnionEngine<
         },
       ])
     }
-
     const tagValue = data[this.discriminator]
     if (tagValue === undefined) {
-      throw new ValidatorError([
+      return new ValidatorError([
         {
           path: this.discriminator,
           message: `Missing discriminator field '${this.discriminator}'`,
@@ -592,86 +719,37 @@ export class TexDiscriminatedUnionEngine<
         },
       ])
     }
-
-    for (const engine of this.engines) {
-      const rawField = (engine as any).rawSchema?.[this.discriminator]
-
-      let matches = false
-      if (rawField instanceof TexType) {
-        if (rawField._raw.startsWith('literal:')) {
-          const literalVal = rawField._raw
-            .replace('literal:', '')
-            .split('|')[0]
-            .trim()
-          if (String(tagValue) === literalVal) matches = true
-        } else if (rawField._raw.startsWith('enum:')) {
-          const allowed = rawField._raw
-            .replace('enum:', '')
-            .split('|')[0]
-            .trim()
-            .split(',')
-          if (allowed.includes(String(tagValue))) matches = true
-        }
-      } else if (
-        typeof rawField === 'string' &&
-        rawField.startsWith('literal:')
-      ) {
-        const literalVal = rawField.replace('literal:', '').split('|')[0].trim()
-        if (String(tagValue) === literalVal) matches = true
-      }
-
-      if (matches) {
-        return engine.parse(data)
-      }
-    }
-
-    throw new ValidatorError([
+    return new ValidatorError([
       {
         path: this.discriminator,
         message: `Invalid discriminator value '${tagValue}' for field '${this.discriminator}'`,
-        expected: 'one of matching variant discriminators',
+        expected: `one of ${JSON.stringify(this.tags.flat())}`,
         received: formatReceivedValue(tagValue),
         code: 'INVALID_DISCRIMINATOR_VALUE',
       },
     ])
   }
 
+  parse(data: any): Variants[number]['_type'] {
+    const engine = this.variantFor(data)
+    if (!engine) throw this.noMatch(data)
+    return engine.parse(data)
+  }
+
+  safeParse(data: any): SafeParseResult<Variants[number]['_type']> {
+    return safely(() => this.parse(data))
+  }
+
   async parseAsync(data: any): Promise<Variants[number]['_type']> {
-    if (!data || typeof data !== 'object') {
-      return this.parse(data)
-    }
+    const engine = this.variantFor(data)
+    if (!engine) throw this.noMatch(data)
+    return engine.parseAsync(data)
+  }
 
-    const tagValue = data[this.discriminator]
-    if (tagValue === undefined) {
-      return this.parse(data)
-    }
-
-    for (const engine of this.engines) {
-      const rawField = (engine as any).rawSchema?.[this.discriminator]
-      let matches = false
-      if (rawField instanceof TexType) {
-        if (rawField._raw.startsWith('literal:')) {
-          const literalVal = rawField._raw
-            .replace('literal:', '')
-            .split('|')[0]
-            .trim()
-          if (String(tagValue) === literalVal) matches = true
-        } else if (rawField._raw.startsWith('enum:')) {
-          const allowed = rawField._raw
-            .replace('enum:', '')
-            .split('|')[0]
-            .trim()
-            .split(',')
-          if (allowed.includes(String(tagValue))) matches = true
-        }
-      }
-
-      if (matches) {
-        return engine.parseAsync(data)
-      }
-    }
-
-    return this.parse(data)
+  safeParseAsync(
+    data: any
+  ): Promise<SafeParseResult<Variants[number]['_type']>> {
+    return safelyAsync(() => this.parseAsync(data))
   }
 
   toOpenApi(): Record<string, any> {
@@ -685,370 +763,168 @@ export class TexDiscriminatedUnionEngine<
   }
 }
 
-// ─── Parse plan ──────────────────────────────────────────────────────────────
-// Everything derivable from a field's rule string is decided once here, so
-// parse() does no string scanning per request.
+// ─── Error collection ────────────────────────────────────────────────────────
 
-interface FieldPlan {
-  key: string
-  tex: TexType | null
-  emptyString: 'keep' | 'null' | 'delete'
-  isDate: boolean
-  dateCoerce: boolean
-  minDate?: string
-  maxDate?: string
-  stringCoerce: boolean
-  number: 'no' | 'coerce' | 'query'
-  boolean: 'no' | 'coerce' | 'query'
-  array: 'no' | 'number' | 'boolean' | 'other'
-  item: TexType | null
-  isNullable: boolean
-  hasRefinements: boolean
-}
-
-interface ParsePlan {
-  /** Fields needing pre-validation work for body parsing */
-  prep: FieldPlan[]
-  /** Same, when the engine validates query/params (scalar coercion on) */
-  prepQuery: FieldPlan[]
-  /** Fields with defaults, dates, refinements or transformations */
-  post: FieldPlan[]
-}
-
-function needsPrep(f: FieldPlan, coerceScalars: boolean): boolean {
-  return (
-    f.tex?.defaultValue !== undefined ||
-    f.emptyString !== 'keep' ||
-    f.isDate ||
-    f.stringCoerce ||
-    f.number === 'coerce' ||
-    f.boolean === 'coerce' ||
-    (coerceScalars && (f.number === 'query' || f.boolean === 'query')) ||
-    f.array !== 'no' ||
-    (f.tex !== null && f.tex.sanitizers.length > 0) ||
-    (f.item !== null && f.item.sanitizers.length > 0)
-  )
-}
-
-function splitPlan(plan: FieldPlan[]): ParsePlan {
-  return {
-    prep: plan.filter((f) => needsPrep(f, false)),
-    prepQuery: plan.filter((f) => needsPrep(f, true)),
-    post: plan.filter(
-      (f) =>
-        f.tex?.defaultValue !== undefined ||
-        f.isDate ||
-        f.hasRefinements ||
-        (f.tex !== null && f.tex.transformations.length > 0)
-    ),
+function errorsOf(
+  validate: (data: any) => any,
+  data: any
+): ValidationErrorDescriptor[] {
+  try {
+    validate(data)
+    return []
+  } catch (err) {
+    if (err instanceof ValidatorError) return [...err.errors]
+    if (err instanceof RuleError) return [describeRuleError(err, data)]
+    throw err
   }
 }
 
-function scalarMode(
-  plain: boolean,
-  raw: string,
-  type: string,
-  coerce: boolean
-): 'no' | 'coerce' | 'query' {
-  if (!plain || !raw.startsWith(type)) return 'no'
-  return coerce ? 'coerce' : 'query'
-}
+// Validates one item of an array (or one value of a record) at a time
+const itemValidators = new WeakMap<object, (data: any) => any>()
 
-function arrayMode(
-  plain: boolean,
-  raw: string,
-  coerce: boolean
-): FieldPlan['array'] {
-  if (!plain || !coerce || !raw.startsWith('array<')) return 'no'
-  if (raw.startsWith('array<number')) return 'number'
-  if (raw.startsWith('array<boolean')) return 'boolean'
-  return 'other'
-}
-
-function buildPlan(rawSchema: Record<string, any>): FieldPlan[] {
-  const plan: FieldPlan[] = []
-  for (const key of Object.keys(rawSchema)) {
-    const val = rawSchema[key]
-    const tex = val instanceof TexType ? val : null
-    // A nested schema contributes only its own modifiers, not its children's
-    const raw = tex
-      ? tex._raw
-      : val instanceof TexEngine
-        ? engineModifiers(val)
-        : String(val)
-    // Unions coerce per alternative inside the compiled rule
-    const plain = tex !== null && !raw.includes('||')
-    const coerce = raw.includes('coerce')
-    const nullable = raw.includes('nullable')
-    const nullish = raw.includes('nullish')
-    const optional = raw.includes('optional')
-
-    let emptyString: FieldPlan['emptyString'] = 'keep'
-    if (optional || nullable || nullish || raw.includes('?')) {
-      emptyString = nullable && !optional && !nullish ? 'null' : 'delete'
-    }
-
-    const item = val?._item instanceof TexType ? (val._item as TexType) : null
-    const isDate = plain && raw.startsWith('date')
-    plan.push({
-      key,
-      tex,
-      emptyString,
-      isDate,
-      dateCoerce: isDate && coerce,
-      minDate: isDate ? raw.match(/minDate:([^\s|]+)/)?.[1] : undefined,
-      maxDate: isDate ? raw.match(/maxDate:([^\s|]+)/)?.[1] : undefined,
-      stringCoerce: plain && coerce && raw.startsWith('string'),
-      number: scalarMode(plain, raw, 'number', coerce),
-      boolean: scalarMode(plain, raw, 'boolean', coerce),
-      array: arrayMode(plain, raw, coerce),
-      item,
-      isNullable: tex !== null && (nullable || nullish),
-      hasRefinements:
-        (tex !== null && tex.refinements.length > 0) ||
-        (item !== null && item.refinements.length > 0),
+function itemValidator(
+  container: TexType,
+  isArray: boolean
+): (data: any) => any {
+  let validate = itemValidators.get(container)
+  if (!validate) {
+    const item = isArray ? (container as any)._item : (container as any)._value
+    const coerce = isArray && ruleParts(container._raw).includes('coerce')
+    const rule = isArray
+      ? `array<${fieldRule('[item]', item)}>${coerce ? ' | coerce' : ''}`
+      : `record<${fieldRule('[value]', item)}>`
+    validate = compileSchema({ v: rule }, false, {
+      v: isArray ? { _item: item } : { _value: item },
     })
+    itemValidators.set(container, validate)
   }
-  return plan
+  return validate
 }
 
-function resolveDefault(defaultValue: any): any {
-  return typeof defaultValue === 'function' ? defaultValue() : defaultValue
+function relabel(
+  errors: ValidationErrorDescriptor[],
+  from: string,
+  to: string
+): ValidationErrorDescriptor[] {
+  return errors.map((e) => ({
+    ...e,
+    path: e.path.startsWith(from) ? to + e.path.slice(from.length) : to,
+  }))
 }
 
-function fieldError(
-  key: string,
+/** Every failing value inside a nested object, array or record at `path` */
+function collectInner(
+  raw: any,
   value: any,
-  message: string,
-  expected: string,
-  code: string
-): never {
-  throw new ValidatorError([
-    {
-      path: key,
-      message,
-      expected,
-      received: formatReceivedValue(value),
-      code,
-    },
-  ])
+  path: string
+): ValidationErrorDescriptor[] {
+  if (value === null || typeof value !== 'object') return []
+  const engine =
+    raw instanceof TexEngine
+      ? raw
+      : raw instanceof TexTransformedEngine
+        ? raw.inner
+        : undefined
+  if (engine) {
+    if (Array.isArray(value)) return []
+    return engine._collectFields(value).map((e) => ({
+      ...e,
+      path: e.path === 'root' ? path : `${path}.${e.path}`,
+    }))
+  }
+  if (!(raw instanceof TexType)) return []
+  const isArray = Array.isArray(value)
+  const item = isArray ? (raw as any)._item : (raw as any)._value
+  if (item === undefined) return []
+
+  const validate = itemValidator(raw, isArray)
+  const keys: (string | number)[] = isArray
+    ? value.map((_: unknown, i: number) => i)
+    : Object.keys(value).filter((k) => k !== '__proto__' && k !== 'constructor')
+  const out: ValidationErrorDescriptor[] = []
+  for (const k of keys) {
+    if (out.length >= MAX_ERRORS) break
+    const single = isArray ? [value[k as number]] : { [k]: value[k] }
+    const at = isArray ? `v[0]` : `v.${k}`
+    const itemPath = isArray ? `${path}[${k}]` : `${path}.${k}`
+    const found = errorsOf(validate, { v: single })
+    if (found.length === 0) continue
+    const nested = found.some((e) => e.path !== at)
+      ? collectInner(item, value[k], itemPath)
+      : []
+    out.push(...(nested.length > 0 ? nested : relabel(found, at, itemPath)))
+  }
+  return out
 }
 
-function prepareDate(key: string, value: any, f: FieldPlan): any {
-  if (
-    f.dateCoerce &&
-    (typeof value === 'string' || typeof value === 'number')
-  ) {
-    const d = new Date(value)
-    if (isNaN(d.getTime())) {
-      fieldError(
-        key,
-        value,
-        'Must be a valid date',
-        'valid date string or timestamp',
-        'INVALID_DATE'
-      )
-    }
-    value = d
-  }
-  if (
-    !(value instanceof Date) &&
-    typeof value !== 'string' &&
-    typeof value !== 'number'
-  ) {
-    fieldError(
-      key,
-      value,
-      'Must be a valid date',
-      'valid date or date string',
-      'INVALID_TYPE'
-    )
-  }
-  if (value instanceof Date && isNaN(value.getTime())) {
-    fieldError(
-      key,
-      value,
-      'Must be a valid date',
-      'valid date string or timestamp',
-      'INVALID_DATE'
-    )
-  }
-  const time = new Date(value).getTime()
-  if (f.minDate && time < new Date(f.minDate).getTime()) {
-    fieldError(
-      key,
-      value,
-      `Date must be after ${f.minDate}`,
-      `>= ${f.minDate}`,
-      'DATE_TOO_EARLY'
-    )
-  }
-  if (f.maxDate && time > new Date(f.maxDate).getTime()) {
-    fieldError(
-      key,
-      value,
-      `Date must be before ${f.maxDate}`,
-      `<= ${f.maxDate}`,
-      'DATE_TOO_LATE'
-    )
-  }
-  return value
+// ─── Async refinements ───────────────────────────────────────────────────────
+// Walks the parsed value next to its schema, so `refineAsync()` rules run at
+// every depth: nested objects, array items and record values.
+
+function joinPath(path: string, key: string | number): string {
+  if (typeof key === 'number') return `${path}[${key}]`
+  return path ? `${path}.${key}` : key
 }
 
-function prepareField(data: any, f: FieldPlan, coerceScalars: boolean): void {
-  const key = f.key
-  const tex = f.tex
-
-  // Apply default value / lazy factory function if field is omitted
-  if (data[key] === undefined && tex?.defaultValue !== undefined) {
-    data[key] = resolveDefault(tex.defaultValue)
-  }
-
-  if (
-    f.emptyString !== 'keep' &&
-    typeof data[key] === 'string' &&
-    data[key].trim() === ''
-  ) {
-    if (f.emptyString === 'null') {
-      data[key] = null
-    } else {
-      delete data[key]
-      if (tex?.defaultValue !== undefined) {
-        data[key] = resolveDefault(tex.defaultValue)
-      }
-    }
-  }
-
-  let value = data[key]
-  if (value === undefined || value === null) return
-
-  if (f.isDate) data[key] = value = prepareDate(key, value, f)
-
-  if (f.stringCoerce && typeof value !== 'string') {
-    data[key] = value = String(value)
-  }
-
-  if (
-    (f.number === 'coerce' || (f.number === 'query' && coerceScalars)) &&
-    typeof value === 'string' &&
-    value.trim() !== ''
-  ) {
-    const n = Number(value)
-    if (isNaN(n))
-      fieldError(key, value, 'Must be a number', 'number', 'INVALID_TYPE')
-    data[key] = value = n
-  }
-
-  if (
-    (f.boolean === 'coerce' || (f.boolean === 'query' && coerceScalars)) &&
-    typeof value === 'string' &&
-    value.trim() !== ''
-  ) {
-    const lower = value.toLowerCase().trim()
-    if (lower === 'true' || lower === '1') data[key] = value = true
-    else if (lower === 'false' || lower === '0') data[key] = value = false
-    else {
-      fieldError(
-        key,
-        value,
-        'Must be a boolean',
-        'boolean (true or false)',
-        'INVALID_TYPE'
-      )
-    }
-  }
-
-  if (f.array !== 'no') data[key] = coerceArray(value, f.array)
-
-  if (tex !== null && tex.sanitizers.length > 0) {
-    for (const s of tex.sanitizers) {
-      if (data[key] === undefined || data[key] === null) break
-      data[key] = s(data[key])
-    }
-  }
-
-  const item = f.item
-  if (item !== null && item.sanitizers.length > 0 && Array.isArray(data[key])) {
-    const arr = data[key]
-    for (let i = 0; i < arr.length; i++) {
-      for (const s of item.sanitizers) {
-        if (arr[i] === undefined || arr[i] === null) break
-        arr[i] = s(arr[i])
-      }
-    }
-  }
-}
-
-function coerceItem(item: any, kind: FieldPlan['array']): any {
-  if (typeof item !== 'string') return item
-  if (kind === 'number') {
-    const n = Number(item)
-    return isNaN(n) ? item : n
-  }
-  if (kind === 'boolean') {
-    const lower = item.toLowerCase()
-    if (lower === 'true') return true
-    if (lower === 'false') return false
-  }
-  return item
-}
-
-function coerceArray(value: any, kind: FieldPlan['array']): any {
-  if (!Array.isArray(value)) {
-    if (typeof value !== 'string') return [value]
-    const parts = value.includes(',')
-      ? value.split(',').map((s: string) => s.trim())
-      : [value]
-    return kind === 'other' ? parts : parts.map((p) => coerceItem(p, kind))
-  }
-  return kind === 'other' ? value : value.map((v) => coerceItem(v, kind))
-}
-
-function refinementMessage(
-  r: { message?: string | ((val: any) => string) },
-  value: any
-): string {
-  return typeof r.message === 'function'
-    ? r.message(value)
-    : r.message || 'Invalid value'
-}
-
-function runSyncRefinements(
-  f: FieldPlan,
+function collectAsync(
+  node: any,
   value: any,
-  errors: ValidationErrorDescriptor[]
+  path: string,
+  tasks: Promise<ValidationErrorDescriptor | null>[]
 ): void {
-  if (f.tex !== null) {
-    for (const r of f.tex.refinements) {
-      if (!r.async && !r.fn(value)) {
-        errors.push({
-          path: f.key,
-          message: refinementMessage(r, value),
-          expected: 'custom refinement rule',
-          received: formatReceivedValue(value),
-          code: 'CUSTOM_VALIDATION',
-        })
-      }
+  if (value === undefined || value === null) return
+  if (node instanceof TexEngine) {
+    if (typeof value !== 'object') return
+    const raw = (node as any).rawSchema as Record<string, any>
+    for (const key of Object.keys(raw)) {
+      collectAsync(raw[key], value[key], joinPath(path, key), tasks)
     }
-  }
-  const item = f.item
-  if (item === null || item.refinements.length === 0 || !Array.isArray(value)) {
     return
   }
-  const itemNullable =
-    item._raw.includes('nullable') || item._raw.includes('nullish')
-  for (let i = 0; i < value.length; i++) {
-    if (value[i] === null && itemNullable) continue
-    for (const r of item.refinements) {
-      if (!r.async && !r.fn(value[i])) {
-        errors.push({
-          path: `${f.key}[${i}]`,
-          message: refinementMessage(r, value[i]),
-          expected: 'custom refinement rule',
-          received: formatReceivedValue(value[i]),
-          code: 'CUSTOM_VALIDATION',
-        })
-      }
+  if (node instanceof TexDiscriminatedUnionEngine) {
+    const engine = node.variantFor(value)
+    if (engine) collectAsync(engine, value, path, tasks)
+    return
+  }
+  if (!(node instanceof TexType)) return
+
+  for (const r of node.refinements) {
+    if (!r.async) continue
+    tasks.push(
+      Promise.resolve(r.fn(value)).then((ok) =>
+        ok
+          ? null
+          : {
+              path: path || 'root',
+              message: refinementMessage(r, value),
+              expected: 'custom async refinement rule',
+              received: formatReceivedValue(value),
+              code: 'CUSTOM_VALIDATION',
+            }
+      )
+    )
+  }
+  const item = (node as any)._item
+  if (item && Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectAsync(item, value[i], joinPath(path, i), tasks)
     }
   }
+  const recordValue = (node as any)._value
+  if (recordValue && typeof value === 'object') {
+    for (const key of Object.keys(value)) {
+      collectAsync(recordValue, value[key], joinPath(path, key), tasks)
+    }
+  }
+}
+
+async function runAsyncRefinements(
+  engine: TexEngine<any>,
+  parsed: any
+): Promise<ValidationErrorDescriptor[]> {
+  const tasks: Promise<ValidationErrorDescriptor | null>[] = []
+  collectAsync(engine, parsed, '', tasks)
+  if (tasks.length === 0) return []
+  const results = await Promise.all(tasks)
+  return results.filter((e): e is ValidationErrorDescriptor => e !== null)
 }

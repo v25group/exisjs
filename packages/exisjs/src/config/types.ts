@@ -116,6 +116,11 @@ export interface DevConfig {
   extensions?: string[]
   /** Debounce interval in milliseconds before reloading the server */
   debounceMs?: number
+  /**
+   * Load each route file on its first request (default `true`). Set to `false`
+   * to load every route at startup, as `exisjs start` does.
+   */
+  lazyRoutes?: boolean
 }
 
 export interface ExisConfig {

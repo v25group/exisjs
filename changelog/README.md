@@ -8,6 +8,7 @@ This directory contains the detailed release notes for every version of ExisJS, 
 changelog/
 ├── README.md               # This navigation guide
 ├── v0.9/                   # 0.9.x Release Series
+│   ├── v0.9.2.md           # Dev server fixes, production default env, validator & sanitizer overhaul
 │   ├── v0.9.1.md           # Boundary wrapper Buffer fix, nested object modifiers
 │   └── v0.9.0.md           # Field-report fixes: DI scopes, idempotency, RBAC, error envelope, production defaults
 ├── v0.8/                   # 0.8.x Release Series
@@ -39,6 +40,6 @@ changelog/
 
 ## Quick Links
 
-- [Latest Release (v0.9.1)](./v0.9/v0.9.1.md)
+- [Latest Release (v0.9.2)](./v0.9/v0.9.2.md)
 - [Root Changelog](../CHANGELOG.md)
 - [Documentation](../docs/)

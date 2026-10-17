@@ -53,8 +53,17 @@ export function mixedParadigmMessage(
   )
 }
 
+interface LazyRoute {
+  filePath: string
+  loaded: boolean
+  /** Shared by every request that arrives while the file is being mounted */
+  loading?: Promise<void>
+  /** Module already imported by the startup paradigm check, used for the first mount */
+  preloaded?: any
+}
+
 export class RouteScanner {
-  public lazyRoutes = new Map<string, { filePath: string; loaded: boolean }>()
+  public lazyRoutes = new Map<string, LazyRoute>()
   public routeMap = new Map<string, string>()
   public apiDir: string | null = null
   public _allApiDirs?: string[]
@@ -64,23 +73,42 @@ export class RouteScanner {
   constructor(public app: App) {}
 
   async loadAllRoutes(): Promise<void> {
-    for (const [, entry] of this.lazyRoutes.entries()) {
-      if (!entry.loaded) {
-        entry.loaded = true
-        this.app.getRouter().removeRoutesBySource('lazy:' + entry.filePath)
-        const routePath = this.routeMap.get(entry.filePath)
-        if (routePath) {
-          try {
-            await this.mountRouteFile(entry.filePath, routePath)
-          } catch (e) {
-            this.app.log.error(
-              { err: e, file: entry.filePath },
-              'Failed to eager-load route'
-            )
-          }
-        }
+    for (const entry of this.lazyRoutes.values()) {
+      if (entry.loaded) continue
+      try {
+        await this.loadLazyRoute(entry)
+      } catch (e) {
+        // The placeholder stays, so the first request retries and reports the error
+        this.app.log.error(
+          { err: e, file: entry.filePath },
+          'Failed to eager-load route'
+        )
       }
     }
+  }
+
+  /** Mounts a lazily registered route file once; concurrent callers share the same load. */
+  private loadLazyRoute(entry: LazyRoute): Promise<void> {
+    entry.loading ??= (async () => {
+      const router = this.app.getRouter()
+      const preloaded = entry.preloaded
+      entry.preloaded = undefined
+      try {
+        // Real routes go in before the placeholder leaves, so no request finds neither
+        await this.mountRouteFile(
+          entry.filePath,
+          this.routeMap.get(entry.filePath)!,
+          preloaded
+        )
+      } catch (err) {
+        router.removeRoutesBySource(entry.filePath) // drop a partial mount
+        entry.loading = undefined // the next request tries again
+        throw err
+      }
+      router.removeRoutesBySource('lazy:' + entry.filePath)
+      entry.loaded = true
+    })()
+    return entry.loading
   }
 
   public async autoMountRoutes(root: string): Promise<void> {
@@ -243,26 +271,18 @@ export class RouteScanner {
 
           if (isDev) {
             const lazyKey = normalized
-            this.lazyRoutes.set(lazyKey, {
-              filePath: normalized,
-              loaded: false,
-            })
+            const entry: LazyRoute = { filePath: normalized, loaded: false }
+            this.lazyRoutes.set(lazyKey, entry)
 
             const lazyHandler: Handler = async (req, res, next) => {
-              const entry = this.lazyRoutes.get(lazyKey)
-              if (entry && !entry.loaded) {
-                entry.loaded = true
-                this.app.getRouter().removeRoutesBySource('lazy:' + lazyKey)
-                try {
-                  await this.mountRouteFile(normalized, routePath)
-                } catch (err) {
-                  formatDevError(err as Error, normalized)
-                  return
-                }
-                await this.app.getRouter().handle(req, res, next)
-              } else {
-                next?.()
+              try {
+                await this.loadLazyRoute(entry)
+              } catch (err) {
+                formatDevError(err as Error, normalized)
+                if (next) return next(err as Error)
+                throw err
               }
+              await this.app.getRouter().handle(req, res, next)
             }
 
             const lazyRouter = new Router()
@@ -304,6 +324,9 @@ export class RouteScanner {
         try {
           const url = pathToFileURL(file).href
           const mod = await dynamicImport(url)
+          // Reused for the first mount so the file's top level runs only once
+          const entry = this.lazyRoutes.get(file)
+          if (entry && !entry.loaded) entry.preloaded = mod
           const paradigm = routeParadigm(mod)
           if (paradigm === 'functional') functionalFiles.push(file)
           else if (paradigm === 'oop') oopFiles.push(file)
@@ -319,6 +342,10 @@ export class RouteScanner {
 
       if (oopFiles.length > 0) this.globalParadigm = 'oop'
       else if (functionalFiles.length > 0) this.globalParadigm = 'functional'
+    }
+
+    if (isDev && this.app.options.dev?.lazyRoutes === false) {
+      await this.loadAllRoutes()
     }
 
     if (!this.hasBoundaries && !isProd) {
