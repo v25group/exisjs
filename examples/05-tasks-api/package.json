@@ -17,7 +17,7 @@
   "devDependencies": {
     "@exisjs/cli": "^0.10.0-alpha.0",
     "@types/node": "^20.0.0",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "typescript": "^5.9.3",
     "eslint": "^10.0.1",
     "@eslint/js": "^10.0.1",
