@@ -43,11 +43,30 @@ export type ResolveInput<T> = T extends { _input: infer I }
 
 export {
   tex,
+  TexBuilder,
   TexEngine,
   TexTransformedEngine,
   TexDiscriminatedUnionEngine,
+  ValidatorError,
   paginate,
   getPaginationSkip,
   type PaginationMeta,
   type PaginatedResult,
+  type ValidationErrorDescriptor,
 } from './tex'
+export type { SafeParseResult } from './engine'
+export { TexType } from './tex-types'
+export type {
+  TexDefaultValue,
+  TexBaseOptions,
+  TexStringOptions,
+  TexUrlOptions,
+  TexNumberOptions,
+  TexBooleanOptions,
+  TexArrayOptions,
+  TexEnumOptions,
+  TexObjectOptions,
+  TexFileOptions,
+  TexPasswordOptions,
+  TexDateOptions,
+} from './types'

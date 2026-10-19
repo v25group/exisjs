@@ -62,6 +62,18 @@ interface LazyRoute {
   preloaded?: any
 }
 
+/**
+ * Outside development a route that cannot load stops the start: a server
+ * missing part of its API must not report healthy and take traffic.
+ */
+function routeLoadError(file: string, err: unknown): Error {
+  const reason = err instanceof Error ? err.message : String(err)
+  return new Error(
+    `[ExisJS] ${file} failed to load, so the server will not start: ${reason}`,
+    { cause: err }
+  )
+}
+
 export class RouteScanner {
   public lazyRoutes = new Map<string, LazyRoute>()
   public routeMap = new Map<string, string>()
@@ -160,11 +172,10 @@ export class RouteScanner {
           manifestCronJobs = mod.cronJobs
         }
       } catch (err: any) {
+        // The manifest imports every route; one that throws (a missing
+        // environment value, say) means the app cannot run as built
         if (err.code !== 'ENOENT') {
-          this.app.log.warn(
-            { err: err.message },
-            'Failed to load routes manifest'
-          )
+          throw routeLoadError('the routes manifest', err)
         }
       }
     }
@@ -209,11 +220,7 @@ export class RouteScanner {
           // CORS, headers and providers before mounting the route
           await this.mountRouteFile(normalizedPath, routePath, routeMod)
         } catch (err) {
-          // Fail closed: a route whose boundary cannot load is not served
-          this.app.log.error(
-            { err, file: filePath },
-            `Failed to load route file: ${filePath}`
-          )
+          throw routeLoadError(filePath, err)
         }
       }
 
@@ -296,10 +303,7 @@ export class RouteScanner {
             try {
               await this.mountRouteFile(normalized, routePath)
             } catch (err) {
-              this.app.log.error(
-                { err, file: filePath },
-                `Failed to load route file: ${filePath}`
-              )
+              throw routeLoadError(path.relative(root, filePath), err)
             }
           }
         }

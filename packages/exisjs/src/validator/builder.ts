@@ -31,6 +31,39 @@ import type {
 import { TexEngine, TexDiscriminatedUnionEngine, fieldRule } from './engine'
 import { formatEnumValues } from './rules'
 
+const OBJECT_OPTIONS = ['strict', 'optional', 'nullable', 'nullish']
+
+// Plain JavaScript gets no type error for a misspelled option, so refuse it
+function checkObjectOptions(opts: unknown): void {
+  if (opts === undefined) return
+  if (opts === null || typeof opts !== 'object' || Array.isArray(opts)) {
+    throw new TypeError('tex.object(): options must be an object')
+  }
+  for (const key of Object.keys(opts)) {
+    if (!OBJECT_OPTIONS.includes(key)) {
+      throw new TypeError(
+        `tex.object(): unknown option "${key}". Supported: ${OBJECT_OPTIONS.join(', ')}`
+      )
+    }
+  }
+}
+
+type OptionalFlag<O> = O extends { optional: true } | { nullish: true }
+  ? true
+  : false
+type NullableFlag<O> = O extends { nullable: true } | { nullish: true }
+  ? true
+  : false
+
+/** What `tex.object(shape, options)` returns */
+export type ObjectSchema<T extends Record<string, any>, O> = TexEngine<
+  | ResolveSchema<T>
+  | (NullableFlag<O> extends true ? null : never)
+  | (OptionalFlag<O> extends true ? undefined : never)
+> & { readonly _input: ResolveInput<T> } & (OptionalFlag<O> extends true
+    ? { readonly __isOptional: true }
+    : unknown)
+
 // `length` and `pattern` for string-like schemas
 function textChecks(opts?: { length?: number; pattern?: RegExp }): string {
   let out = ''
@@ -491,10 +524,11 @@ export class TexBuilder {
    * const user = UserSchema.parse(req.body)
    * ```
    */
-  object<T extends Record<string, any>>(
-    schema: T,
-    opts?: TexObjectOptions
-  ): TexEngine<ResolveSchema<T>> & { readonly _input: ResolveInput<T> } {
+  object<
+    T extends Record<string, any>,
+    O extends TexObjectOptions = Record<never, never>,
+  >(schema: T, opts?: O): ObjectSchema<T, O> {
+    checkObjectOptions(opts)
     const compiledSchema: Record<string, string> = {}
     const shape: Record<string, any> = {}
     for (const [key, value] of Object.entries(schema)) {
@@ -507,7 +541,10 @@ export class TexBuilder {
           : value
       compiledSchema[key] = fieldRule(key, shape[key])
     }
-    return new TexEngine(compiledSchema, shape, opts?.strict) as any
+    let engine = new TexEngine<any>(compiledSchema, shape, opts?.strict)
+    if (opts?.optional || opts?.nullish) engine = engine.optional()
+    if (opts?.nullable || opts?.nullish) engine = engine.nullable()
+    return engine as any
   }
 
   /**

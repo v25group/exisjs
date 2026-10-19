@@ -165,11 +165,20 @@ export interface ExisConfig {
    */
   server?: 'auto' | 'node' | 'bun' | 'uws'
 
+  /**
+   * Limits how many requests the app handles at once. Requests over
+   * `maxConcurrent` wait in this process (up to `maxQueue`, for at most
+   * `timeoutMs`), then get 503. Unknown keys and drivers stop the start.
+   */
   queue?: {
-    driver?: 'memory' | 'redis' | string
+    /** Only `'memory'`: waiting requests live in this process */
+    driver?: 'memory'
+    /** Requests handled at once. Default 1000 */
     maxConcurrent?: number
+    /** Requests allowed to wait. Default 500 */
     maxQueue?: number
-    [key: string]: any
+    /** How long a request may wait, in ms. Default 10000 */
+    timeoutMs?: number
   }
   watch?: WatchConfig
   dev?: DevConfig

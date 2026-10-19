@@ -172,6 +172,7 @@ The root configuration schema accepted by `exis.config.ts`:
 | `host` | `string` | `'0.0.0.0'` | Network interface binding. |
 | `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | HTTP server backend. Automatically selects Bun or Node when detected. |
 | `cluster` | `{ workers?: number \| 'auto' \| 'safe' \| 'max' }` | `{ workers: 1 }` | Multi-process worker clustering. `'safe'` uses available CPU cores minus 1; `'max'` uses all available cores. |
+| `queue` | `{ driver?: 'memory', maxConcurrent?, maxQueue?, timeoutMs? }` | not set | Limits concurrent requests per process; extra requests wait, then get `503`. Unknown keys or another driver stop the start. |
 | `trustProxy` | `boolean \| number` | `false` | `true`: trust all proxy headers (`X-Forwarded-For`, `CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`). `N`: trust only the N closest hops in `X-Forwarded-For`, counting the socket peer; CDN headers are ignored. |
 | `bodyLimit` | `number` | `10485760` (10MB) | Maximum payload size in bytes for JSON and URL-encoded request bodies. |
 | `compression` | `boolean` | `false` | Enables gzip and Brotli response compression. |
@@ -195,7 +196,7 @@ The root configuration schema accepted by `exis.config.ts`:
 | Property | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false, exporter: 'console' }` | OpenTelemetry tracing and span reporting (`'otlp'` or `'console'`). |
-| `metrics` | `boolean \| MetricsConfig` | `{ enabled: false, path: '/metrics' }` | Prometheus-compatible metrics endpoint. |
+| `metrics` | `boolean \| MetricsConfig` | `{ enabled: false, path: '/metrics' }` | Prometheus text-format endpoint: request counts and duration histograms by route pattern, in-flight requests, memory and event-loop lag; aggregated across cluster workers. |
 | `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false, path: '/_health' }` | Liveness and readiness health probe route. |
 | `docs` | `boolean \| SwaggerConfig` | `{ enabled: false, path: '/docs' }` | Interactive OpenAPI / Swagger UI documentation generation. |
 

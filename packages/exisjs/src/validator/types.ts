@@ -68,7 +68,14 @@ export interface TexEnumOptions<
 }
 
 export interface TexObjectOptions {
+  /** Reject keys that are not in the schema */
   strict?: boolean
+  /** As a field of another object: may be left out (same as `.optional()`) */
+  optional?: boolean
+  /** As a field of another object: may be `null` (same as `.nullable()`) */
+  nullable?: boolean
+  /** May be left out or `null` (same as `.nullish()`) */
+  nullish?: boolean
 }
 
 export interface TexFileOptions extends TexBaseOptions {

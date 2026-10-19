@@ -39,6 +39,8 @@ import type {
   TexFileOptions,
   TexPasswordOptions,
   TexObjectOptions,
+  TexUrlOptions,
+  SafeParseResult,
   ValidationErrorDescriptor,
   PaginationMeta,
   PaginatedResult,
@@ -92,6 +94,8 @@ The `tex.coerce` namespace provides explicit coercion primitives for query param
 #### `tex.object(shape, options?)`
 
 Validates an object against a structured field schema.
+
+Options: `strict` (reject keys not in the schema), and `optional`, `nullable`, `nullish` for an object used as a field (the same as calling `.optional()`, `.nullable()` or `.nullish()`). Any other option throws, so a misspelled option in plain JavaScript is not silently ignored.
 
 ```typescript
 const UserSchema = tex.object({

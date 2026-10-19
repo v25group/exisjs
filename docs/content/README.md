@@ -33,6 +33,7 @@ Documentation follows the [Diátaxis Framework](https://diataxis.fr/), separatin
 - [`cron.mdx`](./cron.mdx): Background task scheduling (`cron()` and `@Cron()`) with drift correction and overlap protection.
 - [`swagger.mdx`](./swagger.mdx): Automatic OpenAPI 3.1 schema extraction, Swagger UI (`/docs`), and JSON documentation endpoints.
 - [`testing.mdx`](./testing.mdx): Test harness (`createTestContext`, `createTestApp`), mocking utilities (`ex`), and CLI test runner.
+- [`deployment.mdx`](./deployment.mdx): Docker images, build-time secrets (`--skip-env-check`), graceful shutdown, health checks and migrations.
 - [`config.mdx`](./config.mdx): Global configuration options in `exis.config.ts`, lifecycle phases, clustering, and file watcher settings.
 - [`exisjs-mcp.mdx`](./exisjs-mcp.mdx): Model Context Protocol (MCP) server integration for IDE AI assistants.
 

@@ -21,6 +21,7 @@ export type {
   TexFileOptions,
   TexPasswordOptions,
   TexDateOptions,
+  TexUrlOptions,
   ValidationErrorDescriptor,
   PaginationMeta,
   PaginatedResult,

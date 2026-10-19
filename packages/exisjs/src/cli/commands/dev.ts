@@ -9,6 +9,32 @@ import { getFormattedTime } from '../../utils/time'
 import { loadEnv } from '../../config/env'
 import { loadConfig } from '../../config/config'
 
+const ENV_FILES = [
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.development.local',
+]
+
+const CLOSED_CHANNEL_CODES = [
+  'EPIPE',
+  'ERR_IPC_CHANNEL_CLOSED',
+  'ERR_IPC_DISCONNECTED',
+]
+
+export function isClosedChannelError(
+  err: NodeJS.ErrnoException | null | undefined
+): boolean {
+  return !!err && CLOSED_CHANNEL_CODES.includes(err.code ?? '')
+}
+
+// child.send() callback: a child that already exited is expected at shutdown
+function ignoreClosedChannel(err: Error | null): void {
+  if (err && !isClosedChannelError(err as NodeJS.ErrnoException)) {
+    console.error(`[exis] Could not signal the server process: ${err.message}`)
+  }
+}
+
 export const DEFAULT_WATCH_IGNORED: (string | RegExp)[] = [
   // Dotfiles and dotfolders (.git, .vscode, .idea, etc.) except .env
   /(^|[/\\])\.(?!env)/,
@@ -56,6 +82,37 @@ export const RELOADABLE_CONFIG_FILES = new Set([
   'exis.config.mjs',
   'exis.config.cjs',
 ])
+
+/**
+ * chokidar's `ignored` test. Patterns apply to the path inside the project:
+ * a project under a folder such as `D:\data` or `/srv/build` must still
+ * reload, which matching the absolute path prevented.
+ */
+export function watchIgnore(
+  cwd: string,
+  userIgnored: (string | RegExp)[] = []
+): (file: string) => boolean {
+  const patterns = [...DEFAULT_WATCH_IGNORED, ...userIgnored]
+  return (file) => {
+    const rel = path
+      .relative(cwd, path.resolve(cwd, file))
+      .split(path.sep)
+      .join('/')
+    if (
+      rel === '' ||
+      rel === '..' ||
+      rel.startsWith('../') ||
+      path.isAbsolute(rel)
+    ) {
+      return false
+    }
+    return patterns.some((p) =>
+      typeof p === 'string'
+        ? rel.includes(p) || path.basename(rel) === p
+        : p.test(rel)
+    )
+  }
+}
 
 export function shouldReloadOnFile(
   file: string,
@@ -351,7 +408,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     ) {
       try {
         if (child.connected) {
-          child.send({ type: 'exis:shutdown' })
+          // The callback receives the error if the child already closed its end
+          child.send({ type: 'exis:shutdown' }, ignoreClosedChannel)
           child.disconnect()
         }
       } catch {
@@ -522,7 +580,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     // 1. Send IPC shutdown message so the child can run app.close() / onClose hooks
     try {
       if (child.connected) {
-        child.send({ type: 'exis:shutdown' })
+        // The callback receives the error if the child already closed its end
+        child.send({ type: 'exis:shutdown' }, ignoreClosedChannel)
       }
     } catch {
       /* ignore — child may have already exited */
@@ -626,8 +685,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       }
     })
 
-    child!.on('error', (err) => {
-      error(`Failed to start process: ${err.message}`)
+    child!.on('error', (err: NodeJS.ErrnoException) => {
+      // Ctrl+C on Windows reaches the child too, so its IPC end can close
+      // while the parent is still telling it to stop: not a failure
+      if ((isShuttingDown || isRestarting) && isClosedChannelError(err)) return
+      error(
+        currentSpawnedChild?.pid
+          ? `Server process error: ${err.message}`
+          : `Failed to start process: ${err.message}`
+      )
     })
 
     child!.on('exit', (code, signal) => {
@@ -722,18 +788,19 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
             ]
               .map((f) => path.join(cwd, f))
               .filter((f) => fs.existsSync(f)),
-            // Watched even before they exist, so creating one reloads too
-            ...[
-              '.env',
-              '.env.local',
-              '.env.development',
-              '.env.development.local',
-            ].map((f) => path.join(cwd, f)),
           ]
         } else {
           watchPaths = [cwd]
         }
       }
+      // .env files are read when the app process starts, so a change needs
+      // a restart; watched even when `watch.paths` is set, and before they
+      // exist, so creating one reloads too
+      watchPaths.push(
+        ...ENV_FILES.map((f) => path.join(cwd, f)).filter(
+          (f) => !watchPaths.includes(f)
+        )
+      )
 
       watcher = chokidar.watch(watchPaths, {
         cwd,
@@ -741,7 +808,7 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         usePolling: devConfig.usePolling ?? process.platform === 'win32',
         interval: devConfig.interval ?? 100,
         binaryInterval: devConfig.binaryInterval ?? 300,
-        ignored: [...DEFAULT_WATCH_IGNORED, ...userIgnored],
+        ignored: watchIgnore(cwd, userIgnored),
         awaitWriteFinish: {
           stabilityThreshold: 200,
           pollInterval: 100,

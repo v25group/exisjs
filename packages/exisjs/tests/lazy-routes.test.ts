@@ -119,3 +119,36 @@ describe('Default environment', () => {
     expect(child.stdout.trim()).toBe('production')
   })
 })
+
+// B9 (found verifying docs/REPORT.md B7): in production a route file that
+// failed to load was logged and skipped, and the server started healthy
+describe('Route files that fail to load outside development', () => {
+  it('stop the start, naming the file and the reason', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'exis-route-fail-'))
+    try {
+      const routerPath = path
+        .join(__dirname, '../src/router/index')
+        .split(path.sep)
+        .join('/')
+      await fs.mkdir(path.join(dir, 'src', 'http', 'ok'), { recursive: true })
+      await fs.mkdir(path.join(dir, 'src', 'http', 'needs-db'), {
+        recursive: true,
+      })
+      await fs.writeFile(
+        path.join(dir, 'src', 'http', 'ok', 'route.js'),
+        `const { controller, route } = require('${routerPath}')
+        exports.default = controller({ a: route.get('/', { handle: () => ({}) }) })`
+      )
+      await fs.writeFile(
+        path.join(dir, 'src', 'http', 'needs-db', 'route.js'),
+        `throw new Error('DATABASE_URL: Expected value, received undefined')`
+      )
+      const app = new App({ env: 'production', server: 'node' })
+      await expect(
+        (app as any).routeScanner.autoMountRoutes(dir)
+      ).rejects.toThrow(/needs-db.*failed to load.*DATABASE_URL/)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+})

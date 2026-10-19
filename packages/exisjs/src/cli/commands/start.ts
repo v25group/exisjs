@@ -83,7 +83,9 @@ export async function startCommand(options: StartOptions = {}): Promise<void> {
     // Send IPC shutdown message to child
     try {
       if (child.connected) {
-        child.send({ type: 'exis:shutdown' })
+        child.send({ type: 'exis:shutdown' }, () => {
+          /* the child may already have exited */
+        })
       }
     } catch {
       /* ignore */

@@ -1,4 +1,4 @@
-import { tex } from '../src/validator/index'
+import { tex, type Infer } from '../src/validator/index'
 import { ValidatorError } from '../src/validator/error'
 import { sanitize } from '../src/sanitize/index'
 import { describe, it, expect } from '../src/testing'
@@ -497,5 +497,59 @@ describe('sanitize', () => {
       b: ['y'],
       c: { d: 'z' },
     })
+  })
+})
+
+// B3 (docs/REPORT.md, 0.9.2): ValidatorError was not exported from exisjs/validator
+describe('exisjs/validator exports', () => {
+  it('exports the ValidatorError that parse() throws', async () => {
+    const entry = await import('../src/validator/index')
+    const Schema = entry.tex.object({ n: entry.tex.number() })
+    try {
+      Schema.parse({ n: 'x' })
+      throw new Error('expected a failure')
+    } catch (err) {
+      expect(err).toBeInstanceOf(entry.ValidatorError)
+    }
+  })
+})
+
+// B4 (docs/REPORT.md, 0.9.2): tex.object(shape, { optional: true }) ignored the option
+// Assignable both ways (ResolveSchema builds intersections, never identical)
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false
+const assertType = <_T extends true>(): void => undefined
+
+describe('tex.object() options', () => {
+  it('accepts optional / nullable / nullish like the field builders', () => {
+    const Body = tex.object({
+      name: tex.string(),
+      address: tex.object(
+        { city: tex.string({ optional: true }) },
+        { optional: true }
+      ),
+      billing: tex.object({ zip: tex.string() }, { nullish: true }),
+      shipping: tex.object({ zip: tex.string() }, { nullable: true }),
+    })
+    expect(Body.parse({ name: 'x', shipping: null })).toEqual({
+      name: 'x',
+      shipping: null,
+    })
+    expect(Body.parse({ name: 'x', billing: null, shipping: null })).toEqual({
+      name: 'x',
+      billing: null,
+      shipping: null,
+    })
+    expect(errorsOf(() => Body.parse({ name: 'x' }))[0].path).toBe('shipping')
+
+    type Out = Infer<typeof Body>
+    assertType<Same<Out['address'], { city?: string } | undefined>>()
+    assertType<Same<Out['billing'], { zip: string } | null | undefined>>()
+    assertType<Same<Out['shipping'], { zip: string } | null>>()
+  })
+
+  it('refuses an unknown option instead of ignoring it', () => {
+    expect(() =>
+      tex.object({ a: tex.string() }, { optinal: true } as any)
+    ).toThrow(/unknown option "optinal"/)
   })
 })

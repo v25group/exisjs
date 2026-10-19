@@ -4,6 +4,15 @@ import type { Server as HttpsServer } from 'node:https'
 import type { Http2SecureServer } from 'node:http2'
 import { Router } from '../router/router'
 import { cors, helmet, compress, requestLogger } from '../middleware/middleware'
+import {
+  backpressureMiddleware,
+  resolveQueueConfig,
+} from '../middleware/backpressure'
+import {
+  MetricsRegistry,
+  listenAsWorker,
+  render as renderMetrics,
+} from './metrics'
 import { createErrorHandler } from '../error/errors'
 import { defaultConfig, mergeConfig } from '../config/config'
 import type { ResolvedConfig } from '../config/config'
@@ -559,6 +568,13 @@ export class App<TRoutes extends Record<string, any> = {}> {
 
     // Request ID is always on; RequestHandler applies it inline
 
+    // queue: { maxConcurrent, maxQueue, timeoutMs } limits concurrent requests
+    // for the whole app; checked here so a wrong setting stops the start
+    const queueOptions = resolveQueueConfig(this.options.queue)
+    if (queueOptions) {
+      this.globalMiddleware.unshift(backpressureMiddleware(queueOptions))
+    }
+
     if (this.options.blockProbes || this.options.blockSuspiciousProbes) {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { blockSuspiciousProbes } = require('../middleware/security')
@@ -709,7 +725,28 @@ export class App<TRoutes extends Record<string, any> = {}> {
       }
     }
 
-    // Metrics Route
+    // Metrics (Prometheus text format)
+    const metricsOpt = this.options.metrics
+    if (
+      metricsOpt === true ||
+      (typeof metricsOpt === 'object' && metricsOpt?.enabled)
+    ) {
+      const registry = new MetricsRegistry()
+      listenAsWorker(registry)
+      // First, so blocked, rejected and unmatched requests are counted too
+      this.globalMiddleware.unshift(registry.middleware())
+      const metricsPath =
+        (typeof metricsOpt === 'object' && metricsOpt.path) || '/metrics'
+      this.get(metricsPath as any, async (_req, res) => {
+        const body = renderMetrics(await registry.collect())
+        res.setHeader(
+          'Content-Type',
+          'text/plain; version=0.0.4; charset=utf-8'
+        )
+        res.setHeader('Cache-Control', 'no-store')
+        return res.send(body)
+      })
+    }
   }
 
   public async inject(options: {

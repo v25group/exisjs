@@ -1,8 +1,8 @@
 ---
 title: "Configuration"
 description: "Global runtime configuration, phases, environment loading, server engine selection, and cluster options in exis.config.ts."
-nextUrl: "/docs/exisjs-mcp"
-nextTitle: "AI Integration (MCP)"
+nextUrl: "/docs/deployment"
+nextTitle: "Deploying with Docker"
 ---
 
 # Configuration (`exis.config.ts`)
@@ -166,7 +166,7 @@ export default defineConfig({
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
 | `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; the project template uses `enabled: process.env.NODE_ENV !== 'production'` so published API docs do not help attackers. |
 | `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. |
-| `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). |
+| `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). See [Prometheus Metrics](#prometheus-metrics). |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false }` | OpenTelemetry tracing and metrics export. |
 
 ### Concurrency & Clustering
@@ -181,6 +181,24 @@ export default defineConfig({
   }
 })
 ```
+
+#### Limiting concurrent requests (`queue`)
+
+`queue` caps how many requests the app handles at once, so a traffic spike slows down instead of exhausting memory or the database pool:
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  queue: {
+    maxConcurrent: 500, // handled at once (default 1000)
+    maxQueue: 200, // may wait for a free slot (default 500)
+    timeoutMs: 10_000, // longest wait (default 10 s)
+  },
+})
+```
+
+A request over the limit waits in this process; when `maxQueue` is full, or the wait exceeds `timeoutMs`, it gets `503 Service Unavailable`. A client that disconnects frees its place. The limit is per process (per worker in cluster mode).
+
+The only `driver` is `'memory'`. Any other driver, unknown keys and invalid numbers stop the server at start-up with a message naming the option. ExisJS has no shared or durable queue yet, so a setting that pretended to provide one would be silently ignored.
 
 ---
 
@@ -212,6 +230,32 @@ export default defineConfig({
 ExisJS automatically excludes build output and temp folders from triggering watcher reloads:
 - **Folders**: `node_modules`, `.git`, `.exis`, `dist`, `build`, `out`, `.turbo`, `.next`, `.cache`, `logs`, `tmp`, `temp`, `tests`, `coverage`.
 - **Files**: `.log`, `.sqlite`, `.db`, `.png`, `.jpg`, `.svg`, `package-lock.json`, `*.d.ts`.
+
+---
+
+## Prometheus Metrics
+
+Set `metrics: { enabled: true }` (or `metrics: true`) to serve request and process metrics in the Prometheus text format at `GET /metrics` (change it with `path`).
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  metrics: { enabled: true, path: '/metrics' },
+})
+```
+
+| Metric | Type | Labels |
+| :--- | :--- | :--- |
+| `http_requests_total` | counter | `method`, `route`, `status` |
+| `http_request_duration_seconds` | histogram (5 ms to 10 s) | `method`, `route` |
+| `http_requests_in_flight` | gauge | |
+| `process_resident_memory_bytes`, `nodejs_heap_used_bytes` | gauge | `worker` in cluster mode |
+| `nodejs_eventloop_lag_p99_seconds` | gauge | `worker` in cluster mode |
+| `process_start_time_seconds` | gauge | `worker` in cluster mode |
+
+- **`route` is the route pattern** (`/users/:id`), never the requested URL, so the number of series stays bounded. Requests that match no route are counted under `(unmatched)`.
+- **Status `499`** counts requests whose client disconnected before the response finished.
+- **Cluster mode:** a scrape can reach any worker; that worker collects the numbers of every worker through the primary process, so the request counters are always the whole server's. Memory and event-loop lag are reported per worker.
+- **Keep the endpoint private.** It lists every route of the API. Expose it only on an internal network, or block it at the proxy for public traffic.
 
 ---
 

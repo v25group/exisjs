@@ -1,0 +1,146 @@
+---
+title: "Deploying with Docker"
+description: "Build an ExisJS app into a small production image, keep secrets out of the build, run the server so it shuts down gracefully, and wire up health checks."
+nextUrl: "/docs/exisjs-mcp"
+nextTitle: "AI Integration (MCP)"
+---
+
+# Deploying with Docker
+
+This page builds an ExisJS app into a production image that:
+
+- builds without secrets, because container platforms provide them only when the container runs;
+- refuses to start when a required secret is missing;
+- stops gracefully on `docker stop` and on every redeploy.
+
+The Dockerfile below was tested end to end with an app created by `npm create exisjs`.
+
+---
+
+## The Dockerfile
+
+```dockerfile filename="Dockerfile"
+# syntax=docker/dockerfile:1
+
+# ── Build: full toolchain ────────────────────────────────────────────────────
+FROM node:24-slim AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+# Secrets are injected when the container runs, not while the image builds
+RUN npx exisjs build --skip-env-check
+
+# ── Runtime: production dependencies only ────────────────────────────────────
+FROM node:24-slim
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=build /app/.exis ./.exis
+USER node
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
+  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+# The exisjs binary itself, not `npm start` (see below)
+CMD ["node_modules/.bin/exisjs", "start"]
+```
+
+`exisjs build` writes everything the server needs into `.exis/`: the compiled code, the route manifest and the compiled `exis.config`. The runtime image needs only `.exis/`, `package.json` and the production dependencies; it contains no source files.
+
+Add a `.dockerignore`, so local files never reach the image. **`.env` must be in it**, or your local secrets are copied into every image layer:
+
+```text filename=".dockerignore"
+node_modules
+.exis
+dist
+.git
+.env
+.env.*
+!.env.example
+*.log
+coverage
+```
+
+---
+
+## Secrets: `--skip-env-check`
+
+`exisjs build` loads your route files to check them, and a route that imports `tex.env` validates the environment while it loads. In a Docker build the secrets don't exist yet, so a plain `RUN npx exisjs build` fails:
+
+```text
+✗ BUILD_VALIDATION_FAILED: Validation Error: DATABASE_URL: Expected value, received undefined
+```
+
+`--skip-env-check` skips that check **for the build only**. When the container starts, `tex.env` validates the real environment, and a missing or invalid value stops the server with exit code 1:
+
+```text
+[ExisJS] the routes manifest failed to load, so the server will not start:
+Validation Error: DATABASE_URL: Expected value, received undefined
+```
+
+Pass the secrets when you run the container (`docker run -e DATABASE_URL=...`, or your platform's environment settings). Never set `EXIS_SKIP_ENV_CHECK` in the runtime environment: it is the build flag, and would let the server start with placeholder values.
+
+---
+
+## Start the server directly, not with `npm start`
+
+Run `node_modules/.bin/exisjs start` as the container command. Started through `npm start`, npm sits between the platform and the server: a redeploy's `SIGTERM` then shows up as `npm error signal SIGTERM`, and some platforms stop the container early when they detach its input.
+
+With the command above, `docker stop` sends `SIGTERM` to `exisjs start`, which passes it to the server:
+
+1. The readiness probe (`/_ready`, if enabled) answers `503`, so the load balancer stops sending new requests.
+2. Requests in progress finish.
+3. `onClose` hooks run and registered databases disconnect.
+4. The process exits with code 0.
+
+`exisjs start` waits up to 10 seconds for this, and Docker also waits 10 seconds by default before it kills the container. If your requests can take longer, raise both: `docker stop -t 60` / `stop_grace_period: 60s` in Compose, and the platform's equivalent.
+
+---
+
+## Health checks
+
+The project template has a `GET /health` route, which the `HEALTHCHECK` above calls. `node:24-slim` has no `curl`, so the check uses Node's `fetch`.
+
+For a load balancer or Kubernetes, turn on the built-in probes instead:
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  healthcheck: { enabled: true }, // GET /_health (liveness) and GET /_ready (readiness)
+})
+```
+
+Point the load balancer, or the Kubernetes `readinessProbe`, at `/_ready`: it answers `503` while a registered database is down and during shutdown. Use `/_health` only to decide whether to restart the container.
+
+---
+
+## Database migrations and scripts
+
+The runtime image has no source files, so run one-off tasks from the build stage, which has the whole project and toolchain:
+
+```sh
+docker build --target build -t my-api:build .
+docker run --rm -e DATABASE_URL="$DATABASE_URL" my-api:build npx exisjs run scripts/migrate.ts
+```
+
+Run it as a separate step of your deployment, before the new version starts.
+
+---
+
+## Platform notes
+
+- **Pin the Node.js version.** Use an explicit image (`node:24-slim`). Builders that pick Node for you, such as Nixpacks, may default to an older version than your dependencies need; set it explicitly (for Nixpacks, `nodejs_22` or later in `nixpacks.toml`).
+- **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD`, enter `node_modules/.bin/exisjs start`.
+- **Long requests behind a CDN.** A proxy such as Cloudflare ends requests after about 100 seconds, whatever the server allows. Serve long-running endpoints from a hostname that is not proxied.
+
+---
+
+## What is in the image today
+
+| Part | Size |
+| :--- | ---: |
+| `node:24-slim` base image | ~220 MB |
+| `node_modules` of a new app, production install | 45 MB |
+| of which build tooling (`typescript`, `esbuild`, `tsx`) | 34 MB |
+
+The build tooling is installed in production because the `exisjs` package includes the CLI. Moving the CLI to a separate development dependency, and starting the server as a single process, is planned; this page will show the smaller layout when it ships.

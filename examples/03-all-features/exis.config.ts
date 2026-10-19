@@ -21,9 +21,10 @@ const config: ExisConfig = {
   helmet: { enabled: true },
   asyncContext: true,
 
+  // At most 500 requests at once; up to 200 more wait (10 s), the rest get 503
   queue: {
-    driver: 'memory',
-    enableWorkers: true,
+    maxConcurrent: 500,
+    maxQueue: 200,
   },
 }
 

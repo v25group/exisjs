@@ -63,7 +63,7 @@ ExisJS provides type-safe primitives that accept modifier options and configurat
 | `tex.record()` | `tex.record(valueSchema, options?)` | Validates dynamic key-value dictionaries (`Record<string, T>`). |
 | `tex.any()` | `tex.any(options?)` | Pass-through validator without schema constraints. |
 | `tex.file()` | `tex.file(options?)` | Validates multipart file uploads. Supports `{ maxSize, mimeTypes }`. |
-| `tex.object()` | `tex.object(shape, options?)` | Compiles an object schema. Supports `{ strict: true }` to reject unlisted keys. |
+| `tex.object()` | `tex.object(shape, options?)` | Compiles an object schema. Supports `{ strict, optional, nullable, nullish }`: `strict: true` rejects unlisted keys; the others work as for fields when the object is nested. An unknown option throws. |
 | `tex.coerce.*` | `tex.coerce.number() \| boolean() \| date() \| string()` | Explicit coercion namespace for query strings, route parameters, and form inputs. |
 | `tex.pagination()` | `tex.pagination(options?)` | Predefined schema for `page`, `limit`, `sort`, and `order` query parameters. |
 | `tex.env()` | `tex.env(shape, options?)` | Environment variable schema parser with automatic type coercion from string values. |

@@ -1,6 +1,7 @@
 import cluster from 'node:cluster'
 import os from 'node:os'
 import process from 'node:process'
+import { handlePrimaryMessage as handleMetricsMessage } from './metrics'
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -121,6 +122,7 @@ function primaryProcess(workerCount: number, config?: ClusterConfig) {
 
   function setupWorkerIpc(worker: import('node:cluster').Worker) {
     worker.on('message', (msg) => {
+      if (handleMetricsMessage(worker, msg)) return
       // Broadcast cache revalidation to all OTHER workers
       if (msg && msg.type === 'exis:cache:revalidate') {
         for (const id in cluster.workers) {
