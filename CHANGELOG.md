@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.0-alpha.0`** | 2026-10-19 | Prerelease (`alpha` tag): Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; failed route files stop the start; `partial()` keeps unsent fields unset | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.9.2`** | 2026-10-17 | Patch: Bug Fixes & Security | Development server: no `404` for concurrent first requests, a route that fails to load answers `500`, route files run once, `dev.lazyRoutes`; `env` defaults to `production` so a server started without `NODE_ENV` no longer sends error details; validator: nested rules, immutable schemas, `safeParse`, `pattern` / `url` / `int`, 4-10x faster; sanitizer fixes | [**Read v0.9.2 Notes →**](./changelog/v0.9/v0.9.2.md) |
 | **`v0.9.1`** | 2026-10-16 | Patch: Bug Fixes | RFC 9110 conditional requests (`res.checkPreconditions()`, 304/412/428), binary request bodies kept intact, boundary wrappers keep a returned `Buffer` binary, nested `tex.object` `.optional()` honoured, `.nullable()` / `.nullish()` on object schemas, clear error for a missing field schema, AGENTS.md docs path | [**Read v0.9.1 Notes →**](./changelog/v0.9/v0.9.1.md) |
 | **`v0.9.0`** | 2026-10-14 | Minor (breaking): Correctness & Security | Request-scoped DI and `@Idempotent` cross-user leaks fixed, hung requests answered, class controllers handle `res.json()`/`download()`/Buffers and `@UseInterceptors`, safe RBAC (401, all-of permissions, no `isSuperAdmin`), one error envelope, default CSP, readiness endpoint, shared rate-limit and cron-lock stores | [**Read v0.9.0 Notes →**](./changelog/v0.9/v0.9.0.md) |
@@ -31,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | **`v0.7.2`** | 2026-09-06 | Bug Fixes & DX | TypeScript route param inference, runtime aliases, ESM relative fixes | [**Read v0.7.2 Notes →**](./changelog/v0.7/v0.7.2.md) |
 | **`v0.7.1`** | 2026-09-06 | OOP & Logging | Full OOP parity decorators, DI scopes, `@Use(...)` unification, Pino logger | [**Read v0.7.1 Notes →**](./changelog/v0.7/v0.7.1.md) |
 | **`v0.7.0`** | 2026-09-06 | Major Architecture | Monorepo decoupling, `boundary.ts` pipeline, native Rust `tex` validator | [**Read v0.7.0 Notes →**](./changelog/v0.7/v0.7.0.md) |
+
+---
+
+## Prerelease: [0.10.0-alpha.0] - 2026-10-19
+
+> Published with the npm tag `alpha`; `latest` stays on 0.9.2. Install with `npm install exisjs@alpha` and `npm install -D @exisjs/cli@alpha`. Details and upgrade steps in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md).
+
+### Breaking
+- The CLI is in the new `@exisjs/cli` package (still installed with `exisjs` until 0.11); run `npx exisjs migrate`.
+- `queue` rejects unknown keys and drivers other than `memory`; `tex.object()` rejects unknown options; outside development a route file that fails to load stops the start.
+
+### Added
+- `exisjs start` runs from the runtime, as one process, with no CLI installed (also `node .exis/server/main.js`); `exisjs migrate`; Prometheus `/metrics`; `queue` concurrency limits; `tex.object(..., { optional | nullable | nullish })`; size budget in CI.
+
+### Fixed
+- Graceful shutdown with a request in flight skipped `onClose` and the database disconnect; `partial()` reset unsent fields to their defaults; tests and routes used two copies of a module; `exisjs dev` ignored projects inside folders named `temp`, `data`, `build`...; Ctrl+C printed `EPIPE`; `ValidatorError` was not exported; the scaffold echoed passwords.
 
 ---
 

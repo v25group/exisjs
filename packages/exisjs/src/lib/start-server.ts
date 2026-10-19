@@ -42,8 +42,7 @@ async function start() {
 
     // Register path aliases loader
     try {
-      const { registerPathAliasLoader } =
-        await import('../cli/resolve-aliases.js')
+      const { registerPathAliasLoader } = await import('./resolve-aliases.js')
       registerPathAliasLoader(cwd)
     } catch {
       // ignore
@@ -178,7 +177,9 @@ async function start() {
         if (isShuttingDown) return
         isShuttingDown = true
         clearInterval(memMonitor)
-        const isCLI = process.env.__EXIS_DEV_SERVER || process.env.__EXIS_CLI
+        // The dev server's parent prints its own messages; `exisjs start`
+        // and main.js run the server themselves, so it reports here
+        const isCLI = process.env.__EXIS_DEV_SERVER
         if (!isCLI) {
           console.error(
             `\n[exis] ${signal} received. Shutting down gracefully...`

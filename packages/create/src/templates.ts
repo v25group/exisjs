@@ -8,7 +8,6 @@ export function packageJsonTemplate(
     build: 'exisjs build',
     start: 'exisjs start',
     test: 'exisjs test',
-    format: 'prettier --write "src/**/*.ts"',
   }
 
   if (useEslint) {
@@ -32,18 +31,21 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.9.2',
+      exisjs: '^0.10.0-alpha.0',
     },
   }
 
+  // The exisjs command (dev, build, test) is a development tool
   if (useTypeScript) {
     pkg.devDependencies = {
+      '@exisjs/cli': '^0.10.0-alpha.0',
       '@types/node': '^20.0.0',
       prettier: '^3.9.9',
       typescript: '^5.9.3',
     }
   } else {
     pkg.devDependencies = {
+      '@exisjs/cli': '^0.10.0-alpha.0',
       prettier: '^3.9.9',
     }
   }
@@ -605,20 +607,24 @@ export function userServiceTemplate(
   const tsType = useTypeScript ? ': CreateUserDto' : ''
   const returnType = useTypeScript ? ': Promise<User>' : ''
   const arrayReturnType = useTypeScript ? ': Promise<User[]>' : ''
-  const nullableReturnType = useTypeScript ? ': Promise<User | null>' : ''
+  const foundReturnType = useTypeScript ? ': Promise<User>' : ''
 
   if (isOop) {
     return `import { Injectable } from 'exisjs/decorators'
+import { HttpError } from 'exisjs/error'
 ${useTypeScript ? "import type { CreateUserDto } from './schema'\n\nexport interface User {\n  id: number\n  name: string\n  email: string\n  createdAt: Date\n}\n" : ''}
 @Injectable({ scope: 'singleton' })
 export class UserService {
   private users${useTypeScript ? ': User[]' : ''} = []
 
   async create(userDto${tsType})${returnType} {
-    const newUser = { 
-      id: Date.now(), 
+    // Keep the password out of what is stored and returned; a real app
+    // hashes it (argon2, bcrypt) and stores only the hash
+    const newUser = {
+      id: Date.now(),
+      name: userDto.name,
+      email: userDto.email,
       createdAt: new Date(),
-      ...userDto 
     }
     this.users.push(newUser)
     return newUser
@@ -628,21 +634,27 @@ export class UserService {
     return this.users
   }
 
-  async findById(id: string)${nullableReturnType} {
-    return this.users.find((u) => String(u.id) === id) || null
+  async findById(id: string)${foundReturnType} {
+    const user = this.users.find((u) => String(u.id) === id)
+    if (!user) throw HttpError.notFound('User')
+    return user
   }
 }
 `
   }
 
-  return `${useTypeScript ? "import type { CreateUserDto } from './schema'\n\nexport interface User {\n  id: number\n  name: string\n  email: string\n  createdAt: Date\n}\n" : ''}// In-memory user store
+  return `import { HttpError } from 'exisjs/error'
+${useTypeScript ? "import type { CreateUserDto } from './schema'\n\nexport interface User {\n  id: number\n  name: string\n  email: string\n  createdAt: Date\n}\n" : ''}// In-memory user store
 const users${useTypeScript ? ': User[]' : ''} = []
 
 export async function createUser(userDto${tsType})${returnType} {
-  const newUser = { 
-    id: Date.now(), 
+  // Keep the password out of what is stored and returned; a real app
+  // hashes it (argon2, bcrypt) and stores only the hash
+  const newUser = {
+    id: Date.now(),
+    name: userDto.name,
+    email: userDto.email,
     createdAt: new Date(),
-    ...userDto 
   }
   users.push(newUser)
   return newUser
@@ -652,8 +664,10 @@ export async function getUsers()${arrayReturnType} {
   return users
 }
 
-export async function getUserById(id: string)${nullableReturnType} {
-  return users.find((u) => String(u.id) === id) || null
+export async function getUserById(id: string)${foundReturnType} {
+  const user = users.find((u) => String(u.id) === id)
+  if (!user) throw HttpError.notFound('User')
+  return user
 }
 `
 }

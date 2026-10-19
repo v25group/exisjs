@@ -39,6 +39,19 @@ jobs:
       - name: Run Tests
         run: npm test
 
+      # B8: a production install must stay small and free of build tooling
+      - name: Production install size budget
+        run: node scripts/size-budget.mjs
+
+      - name: Package checks (exports and types)
+        run: |
+          npx --yes publint@0.3 packages/exisjs
+          npx --yes publint@0.3 packages/cli
+          npx --yes publint@0.3 packages/exis
+          npx --yes @arethetypeswrong/cli@0.18 --pack packages/exisjs
+          npx --yes @arethetypeswrong/cli@0.18 --pack packages/cli
+          npx --yes @arethetypeswrong/cli@0.18 --pack packages/exis
+
   examples:
     name: Examples and scaffold
     runs-on: ubuntu-latest

@@ -14,7 +14,10 @@ Install `exisjs` via npm:
 
 ```bash
 npm install exisjs
+npm install -D @exisjs/cli typescript
 ```
+
+The `exisjs` command (`dev`, `build`, `test`) is in [`@exisjs/cli`](https://www.npmjs.com/package/@exisjs/cli), a development dependency; production installs only need `exisjs`.
 
 Or initialize a new project using the scaffolding CLI:
 

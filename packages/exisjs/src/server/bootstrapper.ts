@@ -350,7 +350,9 @@ export class ServerBootstrapper {
           finishOnce()
         }
       }, 50)
-      checkIdle.unref()
+      // Not unref'd: once the server stops listening, this interval is what
+      // keeps the process alive until the last request ends and the onClose
+      // hooks and database disconnects have run
 
       // Set timeout to force close active connections
       timer = setTimeout(() => {

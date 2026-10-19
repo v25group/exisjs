@@ -2,8 +2,8 @@ import { describe, expect, it, beforeEach, afterEach } from '../src/testing'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
-import { generateManifest, atomicWriteFile } from '../src/cli/manifest'
-import { cleanCommand } from '../src/cli/commands/clean'
+import { generateManifest, atomicWriteFile } from '../../cli/src/manifest'
+import { cleanCommand } from '../../cli/src/commands/clean'
 import { App } from '../src/server/app'
 
 describe('.exis Directory Engine & Manifest Improvements', () => {

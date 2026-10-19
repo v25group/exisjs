@@ -412,7 +412,13 @@ export class TexEngine<T = any> {
       // Not `val.includes('?')`: a nested rule contains its children's `?`
       newSchema[key] = `${val} | optional`
       const rawVal = this.rawSchema[key]
-      if (rawVal instanceof TexType || rawVal instanceof TexEngine) {
+      if (rawVal instanceof TexType) {
+        // A field left out of a partial update stays unset: a default would
+        // overwrite the stored value (PATCH without `tags` -> tags: [])
+        const field = rawVal.optional() as unknown as TexType<any>
+        field.defaultValue = undefined
+        newRaw[key] = field
+      } else if (rawVal instanceof TexEngine) {
         newRaw[key] = rawVal.optional()
       } else if (rawVal !== null && typeof rawVal === 'object') {
         newRaw[key] = rawVal

@@ -3,6 +3,8 @@ import type { LoggerConfig, Logger } from '../types'
 
 import { STATUS_CODES } from 'node:http'
 import { Transform } from 'node:stream'
+import { createRequire } from 'node:module'
+import path from 'node:path'
 
 // ─── Request Log Terminal Formatting Helpers ─────────────────────────────────
 
@@ -134,6 +136,36 @@ const DEFAULT_REDACT = [
   'secret',
 ]
 
+let prettyHintShown = false
+
+/**
+ * pino-pretty is a development tool (installed with @exisjs/cli), so a
+ * production install may not have it: then logs stay JSON, with one hint.
+ */
+function loadPinoPretty(): ((options: any) => any) | null {
+  const candidates = [
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    () => require('pino-pretty'),
+    () =>
+      createRequire(path.join(process.cwd(), 'package.json'))('pino-pretty'),
+  ]
+  for (const load of candidates) {
+    try {
+      const mod = load()
+      return mod.default ?? mod
+    } catch {
+      // try the next location
+    }
+  }
+  if (!prettyHintShown) {
+    prettyHintShown = true
+    process.stderr.write(
+      '[exis] Pretty logs need pino-pretty (npm install -D pino-pretty); logging JSON instead.\n'
+    )
+  }
+  return null
+}
+
 export function createLogger(config: LoggerConfig = {}): Logger {
   const {
     level = 'info',
@@ -168,8 +200,9 @@ export function createLogger(config: LoggerConfig = {}): Logger {
   }
 
   const streams: pino.StreamEntry[] = []
+  const prettyFactory = pretty ? loadPinoPretty() : null
 
-  if (pretty) {
+  if (prettyFactory) {
     const stripColonStream = new Transform({
       transform(chunk: any, _encoding: BufferEncoding, callback: () => void) {
         const str = chunk
@@ -182,8 +215,7 @@ export function createLogger(config: LoggerConfig = {}): Logger {
     })
     stripColonStream.pipe(process.stdout)
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const prettyStream = require('pino-pretty')({
+    const prettyStream = prettyFactory({
       colorize: true,
       translateTime: 'SYS:HH:MM:ss',
       ignore:

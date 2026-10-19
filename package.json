@@ -1,8 +1,8 @@
 {
-  "name": "exis",
-  "version": "0.9.2",
+  "name": "exisjs-monorepo",
+  "version": "0.10.0-alpha.0",
   "private": true,
-  "description": "ExisJS monorepo: exisjs, create-exisjs and @exisjs/fetch",
+  "description": "ExisJS monorepo: exisjs, @exisjs/cli, create-exisjs, @exisjs/fetch and the short names exis and create-exis",
   "homepage": "https://github.com/v25group/exisjs#readme",
   "bugs": {
     "url": "https://github.com/v25group/exisjs/issues"
@@ -22,15 +22,15 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "npm run build --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/create",
+    "build": "npm run build --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/cli --workspace=packages/create",
     "dev": "npm run dev --workspaces --if-present",
     "test": "cross-env NODE_ENV=test tsx --test \"packages/*/tests/**/*.test.ts\"",
     "test:watch": "cross-env NODE_ENV=test tsx --test --watch \"packages/*/tests/**/*.test.ts\"",
     "verify:examples": "node scripts/verify-examples.mjs",
     "lint": "eslint .",
-    "typecheck": "npm run build --workspace=packages/exisjs && tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
+    "typecheck": "npm run build --workspace=packages/exisjs && tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/cli/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
     "prepare": "husky",
-    "release": "npm run build && npm publish --workspace=packages/exisjs --workspace=packages/create --workspace=packages/fetch --access public",
+    "release": "npm run build && npm publish --workspace=packages/cli --workspace=packages/exisjs --workspace=packages/exis --workspace=packages/create --workspace=packages/create-exis --workspace=packages/fetch --access public",
     "bench": "npm run build --workspace=packages/exisjs && tsx bench/http.ts",
     "bench:quick": "npm run build --workspace=packages/exisjs && tsx bench/http.ts --quick",
     "bench:router": "tsx bench/micro/router.ts",

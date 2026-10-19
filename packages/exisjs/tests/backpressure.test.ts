@@ -33,17 +33,23 @@ describe('queue config', () => {
 
   it('answers 503 once maxConcurrent and maxQueue are full', async () => {
     const app = new App({ queue: { maxConcurrent: 1, maxQueue: 0 } })
+    // The first request holds the only slot until the test opens the gate
+    let open!: () => void
+    let entered!: () => void
+    const gate = new Promise<void>((r) => (open = r))
+    const inside = new Promise<void>((r) => (entered = r))
     app.get('/slow', async () => {
-      await sleep(150)
+      entered()
+      await gate
       return { ok: true }
     })
     const client = createTestApp(app)
-    const [a, b] = await Promise.all([
-      client.get('/slow'),
-      sleep(30).then(() => client.get('/slow')),
-    ])
-    expect(a.status).toBe(200)
-    expect(b.status).toBe(503)
+    // The test client sends a request only once it is awaited
+    const first = Promise.resolve(client.get('/slow'))
+    await inside
+    expect((await client.get('/slow')).status).toBe(503)
+    open()
+    expect((await first).status).toBe(200)
     expect((await client.get('/slow')).status).toBe(200)
   })
 

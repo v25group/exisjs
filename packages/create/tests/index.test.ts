@@ -118,7 +118,11 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.9.2')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.10.0-alpha.0')
+    // B8: the CLI is a development tool; production starts main.js
+    expect(pkgJson.devDependencies['@exisjs/cli']).toBe('^0.10.0-alpha.0')
+    expect(pkgJson.dependencies['@exisjs/cli']).toBeUndefined()
+    expect(pkgJson.scripts.start).toBe('exisjs start')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 
@@ -208,6 +212,19 @@ describe('create-exis scaffolding', () => {
           .exisConfigTemplate(ts)
           .includes("docs: { enabled: process.env.NODE_ENV !== 'production' }")
       ).toBe(true)
+    }
+  })
+
+  // Found building examples/05-tasks-api: the sample service echoed the
+  // password back and answered 200 with null for an unknown id
+  it('keeps the password out of the sample user service and 404s unknown ids', async () => {
+    const { userServiceTemplate } = await import('../src/templates')
+    for (const paradigm of ['functional', 'oop']) {
+      for (const ts of [true, false]) {
+        const code = userServiceTemplate(paradigm, ts)
+        expect(code.includes('...userDto')).toBe(false)
+        expect(code.includes("HttpError.notFound('User')")).toBe(true)
+      }
     }
   })
 

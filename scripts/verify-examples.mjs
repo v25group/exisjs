@@ -1,6 +1,7 @@
 // Verifies that what users start from actually works:
-//   1. both example apps type-check, pass their tests, build, and answer
-//      requests when started in production mode
+//   1. the example apps type-check, pass their tests, build, and answer
+//      requests when started the production way (exisjs start from the
+//      runtime package, without the CLI)
 //   2. a freshly scaffolded project (functional and class-based) type-checks,
 //      passes its generated test and builds
 //
@@ -14,7 +15,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const EXIS = path.join(ROOT, 'packages', 'exisjs', 'bin', 'exis.js')
+const EXIS = path.join(ROOT, 'packages', 'cli', 'bin', 'exisjs.js')
+// The runtime's own binary: what `npm start` runs in a production install
+const EXIS_RUNTIME = path.join(ROOT, 'packages', 'exisjs', 'bin', 'exis.js')
 const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
 const ESLINT = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js')
 const CREATE = path.join(ROOT, 'packages', 'create', 'bin', 'create-exis.js')
@@ -60,9 +63,10 @@ async function waitFor(url, timeoutMs) {
 
 /** Starts the production build and checks each [method, path, status] */
 async function smoke(cwd, port, env, checks) {
-  process.stdout.write('  start (production) + requests ... ')
+  process.stdout.write('  start (exisjs start, runtime) + requests ... ')
   let output = ''
-  const child = spawn(process.execPath, [EXIS, 'start'], {
+  // How production runs it: one process, the runtime's binary, no CLI
+  const child = spawn(process.execPath, [EXIS_RUNTIME, 'start'], {
     cwd,
     env: { ...process.env, ...env, PORT: String(port) },
   })
@@ -77,7 +81,9 @@ async function smoke(cwd, port, env, checks) {
     for (const [method, route, expected, init] of checks) {
       const res = await fetch(base + route, { method, ...init })
       if (res.status !== expected) {
-        problems.push(`${method} ${route}: expected ${expected}, got ${res.status}`)
+        problems.push(
+          `${method} ${route}: expected ${expected}, got ${res.status}`
+        )
       }
     }
   }
@@ -91,7 +97,13 @@ async function smoke(cwd, port, env, checks) {
   failed = true
   console.log('FAILED')
   for (const p of problems) console.log(`      ${p}`)
-  console.log(output.split('\n').slice(-25).map((l) => `      ${l}`).join('\n'))
+  console.log(
+    output
+      .split('\n')
+      .slice(-25)
+      .map((l) => `      ${l}`)
+      .join('\n')
+  )
 }
 
 async function verifyExample(name, { env, checks, port }) {
@@ -151,7 +163,11 @@ await verifyExample('01-my-app', {
       'POST',
       '/auth/register',
       201,
-      json({ name: 'Ada', email: 'ada@example.com', password: 'correct-horse' }),
+      json({
+        name: 'Ada',
+        email: 'ada@example.com',
+        password: 'correct-horse',
+      }),
     ],
     ['GET', '/missing', 404],
   ],
@@ -177,6 +193,22 @@ if (process.env.SKIP_MONGO === '1') {
     ],
   })
 }
+
+await verifyExample('05-tasks-api', {
+  port: 4705,
+  env: {},
+  checks: [
+    ['GET', '/_ready', 200],
+    ['GET', '/tasks?page=1&limit=5', 200],
+    ['GET', '/tasks?limit=500', 400],
+    ['POST', '/tasks', 201, json({ title: 'Release 0.10', tags: ['release'] })],
+    ['POST', '/tasks', 400, json({ title: '', link: { url: 'http://x.io' } })],
+    ['GET', '/tasks/not-a-uuid', 400],
+    ['GET', '/tasks/2f1c6c1e-2b7a-4c55-9d38-6d0d3b8a1e21', 404],
+    ['GET', '/metrics', 200],
+    ['GET', '/docs/json', 404],
+  ],
+})
 
 verifyScaffold('functional')
 verifyScaffold('oop')

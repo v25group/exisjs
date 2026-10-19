@@ -40,6 +40,7 @@ Or install `exisjs` into an existing Node.js project:
 
 ```bash
 npm install exisjs
+npm install -D @exisjs/cli typescript
 ```
 
 ---

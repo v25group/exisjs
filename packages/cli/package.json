@@ -1,0 +1,60 @@
+{
+  "name": "@exisjs/cli",
+  "version": "0.10.0-alpha.0",
+  "description": "The exisjs command: dev server with hot reload, build, test, run and start for ExisJS apps. Install as a development dependency.",
+  "keywords": [
+    "exisjs",
+    "exis",
+    "cli",
+    "dev-server",
+    "build",
+    "typescript"
+  ],
+  "homepage": "https://github.com/v25group/exisjs/tree/main/packages/cli#readme",
+  "bugs": {
+    "url": "https://github.com/v25group/exisjs/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/v25group/exisjs.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "V25 Group <support@v25group.com>",
+  "main": "dist/index.js",
+  "type": "commonjs",
+  "bin": {
+    "exisjs": "bin/exisjs.js",
+    "exis": "bin/exisjs.js"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('fs').rmSync('dist', {recursive:true, force:true}); require('fs').rmSync('tsconfig.tsbuildinfo', {force:true})\"",
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "chokidar": "^5.0.0",
+    "commander": "^15.0.0",
+    "esbuild": "^0.28.2",
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15"
+  },
+  "peerDependencies": {
+    "exisjs": "0.10.0-alpha.0",
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

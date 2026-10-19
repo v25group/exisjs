@@ -34,14 +34,54 @@ jobs:
       - name: Run Tests
         run: npm run test
 
+      # A prerelease must never move `latest` (docs/RELEASING.md): the npm
+      # tag comes from the version, -alpha -> alpha, -beta -> beta, -rc -> next
+      - name: Choose the npm tag
+        run: |
+          VERSION=$(node -p "require('./packages/exisjs/package.json').version")
+          case "$VERSION" in
+            *-alpha*) TAG=alpha ;;
+            *-beta*) TAG=beta ;;
+            *-rc*) TAG=next ;;
+            *-canary*) TAG=canary ;;
+            *-*) echo "Unknown prerelease $VERSION"; exit 1 ;;
+            *) TAG=latest ;;
+          esac
+          echo "Publishing $VERSION with tag $TAG"
+          echo "NPM_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Publish @exisjs/cli
+        run: |
+          VERSION=$(node -p "require('./packages/cli/package.json').version")
+          EXISTS=$(npm view @exisjs/cli@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/cli --access public --provenance --tag "$NPM_TAG"
+          else
+            echo "@exisjs/cli@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish exisjs
         run: |
           VERSION=$(node -p "require('./packages/exisjs/package.json').version")
           EXISTS=$(npm view exisjs@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/exisjs --access public --provenance
+            npm publish --workspace=packages/exisjs --access public --provenance --tag "$NPM_TAG"
           else
             echo "exisjs@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish exis
+        run: |
+          VERSION=$(node -p "require('./packages/exis/package.json').version")
+          EXISTS=$(npm view exis@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/exis --access public --provenance --tag "$NPM_TAG"
+          else
+            echo "exis@$VERSION is already published. Skipping."
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -51,9 +91,21 @@ jobs:
           VERSION=$(node -p "require('./packages/create/package.json').version")
           EXISTS=$(npm view create-exisjs@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/create --access public --provenance
+            npm publish --workspace=packages/create --access public --provenance --tag "$NPM_TAG"
           else
             echo "create-exisjs@$VERSION is already published. Skipping."
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish create-exis
+        run: |
+          VERSION=$(node -p "require('./packages/create-exis/package.json').version")
+          EXISTS=$(npm view create-exis@$VERSION version 2>/dev/null || echo "")
+          if [ -z "$EXISTS" ]; then
+            npm publish --workspace=packages/create-exis --access public --provenance --tag "$NPM_TAG"
+          else
+            echo "create-exis@$VERSION is already published. Skipping."
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -63,7 +115,7 @@ jobs:
           VERSION=$(node -p "require('./packages/fetch/package.json').version")
           EXISTS=$(npm view @exisjs/fetch@$VERSION version 2>/dev/null || echo "")
           if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/fetch --access public --provenance
+            npm publish --workspace=packages/fetch --access public --provenance --tag "$NPM_TAG"
           else
             echo "@exisjs/fetch@$VERSION is already published. Skipping."
           fi
@@ -76,6 +128,10 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           NOTE_FILE=$(find changelog -type f -name "${TAG}.md" 2>/dev/null | head -n 1)
+          # v0.10.0-alpha.0 uses the notes of v0.10.0
+          if [ -z "$NOTE_FILE" ]; then
+            NOTE_FILE=$(find changelog -type f -name "${TAG%%-*}.md" 2>/dev/null | head -n 1)
+          fi
           if [ -n "$NOTE_FILE" ] && [ -f "$NOTE_FILE" ]; then
             echo "Found release notes at $NOTE_FILE"
             echo "path=$NOTE_FILE" >> "$GITHUB_OUTPUT"
@@ -90,6 +146,7 @@ jobs:
           name: ${{ github.ref_name }}
           body_path: ${{ steps.release_notes.outputs.path }}
           generate_release_notes: true
+          prerelease: ${{ env.NPM_TAG != 'latest' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

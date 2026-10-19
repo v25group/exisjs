@@ -68,11 +68,17 @@ interface LazyRoute {
  */
 function routeLoadError(file: string, err: unknown): Error {
   const reason = err instanceof Error ? err.message : String(err)
-  return new Error(
-    `[ExisJS] ${file} failed to load, so the server will not start: ${reason}`,
+  return Object.assign(
+    new Error(
+      `[ExisJS] ${file} failed to load, so the server will not start: ${reason}`
+    ),
     { cause: err }
   )
 }
+
+const importModule = new Function('specifier', 'return import(specifier)') as (
+  specifier: string
+) => Promise<any>
 
 export class RouteScanner {
   public lazyRoutes = new Map<string, LazyRoute>()
@@ -132,7 +138,7 @@ export class RouteScanner {
 
     try {
       const { registerPathAliasLoader } =
-        await import('../cli/resolve-aliases.js')
+        await import('../lib/resolve-aliases.js')
       registerPathAliasLoader(root)
     } catch {
       // ignore
@@ -157,16 +163,7 @@ export class RouteScanner {
           let url = pathToFileURL(manifestPath).href
           if (!isProd) url += '?t=' + Date.now() // cache bust for dev
 
-          let mod: any
-          if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-            mod = await import(url)
-          } else {
-            const dynamicImport = new Function(
-              'specifier',
-              'return import(specifier)'
-            )
-            mod = await dynamicImport(url)
-          }
+          const mod: any = await importModule(url)
           manifest = mod.manifest
           manifestErrorHandler = mod.errorHandler
           manifestCronJobs = mod.cronJobs
@@ -394,15 +391,9 @@ export class RouteScanner {
             ? pathToFileURL(filePath).href
             : pathToFileURL(filePath).href + '?t=' + Date.now()
 
-        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-          mod = await import(url)
-        } else {
-          const dynamicImport = new Function(
-            'specifier',
-            'return import(specifier)'
-          )
-          mod = await dynamicImport(url)
-        }
+        // A real import(): tsc turns `import()` into require() for CommonJS,
+        // which loads a second copy of modules a test imports as ESM
+        mod = await importModule(url)
       } catch {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         mod = require(filePath)

@@ -1,0 +1,27 @@
+{
+  "name": "05-tasks-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "exisjs dev",
+    "build": "exisjs build",
+    "start": "exisjs start",
+    "test": "exisjs test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "exisjs": "^0.10.0-alpha.0"
+  },
+  "devDependencies": {
+    "@exisjs/cli": "^0.10.0-alpha.0",
+    "@types/node": "^20.0.0",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "eslint": "^10.0.1",
+    "@eslint/js": "^10.0.1",
+    "eslint-config-prettier": "^10.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

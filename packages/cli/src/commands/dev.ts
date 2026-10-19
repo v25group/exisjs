@@ -1,0 +1,975 @@
+import { spawn, spawnSync, ChildProcess } from 'node:child_process'
+import path from 'node:path'
+import fs from 'node:fs'
+import http from 'node:http'
+import net from 'node:net'
+import { pathToFileURL } from 'node:url'
+import { error, c, warn } from '../utils'
+import {
+  getFormattedTime,
+  loadEnv,
+  loadConfig,
+  START_SERVER_PATH,
+} from 'exisjs/internal'
+
+const ENV_FILES = [
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.development.local',
+]
+
+const CLOSED_CHANNEL_CODES = [
+  'EPIPE',
+  'ERR_IPC_CHANNEL_CLOSED',
+  'ERR_IPC_DISCONNECTED',
+]
+
+export function isClosedChannelError(
+  err: NodeJS.ErrnoException | null | undefined
+): boolean {
+  return !!err && CLOSED_CHANNEL_CODES.includes(err.code ?? '')
+}
+
+// child.send() callback: a child that already exited is expected at shutdown
+function ignoreClosedChannel(err: Error | null): void {
+  if (err && !isClosedChannelError(err as NodeJS.ErrnoException)) {
+    console.error(`[exis] Could not signal the server process: ${err.message}`)
+  }
+}
+
+export const DEFAULT_WATCH_IGNORED: (string | RegExp)[] = [
+  // Dotfiles and dotfolders (.git, .vscode, .idea, etc.) except .env
+  /(^|[/\\])\.(?!env)/,
+  /(^|[/\\])node_modules([/\\]|$)/,
+  /(^|[/\\])\.exis([/\\]|$)/,
+  /(^|[/\\])dist([/\\]|$)/,
+  /(^|[/\\])build([/\\]|$)/,
+  /(^|[/\\])out([/\\]|$)/,
+  /(^|[/\\])\.turbo([/\\]|$)/,
+  /(^|[/\\])\.next([/\\]|$)/,
+  /(^|[/\\])\.cache([/\\]|$)/,
+  // Lock files
+  /(^|[/\\])(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i,
+  // Tests & Coverage
+  /(^|[/\\])(tests?|coverage|__tests__|\.nyc_output)([/\\]|$)/i,
+  /\.(test|spec)\.[tj]sx?$/i,
+  // Generated types
+  /exis\.d\.ts$/,
+  /\.d\.ts$/,
+  // Runtime data, storage, downloads, artifacts, uploads, logs, temp dirs
+  /(^|[/\\])(downloads|storage|uploads|tmp|temp|logs|data|fixtures|reports|artifacts|public)([/\\]|$)/i,
+  // Non-source & runtime artifact file extensions
+  /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
+  /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
+  /\.(log|log\.\d+|sqlite|sqlite3|db|db-shm|db-wal|db-journal)$/i, // logs and databases
+  /\.(png|jpe?g|gif|svg|ico|webp|avif|mp4|webm|mov|mp3|wav|ogg)$/i, // media files
+  /\.(pdf|docx?|xlsx?|pptx?|csv|tsv)$/i, // documents & spreadsheets
+  /\.(md|mdx|txt|rst|adoc)$/i, // markdown & plain text documentation
+]
+
+export const RELOADABLE_EXTENSIONS = new Set([
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+])
+
+export const RELOADABLE_CONFIG_FILES = new Set([
+  'tsconfig.json',
+  'package.json',
+  'exis.config.ts',
+  'exis.config.js',
+  'exis.config.mjs',
+  'exis.config.cjs',
+])
+
+/**
+ * chokidar's `ignored` test. Patterns apply to the path inside the project:
+ * a project under a folder such as `D:\data` or `/srv/build` must still
+ * reload, which matching the absolute path prevented.
+ */
+export function watchIgnore(
+  cwd: string,
+  userIgnored: (string | RegExp)[] = []
+): (file: string) => boolean {
+  const patterns = [...DEFAULT_WATCH_IGNORED, ...userIgnored]
+  return (file) => {
+    const rel = path
+      .relative(cwd, path.resolve(cwd, file))
+      .split(path.sep)
+      .join('/')
+    if (
+      rel === '' ||
+      rel === '..' ||
+      rel.startsWith('../') ||
+      path.isAbsolute(rel)
+    ) {
+      return false
+    }
+    return patterns.some((p) =>
+      typeof p === 'string'
+        ? rel.includes(p) || path.basename(rel) === p
+        : p.test(rel)
+    )
+  }
+}
+
+export function shouldReloadOnFile(
+  file: string,
+  userIgnored: (string | RegExp)[] = [],
+  customExtensions?: string[]
+): boolean {
+  if (!file) return false
+
+  const normalized = file.replace(/\\/g, '/')
+  const baseName = path.basename(normalized)
+  const ext = path.extname(normalized).toLowerCase()
+
+  // 1. Check user custom ignores
+  for (const pattern of userIgnored) {
+    if (typeof pattern === 'string') {
+      if (normalized.includes(pattern) || baseName === pattern) return false
+    } else if (pattern instanceof RegExp && pattern.test(normalized)) {
+      return false
+    }
+  }
+
+  // 2. Check default ignored patterns
+  for (const regex of DEFAULT_WATCH_IGNORED) {
+    if (typeof regex !== 'string' && regex.test(normalized)) return false
+  }
+
+  // 3. Environment files (.env, .env.local, .env.development, etc.)
+  if (baseName === '.env' || baseName.startsWith('.env.')) {
+    return true
+  }
+
+  // 4. Reloadable config files
+  if (RELOADABLE_CONFIG_FILES.has(baseName)) {
+    return true
+  }
+
+  // 5. Custom allowed extensions if specified by user
+  if (customExtensions && customExtensions.length > 0) {
+    const extSet = new Set(
+      customExtensions.map((e) =>
+        e.startsWith('.') ? e.toLowerCase() : `.${e.toLowerCase()}`
+      )
+    )
+    return extSet.has(ext)
+  }
+
+  // 6. Source file extensions
+  if (RELOADABLE_EXTENSIONS.has(ext)) {
+    // Avoid re-triggering for declaration files like index.d.ts
+    if (normalized.endsWith('.d.ts')) return false
+    return true
+  }
+
+  // Any other file (e.g. .csv, .xlsx, .md, .txt, .json data file) is ignored
+  return false
+}
+
+interface DevOptions {
+  port?: string
+  host?: string
+  entry?: string
+  /** Start even if another dev server appears to use the same port */
+  force?: boolean
+  _disableWatch?: boolean
+}
+
+/** True when something accepts connections on the port. */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ port, host: '127.0.0.1' })
+    socket.setTimeout(500)
+    socket.once('connect', () => {
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('timeout', () => {
+      socket.destroy()
+      resolve(false)
+    })
+    socket.once('error', () => resolve(false))
+  })
+}
+
+/**
+ * Another `exisjs dev` holds this lock when its PID is alive AND it still
+ * serves the port it recorded. A PID alone is not enough: after a crash the
+ * OS may hand the same number to an unrelated process.
+ */
+export async function isDevLockHeld(lockFile: string): Promise<boolean> {
+  let lock: { pid?: number; port?: number }
+  try {
+    lock = JSON.parse(fs.readFileSync(lockFile, 'utf-8'))
+  } catch {
+    return false
+  }
+  if (!lock.pid || lock.pid === process.pid || !lock.port) return false
+  try {
+    process.kill(lock.pid, 0)
+  } catch {
+    return false
+  }
+  return isPortInUse(lock.port)
+}
+
+export async function devCommand(options: DevOptions = {}): Promise<void> {
+  const cwd = process.cwd()
+  const startServerPath = START_SERVER_PATH
+
+  // Detect entry file
+  const entryFile = resolveEntry(cwd, options.entry)
+  if (!entryFile) {
+    error(
+      'Could not find entry file. Expected src/http/server.ts or http/server.ts'
+    )
+    error('Run this command from your Exis JS project root.')
+    process.exit(1)
+  }
+
+  const exisDir = path.join(cwd, '.exis')
+
+  // 2. Load .env files early so process.env.PORT is available
+  loadEnv(cwd)
+
+  // 3. Read exis.config.ts to pick up user-defined port
+  const userConfig = await loadConfig(cwd)
+
+  // 4. Automatic Port Finding — priority: CLI flag > env > config > default(4000)
+  const startPort = parseInt(
+    options.port || process.env.PORT || String(userConfig.port) || '4000',
+    10
+  )
+
+  function findAvailablePort(port: number): Promise<number> {
+    return new Promise((resolve) => {
+      const server = net.createServer()
+      server.listen(port, () => {
+        server.once('close', () => resolve(port))
+        server.close()
+      })
+      server.on('error', () => {
+        resolve(findAvailablePort(port + 1))
+      })
+    })
+  }
+
+  // 1. One dev server per port: a second instance on another port (for
+  // example pointed at a test database) is allowed
+  const pidFile = path.join(exisDir, `dev-${startPort}.pid`)
+  if (!options.force && (await isDevLockHeld(pidFile))) {
+    console.error(
+      `\n\x1b[31m[ExisJS] A development server for port ${startPort} is already running in another terminal.\x1b[0m\n` +
+        'Stop it, start this one on another port (--port), or pass --force.'
+    )
+    process.exit(1)
+  }
+
+  const actualPort = await findAvailablePort(startPort)
+  if (!fs.existsSync(exisDir)) fs.mkdirSync(exisDir, { recursive: true })
+  fs.writeFileSync(
+    pidFile,
+    JSON.stringify({ pid: process.pid, port: actualPort })
+  )
+
+  // Check for tsconfig (only warn for TypeScript projects)
+  const tsconfigPath = path.join(cwd, 'tsconfig.json')
+  if (!fs.existsSync(tsconfigPath) && entryFile.endsWith('.ts')) {
+    warn('No tsconfig.json found — using default TypeScript settings.')
+  }
+
+  process.env.PORT = String(actualPort)
+  if (options.host) {
+    process.env.HOST = options.host
+  }
+
+  // Built for every start of the app process, so edits to .env files apply
+  // on the next reload instead of only after restarting `exisjs dev`
+  const buildChildEnv = (): Record<string, string> => {
+    loadEnv(cwd, undefined, true)
+    process.env.PORT = String(actualPort)
+    if (options.host) process.env.HOST = options.host
+    return {
+      ...(process.env as Record<string, string>),
+      NODE_ENV: 'development',
+      FORCE_COLOR: '1',
+    }
+  }
+
+  let version = '0.0.0'
+  try {
+    const pkgPath = path.join(__dirname, '..', '..', 'package.json')
+    version = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version
+  } catch {
+    /* ignore */
+  }
+
+  const primary = '\x1b[38;2;160;70;255m'
+  const time = getFormattedTime()
+  console.log(
+    `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}starting development server (v${version})...${c.reset}`
+  )
+
+  // Hardcode Esbuild (tsx) as the Native HMR runner
+  let tsxArgs = [require.resolve('tsx/cli')]
+  try {
+    const resolved = require.resolve('tsx', { paths: [cwd, __dirname] })
+    tsxArgs = ['--import', pathToFileURL(resolved).href]
+  } catch {
+    /* fallback to tsx/cli if resolve fails */
+  }
+
+  const runner = {
+    name: 'tsx',
+    bin: process.execPath,
+    args: tsxArgs,
+    needsManualWatch: true,
+  }
+
+  let child: ChildProcess | null = null
+  let isShuttingDown = false
+  let watcher: any = null
+
+  function cleanupPid() {
+    try {
+      if (fs.existsSync(pidFile)) {
+        fs.unlinkSync(pidFile)
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  let forceExitTriggered = false
+
+  async function handleSessionStop(_signal: string) {
+    if (isShuttingDown) {
+      if (!forceExitTriggered) {
+        forceExitTriggered = true
+        cleanupPid()
+        if (child && child.pid) {
+          try {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        process.exit(0)
+      }
+      return
+    }
+
+    isShuttingDown = true
+    cleanupPid()
+
+    const time = getFormattedTime()
+    const primary = '\x1b[38;2;160;70;255m'
+    console.log(
+      `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}gracefully shutting down server...${c.reset}`
+    )
+
+    if (watcher) {
+      try {
+        watcher.close()
+      } catch {
+        /* ignore */
+      }
+      watcher = null
+    }
+
+    if ((global as any)._tscProcess) {
+      try {
+        ;(global as any)._tscProcess.kill()
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (
+      child &&
+      child.pid &&
+      child.exitCode === null &&
+      child.signalCode === null
+    ) {
+      try {
+        if (child.connected) {
+          // The callback receives the error if the child already closed its end
+          child.send({ type: 'exis:shutdown' }, ignoreClosedChannel)
+          child.disconnect()
+        }
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        if (process.platform !== 'win32') {
+          child.kill('SIGTERM')
+        }
+      } catch {
+        /* ignore */
+      }
+
+      const exitTimeout = setTimeout(() => {
+        try {
+          if (child && !child.killed) {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+        process.exit(0)
+      }, 2000)
+
+      const onChildDone = () => {
+        clearTimeout(exitTimeout)
+        process.exit(0)
+      }
+
+      child.once('close', onChildDone)
+      child.once('exit', onChildDone)
+    } else {
+      process.exit(0)
+    }
+  }
+
+  process.on('SIGINT', () => handleSessionStop('SIGINT'))
+  process.on('SIGTERM', () => handleSessionStop('SIGTERM'))
+
+  let fallbackServer: http.Server | null = null
+
+  function closeFallbackServer() {
+    if (fallbackServer) {
+      try {
+        fallbackServer.close()
+      } catch {
+        /* ignore */
+      }
+      fallbackServer = null
+    }
+  }
+
+  let configuredPort: number | null = null
+  try {
+    const configTs = path.join(cwd, 'exis.config.ts')
+    const configJs = path.join(cwd, 'exis.config.js')
+    const configFile = fs.existsSync(configTs)
+      ? configTs
+      : fs.existsSync(configJs)
+        ? configJs
+        : null
+    if (configFile) {
+      const content = fs.readFileSync(configFile, 'utf8')
+      const match = content.match(/\bport\s*:\s*(\d+)/)
+      if (match) {
+        configuredPort = parseInt(match[1], 10)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  function startFallbackServer(errorMessage: string, customPort?: number) {
+    closeFallbackServer()
+    const port =
+      customPort ??
+      (process.env.PORT ? parseInt(process.env.PORT, 10) : configuredPort) ??
+      4000
+    // ANSI colour codes belong to the terminal, not to a response
+    const plainMessage = errorMessage.replace(
+      new RegExp(String.fromCharCode(27) + '\\[[0-9;]*[A-Za-z]', 'g'),
+      ''
+    )
+    fallbackServer = http.createServer((req, res) => {
+      // API clients, curl and health checks get the standard JSON error;
+      // only browsers asking for HTML get the page
+      if (!String(req.headers.accept || '').includes('text/html')) {
+        res.writeHead(503, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Retry-After': '1',
+        })
+        res.end(
+          JSON.stringify({
+            success: false,
+            statusCode: 503,
+            error: {
+              code: 'BUILD_ERROR',
+              message:
+                'The app failed to start. Fix the error and save to reload.',
+              details: plainMessage.trim().split('\n').slice(-40),
+            },
+          })
+        )
+        return
+      }
+      res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Build Error | Exis</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #fcebeb; color: #333; margin: 0; padding: 40px; }
+    .container { max-width: 900px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px rgba(200, 0, 0, 0.1); border-left: 6px solid #e53e3e; }
+    h1 { color: #e53e3e; margin-top: 0; font-size: 24px; }
+    .code-block { background: #1e1e1e; color: #fc8181; padding: 20px; border-radius: 6px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Build/Syntax Error</h1>
+    <div class="code-block">${plainMessage.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+  </div>
+</body>
+</html>
+      `)
+    })
+    // Same interface as the app itself, never wider
+    const host =
+      options.host || process.env.HOST || userConfig.host || 'localhost'
+    fallbackServer
+      .listen(port, host, () => {
+        console.log(
+          `\n${c.red}[exis] Serving build error on port ${port}${c.reset}`
+        )
+      })
+      .on('error', () => {
+        // Port might still be in use by zombie process, just ignore
+      })
+  }
+
+  let isRestarting = false
+  let pendingRestart = false
+  let reloadDebounceTimer: NodeJS.Timeout | null = null
+  const queuedChangedFiles = new Set<string>()
+  const watchConfig = (userConfig as any).watch || {}
+  const devConfig = userConfig.dev || {}
+  const userIgnored = [
+    ...(watchConfig.ignore || []),
+    ...(devConfig.ignored || []),
+  ]
+  const customExtensions = watchConfig.extensions || devConfig.extensions
+  const RELOAD_DEBOUNCE_MS =
+    watchConfig.debounceMs ?? devConfig.debounceMs ?? 250
+  const RELOAD_TIMEOUT_MS = 3000
+
+  async function killChildGracefully(): Promise<void> {
+    if (!child || child.killed) return
+
+    // 1. Send IPC shutdown message so the child can run app.close() / onClose hooks
+    try {
+      if (child.connected) {
+        // The callback receives the error if the child already closed its end
+        child.send({ type: 'exis:shutdown' }, ignoreClosedChannel)
+      }
+    } catch {
+      /* ignore — child may have already exited */
+    }
+
+    // 2. Disconnect the IPC channel IMMEDIATELY after sending the shutdown message.
+    //    On Windows, this is CRITICAL: it closes the parent's end of the IPC pipe
+    //    before the child starts tearing down its libuv handles, preventing the
+    //    UV_HANDLE_CLOSING assertion crash in src\win\async.c.
+    try {
+      if (child.connected) {
+        child.disconnect()
+      }
+    } catch {
+      /* ignore — channel may already be closed */
+    }
+
+    // 3. On non-Windows, also send SIGTERM as a direct signal
+    try {
+      if (process.platform !== 'win32') {
+        child.kill('SIGTERM')
+      }
+    } catch {
+      /* ignore */
+    }
+
+    if (child) {
+      ;(child as any)._isIntentionalKill = true
+    }
+
+    // 4. Wait for clean exit with a generous graceful timeout (3000ms).
+    //    Child will usually exit in ~50-200ms once onClose finishes.
+    await new Promise<void>((resolve) => {
+      let resolved = false
+      const onExitOrClose = () => {
+        if (resolved) return
+        resolved = true
+        clearTimeout(timer)
+        resolve()
+      }
+
+      const timer = setTimeout(() => {
+        if (resolved) return
+        resolved = true
+        // Timeout expired — force kill the child process tree
+        if (child && !child.killed) {
+          try {
+            if (process.platform === 'win32') {
+              spawnSync('taskkill', ['/pid', String(child.pid), '/f', '/t'], {
+                stdio: 'ignore',
+              })
+            } else {
+              child.kill('SIGKILL')
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        resolve()
+      }, RELOAD_TIMEOUT_MS)
+
+      child!.once('close', onExitOrClose)
+      child!.once('exit', onExitOrClose)
+    })
+  }
+
+  async function startProcess(): Promise<void> {
+    if (isRestarting) {
+      pendingRestart = true
+      return
+    }
+    isRestarting = true
+    closeFallbackServer()
+
+    await killChildGracefully()
+
+    child = spawn(runner!.bin, [...runner!.args, startServerPath], {
+      cwd,
+      env: {
+        ...buildChildEnv(),
+        __EXIS_DEV_SERVER: '1',
+        __EXIS_IS_RESTART: (global as any)._hasStartedBefore ? '1' : '',
+        EXIS_ENTRY_FILE: entryFile!,
+      },
+      stdio: ['inherit', 'inherit', 'pipe', 'ipc'],
+      shell: runner!.bin === process.execPath ? false : true,
+    })
+
+    ;(global as any)._hasStartedBefore = true
+
+    let stderrBuffer = ''
+    const currentSpawnedChild = child
+
+    child!.stderr?.on('data', (chunk) => {
+      const str = chunk.toString()
+      process.stderr.write(chunk)
+      stderrBuffer += str
+      // Keep only last 10000 chars to avoid memory leak
+      if (stderrBuffer.length > 10000) {
+        stderrBuffer = stderrBuffer.substring(stderrBuffer.length - 10000)
+      }
+    })
+
+    child!.on('error', (err: NodeJS.ErrnoException) => {
+      // Ctrl+C on Windows reaches the child too, so its IPC end can close
+      // while the parent is still telling it to stop: not a failure
+      if ((isShuttingDown || isRestarting) && isClosedChannelError(err)) return
+      error(
+        currentSpawnedChild?.pid
+          ? `Server process error: ${err.message}`
+          : `Failed to start process: ${err.message}`
+      )
+    })
+
+    child!.on('exit', (code, signal) => {
+      if ((currentSpawnedChild as any)._isIntentionalKill) {
+        return
+      }
+      if (
+        !isShuttingDown &&
+        signal !== 'SIGTERM' &&
+        code !== 0 &&
+        code !== null
+      ) {
+        if (code === 128 + 15 || code === 143) {
+          // Normal sigterm exits
+          return
+        }
+        error(`Process crashed with code ${code}`)
+        // Start the fallback server so the browser doesn't hang or get "Connection Refused"
+        startFallbackServer(
+          stderrBuffer || 'Process crashed with no error output.'
+        )
+      }
+    })
+
+    isRestarting = false
+
+    // If more file changes arrived while we were restarting, trigger consolidated reload
+    if (pendingRestart) {
+      pendingRestart = false
+      startProcess()
+    }
+  }
+
+  function scheduleReload(file?: string) {
+    if (file) {
+      queuedChangedFiles.add(file)
+    }
+
+    if (reloadDebounceTimer) {
+      clearTimeout(reloadDebounceTimer)
+    }
+
+    reloadDebounceTimer = setTimeout(async () => {
+      reloadDebounceTimer = null
+      const files = Array.from(queuedChangedFiles)
+      queuedChangedFiles.clear()
+
+      const time = getFormattedTime()
+      const primary = '\x1b[38;2;160;70;255m'
+      const fileLabel =
+        files.length === 1
+          ? files[0]
+          : files.length > 1
+            ? `${files[0]} (+${files.length - 1} other files)`
+            : 'file changes'
+
+      console.log(
+        `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${fileLabel}${c.reset}`
+      )
+
+      await generateManifest(cwd, '', true)
+      startProcess()
+    }, RELOAD_DEBOUNCE_MS)
+  }
+
+  // Handle restarts for runners that don't support watch natively
+  if (runner.needsManualWatch && !options._disableWatch) {
+    const chokidar = await importChokidar()
+    if (chokidar) {
+      const configuredWatchPaths = watchConfig.paths || devConfig.watch || []
+
+      let watchPaths: string[]
+      if (configuredWatchPaths.length > 0) {
+        watchPaths = configuredWatchPaths
+      } else {
+        const srcExists = fs.existsSync(path.join(cwd, 'src'))
+        const httpExists = fs.existsSync(path.join(cwd, 'http'))
+        if (srcExists || httpExists) {
+          const candidates = [
+            srcExists ? 'src' : '',
+            httpExists ? 'http' : '',
+          ].filter(Boolean)
+          watchPaths = [
+            ...candidates.map((d) => path.join(cwd, d)),
+            ...[
+              'exis.config.ts',
+              'exis.config.js',
+              'exis.config.mjs',
+              'exis.config.cjs',
+              'tsconfig.json',
+              'package.json',
+            ]
+              .map((f) => path.join(cwd, f))
+              .filter((f) => fs.existsSync(f)),
+          ]
+        } else {
+          watchPaths = [cwd]
+        }
+      }
+      // .env files are read when the app process starts, so a change needs
+      // a restart; watched even when `watch.paths` is set, and before they
+      // exist, so creating one reloads too
+      watchPaths.push(
+        ...ENV_FILES.map((f) => path.join(cwd, f)).filter(
+          (f) => !watchPaths.includes(f)
+        )
+      )
+
+      watcher = chokidar.watch(watchPaths, {
+        cwd,
+        ignoreInitial: true,
+        usePolling: devConfig.usePolling ?? process.platform === 'win32',
+        interval: devConfig.interval ?? 100,
+        binaryInterval: devConfig.binaryInterval ?? 300,
+        ignored: watchIgnore(cwd, userIgnored),
+        awaitWriteFinish: {
+          stabilityThreshold: 200,
+          pollInterval: 100,
+        },
+      })
+
+      watcher.on('error', (err: any) => {
+        // Suppress non-fatal Windows file lock / permission errors (EBUSY / EPERM)
+        if (
+          err?.code === 'EBUSY' ||
+          err?.code === 'EPERM' ||
+          err?.code === 'UNKNOWN'
+        ) {
+          return
+        }
+        console.warn(
+          `\x1b[33m[exis watcher notice]\x1b[0m ${err?.message || err}`
+        )
+      })
+
+      watcher.on('all', async (_eventName: string, file: string) => {
+        if (!shouldReloadOnFile(file, userIgnored, customExtensions)) {
+          return
+        }
+        scheduleReload(file)
+      })
+    }
+  }
+
+  // Generate dev manifest for O(1) booting
+  const { generateManifest } = await import('../manifest')
+  await generateManifest(cwd, '', true)
+
+  if (fs.existsSync(tsconfigPath)) {
+    let tscPath: string
+    try {
+      const req = typeof require !== 'undefined' ? require : eval('require')
+      tscPath = req.resolve('typescript/bin/tsc', { paths: [cwd] })
+    } catch {
+      error('TypeScript compiler not found in project.')
+      error('Install it: npm install -D typescript')
+      process.exit(1)
+    }
+    const tscProcess = spawn(
+      process.execPath,
+      [tscPath, '--noEmit', '--watch', '--preserveWatchOutput'],
+      { cwd, env: process.env }
+    )
+    ;(global as any)._tscProcess = tscProcess
+
+    let tscErrors: string[] = []
+
+    tscProcess.stdout?.on('data', (data) => {
+      const lines = data.toString().trim().split('\n')
+
+      const getTime = () => {
+        return getFormattedTime()
+      }
+
+      for (const line of lines) {
+        if (!line) continue
+        if (line.includes('Found 0 errors')) {
+          tscErrors = []
+          // Type errors are cleared — close the fallback so the real server can serve
+          closeFallbackServer()
+        } else if (line.includes('error TS')) {
+          const time = getTime()
+          console.error(`\n${c.red}${time} ERROR:${c.reset} ${line}`)
+          tscErrors.push(line)
+        } else if (line.includes('Found') && line.includes('error')) {
+          // "Found X errors." summary line
+          const time = getTime()
+          console.error(`\n${c.yellow}${time} INFO:${c.reset} ${line}`)
+          if (tscErrors.length > 0) {
+            startFallbackServer(
+              `TypeScript Compilation Errors\n${'─'.repeat(50)}\n\n` +
+                tscErrors.join('\n')
+            )
+          }
+        } else if (
+          !line.includes('Starting compilation in watch mode') &&
+          !line.includes('File change detected')
+        ) {
+          const time = getTime()
+          console.error(`${c.yellow}${time} INFO:${c.reset} ${line}`)
+        }
+      }
+    })
+  }
+
+  startProcess()
+
+  // CLI Shortcuts
+  if (process.stdin.isTTY) {
+    process.stdin.setEncoding('utf8')
+    process.stdin.on('data', (data) => {
+      const key = data.toString().trim().toLowerCase()
+
+      if (key === 'h') {
+        console.log(`
+  ${c.bold}Shortcuts${c.reset}
+  ${c.dim}press${c.reset} ${c.bold}r + enter${c.reset} ${c.dim}to restart the server${c.reset}
+  ${c.dim}press${c.reset} ${c.bold}u + enter${c.reset} ${c.dim}to show server url${c.reset}
+  ${c.dim}press${c.reset} ${c.bold}c + enter${c.reset} ${c.dim}to clear console${c.reset}
+  ${c.dim}press${c.reset} ${c.bold}q + enter${c.reset} ${c.dim}to quit${c.reset}
+`)
+      } else if (key === 'r') {
+        const time = getFormattedTime()
+        console.log(
+          `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}restarting server...${c.reset}`
+        )
+        startProcess()
+      } else if (key === 'c') {
+        console.clear()
+      } else if (key === 'q') {
+        handleSessionStop('SIGINT')
+      } else if (key === 'u') {
+        // Just trigger a dummy reload so app.ts prints the URL again
+        // Or send an IPC message, but since child.kill('SIGUSR2') isn't set up, we can just restart it
+        startProcess()
+      }
+    })
+    process.stdin.unref()
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function resolveEntry(cwd: string, custom?: string): string | null {
+  if (custom) {
+    const abs = path.resolve(cwd, custom)
+    return fs.existsSync(abs) ? abs : null
+  }
+
+  const srcTs = path.join(cwd, 'src/http/server.ts')
+  const srcJs = path.join(cwd, 'src/http/server.js')
+  const rootTs = path.join(cwd, 'http/server.ts')
+  const rootJs = path.join(cwd, 'http/server.js')
+
+  const hasSrc = fs.existsSync(srcTs) || fs.existsSync(srcJs)
+  const hasRoot = fs.existsSync(rootTs) || fs.existsSync(rootJs)
+
+  if (hasSrc && hasRoot) {
+    console.error(
+      '\n\x1b[31m Ambiguous Entry Point Error\x1b[0m\n' +
+        'You have server entry files in both "src/http" and "http" directories.\n' +
+        'Please keep only one of them to prevent unexpected behavior.\n'
+    )
+    process.exit(1)
+  }
+
+  if (fs.existsSync(srcTs)) return srcTs
+  if (fs.existsSync(srcJs)) return srcJs
+  if (fs.existsSync(rootTs)) return rootTs
+  if (fs.existsSync(rootJs)) return rootJs
+
+  return null
+}
+
+async function importChokidar(): Promise<typeof import('chokidar') | null> {
+  try {
+    return await import('chokidar')
+  } catch {
+    return null
+  }
+}

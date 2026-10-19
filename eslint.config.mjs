@@ -21,6 +21,8 @@ export default defineConfig(
       '**/bin/**/*',
       '**/assets/**/*',
       'scripts/**/*',
+      // One-line CommonJS re-exports of exisjs
+      'packages/exis/*.js',
     ],
   },
   {

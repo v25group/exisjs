@@ -1,0 +1,435 @@
+import path from 'node:path'
+import fs from 'node:fs'
+import { pathToFileURL } from 'node:url'
+import { error, c } from '../utils'
+import { generateManifest, generateExisEnv } from '../manifest.js'
+import { getFormattedTime, loadEnv, resolvePathAliases } from 'exisjs/internal'
+
+export interface BuildOptions {
+  outDir?: string
+  clean?: boolean
+  skipEnvCheck?: boolean
+  dryRun?: boolean
+  mode?: string
+}
+
+export async function buildCommand(options: BuildOptions = {}): Promise<void> {
+  process.env.__EXIS_BUILD = 'true'
+  if (
+    options.skipEnvCheck ||
+    options.dryRun ||
+    process.env.EXIS_SKIP_ENV_CHECK === 'true'
+  ) {
+    process.env.EXIS_SKIP_ENV_CHECK = 'true'
+    process.env.__EXIS_SKIP_ENV_CHECK = 'true'
+  }
+
+  process.on('SIGINT', () => {
+    const time = getFormattedTime()
+    const primary = '\x1b[38;2;160;70;255m'
+    console.log(
+      `\n${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}build cancelled.${c.reset}`
+    )
+    process.exit(0)
+  })
+
+  const cwd = process.cwd()
+
+  // Load .env files so process.env is populated during build-time route validation
+  const mode = options.mode || process.env.NODE_ENV || 'production'
+  loadEnv(cwd, mode, true)
+  const outDir = options.outDir ?? '.exis/server'
+  const tsconfigPath = path.join(cwd, 'tsconfig.json')
+
+  let version = '0.0.0'
+  try {
+    const pkgPath = path.join(__dirname, '..', '..', 'package.json')
+    version = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')).version
+  } catch {
+    /* ignore */
+  }
+
+  // Validate tsconfig
+  if (!fs.existsSync(tsconfigPath)) {
+    console.log(
+      `\n${c.primary}EXIS v${version}${c.reset} ${c.green}building server environment for production...${c.reset}`
+    )
+    console.log(
+      `${c.yellow}No tsconfig.json found. Skipping build for native JS project.${c.reset}`
+    )
+    console.log(`\n  Run ${c.primary}exis start${c.reset} to serve the app.\n`)
+    return
+  }
+
+  console.log(
+    `\n${c.primary}EXIS v${version}${c.reset} ${c.green}building server environment for production...${c.reset}`
+  )
+
+  // Clean .exis/server
+  if (options.clean !== false) {
+    const serverPath = path.join(cwd, outDir)
+    if (fs.existsSync(serverPath)) {
+      process.stdout.write(`${c.dim}cleaning...${c.reset}`)
+      fs.rmSync(serverPath, { recursive: true, force: true })
+      process.stdout.write(
+        `\r${c.green}✓${c.reset} ${c.dim}cleaned output directory.${c.reset}\n`
+      )
+    }
+  }
+
+  process.stdout.write(`${c.dim}compiling...${c.reset}`)
+  const start = Date.now()
+
+  // Ensure we generate the exis.d.ts file with optional fallback node types BEFORE tsc runs
+  await generateExisEnv(cwd)
+
+  let ts: any
+  try {
+    const req = typeof require !== 'undefined' ? require : eval('require')
+    const tsPath = req.resolve('typescript', { paths: [cwd, __dirname] })
+    ts = req(tsPath)
+  } catch {
+    error('TypeScript compiler not found in project.')
+    error('Install it: npm install -D typescript')
+    process.exit(1)
+  }
+
+  // Normalize path for TS on Windows
+  const tsconfigPathForTs = tsconfigPath.replace(/\\/g, '/')
+  const configFile = ts.readConfigFile(tsconfigPathForTs, ts.sys.readFile)
+  if (configFile.error) {
+    error('Error reading tsconfig.json')
+    process.exit(1)
+  }
+
+  const parsedConfig = ts.parseJsonConfigFileContent(
+    configFile.config,
+    ts.sys,
+    path.dirname(tsconfigPathForTs)
+  )
+
+  const isServerSourceFile = (filePath: string): boolean => {
+    const rel = path.relative(cwd, filePath).replace(/\\/g, '/')
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false
+
+    // Ignore test files, scripts, docs
+    if (
+      rel.startsWith('tests/') ||
+      rel.startsWith('test/') ||
+      rel.startsWith('__tests__/') ||
+      rel.startsWith('scripts/') ||
+      rel.startsWith('docs/') ||
+      /\.(test|spec)\.[jt]sx?$/.test(rel)
+    ) {
+      return false
+    }
+
+    // Exclude root tool config files (e.g. drizzle.config.ts, vite.config.ts, tailwind.config.ts)
+    // Only exis.config.* belongs to the ExisJS server configuration
+    if (!rel.includes('/')) {
+      const base = path.basename(rel)
+      return (
+        base === 'exis.config.ts' ||
+        base === 'exis.config.js' ||
+        base === 'exis.config.mjs'
+      )
+    }
+
+    // Server code is strictly in src/ or http/
+    return rel.startsWith('src/') || rel.startsWith('http/')
+  }
+
+  const allNonDeclFiles = parsedConfig.fileNames.filter(
+    (f: string) => !f.endsWith('.d.ts')
+  )
+
+  const serverEntryPoints = allNonDeclFiles.filter(isServerSourceFile)
+  const entryPoints =
+    serverEntryPoints.length > 0 ? serverEntryPoints : allNonDeclFiles
+
+  let format = 'cjs'
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.join(cwd, 'package.json'), 'utf8')
+    )
+    if (pkg.type === 'module') format = 'esm'
+  } catch {
+    // default to cjs if package.json is missing or unparseable
+  }
+
+  // ─── TypeScript Type-Check ─────────────────────────────────────────────────
+  // Run the TS compiler in check-only mode (no emit) to catch type errors,
+  // broken imports, and syntax errors BEFORE esbuild runs.
+  // Hosts that install with NODE_ENV=production (Render, Heroku...) leave out
+  // devDependencies, so the @types packages are absent and every Node global
+  // would be reported as a type error. esbuild does not need types to compile.
+  const missingTypes =
+    process.env.NODE_ENV === 'test' ? [] : findMissingTypePackages(cwd)
+  if (missingTypes.length > 0) {
+    process.stdout.write(
+      `\r${c.yellow}↷${c.reset} ${c.dim}type-check skipped: devDependencies are not installed (${missingTypes.join(', ')}).${c.reset}\n` +
+        `${c.dim}  To type-check on this host, install with: npm install --include=dev${c.reset}\n`
+    )
+  } else if (process.env.NODE_ENV !== 'test') {
+    process.stdout.write(`${c.dim}type-checking...${c.reset}`)
+    const filesToCheck =
+      serverEntryPoints.length > 0 ? serverEntryPoints : parsedConfig.fileNames
+
+    const program = ts.createProgram(filesToCheck, {
+      ...parsedConfig.options,
+      skipLibCheck: true,
+      noEmit: true,
+    })
+    const allDiagnostics = [
+      ...parsedConfig.errors,
+      ...ts.getPreEmitDiagnostics(program),
+    ]
+
+    // Only fail the build for errors that actually affect the server environment
+    const diagnostics = allDiagnostics.filter((diag: any) => {
+      if (!diag.file) return true // Global configuration error
+      return isServerSourceFile(diag.file.fileName)
+    })
+
+    if (diagnostics.length > 0) {
+      process.stdout.write('\n')
+      const formatted = ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+        getCanonicalFileName: (f: string) => f,
+        getCurrentDirectory: ts.sys.getCurrentDirectory,
+        getNewLine: () => '\n',
+      })
+      process.stderr.write(formatted + '\n')
+      error(`TYPE_CHECK_FAILED: ${diagnostics.length} error(s) found.`)
+      console.error(
+        `\n${c.yellow}  Fix the errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+      )
+      process.exit(1)
+    }
+  }
+  if (process.env.NODE_ENV === 'test') {
+    process.stdout.write(
+      `\r${c.yellow}↷${c.reset} ${c.dim}type-check skipped in test environment.${c.reset}\n`
+    )
+  } else if (missingTypes.length === 0) {
+    process.stdout.write(
+      `\r${c.green}✓${c.reset} ${c.dim}type-check passed.${c.reset}\n`
+    )
+  }
+
+  // ─── esbuild Compilation ───────────────────────────────────────────────────
+  process.stdout.write(`${c.dim}compiling...${c.reset}`)
+  try {
+    const esbuild = await import('esbuild')
+    await esbuild.build({
+      entryPoints,
+      outdir: path.join(cwd, outDir),
+      // Keep the project layout (src/http/... -> outDir/src/http/...) even
+      // when every entry point sits in one sub-folder
+      outbase: cwd,
+      platform: 'node',
+      format: format as 'cjs' | 'esm',
+      bundle: false,
+      logLevel: 'error',
+    })
+
+    process.stdout.write(
+      `\r${c.green}✓${c.reset} ${c.dim}compiled via esbuild in ${Date.now() - start}ms.${c.reset}\n`
+    )
+  } catch (err: any) {
+    console.error('')
+    error(`COMPILE_FAILED: ${err?.message ?? 'esbuild encountered an error'}`)
+    process.exit(1)
+  }
+
+  // resolve path aliases natively (no external deps)
+  await fixPathAliases(cwd, outDir)
+
+  // Generate the .exis/manifest.js route map
+  try {
+    await generateManifest(cwd, outDir)
+  } catch (err: any) {
+    console.error('')
+    error(`ROUTE_SCAN_FAILED: ${err.message}`)
+    console.error(
+      `\n${c.yellow}  Fix the routing errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+    )
+    process.exit(1)
+  }
+
+  // Generate .exis/server/package.json to mirror host module type (ESM vs CJS)
+  try {
+    const serverPkgPath = path.join(cwd, outDir, 'package.json')
+    const serverPkgContent = JSON.stringify(
+      {
+        type: format === 'esm' ? 'module' : 'commonjs',
+        private: true,
+      },
+      null,
+      2
+    )
+    fs.writeFileSync(serverPkgPath, serverPkgContent, 'utf8')
+  } catch {
+    // ignore
+  }
+
+  writeMainEntry(cwd, outDir, format === 'esm')
+
+  // ─── Build-time Validation ──────────────────────────────────────────────────
+  // Eagerly import the generated manifest to catch route-level configuration
+  // errors (e.g. missing cache keyGenerator, invalid middleware options) NOW,
+  // at build time, rather than letting them crash the production server on first
+  // request or startup.
+  if (
+    options.skipEnvCheck ||
+    options.dryRun ||
+    process.env.EXIS_SKIP_ENV_CHECK === 'true'
+  ) {
+    process.stdout.write(
+      `${c.yellow}↷${c.reset} ${c.dim}route validation skipped (--skip-env-check).${c.reset}\n`
+    )
+  } else {
+    process.stdout.write(`${c.dim}validating routes...${c.reset}`)
+    try {
+      const manifestPath = path.join(cwd, '.exis', 'routes-manifest.js')
+      if (fs.existsSync(manifestPath)) {
+        try {
+          const { registerPathAliasLoader } = await import('exisjs/internal')
+          registerPathAliasLoader(cwd)
+        } catch {
+          // ignore
+        }
+        const dynamicImport = new Function(
+          'specifier',
+          'return import(specifier)'
+        )
+        const built = await dynamicImport(pathToFileURL(manifestPath).href)
+
+        // One controller style per project: fail the build, not the deploy
+        const { routeParadigm, mixedParadigmMessage } =
+          await import('exisjs/internal')
+        const oopFiles: string[] = []
+        const functionalFiles: string[] = []
+        for (const entry of built.manifest ?? []) {
+          const paradigm = routeParadigm(entry.module)
+          if (paradigm === 'oop') oopFiles.push(entry.filePath)
+          else if (paradigm === 'functional')
+            functionalFiles.push(entry.filePath)
+        }
+        if (oopFiles.length > 0 && functionalFiles.length > 0) {
+          console.error('')
+          error(mixedParadigmMessage(oopFiles, functionalFiles))
+          process.exit(1)
+        }
+
+        process.stdout.write(
+          `\r${c.green}✓${c.reset} ${c.dim}all routes validated.${c.reset}\n`
+        )
+      }
+    } catch (err: any) {
+      const isEnvError =
+        err.message?.includes('Validation Error') ||
+        err.message?.includes('Expected value, received undefined') ||
+        err.message?.includes('env') ||
+        err.code === 'VALIDATION_ERROR'
+
+      console.error('')
+      error(`BUILD_VALIDATION_FAILED: ${err.message}`)
+      if (isEnvError) {
+        console.error(
+          `\n${c.yellow}  Tip: If this environment variable is injected at runtime, run:${c.reset}` +
+            `\n${c.primary}  exis build --skip-env-check${c.reset}\n`
+        )
+      } else {
+        console.error(
+          `\n${c.yellow}  Fix the error above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
+        )
+      }
+      process.exit(1)
+    }
+  }
+
+  const ms = Date.now() - start
+
+  console.log(`\n${c.green}✓ built in ${ms}ms${c.reset}\n`)
+
+  process.exit(0)
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** `@types/*` packages listed in devDependencies that are not installed. */
+export function findMissingTypePackages(cwd: string): string[] {
+  let devDeps: Record<string, string>
+  try {
+    devDeps =
+      JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'))
+        .devDependencies ?? {}
+  } catch {
+    return []
+  }
+  const req = typeof require !== 'undefined' ? require : eval('require')
+  return Object.keys(devDeps).filter((name) => {
+    if (!name.startsWith('@types/')) return false
+    try {
+      req.resolve(`${name}/package.json`, { paths: [cwd] })
+      return false
+    } catch {
+      return true
+    }
+  })
+}
+
+/**
+ * Writes `<outDir>/main.js`, the production entry: `node .exis/server/main.js`
+ * runs the server in that one process, so it receives SIGTERM directly and
+ * production needs neither the CLI nor npm.
+ */
+export function writeMainEntry(
+  cwd: string,
+  outDir: string,
+  esm: boolean
+): string | null {
+  const serverDir = path.join(cwd, outDir)
+  const entry = ['src/http/server.js', 'http/server.js'].find((p) =>
+    fs.existsSync(path.join(serverDir, p))
+  )
+  if (!entry) {
+    console.warn(
+      `${c.yellow}⚠${c.reset} ${c.dim}No src/http/server.ts found: ${outDir}/main.js was not written.${c.reset}`
+    )
+    return null
+  }
+  const root = path.relative(serverDir, cwd).split(path.sep).join('/') || '.'
+  const header =
+    '// Generated by `exisjs build`. Starts the server in this process:\n' +
+    `//   node ${outDir.split(path.sep).join('/')}/main.js\n`
+  const body = (dir: string) =>
+    `process.chdir(path.resolve(${dir}, ${JSON.stringify(root)}))\n` +
+    // An empty NODE_ENV, which some platforms set, counts as unset
+    `if (!process.env.NODE_ENV) process.env.NODE_ENV = 'production'\n` +
+    `process.env.EXIS_ENTRY_FILE = path.join(${dir}, ${JSON.stringify(entry)})\n`
+  const source = esm
+    ? header +
+      `import path from 'node:path'\n` +
+      `import { fileURLToPath } from 'node:url'\n\n` +
+      `const here = path.dirname(fileURLToPath(import.meta.url))\n` +
+      body('here') +
+      `await import('exisjs/start')\n`
+    : header +
+      `const path = require('node:path')\n\n` +
+      body('__dirname') +
+      `require('exisjs/start')\n`
+  const file = path.join(serverDir, 'main.js')
+  fs.writeFileSync(file, source, 'utf8')
+  return file
+}
+
+async function fixPathAliases(cwd: string, outDir: string): Promise<void> {
+  try {
+    await resolvePathAliases(cwd, outDir)
+  } catch (err: any) {
+    process.stdout.write(
+      `\n${c.yellow}⚠${c.reset} ${c.dim}alias resolution failed: ${err.message}${c.reset}\n`
+    )
+  }
+}

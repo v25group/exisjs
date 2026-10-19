@@ -373,6 +373,26 @@ describe('tex: new rules', () => {
   })
 })
 
+// Found building examples/05-tasks-api: a PATCH schema made with partial()
+// kept the defaults, so leaving a field out reset it (tags -> [])
+describe('tex: partial() for updates', () => {
+  it('leaves out fields that were not sent instead of applying defaults', () => {
+    const Task = tex.object({
+      title: tex.string(),
+      status: tex.enum(['todo', 'done'], { default: 'todo' }),
+      tags: tex.array(tex.string(), { default: () => [] }),
+    })
+    expect(Task.partial().parse({ title: 'x' })).toEqual({ title: 'x' })
+    expect(Task.partial().parse({ status: 'done' })).toEqual({ status: 'done' })
+    // The full schema still applies them
+    expect(Task.parse({ title: 'x' })).toEqual({
+      title: 'x',
+      status: 'todo',
+      tags: [],
+    })
+  })
+})
+
 describe('tex: object refine() and field default()', () => {
   const Passwords = tex
     .object({ password: tex.string(), confirm: tex.string() })

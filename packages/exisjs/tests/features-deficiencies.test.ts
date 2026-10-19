@@ -1,7 +1,7 @@
 import { describe, it, expect, ex } from '../src/testing'
 import { Router, runHandlers } from '../src/router/router'
 import { tex, paginate, getPaginationSkip } from '../src/validator/tex'
-import { generateCrud, generateModel } from '../src/cli/commands/generate'
+import { generateCrud, generateModel } from '../../cli/src/commands/generate'
 import { createMockResponse, createMockNext, getResponseBody } from './helpers'
 import { ExisRequest } from '../src/server/request'
 import { Readable } from 'node:stream'

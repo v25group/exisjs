@@ -214,7 +214,9 @@ async function run() {
   writeTemplates(targetDir, dirName, alias, useEslint, useTypeScript, paradigm)
 
   const deps = ['exisjs']
-  const devDeps = useTypeScript ? ['@types/node', 'typescript'] : []
+  const devDeps = useTypeScript
+    ? ['@exisjs/cli', '@types/node', 'typescript']
+    : ['@exisjs/cli']
   if (useEslint) devDeps.push('eslint', '@eslint/js', 'typescript-eslint')
 
   console.log(`\nInstalling dependencies:`)

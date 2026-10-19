@@ -55,6 +55,10 @@ npx exisjs build [options]
 ### Type-checking on deployment hosts
 Some hosts (Render, Heroku and others) install with `NODE_ENV=production`, which leaves out `devDependencies` such as `@types/node`. When `@types/*` packages listed in your `devDependencies` are not installed, `exisjs build` skips the type-check with a warning and still compiles. To keep the type-check on the host, set the install command to `npm install --include=dev`.
 
+The same applies to the CLI itself: `exisjs build` comes from `@exisjs/cli`, a development dependency. Build where development dependencies are installed (a Docker build stage, or `npm install --include=dev` on the host), then install production dependencies only for the running server.
+
+`exisjs build` also writes `.exis/server/main.js`, the production entry: `node .exis/server/main.js` starts the server in that one process, with `NODE_ENV=production` unless set otherwise.
+
 ### Build Outputs
 - Compiles application source code into the specified `outDir`.
 - Emits pre-computed route manifests (`.exis/routes-manifest.js`) for O(1) route discovery at runtime.
@@ -81,7 +85,9 @@ npx exisjs cl [options]
 
 ## `exisjs start`
 
-Starts the compiled production server from the build output directory.
+Starts the built server in the current process (the same as `node .exis/server/main.js`), with `NODE_ENV=production`. The server receives `SIGINT` / `SIGTERM` itself and shuts down gracefully.
+
+`exisjs start` is part of the `exisjs` runtime package, not of `@exisjs/cli`: it works in production installs that leave out development dependencies (`npm ci --omit=dev`), so `"start": "exisjs start"` and `npm start` work on every platform. The other commands need `@exisjs/cli`.
 
 ```bash
 npx exisjs start [options]
@@ -94,6 +100,22 @@ npx exisjs start [options]
 | `-p, --port <port>` | `number` | `3000` | Port to listen on. |
 | `-H, --host <host>` | `string` | `0.0.0.0` | Host address to bind to. |
 | `-e, --entry <file>` | `string` | `.exis/server/src/http/server.js` | Custom compiled entry file path. |
+
+---
+
+## `exisjs migrate`
+
+Updates a project created before 0.10 to the current layout:
+
+- adds `@exisjs/cli` to `devDependencies` (and `typescript`, if the project has a `tsconfig.json` but did not list it);
+- lists the `Dockerfile` lines to change (it does not edit the `Dockerfile`).
+
+```bash
+npx exisjs migrate            # writes package.json
+npx exisjs migrate --dry-run  # only shows the changes
+```
+
+Then run `npm install`. Running it again changes nothing.
 
 ---
 

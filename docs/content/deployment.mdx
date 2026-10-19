@@ -1,6 +1,6 @@
 ---
 title: "Deploying with Docker"
-description: "Build an ExisJS app into a small production image, keep secrets out of the build, run the server so it shuts down gracefully, and wire up health checks."
+description: "Build an ExisJS app into a small production image, keep secrets out of the build, run the server as one process that shuts down gracefully, and wire up health checks."
 nextUrl: "/docs/exisjs-mcp"
 nextTitle: "AI Integration (MCP)"
 ---
@@ -11,7 +11,8 @@ This page builds an ExisJS app into a production image that:
 
 - builds without secrets, because container platforms provide them only when the container runs;
 - refuses to start when a required secret is missing;
-- stops gracefully on `docker stop` and on every redeploy.
+- runs the server as one process that stops gracefully on `docker stop` and on every redeploy;
+- contains no build tools: no TypeScript, esbuild or CLI.
 
 The Dockerfile below was tested end to end with an app created by `npm create exisjs`.
 
@@ -36,17 +37,19 @@ FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --omit=optional && npm cache clean --force
 COPY --from=build /app/.exis ./.exis
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
-# The exisjs binary itself, not `npm start` (see below)
 CMD ["node_modules/.bin/exisjs", "start"]
 ```
 
-`exisjs build` writes everything the server needs into `.exis/`: the compiled code, the route manifest and the compiled `exis.config`. The runtime image needs only `.exis/`, `package.json` and the production dependencies; it contains no source files.
+`exisjs build` writes everything the server needs into `.exis/`: the compiled code, the route manifest, the compiled `exis.config` and `main.js`, the entry that starts the server. The runtime image needs only `.exis/`, `package.json` and the production dependencies; it contains no source files.
+
+- **`--omit=optional`** keeps the CLI out of the image. Until 0.11, `exisjs` lists `@exisjs/cli` as an optional dependency so that projects created before 0.10 keep working. If you use the uWebSockets.js engine (`server: 'uws'`), list `uWebSockets.js` in your own `dependencies`, since it is optional too.
+- **`npm ci`** in the build stage installs `devDependencies`, which include `@exisjs/cli` and `typescript`.
 
 Add a `.dockerignore`, so local files never reach the image. **`.env` must be in it**, or your local secrets are copied into every image layer:
 
@@ -83,18 +86,22 @@ Pass the secrets when you run the container (`docker run -e DATABASE_URL=...`, o
 
 ---
 
-## Start the server directly, not with `npm start`
+## One process, graceful shutdown
 
-Run `node_modules/.bin/exisjs start` as the container command. Started through `npm start`, npm sits between the platform and the server: a redeploy's `SIGTERM` then shows up as `npm error signal SIGTERM`, and some platforms stop the container early when they detach its input.
+`exisjs start` comes with the `exisjs` runtime, so the image needs no CLI, and it runs the server in its own process: Node is PID 1 in the container and receives `SIGTERM` directly. (`node .exis/server/main.js`, written by `exisjs build`, does the same.)
 
-With the command above, `docker stop` sends `SIGTERM` to `exisjs start`, which passes it to the server:
+In the `CMD`, call the binary itself rather than `npm start`: with npm in between, a redeploy's `SIGTERM` shows up as `npm error signal SIGTERM`, and some platforms stop the container early when they detach its input. `npm start` with `"start": "exisjs start"` works too, for platforms that only run npm scripts.
 
-1. The readiness probe (`/_ready`, if enabled) answers `503`, so the load balancer stops sending new requests.
+On `docker stop`:
+
+1. The server stops accepting new connections, and the readiness probe (`/_ready`, if enabled) answers `503`.
 2. Requests in progress finish.
 3. `onClose` hooks run and registered databases disconnect.
 4. The process exits with code 0.
 
-`exisjs start` waits up to 10 seconds for this, and Docker also waits 10 seconds by default before it kills the container. If your requests can take longer, raise both: `docker stop -t 60` / `stop_grace_period: 60s` in Compose, and the platform's equivalent.
+ExisJS waits up to 10 seconds for this, and Docker also waits 10 seconds by default before it kills the container. If your requests can take longer, raise both: `docker stop -t 60` / `stop_grace_period: 60s` in Compose, and the platform's equivalent.
+
+With `cluster: { workers }` set, that process is the cluster primary and forks the workers itself.
 
 ---
 
@@ -116,7 +123,7 @@ Point the load balancer, or the Kubernetes `readinessProbe`, at `/_ready`: it an
 
 ## Database migrations and scripts
 
-The runtime image has no source files, so run one-off tasks from the build stage, which has the whole project and toolchain:
+The runtime image has no source files and no CLI, so run one-off tasks from the build stage, which has the whole project and toolchain:
 
 ```sh
 docker build --target build -t my-api:build .
@@ -127,20 +134,30 @@ Run it as a separate step of your deployment, before the new version starts.
 
 ---
 
+## Projects created before 0.10
+
+Run `npx exisjs migrate` once. It adds `@exisjs/cli` to `devDependencies` and lists the Dockerfile lines to change (`--omit=optional`, and a `CMD` that goes through `npm start`). `"start": "exisjs start"` stays as it is: it now runs the server in its own process, without the CLI.
+
+---
+
 ## Platform notes
 
 - **Pin the Node.js version.** Use an explicit image (`node:24-slim`). Builders that pick Node for you, such as Nixpacks, may default to an older version than your dependencies need; set it explicitly (for Nixpacks, `nodejs_22` or later in `nixpacks.toml`).
-- **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD`, enter `node_modules/.bin/exisjs start`.
+- **Builds on the host.** Platforms that build without a Dockerfile must install `devDependencies` for the build (`npm install --include=dev`), because `exisjs build` comes from `@exisjs/cli`.
+- **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD`, enter `npx exisjs start` or `npm start`.
 - **Long requests behind a CDN.** A proxy such as Cloudflare ends requests after about 100 seconds, whatever the server allows. Serve long-running endpoints from a hostname that is not proxied.
 
 ---
 
-## What is in the image today
+## Image size
 
-| Part | Size |
-| :--- | ---: |
-| `node:24-slim` base image | ~220 MB |
-| `node_modules` of a new app, production install | 45 MB |
-| of which build tooling (`typescript`, `esbuild`, `tsx`) | 34 MB |
+Measured with an app created by `npm create exisjs`, on `node:24-slim`:
 
-The build tooling is installed in production because the `exisjs` package includes the CLI. Moving the CLI to a separate development dependency, and starting the server as a single process, is planned; this page will show the smaller layout when it ships.
+| | Before 0.10 | 0.10 |
+| :--- | ---: | ---: |
+| Production `node_modules` | 45 MB | 8 MB |
+| Build tooling in it (`typescript`, `esbuild`, `tsx`, the CLI) | 34 MB | none |
+| Image | 274 MB | 237 MB |
+| Node processes in the container | 2 | 1 |
+
+Most of the remaining image is the `node:24-slim` base. The production install is checked in CI on every change, against a size budget that fails if build tooling returns.

@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs'
-import { resolvePathAliases } from '../src/cli/resolve-aliases'
+import { resolvePathAliases } from '../src/lib/resolve-aliases'
 import { createTempDir, writeTempFile, cleanupTempDir } from './helpers'
 import { describe, it, expect, beforeAll, afterAll } from '../src/testing'
 
@@ -96,7 +96,7 @@ describe('resolvePathAliases (ESM relative imports & aliases)', () => {
         JSON.stringify(tsconfig, null, 2)
       )
 
-      const { parseAliases } = await import('../src/cli/resolve-aliases')
+      const { parseAliases } = await import('../src/lib/resolve-aliases')
       const aliases = parseAliases(projectDir)
       expect(aliases.length).toBeGreaterThanOrEqual(4)
 
