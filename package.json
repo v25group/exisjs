@@ -2,7 +2,7 @@
   "name": "exisjs-monorepo",
   "version": "0.10.0-alpha.0",
   "private": true,
-  "description": "ExisJS monorepo: exisjs, @exisjs/cli, create-exisjs, @exisjs/fetch and the short names exis and create-exis",
+  "description": "ExisJS monorepo: exisjs, @exisjs/cli, create-exisjs and @exisjs/fetch",
   "homepage": "https://github.com/v25group/exisjs#readme",
   "bugs": {
     "url": "https://github.com/v25group/exisjs/issues"
@@ -30,7 +30,7 @@
     "lint": "eslint .",
     "typecheck": "npm run build --workspace=packages/exisjs && tsc -p packages/exisjs/tsconfig.test.json && tsc -p packages/cli/tsconfig.test.json && tsc -p packages/create/tsconfig.test.json && tsc -p packages/fetch/tsconfig.json --noEmit && tsc -p bench/tsconfig.json",
     "prepare": "husky",
-    "release": "npm run build && npm publish --workspace=packages/cli --workspace=packages/exisjs --workspace=packages/exis --workspace=packages/create --workspace=packages/create-exis --workspace=packages/fetch --access public",
+    "release": "npm run build && npm publish --workspace=packages/cli --workspace=packages/exisjs --workspace=packages/create --workspace=packages/fetch --access public",
     "bench": "npm run build --workspace=packages/exisjs && tsx bench/http.ts",
     "bench:quick": "npm run build --workspace=packages/exisjs && tsx bench/http.ts --quick",
     "bench:router": "tsx bench/micro/router.ts",

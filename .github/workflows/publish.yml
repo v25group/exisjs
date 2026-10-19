@@ -74,18 +74,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish exis
-        run: |
-          VERSION=$(node -p "require('./packages/exis/package.json').version")
-          EXISTS=$(npm view exis@$VERSION version 2>/dev/null || echo "")
-          if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/exis --access public --provenance --tag "$NPM_TAG"
-          else
-            echo "exis@$VERSION is already published. Skipping."
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish create-exisjs
         run: |
           VERSION=$(node -p "require('./packages/create/package.json').version")
@@ -94,18 +82,6 @@ jobs:
             npm publish --workspace=packages/create --access public --provenance --tag "$NPM_TAG"
           else
             echo "create-exisjs@$VERSION is already published. Skipping."
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish create-exis
-        run: |
-          VERSION=$(node -p "require('./packages/create-exis/package.json').version")
-          EXISTS=$(npm view create-exis@$VERSION version 2>/dev/null || echo "")
-          if [ -z "$EXISTS" ]; then
-            npm publish --workspace=packages/create-exis --access public --provenance --tag "$NPM_TAG"
-          else
-            echo "create-exis@$VERSION is already published. Skipping."
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -47,10 +47,8 @@ jobs:
         run: |
           npx --yes publint@0.3 packages/exisjs
           npx --yes publint@0.3 packages/cli
-          npx --yes publint@0.3 packages/exis
           npx --yes @arethetypeswrong/cli@0.18 --pack packages/exisjs
           npx --yes @arethetypeswrong/cli@0.18 --pack packages/cli
-          npx --yes @arethetypeswrong/cli@0.18 --pack packages/exis
 
   examples:
     name: Examples and scaffold
