@@ -30,13 +30,14 @@ const INTERNAL_STACK_PATTERNS = [
   /node:events/i,
   /node:process/i,
   /node:async_hooks/i,
-  /node_modules\/tsx\//i,
-  /node_modules\/commander\//i,
-  /node_modules\/pino/i,
-  /packages\/exisjs\/dist\//i,
-  /node_modules\/exisjs\/dist\//i,
-  /node_modules\/@exisjs\//i,
-  /node_modules\/@swc\//i,
+  // [\\/]: Windows stack paths use backslashes
+  /node_modules[\\/]tsx[\\/]/i,
+  /node_modules[\\/]commander[\\/]/i,
+  /node_modules[\\/]pino/i,
+  /packages[\\/]exisjs[\\/]dist[\\/]/i,
+  /node_modules[\\/]exisjs[\\/]dist[\\/]/i,
+  /node_modules[\\/]@exisjs[\\/]/i,
+  /node_modules[\\/]@swc[\\/]/i,
   /at async (?:Promise\.all|runHandlers|startServer)/i,
 ]
 

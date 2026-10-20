@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.0-alpha.2`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.1: `server` in `exis.config.ts` takes effect and the uWS fallback warning prints, "install the CLI" hints name the matching version, start errors no longer show framework code on Windows | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.1`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.0: `/_ready` answers `503` during a shutdown drain, the `migrate` notice appears, a global CLI hands off to the project's, production logs from `exisjs start`, failing route files are named | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.0`** | 2026-10-19 | Prerelease (`alpha` tag): Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; failed route files stop the start; `partial()` keeps unsent fields unset | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.9.2`** | 2026-10-17 | Patch: Bug Fixes & Security | Development server: no `404` for concurrent first requests, a route that fails to load answers `500`, route files run once, `dev.lazyRoutes`; `env` defaults to `production` so a server started without `NODE_ENV` no longer sends error details; validator: nested rules, immutable schemas, `safeParse`, `pattern` / `url` / `int`, 4-10x faster; sanitizer fixes | [**Read v0.9.2 Notes →**](./changelog/v0.9/v0.9.2.md) |
@@ -35,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | **`v0.7.0`** | 2026-09-06 | Major Architecture | Monorepo decoupling, `boundary.ts` pipeline, native Rust `tex` validator | [**Read v0.7.0 Notes →**](./changelog/v0.7/v0.7.0.md) |
 
 ---
+
+## Prerelease: [0.10.0-alpha.2] - 2026-10-20
+
+> Fixes found by testing alpha.1. Details in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md#changes-in-0100-alpha2).
+
+### Fixed
+- `server` set in `exis.config.ts` was ignored, and the uWS fallback warning never printed; an installed uWS that fails to load (glibc older than 2.38, as in `node:24-slim`) says so with its error; the "install `@exisjs/cli`" hints name the project's version instead of `latest`; on Windows, start-up errors showed a code frame from the framework's own files.
 
 ## Prerelease: [0.10.0-alpha.1] - 2026-10-20
 

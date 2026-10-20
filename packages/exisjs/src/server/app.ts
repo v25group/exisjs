@@ -809,6 +809,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
       this._loggerCreated = false
       this.ensureLogger()
 
+      // The engine was picked in the constructor, before the file config
+      this.bootstrapper.selectEngine()
+
       this._configLoaded = true
 
       if (this.options.env === 'development') {

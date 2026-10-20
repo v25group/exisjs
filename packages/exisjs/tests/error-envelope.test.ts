@@ -137,6 +137,18 @@ describe('Developer Error Envelopes (Clean Terminal DX)', () => {
     }
   })
 
+  it('skips framework frames in Windows stack paths', () => {
+    const err = new Error('queue.driver must be "memory"')
+    err.stack =
+      'Error: queue.driver must be "memory"\n' +
+      '    at resolveQueueConfig (C:\\app\\node_modules\\exisjs\\dist\\middleware\\backpressure.js:76:11)\n' +
+      '    at start (C:\\app\\node_modules\\exisjs\\dist\\lib\\start-server.js:54:5)'
+
+    const parsed = parseErrorLocation(err)
+    assert.strictEqual(parsed.file, undefined)
+    assert.strictEqual(parsed.line, undefined)
+  })
+
   it('should produce clean devErrorResponse payload', () => {
     const err = new Error('Missing required environment variable "PORT"')
     const res = devErrorResponse(err, 'src/config/env.ts') as any

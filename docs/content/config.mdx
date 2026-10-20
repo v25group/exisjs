@@ -135,7 +135,7 @@ export default defineConfig({
 | :--- | :--- | :--- | :--- |
 | `port` | `number` | `4000` | Port number to bind the HTTP server to. |
 | `host` | `string` | `'0.0.0.0'` | Network host interface. |
-| `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | Underlying server adapter engine. `'auto'` uses Bun under Bun, otherwise Node. `'uws'` needs uWebSockets.js, which is not on npm and not installed with `exisjs`: `npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`. Without it, the server falls back to Node with a warning. |
+| `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | Underlying server adapter engine. `'auto'` uses Bun under Bun, otherwise Node. `'uws'` needs uWebSockets.js, which is not on npm and not installed with `exisjs`: `npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`. Without it, or on Linux with glibc older than 2.38 (such as the `node:24-slim` image; use `node:24-trixie-slim`), the server falls back to Node with a warning. |
 | `ssl` | `{ key: string \| Buffer, cert: string \| Buffer }` | `undefined` | SSL certificate credentials for native HTTPS. |
 | `http2` | `boolean` | `true` | Enables HTTP/2 (active when SSL is configured). |
 | `redirectHttp` | `boolean \| number` | `false` | Automatically redirects plaintext HTTP traffic to HTTPS. |

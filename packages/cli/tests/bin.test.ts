@@ -57,12 +57,13 @@ describe('exisjs binary', () => {
     const cwd = project(
       { exisjs: '0.10.0' },
       {
-        'node_modules/exisjs/package.json': '{"name":"exisjs"}',
+        'node_modules/exisjs/package.json':
+          '{"name":"exisjs","version":"0.10.0-alpha.1"}',
       }
     )
     const res = run(cwd, 'dev')
     expect(res.status).toBe(1)
-    expect(res.stderr).toContain('npm install -D @exisjs/cli')
+    expect(res.stderr).toContain('npm install -D @exisjs/cli@0.10.0-alpha.1')
   })
 
   it('suggests migrate when package.json lists exisjs but not @exisjs/cli', () => {

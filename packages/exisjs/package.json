@@ -1,6 +1,6 @@
 {
   "name": "exisjs",
-  "version": "0.10.0-alpha.1",
+  "version": "0.10.0-alpha.2",
   "description": "Fast, lightweight TypeScript backend framework for Node.js with file-system routing, built-in validation, dependency injection and OpenAPI docs",
   "keywords": [
     "exisjs",
@@ -256,7 +256,7 @@
     }
   },
   "optionalDependencies": {
-    "@exisjs/cli": "0.10.0-alpha.1"
+    "@exisjs/cli": "0.10.0-alpha.2"
   },
   "devDependencies": {
     "@types/accepts": "^1.3.7",

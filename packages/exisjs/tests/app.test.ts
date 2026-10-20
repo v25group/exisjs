@@ -289,3 +289,18 @@ describe('App Lifecycle', () => {
     expect(idleClosed).toBe(true)
   })
 })
+
+describe('server engine from exis.config', () => {
+  it("uses server: 'uws' set in the config file, not only in exis()", async () => {
+    const dir = createTempDir()
+    writeTempFile(dir, 'exis.config.js', "module.exports = { server: 'uws' }")
+    const app = new App({ logger: false, env: 'test' })
+    try {
+      await app.create(dir)
+      expect(app.bootstrapper.engine.constructor.name).toBe('UwsEngine')
+    } finally {
+      await app.close()
+      cleanupTempDir(dir)
+    }
+  })
+})

@@ -48,7 +48,8 @@ try {
   console.error(
     `\n  \`exisjs ${command ?? ''}\` is in the @exisjs/cli package, which is not installed.\n` +
       '  Install it as a development dependency:\n\n' +
-      '    npm install -D @exisjs/cli\n\n' +
+      // The CLI pins exisjs exactly; a bare install takes `latest`, which may not match
+      `    npm install -D @exisjs/cli@${require('../package.json').version}\n\n` +
       '  (`exisjs start` needs only exisjs, so production installs can leave it out.)\n'
   )
   process.exit(1)

@@ -12,25 +12,41 @@ declare const Bun: unknown
 
 export class ServerBootstrapper {
   private app: App<any>
-  public engine: HttpEngine
+  public engine!: HttpEngine
   private shutdownHooks: ((signal?: string) => Promise<void> | void)[] = []
 
   constructor(app: App<any>) {
     this.app = app
+    // Quiet here: the logger is still silent until app.create() loads the config
+    this.selectEngine(false)
+  }
 
-    const requestedServer = app.explicitOptions.server
+  // app.create() calls this again once exis.config.ts and the logger are
+  // loaded, so a `server` set in the config file takes effect and the
+  // fallback warnings are actually printed
+  public selectEngine(warn = true): void {
+    const app = this.app
+    const requestedServer = app.options.server
 
     if (requestedServer === 'uws') {
       try {
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         require('uWebSockets.js')
         this.engine = new UwsEngine(app)
-      } catch {
-        // Not on npm, so not installed with exisjs; the app installs it
-        app.log.warn(
-          "server: 'uws' was requested, but uWebSockets.js is not installed. " +
-            'Falling back to the Node.js HTTP server. Install it with: npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz'
-        )
+      } catch (err) {
+        // Not on npm, so not installed with exisjs; the app installs it.
+        // Installed but unloadable is common too: its binary needs glibc 2.38
+        // (node:24-slim has 2.36), and its error says why
+        const notInstalled =
+          (err as NodeJS.ErrnoException)?.code === 'MODULE_NOT_FOUND'
+        if (warn)
+          app.log.warn(
+            notInstalled
+              ? "server: 'uws' was requested, but uWebSockets.js is not installed. " +
+                  'Falling back to the Node.js HTTP server. Install it with: npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz'
+              : "server: 'uws' was requested, but uWebSockets.js failed to load. " +
+                  `Falling back to the Node.js HTTP server. ${(err as Error)?.message ?? err}`
+          )
         this.engine = new NodeEngine(app)
       }
     } else if (
@@ -42,7 +58,7 @@ export class ServerBootstrapper {
       if (typeof Bun !== 'undefined') {
         this.engine = new BunEngine(app)
       } else {
-        if (requestedServer === 'bun') {
+        if (warn && requestedServer === 'bun') {
           app.log.warn(
             "server: 'bun' was requested, but Bun is not available. Falling back to the native Node.js HTTP server."
           )

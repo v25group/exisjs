@@ -19,12 +19,16 @@ if (local && fs.realpathSync(local) !== fs.realpathSync(__filename)) {
   require(local)
   return
 }
-if (!local && resolveFromProject('exisjs/package.json')) {
+const runtimePkg = !local && resolveFromProject('exisjs/package.json')
+if (runtimePkg) {
+  // The CLI's peer dependency pins exisjs exactly, so name the matching
+  // version: a bare install takes `latest`, which may be an older release
+  const { version } = JSON.parse(fs.readFileSync(runtimePkg, 'utf8'))
   console.error(
     '\n  This project has exisjs but not @exisjs/cli, so the exisjs command ' +
       'installed globally would run a second copy of the framework.\n' +
       '  Install the CLI in the project:\n\n' +
-      '    npm install -D @exisjs/cli\n'
+      `    npm install -D @exisjs/cli@${version}\n`
   )
   process.exit(1)
 }
