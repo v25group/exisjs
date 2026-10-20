@@ -114,4 +114,22 @@ describe('exisjs migrate', () => {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  // Beta test: the CRM's nixpacks build ran `npm run build`, which needs the secrets
+  it('flags npm run build when the build script is exisjs build', () => {
+    const dir = app({
+      'package.json': OLD_PKG,
+      Dockerfile: 'RUN npm run build\nRUN npm run build -- --skip-env-check',
+      'nixpacks.toml':
+        '[phases.build]\ncmds = ["npm run build"]\n# npm run build',
+    })
+    try {
+      const advice = dockerfileAdvice(dir)
+      expect(advice).toHaveLength(2)
+      expect(advice[0]).toMatch(/^Dockerfile:1: add --skip-env-check/)
+      expect(advice[1]).toMatch(/^nixpacks.toml:2: add --skip-env-check/)
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

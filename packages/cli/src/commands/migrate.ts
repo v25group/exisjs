@@ -94,6 +94,27 @@ export function dockerfileAdvice(cwd: string): string[] {
   }
   // npm between the platform and the server turns SIGTERM into an error
   const npmStart = /\bnpm\b.*\bstart\b/
+  // `npm run build` runs the project's build script, usually `exisjs build`
+  let buildScript = ''
+  try {
+    buildScript =
+      JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'))
+        .scripts?.build ?? ''
+  } catch {
+    /* no build script */
+  }
+  const npmRunBuild = /\bnpm\s+run\s+build\b/
+  const buildNeedsSkip = (line: string): boolean => {
+    if (/--skip-env-check/.test(line)) return false
+    if (/\bexisjs\s+build\b/.test(line)) return true
+    return (
+      npmRunBuild.test(line) &&
+      /\bexisjs\s+build\b/.test(buildScript) &&
+      !/--skip-env-check/.test(buildScript)
+    )
+  }
+  const skipAdvice = (at: string, line: string): string =>
+    `${at}: add --skip-env-check (npm run build -- --skip-env-check); secrets are not set while the image builds   (was: ${line.trim()})`
 
   check('Dockerfile', (line, at) => {
     if (/^\s*CMD\b/i.test(line) && npmStart.test(line)) {
@@ -107,18 +128,16 @@ export function dockerfileAdvice(cwd: string): string[] {
         `${at}: add --omit=optional so the build tooling stays out of the image   (was: ${line.trim()})`
       )
     }
-    if (
-      /^\s*RUN\b.*\bexisjs\s+build\b/i.test(line) &&
-      !/--skip-env-check/.test(line)
-    ) {
-      advice.push(
-        `${at}: add --skip-env-check; secrets are not set while the image builds   (was: ${line.trim()})`
-      )
+    if (/^\s*RUN\b/i.test(line) && buildNeedsSkip(line)) {
+      advice.push(skipAdvice(at, line))
     }
   })
   check('nixpacks.toml', (line, at) => {
     if (/^\s*cmd\s*=/.test(line) && npmStart.test(line)) {
       advice.push(`${at}: cmd = "${START_BIN}"   (was: ${line.trim()})`)
+    }
+    if (!/^\s*#/.test(line) && buildNeedsSkip(line)) {
+      advice.push(skipAdvice(at, line))
     }
   })
   check('Procfile', (line, at) => {
