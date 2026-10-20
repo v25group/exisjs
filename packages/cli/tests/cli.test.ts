@@ -223,6 +223,11 @@ module.exports = Controller('/')(OopController) || OopController`
         await expect(buildCommand({ outDir: '.exis/server' })).rejects.toThrow(
           'ProcessExited: 1'
         )
+        // Nothing left for `exisjs start` to run (alpha test result 6)
+        expect(fs.existsSync(path.join(dir, '.exis/server'))).toBe(false)
+        expect(fs.existsSync(path.join(dir, '.exis/routes-manifest.js'))).toBe(
+          false
+        )
       } finally {
         console.error = origError
         process.cwd = sharedCwd
@@ -375,6 +380,8 @@ module.exports = Controller('/')(OopController) || OopController`
       expect(loaded[0]).toContain('start-server.js')
       expect(process.env.EXIS_ENTRY_FILE).toContain(path.normalize(entryPath))
       expect(process.env.NODE_ENV).toBe('production')
+      // Production logs, not the dev banner (alpha test result 1)
+      expect(process.env.__EXIS_CLI).toBeUndefined()
       expect(cp.spawn).not.toHaveBeenCalled()
     })
 

@@ -91,4 +91,27 @@ describe('exisjs migrate', () => {
       fs.rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  // Alpha test result 12: the CRM deploys with nixpacks on Dokploy
+  it('also checks the build line, nixpacks.toml and Procfile', () => {
+    const dir = app({
+      'package.json': OLD_PKG,
+      Dockerfile: 'RUN npx exisjs build\nRUN npx exisjs build --skip-env-check',
+      'nixpacks.toml': '[start]\ncmd = "npm start"',
+      Procfile: 'web: npm run start',
+    })
+    try {
+      const advice = dockerfileAdvice(dir)
+      expect(advice).toHaveLength(3)
+      expect(advice[0]).toMatch(/^Dockerfile:1: add --skip-env-check/)
+      expect(advice[1]).toContain(
+        'nixpacks.toml:2: cmd = "node_modules/.bin/exisjs start"'
+      )
+      expect(advice[2]).toContain(
+        'Procfile:1: web: node_modules/.bin/exisjs start'
+      )
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

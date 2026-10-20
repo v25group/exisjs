@@ -428,7 +428,7 @@ export function createUwsApp(
 ) {
   if (!uWS) {
     throw new Error(
-      'uWebSockets.js is not installed. Install it with: npm install uWebSockets.js@github:uNetworking/uWebSockets.js#v20.51.0'
+      'uWebSockets.js is not installed. Install it with: npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz'
     )
   }
 

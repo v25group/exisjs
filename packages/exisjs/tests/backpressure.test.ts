@@ -100,3 +100,42 @@ describe('queue config', () => {
     }
   })
 })
+
+// Alpha test result 2: the CRM connected to MongoDB and scheduled its cron
+// before a wrong queue setting stopped the start
+describe('queue config at start-up', () => {
+  it('is checked before the app entry runs', async () => {
+    const fsp = await import('node:fs/promises')
+    const os = await import('node:os')
+    const path = await import('node:path')
+    const { spawnSync } = await import('node:child_process')
+    const { pathToFileURL } = await import('node:url')
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'exis-queue-'))
+    try {
+      const marker = path.join(dir, 'entry-ran')
+      await fsp.writeFile(
+        path.join(dir, 'exis.config.js'),
+        "module.exports = { queue: { driver: 'redis' } }"
+      )
+      await fsp.writeFile(
+        path.join(dir, 'server.js'),
+        `require('fs').writeFileSync(${JSON.stringify(marker)}, '')`
+      )
+      const tsx = pathToFileURL(require.resolve('tsx')).href
+      const res = spawnSync(
+        process.execPath,
+        ['--import', tsx, path.join(__dirname, '../src/lib/start-server.ts')],
+        {
+          cwd: dir,
+          encoding: 'utf8',
+          env: { ...process.env, EXIS_ENTRY_FILE: path.join(dir, 'server.js') },
+        }
+      )
+      expect(res.status).toBe(1)
+      expect(res.stdout + res.stderr).toContain('queue.driver')
+      expect(await fsp.stat(marker).catch(() => null)).toBe(null)
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true })
+    }
+  })
+})

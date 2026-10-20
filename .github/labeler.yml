@@ -3,17 +3,17 @@
 
 "area: cli":
   - changed-files:
-    - any-glob-to-any-file: 'packages/exis/src/cli/**/*'
-    - any-glob-to-any-file: 'packages/create-exis/**/*'
+    - any-glob-to-any-file: 'packages/cli/**/*'
+    - any-glob-to-any-file: 'packages/create/**/*'
 
 "area: core":
   - changed-files:
-    - any-glob-to-any-file: 'packages/exis/src/server/**/*'
-    - any-glob-to-any-file: 'packages/exis/src/router/**/*'
+    - any-glob-to-any-file: 'packages/exisjs/src/server/**/*'
+    - any-glob-to-any-file: 'packages/exisjs/src/router/**/*'
     
 "area: middleware":
   - changed-files:
-    - any-glob-to-any-file: 'packages/exis/src/middleware/**/*'
+    - any-glob-to-any-file: 'packages/exisjs/src/middleware/**/*'
 
 "area: docs":
   - changed-files:

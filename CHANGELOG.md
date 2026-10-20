@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.0-alpha.1`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.0: `/_ready` answers `503` during a shutdown drain, the `migrate` notice appears, a global CLI hands off to the project's, production logs from `exisjs start`, failing route files are named | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.0`** | 2026-10-19 | Prerelease (`alpha` tag): Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; failed route files stop the start; `partial()` keeps unsent fields unset | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.9.2`** | 2026-10-17 | Patch: Bug Fixes & Security | Development server: no `404` for concurrent first requests, a route that fails to load answers `500`, route files run once, `dev.lazyRoutes`; `env` defaults to `production` so a server started without `NODE_ENV` no longer sends error details; validator: nested rules, immutable schemas, `safeParse`, `pattern` / `url` / `int`, 4-10x faster; sanitizer fixes | [**Read v0.9.2 Notes →**](./changelog/v0.9/v0.9.2.md) |
 | **`v0.9.1`** | 2026-10-16 | Patch: Bug Fixes | RFC 9110 conditional requests (`res.checkPreconditions()`, 304/412/428), binary request bodies kept intact, boundary wrappers keep a returned `Buffer` binary, nested `tex.object` `.optional()` honoured, `.nullable()` / `.nullish()` on object schemas, clear error for a missing field schema, AGENTS.md docs path | [**Read v0.9.1 Notes →**](./changelog/v0.9/v0.9.1.md) |
@@ -34,6 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | **`v0.7.0`** | 2026-09-06 | Major Architecture | Monorepo decoupling, `boundary.ts` pipeline, native Rust `tex` validator | [**Read v0.7.0 Notes →**](./changelog/v0.7/v0.7.0.md) |
 
 ---
+
+## Prerelease: [0.10.0-alpha.1] - 2026-10-20
+
+> Fixes found by testing alpha.0. Details in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md#changes-in-0100-alpha1).
+
+### Added
+- `healthcheck.drainMs`: on shutdown, `/_ready` answers `503` while the server keeps serving, then the listener closes (default 5000 in production).
+- `create-exisjs --help`; `exisjs migrate` also checks `nixpacks.toml`, `Procfile` and the build line.
+
+### Breaking
+- uWebSockets.js is no longer installed with `exisjs`; apps with `server: 'uws'` install it: `npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`.
+
+### Fixed
+- The `migrate` notice never appeared; a global CLI ran its own `exisjs`; `exisjs start` printed the development banner; a failing route in a built app was reported as the manifest; a wrong `queue` setting was found after the app's code ran; a failed build left a runnable `.exis/`.
 
 ## Prerelease: [0.10.0-alpha.0] - 2026-10-19
 

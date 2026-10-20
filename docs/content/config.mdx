@@ -135,7 +135,7 @@ export default defineConfig({
 | :--- | :--- | :--- | :--- |
 | `port` | `number` | `4000` | Port number to bind the HTTP server to. |
 | `host` | `string` | `'0.0.0.0'` | Network host interface. |
-| `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | Underlying server adapter engine. |
+| `server` | `'auto' \| 'node' \| 'bun' \| 'uws'` | `'auto'` | Underlying server adapter engine. `'auto'` uses Bun under Bun, otherwise Node. `'uws'` needs uWebSockets.js, which is not on npm and not installed with `exisjs`: `npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`. Without it, the server falls back to Node with a warning. |
 | `ssl` | `{ key: string \| Buffer, cert: string \| Buffer }` | `undefined` | SSL certificate credentials for native HTTPS. |
 | `http2` | `boolean` | `true` | Enables HTTP/2 (active when SSL is configured). |
 | `redirectHttp` | `boolean \| number` | `false` | Automatically redirects plaintext HTTP traffic to HTTPS. |
@@ -165,7 +165,7 @@ export default defineConfig({
 | `debugRouting` | `boolean` | `false` | Outputs detailed route resolution logs per request in development. |
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
 | `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; the project template uses `enabled: process.env.NODE_ENV !== 'production'` so published API docs do not help attackers. |
-| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. |
+| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. `drainMs` (5000 in production, else 0): on shutdown, how long `/_ready` answers `503` before the server stops accepting connections. |
 | `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). See [Prometheus Metrics](#prometheus-metrics). |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false }` | OpenTelemetry tracing and metrics export. |
 

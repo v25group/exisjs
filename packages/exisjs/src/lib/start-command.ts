@@ -32,7 +32,6 @@ export async function startBuiltServer(
   if (options.port) process.env.PORT = options.port
   if (options.host) process.env.HOST = options.host
   process.env.NODE_ENV = 'production'
-  process.env.__EXIS_CLI = 'true'
 
   const mainFile = path.join(cwd, '.exis', 'server', 'main.js')
   if (!options.entry && fs.existsSync(mainFile)) {

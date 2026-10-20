@@ -108,7 +108,7 @@ npx exisjs start [options]
 Updates a project created before 0.10 to the current layout:
 
 - adds `@exisjs/cli` to `devDependencies` (and `typescript`, if the project has a `tsconfig.json` but did not list it);
-- lists the `Dockerfile` lines to change (it does not edit the `Dockerfile`).
+- lists the deployment lines to change, without editing the files: in the `Dockerfile`, a `CMD` through `npm start`, `npm ci --omit=dev` without `--omit=optional`, and `exisjs build` without `--skip-env-check`; in `nixpacks.toml` and `Procfile`, a start command through `npm start`.
 
 ```bash
 npx exisjs migrate            # writes package.json

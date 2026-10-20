@@ -83,6 +83,13 @@ export interface HealthCheckConfig {
    * not shutting down; 503 otherwise. Default '/_ready'; `false` disables it.
    */
   readyPath?: string | false
+  /**
+   * On shutdown, how long `/_ready` answers 503 while the server still
+   * accepts requests, before it closes the listener. Set it to at least
+   * your load balancer's or readinessProbe's check interval. Default 5000
+   * in production, 0 otherwise.
+   */
+  drainMs?: number
   checks?: (() => Promise<boolean>)[]
 }
 

@@ -48,6 +48,12 @@ async function start() {
       // ignore
     }
 
+    // Check the config before any app code runs, so a wrong setting can't
+    // open database connections or schedule cron jobs first
+    const { loadConfig } = await import('../config/config.js')
+    const { resolveQueueConfig } = await import('../middleware/backpressure.js')
+    resolveQueueConfig((await loadConfig(cwd)).queue)
+
     // 2. Auto-load Environment variables validation file if it exists
     const envFiles = [
       path.join(cwd, 'src', 'config', 'env.ts'),

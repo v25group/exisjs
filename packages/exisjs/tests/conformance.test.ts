@@ -862,6 +862,19 @@ describe('ENT-4: liveness and readiness', () => {
     app._shuttingDown = true
     expect((await client.get('/_ready')).body.status).toBe('shutting_down')
   })
+
+  it('answers 503 on /_ready but keeps serving during the drain', async () => {
+    const app = new App({ healthcheck: { enabled: true, drainMs: 300 } })
+    app.get('/ping', () => ({ ok: true }))
+    const client = createTestApp(app)
+
+    let closed = false
+    const closing = app.close().then(() => (closed = true))
+    expect((await client.get('/_ready')).status).toBe(503)
+    expect((await client.get('/ping')).status).toBe(200)
+    expect(closed).toBe(false)
+    await closing
+  })
 })
 
 describe('SEC-1: deny-by-default routes', () => {

@@ -80,6 +80,31 @@ const importModule = new Function('specifier', 'return import(specifier)') as (
   specifier: string
 ) => Promise<any>
 
+/** The manifest imports every route at once; import them one by one to name the file that fails */
+async function findFailingRoute(
+  manifestPath: string,
+  root: string,
+  err: unknown
+): Promise<Error> {
+  try {
+    const fs = await import('node:fs/promises')
+    const source = await fs.readFile(manifestPath, 'utf8')
+    for (const [, spec] of source.matchAll(
+      /^import \* as route_\d+ from '(.+)'$/gm
+    )) {
+      const file = path.resolve(path.dirname(manifestPath), spec)
+      try {
+        await importModule(pathToFileURL(file).href)
+      } catch (routeErr) {
+        return routeLoadError(path.relative(root, file), routeErr)
+      }
+    }
+  } catch {
+    // unreadable manifest: report it as a whole
+  }
+  return routeLoadError('the routes manifest', err)
+}
+
 export class RouteScanner {
   public lazyRoutes = new Map<string, LazyRoute>()
   public routeMap = new Map<string, string>()
@@ -172,7 +197,7 @@ export class RouteScanner {
         // The manifest imports every route; one that throws (a missing
         // environment value, say) means the app cannot run as built
         if (err.code !== 'ENOENT') {
-          throw routeLoadError('the routes manifest', err)
+          throw await findFailingRoute(manifestPath, root, err)
         }
       }
     }

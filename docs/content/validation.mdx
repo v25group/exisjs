@@ -420,18 +420,22 @@ When validating, `tex.discriminatedUnion` matches the discriminator property aga
 
 ```json filename="Discriminator Error Example"
 {
+  "success": false,
   "statusCode": 400,
-  "error": { "code": "VALIDATION_ERROR", "message": "Validation Error", "details": [] },
-  "message": "Validation Error: type: Invalid discriminator value 'archive' for field 'type'",
-  "details": [
-    {
-      "path": "type",
-      "message": "Invalid discriminator value 'archive' for field 'type'",
-      "expected": "one of matching variant discriminators",
-      "received": "'archive'",
-      "code": "INVALID_DISCRIMINATOR_VALUE"
-    }
-  ]
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation Error",
+    "details": [
+      {
+        "field": "type",
+        "message": "Invalid discriminator value 'archive' for field 'type'",
+        "expected": "one of [\"create\",\"update\",\"delete\"]",
+        "received": "\"archive\"",
+        "code": "INVALID_DISCRIMINATOR_VALUE",
+        "httpPart": "body"
+      }
+    ]
+  }
 }
 ```
 
@@ -640,29 +644,30 @@ When incoming requests fail validation, ExisJS returns an HTTP `400 Bad Request`
 
 ```json filename="HTTP 400 Bad Request"
 {
+  "success": false,
   "statusCode": 400,
-  "error": { "code": "VALIDATION_ERROR", "message": "Validation Error", "details": [] },
-  "message": "Validation Error: username: Field must be at least 4 characters, email: Invalid email address",
-  "errors": {
-    "username": "Field must be at least 4 characters",
-    "email": "Invalid email address"
-  },
-  "details": [
-    {
-      "path": "username",
-      "message": "Field must be at least 4 characters",
-      "expected": "min: 4",
-      "received": "abc",
-      "code": "VALUE_TOO_SMALL"
-    },
-    {
-      "path": "email",
-      "message": "Invalid email address",
-      "expected": "valid email format",
-      "received": "invalid-email",
-      "code": "INVALID_EMAIL"
-    }
-  ]
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation Error",
+    "details": [
+      {
+        "field": "username",
+        "message": "Must be at least 4 characters",
+        "expected": "must be at least 4 characters",
+        "received": "\"abc\"",
+        "code": "VALUE_TOO_SMALL",
+        "httpPart": "body"
+      },
+      {
+        "field": "email",
+        "message": "Must be a valid email",
+        "expected": "valid email address",
+        "received": "\"invalid-email\"",
+        "code": "INVALID_EMAIL",
+        "httpPart": "body"
+      }
+    ]
+  }
 }
 ```
 

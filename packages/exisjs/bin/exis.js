@@ -2,8 +2,6 @@
 // `exisjs start` runs here, from the runtime, so production installs need no
 // development tools. Every other command is in @exisjs/cli; this binary
 // forwards to it.
-const fs = require('node:fs')
-const path = require('node:path')
 
 const [command, ...args] = process.argv.slice(2)
 
@@ -56,22 +54,5 @@ try {
   process.exit(1)
 }
 
-// One line, only for projects that rely on the package installed through
-// the runtime instead of listing it themselves
-try {
-  const pkg = JSON.parse(
-    fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8')
-  )
-  const listed =
-    pkg.devDependencies?.['@exisjs/cli'] || pkg.dependencies?.['@exisjs/cli']
-  if (!listed && command !== 'migrate' && !process.env.EXIS_NO_CLI_NOTICE) {
-    console.error(
-      '\x1b[33m[exis]\x1b[0m The CLI moved to @exisjs/cli; exisjs 0.11 stops installing it. ' +
-        'Run \x1b[36mnpx exisjs migrate\x1b[0m to update this project.'
-    )
-  }
-} catch {
-  // no package.json: nothing to suggest
-}
-
+// The CLI prints the `migrate` notice for projects that don't list it
 require(cli)

@@ -48,7 +48,7 @@ CMD ["node_modules/.bin/exisjs", "start"]
 
 `exisjs build` writes everything the server needs into `.exis/`: the compiled code, the route manifest, the compiled `exis.config` and `main.js`, the entry that starts the server. The runtime image needs only `.exis/`, `package.json` and the production dependencies; it contains no source files.
 
-- **`--omit=optional`** keeps the CLI out of the image. Until 0.11, `exisjs` lists `@exisjs/cli` as an optional dependency so that projects created before 0.10 keep working. If you use the uWebSockets.js engine (`server: 'uws'`), list `uWebSockets.js` in your own `dependencies`, since it is optional too.
+- **`--omit=optional`** keeps the CLI out of the image. Until 0.11, `exisjs` lists `@exisjs/cli` as an optional dependency so that projects created before 0.10 keep working. If you use the uWebSockets.js engine (`server: 'uws'`), install it in the project (`npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`): `exisjs` doesn't install it. uWebSockets.js is not published on npm; this URL is its GitHub release, which needs no `git` in the image.
 - **`npm ci`** in the build stage installs `devDependencies`, which include `@exisjs/cli` and `typescript`.
 
 Add a `.dockerignore`, so local files never reach the image. **`.env` must be in it**, or your local secrets are copied into every image layer:
@@ -94,12 +94,13 @@ In the `CMD`, call the binary itself rather than `npm start`: with npm in betwee
 
 On `docker stop`:
 
-1. The server stops accepting new connections, and the readiness probe (`/_ready`, if enabled) answers `503`.
-2. Requests in progress finish.
-3. `onClose` hooks run and registered databases disconnect.
-4. The process exits with code 0.
+1. If readiness probes are on (`healthcheck: { enabled: true }`), `/_ready` answers `503` while the server keeps accepting requests for `healthcheck.drainMs` (default 5 seconds in production). That gives the load balancer time to stop sending traffic here.
+2. The server stops accepting new connections.
+3. Requests in progress get up to 5 seconds to finish.
+4. `onClose` hooks run and registered databases disconnect.
+5. The process exits with code 0.
 
-ExisJS waits up to 10 seconds for this, and Docker also waits 10 seconds by default before it kills the container. If your requests can take longer, raise both: `docker stop -t 60` / `stop_grace_period: 60s` in Compose, and the platform's equivalent.
+Docker waits 10 seconds by default before it kills the container. With readiness probes on, the drain and the requests can take up to 10 seconds together, so give the container more time: `docker stop -t 30` / `stop_grace_period: 30s` in Compose, and the platform's equivalent (`terminationGracePeriodSeconds` in Kubernetes).
 
 With `cluster: { workers }` set, that process is the cluster primary and forks the workers itself.
 
@@ -118,6 +119,14 @@ export default defineConfig({
 ```
 
 Point the load balancer, or the Kubernetes `readinessProbe`, at `/_ready`: it answers `503` while a registered database is down and during shutdown. Use `/_health` only to decide whether to restart the container.
+
+On shutdown, `/_ready` answers `503` for `drainMs` before the server stops accepting connections. Set it to at least the probe's interval, so the load balancer notices before requests are refused:
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  healthcheck: { enabled: true, drainMs: 10_000 }, // Kubernetes: periodSeconds 5 x failureThreshold 2
+})
+```
 
 ---
 

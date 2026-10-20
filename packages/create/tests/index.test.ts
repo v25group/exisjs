@@ -118,9 +118,9 @@ describe('create-exis scaffolding', () => {
       templates.packageJsonTemplate('test-api', true, true)
     )
     expect(pkgJson.name).toBe('test-api')
-    expect(pkgJson.dependencies.exisjs).toBe('^0.10.0-alpha.0')
+    expect(pkgJson.dependencies.exisjs).toBe('^0.10.0-alpha.1')
     // B8: the CLI is a development tool; production starts main.js
-    expect(pkgJson.devDependencies['@exisjs/cli']).toBe('^0.10.0-alpha.0')
+    expect(pkgJson.devDependencies['@exisjs/cli']).toBe('^0.10.0-alpha.1')
     expect(pkgJson.dependencies['@exisjs/cli']).toBeUndefined()
     expect(pkgJson.scripts.start).toBe('exisjs start')
     expect(pkgJson.devDependencies.typescript).toBeDefined()

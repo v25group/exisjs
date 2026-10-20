@@ -39,8 +39,28 @@ const c = {
   red: '\x1b[31m',
 }
 
+const HELP = `Usage: npm create exisjs@latest [project-name] -- [options]
+
+Options:
+  -y, --yes                 Accept the defaults, no questions
+  --ts, --typescript        TypeScript (default)
+  --js, --javascript        JavaScript
+  --functional              Function-based routes (default)
+  --oop                     Class-based controllers
+  --eslint, --no-eslint     Add ESLint (default), or leave it out
+  --use-npm, --use-pnpm, --use-yarn, --use-bun
+                            Package manager to install with
+  --skip-install            Don't install dependencies
+  --skip-git                Don't initialise a git repository
+  -h, --help                Show this help
+`
+
 async function run() {
   const args = process.argv.slice(2)
+  if (args.includes('-h') || args.includes('--help')) {
+    console.log(HELP)
+    return
+  }
   const prompts = (await import('prompts')).default
 
   const isYes = args.includes('-y') || args.includes('--yes')

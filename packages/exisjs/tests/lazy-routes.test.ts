@@ -151,4 +151,38 @@ describe('Route files that fail to load outside development', () => {
       await fs.rm(dir, { recursive: true, force: true })
     }
   })
+
+  // Alpha test result 4: the built manifest imports every route at once
+  it('name the file when the built manifest fails to import', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'exis-manifest-fail-'))
+    try {
+      const http = path.join(dir, '.exis', 'server', 'src', 'http')
+      await fs.mkdir(path.join(http, 'ok'), { recursive: true })
+      await fs.mkdir(path.join(http, 'needs-db'), { recursive: true })
+      await fs.writeFile(
+        path.join(http, 'ok', 'route.js'),
+        'exports.default = {}'
+      )
+      await fs.writeFile(
+        path.join(http, 'needs-db', 'route.js'),
+        `throw new Error('DATABASE_URL: Expected value, received undefined')`
+      )
+      await fs.writeFile(
+        path.join(dir, '.exis', 'routes-manifest.js'),
+        `import * as route_0 from './server/src/http/ok/route.js'
+import * as route_1 from './server/src/http/needs-db/route.js'
+export const manifest = [route_0, route_1]
+`
+      )
+      const app = new App({ env: 'production', server: 'node' })
+      // The built manifest is read only in production
+      process.env.NODE_ENV = 'production'
+      await expect(
+        (app as any).routeScanner.autoMountRoutes(dir)
+      ).rejects.toThrow(/needs-db.route\.js failed to load.*DATABASE_URL/)
+    } finally {
+      process.env.NODE_ENV = 'test'
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
 })

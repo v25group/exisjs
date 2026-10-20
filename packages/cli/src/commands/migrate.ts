@@ -77,25 +77,53 @@ export function migratePackageJson(
   return changes
 }
 
-/** Dockerfile lines that should change; the file is not edited */
+const START_BIN = 'node_modules/.bin/exisjs start'
+
+/** Deployment-file lines that should change; the files are not edited */
 export function dockerfileAdvice(cwd: string): string[] {
-  const file = path.join(cwd, 'Dockerfile')
-  if (!fs.existsSync(file)) return []
   const advice: string[] = []
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
-  lines.forEach((line, i) => {
-    const n = `Dockerfile:${i + 1}`
-    // npm between the platform and the server turns SIGTERM into an error
-    if (/^\s*CMD\b/i.test(line) && /\bnpm\b.*\bstart/.test(line)) {
-      advice.push(`${n}: ${START_CMD}   (was: ${line.trim()})`)
+  const check = (
+    name: string,
+    test: (line: string, at: string) => void
+  ): void => {
+    const file = path.join(cwd, name)
+    if (!fs.existsSync(file)) return
+    fs.readFileSync(file, 'utf8')
+      .split(/\r?\n/)
+      .forEach((line, i) => test(line, `${name}:${i + 1}`))
+  }
+  // npm between the platform and the server turns SIGTERM into an error
+  const npmStart = /\bnpm\b.*\bstart\b/
+
+  check('Dockerfile', (line, at) => {
+    if (/^\s*CMD\b/i.test(line) && npmStart.test(line)) {
+      advice.push(`${at}: ${START_CMD}   (was: ${line.trim()})`)
     }
     if (
       /npm\s+(ci|install)\b.*--omit=dev/.test(line) &&
       !/--omit=optional/.test(line)
     ) {
       advice.push(
-        `${n}: add --omit=optional so the build tooling stays out of the image   (was: ${line.trim()})`
+        `${at}: add --omit=optional so the build tooling stays out of the image   (was: ${line.trim()})`
       )
+    }
+    if (
+      /^\s*RUN\b.*\bexisjs\s+build\b/i.test(line) &&
+      !/--skip-env-check/.test(line)
+    ) {
+      advice.push(
+        `${at}: add --skip-env-check; secrets are not set while the image builds   (was: ${line.trim()})`
+      )
+    }
+  })
+  check('nixpacks.toml', (line, at) => {
+    if (/^\s*cmd\s*=/.test(line) && npmStart.test(line)) {
+      advice.push(`${at}: cmd = "${START_BIN}"   (was: ${line.trim()})`)
+    }
+  })
+  check('Procfile', (line, at) => {
+    if (/^\s*web\s*:/.test(line) && npmStart.test(line)) {
+      advice.push(`${at}: web: ${START_BIN}   (was: ${line.trim()})`)
     }
   })
   return advice

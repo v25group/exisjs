@@ -49,6 +49,8 @@ yarn create exisjs my-api
 bun create exisjs my-api
 ```
 
+Yarn 1 can't take a version tag in `yarn create`. To try a prerelease with Yarn 1, run `npx create-exisjs@alpha my-api`, then `yarn install` in the project.
+
 The CLI prompts you with configuration options:
 
 ```text filename="Terminal"
@@ -68,6 +70,8 @@ For automated environments, Docker initialization, or CI/CD pipelines, you can p
 ```bash
 npx create-exisjs@latest my-api --ts --functional --eslint --yes
 ```
+
+`npx create-exisjs@latest --help` lists every flag.
 
 #### Complete CLI Flag Reference
 

@@ -26,8 +26,10 @@ export class ServerBootstrapper {
         require('uWebSockets.js')
         this.engine = new UwsEngine(app)
       } catch {
+        // Not on npm, so not installed with exisjs; the app installs it
         app.log.warn(
-          "server: 'uws' was requested, but uWebSockets.js is not available. Falling back to the native Node.js HTTP server."
+          "server: 'uws' was requested, but uWebSockets.js is not installed. " +
+            'Falling back to the Node.js HTTP server. Install it with: npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz'
         )
         this.engine = new NodeEngine(app)
       }

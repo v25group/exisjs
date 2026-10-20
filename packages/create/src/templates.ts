@@ -31,21 +31,21 @@ export function packageJsonTemplate(
 
     scripts,
     dependencies: {
-      exisjs: '^0.10.0-alpha.0',
+      exisjs: '^0.10.0-alpha.1',
     },
   }
 
   // The exisjs command (dev, build, test) is a development tool
   if (useTypeScript) {
     pkg.devDependencies = {
-      '@exisjs/cli': '^0.10.0-alpha.0',
+      '@exisjs/cli': '^0.10.0-alpha.1',
       '@types/node': '^20.0.0',
       prettier: '^3.9.9',
       typescript: '^5.9.3',
     }
   } else {
     pkg.devDependencies = {
-      '@exisjs/cli': '^0.10.0-alpha.0',
+      '@exisjs/cli': '^0.10.0-alpha.1',
       prettier: '^3.9.9',
     }
   }

@@ -886,9 +886,25 @@ export class App<TRoutes extends Record<string, any> = {}> {
   /** Set once shutdown starts, so readiness probes stop sending traffic */
   public _shuttingDown = false
 
-  close(timeout = 5000, signal?: string): Promise<void> {
-    this._shuttingDown = true
+  async close(timeout = 5000, signal?: string): Promise<void> {
+    if (!this._shuttingDown) {
+      this._shuttingDown = true
+      // Keep serving while /_ready answers 503, so load balancers stop
+      // routing here before the listener closes
+      const delay = this.readinessDrainMs()
+      if (delay > 0) {
+        this.log.info(`Not ready; closing the listener in ${delay} ms`)
+        await new Promise((r) => setTimeout(r, delay))
+      }
+    }
     return this.bootstrapper.close(timeout, signal)
+  }
+
+  private readinessDrainMs(): number {
+    const hc = this.options.healthcheck
+    if (!hc || typeof hc !== 'object' || !hc.enabled || hc.readyPath === false)
+      return 0
+    return hc.drainMs ?? (process.env.NODE_ENV === 'production' ? 5000 : 0)
   }
 
   // ─── Expose internals ─────────────────────────────────────────────────────────

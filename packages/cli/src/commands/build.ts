@@ -77,6 +77,15 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     }
   }
 
+  // A failed build must not leave output that `exisjs start` would run
+  const failBuild = (): never => {
+    if (options.clean !== false) {
+      fs.rmSync(path.join(cwd, outDir), { recursive: true, force: true })
+      fs.rmSync(path.join(cwd, '.exis', 'routes-manifest.js'), { force: true })
+    }
+    return process.exit(1)
+  }
+
   process.stdout.write(`${c.dim}compiling...${c.reset}`)
   const start = Date.now()
 
@@ -91,7 +100,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   } catch {
     error('TypeScript compiler not found in project.')
     error('Install it: npm install -D typescript')
-    process.exit(1)
+    failBuild()
   }
 
   // Normalize path for TS on Windows
@@ -99,7 +108,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   const configFile = ts.readConfigFile(tsconfigPathForTs, ts.sys.readFile)
   if (configFile.error) {
     error('Error reading tsconfig.json')
-    process.exit(1)
+    failBuild()
   }
 
   const parsedConfig = ts.parseJsonConfigFileContent(
@@ -203,7 +212,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
       console.error(
         `\n${c.yellow}  Fix the errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
       )
-      process.exit(1)
+      failBuild()
     }
   }
   if (process.env.NODE_ENV === 'test') {
@@ -238,7 +247,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
   } catch (err: any) {
     console.error('')
     error(`COMPILE_FAILED: ${err?.message ?? 'esbuild encountered an error'}`)
-    process.exit(1)
+    failBuild()
   }
 
   // resolve path aliases natively (no external deps)
@@ -253,7 +262,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
     console.error(
       `\n${c.yellow}  Fix the routing errors above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
     )
-    process.exit(1)
+    failBuild()
   }
 
   // Generate .exis/server/package.json to mirror host module type (ESM vs CJS)
@@ -318,7 +327,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
         if (oopFiles.length > 0 && functionalFiles.length > 0) {
           console.error('')
           error(mixedParadigmMessage(oopFiles, functionalFiles))
-          process.exit(1)
+          failBuild()
         }
 
         process.stdout.write(
@@ -344,7 +353,7 @@ export async function buildCommand(options: BuildOptions = {}): Promise<void> {
           `\n${c.yellow}  Fix the error above, then run ${c.reset}${c.primary}exis build${c.reset}${c.yellow} again.${c.reset}\n`
         )
       }
-      process.exit(1)
+      failBuild()
     }
   }
 
