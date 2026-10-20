@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.0-beta.0`** | 2026-10-20 | Prerelease (`beta` tag) | Ctrl+C in a terminal skips the readiness drain; deployment guide: use a clean `npm ci --omit=...` instead of `npm prune` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.2`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.1: `server` in `exis.config.ts` takes effect and the uWS fallback warning prints, "install the CLI" hints name the matching version, start errors no longer show framework code on Windows | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.1`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.0: `/_ready` answers `503` during a shutdown drain, the `migrate` notice appears, a global CLI hands off to the project's, production logs from `exisjs start`, failing route files are named | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.0`** | 2026-10-19 | Prerelease (`alpha` tag): Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; failed route files stop the start; `partial()` keeps unsent fields unset | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -36,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | **`v0.7.0`** | 2026-09-06 | Major Architecture | Monorepo decoupling, `boundary.ts` pipeline, native Rust `tex` validator | [**Read v0.7.0 Notes →**](./changelog/v0.7/v0.7.0.md) |
 
 ---
+
+## Prerelease: [0.10.0-beta.0] - 2026-10-20
+
+> Feature-complete for 0.10.0. Install with `npm install exisjs@beta` and `npm install -D @exisjs/cli@beta`. Details in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md#changes-in-0100-beta0).
+
+### Fixed
+- With `healthcheck` on, Ctrl+C in a terminal waited for the readiness drain (5 s in production) before stopping; it now stops at once. `SIGTERM`, and `SIGINT` without a terminal, still drain.
+
+### Docs
+- Deployment guide: `npm prune --omit=dev --omit=optional` also removes the `exisjs` command; use a clean `npm ci --omit=dev --omit=optional`, or run `npm rebuild exisjs` after pruning.
 
 ## Prerelease: [0.10.0-alpha.2] - 2026-10-20
 

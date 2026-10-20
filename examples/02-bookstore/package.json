@@ -1,6 +1,6 @@
 {
   "name": "02-bookstore",
-  "version": "0.10.0-alpha.2",
+  "version": "0.10.0-beta.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,6 +24,6 @@
     "typescript-eslint": "^8.71.1",
     "tsx": "^4.23.15",
     "@types/jsonwebtoken": "^9.0.10",
-    "@exisjs/cli": "^0.10.0-alpha.2"
+    "@exisjs/cli": "^0.10.0-beta.0"
   }
 }

@@ -50,6 +50,7 @@ CMD ["node_modules/.bin/exisjs", "start"]
 
 - **`--omit=optional`** keeps the CLI out of the image. Until 0.11, `exisjs` lists `@exisjs/cli` as an optional dependency so that projects created before 0.10 keep working. If you use the uWebSockets.js engine (`server: 'uws'`), install it in the project (`npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`): `exisjs` doesn't install it. uWebSockets.js is not published on npm; this URL is its GitHub release, which needs no `git` in the image. Its Linux binary needs glibc 2.38 or later, which `node:24-slim` (Debian 12, glibc 2.36) doesn't have: use `node:24-trixie-slim` in both stages instead. On `node:24-slim`, the server logs `uWebSockets.js failed to load` and runs on Node.
 - **`npm ci`** in the build stage installs `devDependencies`, which include `@exisjs/cli` and `typescript`.
+- **Use a clean `npm ci --omit=...`, not `npm prune`.** Both `exisjs` and `@exisjs/cli` provide the `exisjs` command. When `npm prune --omit=dev --omit=optional` removes the CLI, npm also removes the command and doesn't link the runtime's, so `exisjs start` is not found. If your build prunes, run `npm rebuild exisjs` after it, or start with `node .exis/server/main.js`, which needs no command.
 
 Add a `.dockerignore`, so local files never reach the image. **`.env` must be in it**, or your local secrets are copied into every image layer:
 
@@ -94,7 +95,7 @@ In the `CMD`, call the binary itself rather than `npm start`: with npm in betwee
 
 On `docker stop`:
 
-1. If readiness probes are on (`healthcheck: { enabled: true }`), `/_ready` answers `503` while the server keeps accepting requests for `healthcheck.drainMs` (default 5 seconds in production). That gives the load balancer time to stop sending traffic here.
+1. If readiness probes are on (`healthcheck: { enabled: true }`), `/_ready` answers `503` while the server keeps accepting requests for `healthcheck.drainMs` (default 5 seconds in production). That gives the load balancer time to stop sending traffic here. Ctrl+C in a terminal skips this wait.
 2. The server stops accepting new connections.
 3. Requests in progress get up to 5 seconds to finish.
 4. `onClose` hooks run and registered databases disconnect.

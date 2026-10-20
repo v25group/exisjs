@@ -875,6 +875,23 @@ describe('ENT-4: liveness and readiness', () => {
     expect(closed).toBe(false)
     await closing
   })
+
+  it('skips the drain for Ctrl+C in a terminal', async () => {
+    const app = new App({ healthcheck: { enabled: true, drainMs: 5000 } })
+    const tty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY')
+    Object.defineProperty(process.stdin, 'isTTY', {
+      value: true,
+      configurable: true,
+    })
+    try {
+      const start = Date.now()
+      await app.close(undefined, 'SIGINT')
+      expect(Date.now() - start).toBeLessThan(1000)
+    } finally {
+      if (tty) Object.defineProperty(process.stdin, 'isTTY', tty)
+      else delete (process.stdin as any).isTTY
+    }
+  })
 })
 
 describe('SEC-1: deny-by-default routes', () => {

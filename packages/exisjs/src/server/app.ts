@@ -894,7 +894,9 @@ export class App<TRoutes extends Record<string, any> = {}> {
       this._shuttingDown = true
       // Keep serving while /_ready answers 503, so load balancers stop
       // routing here before the listener closes
-      const delay = this.readinessDrainMs()
+      // Ctrl+C in a terminal is a person, not a load balancer: no drain
+      const interactive = signal === 'SIGINT' && !!process.stdin.isTTY
+      const delay = interactive ? 0 : this.readinessDrainMs()
       if (delay > 0) {
         this.log.info(`Not ready; closing the listener in ${delay} ms`)
         await new Promise((r) => setTimeout(r, delay))
