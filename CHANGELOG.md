@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.0`** | 2026-10-21 | Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; readiness drain on shutdown; settings that did nothing fail at start-up; `migrate` checks Dockerfile, `nixpacks.toml` and `Procfile`; health probes log at `debug` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-beta.0`** | 2026-10-20 | Prerelease (`beta` tag) | Ctrl+C in a terminal skips the readiness drain; deployment guide: use a clean `npm ci --omit=...` instead of `npm prune` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.2`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.1: `server` in `exis.config.ts` takes effect and the uWS fallback warning prints, "install the CLI" hints name the matching version, start errors no longer show framework code on Windows | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.1`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.0: `/_ready` answers `503` during a shutdown drain, the `migrate` notice appears, a global CLI hands off to the project's, production logs from `exisjs start`, failing route files are named | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -37,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | **`v0.7.0`** | 2026-09-06 | Major Architecture | Monorepo decoupling, `boundary.ts` pipeline, native Rust `tex` validator | [**Read v0.7.0 Notes →**](./changelog/v0.7/v0.7.0.md) |
 
 ---
+
+## Current Release: [0.10.0] - 2026-10-21
+
+> The CLI moves to `@exisjs/cli`, production installs are about 10x smaller, and settings that did nothing now work or stop the start. Includes everything from the prereleases below. Upgrade with `npm install exisjs@latest` and `npm install -D @exisjs/cli@latest`, then `npx exisjs migrate`. Details and upgrade steps in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md).
+
+### Fixed (since beta.0)
+- `exisjs migrate` flags `npm run build` without `--skip-env-check` when the `build` script is `exisjs build`, in a Dockerfile or `nixpacks.toml`.
+- Successful health probes (`/health`, and `/_health` / `/_ready` with `healthcheck` on) log at `debug`, so a Docker `HEALTHCHECK` no longer fills the production log; failures still log.
+- A database that fails to connect at `exisjs start` is logged as an error instead of hidden; the server starts and `/_ready` answers `503` until it is healthy.
 
 ## Prerelease: [0.10.0-beta.0] - 2026-10-20
 
@@ -85,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.9.2] - 2026-10-17
+## Previous Release: [0.9.2] - 2026-10-17
 
 > Development server fixes, a safe default environment, and a reworked validator and sanitizer module. Details in [**`changelog/v0.9/v0.9.2.md`**](./changelog/v0.9/v0.9.2.md).
 

@@ -162,14 +162,13 @@ async function start() {
         await app.onStartHook(app)
       }
 
-      // Auto-connect any databases registered in onStartHook or plugins before listening
-      try {
-        const { DatabaseManager } = await import('../database/lifecycle')
-        if (DatabaseManager.size > 0) {
-          await DatabaseManager.connectAll()
-        }
-      } catch {
-        // ignore if database module unavailable
+      // Auto-connect any databases registered in onStartHook or plugins before listening.
+      // A failed connection is logged, not fatal: the server starts and `/_ready`
+      // answers 503 until the database is healthy, so the platform can tell the difference.
+      if (DatabaseManager.size > 0) {
+        await DatabaseManager.connectAll().catch((err) =>
+          app.log.error(err.message)
+        )
       }
 
       await app.listen()

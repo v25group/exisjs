@@ -1,6 +1,6 @@
 {
   "name": "@exisjs/cli",
-  "version": "0.10.0-beta.0",
+  "version": "0.10.0",
   "description": "The exisjs command: dev server with hot reload, build, test, run and start for ExisJS apps. Install as a development dependency.",
   "keywords": [
     "exisjs",
@@ -48,7 +48,7 @@
     "tsx": "^4.23.15"
   },
   "peerDependencies": {
-    "exisjs": "0.10.0-beta.0",
+    "exisjs": "0.10.0",
     "typescript": ">=5.0.0"
   },
   "devDependencies": {

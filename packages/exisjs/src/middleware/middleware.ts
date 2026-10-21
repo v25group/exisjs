@@ -252,8 +252,12 @@ export function requestId(): Handler {
 // ─── Request Logger (Pino) ───────────────────────────────────────────────────────
 
 export function requestLogger(
-  loggerOrConfig: Logger | LoggerConfig = {}
+  loggerOrConfig: Logger | LoggerConfig = {},
+  // Health probes (Docker HEALTHCHECK, load balancers) hit these every few seconds:
+  // successful ones log at debug so they don't bury real traffic; failures still log
+  probePaths: readonly string[] = []
 ): Handler {
+  const probes = new Set(probePaths)
   const log: Logger = isLogger(loggerOrConfig)
     ? loggerOrConfig
     : createLogger(loggerOrConfig)
@@ -320,6 +324,8 @@ export function requestLogger(
         } else {
           logger.warn(logData, `${req.method} ${req.path}`)
         }
+      } else if (probes.has(req.path)) {
+        logger.debug(logData, `${req.method} ${req.path}`)
       } else {
         logger.info(logData, `${req.method} ${req.path}`)
       }

@@ -20,6 +20,6 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.71.1",
     "tsx": "^4.23.15",
-    "@exisjs/cli": "^0.10.0-beta.0"
+    "@exisjs/cli": "^0.10.0"
   }
 }

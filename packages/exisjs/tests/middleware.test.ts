@@ -431,6 +431,37 @@ describe('requestLogger()', () => {
     expect(mockLog.warn).toHaveBeenCalled()
   })
 
+  it('logs successful health probes at debug, failed ones as usual', () => {
+    const mockLog = {
+      info: ex.fn(),
+      debug: ex.fn(),
+      warn: ex.fn(),
+      error: ex.fn(),
+      child: ex.fn(() => mockLog),
+    }
+    const handler = requestLogger(mockLog as never, ['/health'])
+    const ok = createMockResponse()
+    handler(
+      createMockRequest({ method: 'GET', url: '/health' }),
+      ok,
+      createMockNext()
+    )
+    ok.statusCode = 200
+    ok.end()
+    expect(mockLog.debug).toHaveBeenCalled()
+    expect(mockLog.info).not.toHaveBeenCalled()
+
+    const down = createMockResponse()
+    handler(
+      createMockRequest({ method: 'GET', url: '/health' }),
+      down,
+      createMockNext()
+    )
+    down.statusCode = 503
+    down.end()
+    expect(mockLog.error).toHaveBeenCalled()
+  })
+
   it('logs errors for 5xx errors', () => {
     const mockLog = {
       info: ex.fn(),

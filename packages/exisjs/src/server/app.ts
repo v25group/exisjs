@@ -588,7 +588,18 @@ export class App<TRoutes extends Record<string, any> = {}> {
     }
 
     if (logOpt !== false) {
-      this.globalMiddleware.push(requestLogger(this.log))
+      const hc = this.options.healthcheck
+      const builtInProbes =
+        hc && typeof hc === 'object' && hc.enabled
+          ? [
+              hc.path || '/_health',
+              ...(hc.readyPath === false ? [] : [hc.readyPath ?? '/_ready']),
+            ]
+          : []
+      // `/health` is the project template's route, which the documented Dockerfile probes
+      this.globalMiddleware.push(
+        requestLogger(this.log, ['/health', ...builtInProbes])
+      )
     }
 
     if (compressionOpt) {
