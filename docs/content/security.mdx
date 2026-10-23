@@ -22,8 +22,8 @@ The following security middlewares are exported from `exisjs/middleware` and can
 | `rateLimit` | `rateLimit(options?)` | Enforces request volume limits per IP or custom key, returning `429 Too Many Requests` with standard rate-limit headers. |
 | `ipFilter` | `ipFilter(options)` | Grants or restricts access based on client IP addresses and CIDR subnets. |
 | `idempotent` | `idempotent(options?)` | Caches mutation responses keyed by the `Idempotency-Key` header to prevent duplicate operations. |
-| `hpp` | `hpp()` | Protects against HTTP Parameter Pollution by normalizing repeated query parameters and form fields. |
-| `mongoSanitize` | `mongoSanitize()` | Strips MongoDB query operator keys (keys starting with `$` or containing `.`) from bodies, queries, and parameters. |
+| `hpp` | `hpp({ whitelist })` | Protects against HTTP Parameter Pollution: a repeated query parameter or form field keeps its last value. JSON bodies are left alone. |
+| `mongoSanitize` | `mongoSanitize({ allowDots, exclude })` | Removes keys that start with `$` or contain `.` from bodies, queries and parameters. |
 | `timeout` | `timeout(ms \| options)` | Terminates requests exceeding a specified duration with an HTTP `503 Service Unavailable` response. |
 | `blockSuspiciousProbes` | `blockSuspiciousProbes(options?)` | Intercepts automated vulnerability scanners (probing for `.env`, `/.git`, WordPress files) and terminates them immediately. |
 | `timingSafeEqual` | `timingSafeEqual(a, b)` | Compares secrets, tokens, or hashes in constant time to prevent side-channel timing attacks. |
@@ -84,6 +84,17 @@ export default exis({
 })
 ```
 
+The middleware also checks that the `Origin` (or `Referer`) of a state-changing request is the request's own host. Behind a reverse proxy, set `trustProxy` so the host comes from `X-Forwarded-Host`; otherwise the proxy's upstream host is compared and every request fails with `403 CSRF_FAILED`. When the API is served from a different host than the site, list the site:
+
+```typescript
+csrf({
+  secret: process.env.CSRF_SECRET!,
+  allowedOrigins: ['https://crm.example.com'],
+})
+```
+
+Outside production, a mismatch puts `expectedHost` and `receivedOrigin` in the error's `details`.
+
 ---
 
 ## 3. Rate Limiting (`rateLimit`)
@@ -141,6 +152,63 @@ If the store fails, requests are let through and a warning is logged, so a cache
 | `RateLimit-Reset` | Time in seconds until the current quota window resets. | `18` |
 | `Retry-After` | Included on `429 Too Many Requests` responses, indicating wait time. | `18` |
 | `X-RateLimit-*` | Legacy header equivalents provided for compatibility. | `X-RateLimit-Reset: 1727871234` |
+
+### Login lockout keyed on the email (`consume`, `assertNotLimited`)
+
+`rateLimit()` runs before the body is validated, so it can only key on the request (the IP). A lockout per account needs the email, which only the handler has. Use the store directly:
+
+```typescript filename="src/http/auth/route.ts"
+import { HttpError } from 'exisjs/error'
+import { MemoryRateLimitStore, consume, assertNotLimited } from 'exisjs/middleware'
+
+const lockouts = new MemoryRateLimitStore()
+const limit = { max: 5, windowMs: 15 * 60_000 }
+
+export async function login(email: string, password: string) {
+  const key = `login:${email.toLowerCase()}`
+  await assertNotLimited(lockouts, key, limit) // 429 while locked, without counting
+  const user = await findUser(email)
+  if (!user || !(await verifyPassword(user, password))) {
+    await consume(lockouts, key, limit) // count the failure
+    throw new HttpError('Invalid email or password', 401, 'UNAUTHORIZED')
+  }
+  await lockouts.reset(key) // a successful sign-in clears it
+  return user
+}
+```
+
+Both throw the standard `429 RATE_LIMIT_EXCEEDED` error, with `details.retryAfter` in seconds. `assertNotLimited` needs a store with `get()`; `reset()` is optional on custom stores.
+
+A MongoDB store, for apps without Redis, shared by every instance. The TTL index deletes a key's document after its window:
+
+```typescript filename="src/common/rate-limit-store.ts"
+import type { RateLimitStore } from 'exisjs/middleware'
+import { db } from '../database/db'
+
+const hits = db.collection<{ _id: string; count: number; resetAt: Date }>('rate_limits')
+await hits.createIndex({ resetAt: 1 }, { expireAfterSeconds: 0 })
+
+export const mongoStore: RateLimitStore = {
+  async increment(key, windowMs) {
+    const now = new Date()
+    // A finished window starts again at 1
+    await hits.deleteOne({ _id: key, resetAt: { $lte: now } })
+    const doc = await hits.findOneAndUpdate(
+      { _id: key },
+      { $inc: { count: 1 }, $setOnInsert: { resetAt: new Date(now.getTime() + windowMs) } },
+      { upsert: true, returnDocument: 'after' }
+    )
+    return { count: doc!.count, resetTime: doc!.resetAt.getTime() }
+  },
+  async get(key) {
+    const doc = await hits.findOne({ _id: key, resetAt: { $gt: new Date() } })
+    return doc ? { count: doc.count, resetTime: doc.resetAt.getTime() } : undefined
+  },
+  async reset(key) {
+    await hits.deleteOne({ _id: key })
+  },
+}
+```
 
 ---
 
@@ -206,7 +274,7 @@ export default controller({
 
 ### HTTP Parameter Pollution (`hpp`)
 
-Prevents parameter pollution attacks where query string or body keys are duplicated (e.g. `?role=user&role=admin`):
+Prevents parameter pollution attacks where a query or form key is repeated (`?role=user&role=admin`). The handler sees the last value. Arrays in a JSON body are never changed, because JSON can't repeat a key.
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -214,14 +282,17 @@ import { hpp } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
-    app.use(hpp())
+    // `?tags=a&tags=b` stays an array; every other repeated key keeps its last value
+    app.use(hpp({ whitelist: ['tags'] }))
   },
 })
 ```
 
+A strict `tex` schema already rejects an array where one value is expected, so with schemas on every route `hpp()` is a second line of defence.
+
 ### NoSQL Injection Sanitization (`mongoSanitize` / `dbSanitize`)
 
-Strips prohibited operator keys containing `$` or `.` from `req.body`, `req.query`, and `req.params`:
+Removes keys that start with `$` (query operators such as `$gt` and `$where`) or contain `.` from `req.body`, `req.query` and `req.params`. Removed keys are dropped silently, so the handler never sees them. Only JSON and urlencoded bodies are read.
 
 ```typescript filename="src/http/server.ts"
 import { exis } from 'exisjs'
@@ -229,10 +300,24 @@ import { mongoSanitize } from 'exisjs/middleware'
 
 export default exis({
   async onStart(app) {
-    app.use(mongoSanitize())
+    app.use(
+      mongoSanitize({
+        // Keep dotted keys such as `settings.theme`; `$` keys are still removed
+        allowDots: false,
+        // Meta's webhook handshake sends `hub.mode`, `hub.verify_token` and `hub.challenge`
+        exclude: [/^\/webhooks\//],
+      })
+    )
   },
 })
 ```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `allowDots` | `false` | Keep keys that contain a dot. Leave it off if a body can reach an update query, where `"profile.role"` sets a nested field |
+| `exclude` | `[]` | Paths (strings or regular expressions) the middleware skips |
+
+Strict `tex` schemas are the stronger defence: an object schema rejects an operator object (`{ "$gt": "" }`) where a string is expected.
 
 ---
 

@@ -86,6 +86,9 @@ export function compression(): Handler {
       res.vary('Accept-Encoding')
       // Remove Content-Length since compressed size will differ
       res.raw.removeHeader('Content-Length')
+      // Nothing is written until zlib finishes; without this the router sees an
+      // unsent response and answers 204 under the compressed body
+      res._pending = true
 
       // zlib's async API runs on the libuv threadpool, so a large body does
       // not block other requests while it compresses

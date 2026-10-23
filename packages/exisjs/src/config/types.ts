@@ -24,6 +24,11 @@ export interface LoggerConfig {
   level?: 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent'
   pretty?: boolean
   redact?: string[]
+  /**
+   * Paths whose successful requests log at `debug`, like the built-in health
+   * probes: a custom probe, an uptime monitor's URL
+   */
+  quietPaths?: string[]
 }
 
 // ─── Logger Types ─────────────────────────────────────────────────────────────
@@ -86,7 +91,7 @@ export interface HealthCheckConfig {
   /**
    * On shutdown, how long `/_ready` answers 503 while the server still
    * accepts requests, before it closes the listener. Set it to at least
-   * your load balancer's or readinessProbe's check interval. Default 5000
+   * your load balancer's or readinessProbe's check interval. Default 2000
    * in production, 0 otherwise.
    */
   drainMs?: number
@@ -141,7 +146,12 @@ export interface ExisConfig {
   docs?: SwaggerConfig | boolean
   swagger?: SwaggerConfig | boolean
   helmet?: HelmetConfig | boolean
-  trustProxy?: boolean | number
+  /**
+   * Which proxy headers to believe for `req.ip`, `req.protocol` and `req.host`:
+   * `'cloudflare'` behind Cloudflare, a hop count behind your own proxies,
+   * `{ header: 'x-real-ip' }` for a proxy that sets one named header
+   */
+  trustProxy?: import('../server/helpers/ip').TrustProxy
   /** Route access rules (`@Roles`, `@Permissions`, functional `roles` / `permissions`) */
   authorization?: import('../router/authorize').AuthorizationConfig
   /** Error response options */

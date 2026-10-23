@@ -33,6 +33,13 @@ export const TEST_REPORTER_PATH = path.join(
   'reporter.mjs'
 )
 
+/** Preloaded into each test process: fails a file whose process doesn't exit */
+export const TEST_EXIT_WATCH_PATH = path.join(
+  __dirname,
+  'testing',
+  'exit-watch.mjs'
+)
+
 /** The installed runtime version, which the CLI must match */
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 export const RUNTIME_VERSION: string = require('../package.json').version

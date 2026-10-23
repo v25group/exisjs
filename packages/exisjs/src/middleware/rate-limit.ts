@@ -39,6 +39,12 @@ export interface RateLimitHit {
  */
 export interface RateLimitStore {
   increment(key: string, windowMs: number): RateLimitHit | Promise<RateLimitHit>
+  /** The key's hits in the current window without adding one; `undefined` if none */
+  get?(
+    key: string
+  ): RateLimitHit | undefined | Promise<RateLimitHit | undefined>
+  /** Forgets the key, e.g. clears a login lockout after a successful sign-in */
+  reset?(key: string): void | Promise<void>
 }
 
 /** Per-process store; idle keys are dropped once their window ends. */
@@ -65,6 +71,70 @@ export class MemoryRateLimitStore implements RateLimitStore {
     record.count += 1
     return { count: record.count, resetTime: record.resetTime }
   }
+
+  get(key: string): RateLimitHit | undefined {
+    const record = this.hits.get(key)
+    if (!record || record.resetTime <= Date.now()) return undefined
+    return { count: record.count, resetTime: record.resetTime }
+  }
+
+  reset(key: string): void {
+    this.hits.delete(key)
+  }
+}
+
+export interface ConsumeOptions {
+  max: number
+  windowMs: number
+  message?: string
+}
+
+function tooMany(hit: RateLimitHit, message?: string): HttpError {
+  const retryAfter = Math.max(1, Math.ceil((hit.resetTime - Date.now()) / 1000))
+  return new HttpError(
+    message || 'Too many requests, please try again later.',
+    429,
+    'RATE_LIMIT_EXCEEDED',
+    { retryAfter }
+  )
+}
+
+/**
+ * Counts one hit for `key` and throws the standard 429 once it passes `max`.
+ * For limits keyed on something only the handler knows, such as the email
+ * of a login attempt (route middleware runs before the body is validated).
+ *
+ * @example Login lockout: refuse while locked, count failures, clear on success
+ * ```ts
+ * await assertNotLimited(store, `login:${email}`, { max: 5, windowMs: 15 * 60_000 })
+ * if (!(await verifyPassword(user, password))) {
+ *   await consume(store, `login:${email}`, { max: 5, windowMs: 15 * 60_000 })
+ *   throw new HttpError('Invalid email or password', 401, 'UNAUTHORIZED')
+ * }
+ * await store.reset?.(`login:${email}`)
+ * ```
+ */
+export async function consume(
+  store: RateLimitStore,
+  key: string,
+  options: ConsumeOptions
+): Promise<RateLimitHit> {
+  const hit = await store.increment(key, options.windowMs)
+  if (hit.count > options.max) throw tooMany(hit, options.message)
+  return hit
+}
+
+/** Throws the standard 429 if `key` already reached `max`, without counting a hit. Needs `store.get`. */
+export async function assertNotLimited(
+  store: RateLimitStore,
+  key: string,
+  options: ConsumeOptions
+): Promise<void> {
+  if (!store.get) {
+    throw new Error('assertNotLimited needs a RateLimitStore with get()')
+  }
+  const hit = await store.get(key)
+  if (hit && hit.count >= options.max) throw tooMany(hit, options.message)
 }
 
 export function rateLimit(options: RateLimitOptions = {}): Handler {

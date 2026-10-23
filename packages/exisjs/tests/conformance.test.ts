@@ -927,6 +927,58 @@ describe('SEC-1: deny-by-default routes', () => {
     expect((await client.get('/dd/private')).status).toBe(200)
   })
 
+  it('answers 401/403 before validating input, so errors never describe the API', async () => {
+    const { tex } = await import('../src/validator/tex')
+    const Payment = tex.object({ amount: tex.number() })
+
+    @Controller('/pay')
+    class PayController {
+      @Post('/')
+      @Permissions('payments.record')
+      create(@Body(Payment) body: any) {
+        return body
+      }
+    }
+
+    let user: any = undefined
+    const app = new App({ authorization: { defaultPolicy: 'authenticated' } })
+    app.use((req: any, _res: any, next: any) => {
+      req.user = user
+      next()
+    })
+    app.registerControllers([PayController])
+    app.registerFunctionalController(
+      controller({
+        yearly: route.get('/yearly', {
+          permissions: ['analytics.read'],
+          query: tex.object({ year: tex.coerce.number() }),
+          handle: ({ query }: any) => query,
+        }),
+        notes: route.post('/notes', {
+          body: tex.object({ text: tex.string() }),
+          handle: ({ body }: any) => body,
+        }),
+      })
+    )
+    const client = createTestApp(app)
+
+    expect((await client.post('/pay').send({ amount: 'x' })).status).toBe(401)
+    expect((await client.get('/yearly')).status).toBe(401)
+    expect((await client.post('/notes').send({})).status).toBe(401)
+
+    user = { id: '1', permissions: [] }
+    expect((await client.post('/pay').send({ amount: 'x' })).status).toBe(403)
+    expect((await client.get('/yearly')).status).toBe(403)
+    expect((await client.post('/notes').send({})).status).toBe(400)
+
+    user = { id: '1', permissions: ['payments.record', 'analytics.read'] }
+    expect((await client.post('/pay').send({ amount: 'x' })).status).toBe(400)
+    expect((await client.post('/pay').send({ amount: 5 })).body).toEqual({
+      amount: 5,
+    })
+    expect((await client.get('/yearly?year=2026')).body).toEqual({ year: 2026 })
+  })
+
   it('keeps routes open by default', async () => {
     const app = new App()
     app.registerControllers([DenyController])

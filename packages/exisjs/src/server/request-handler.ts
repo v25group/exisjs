@@ -1,6 +1,8 @@
 import type { App } from './app'
 import http, { IncomingMessage, ServerResponse } from 'node:http'
+import zlib from 'node:zlib'
 import { ExisRequest } from './request'
+import { isProxyTrusted } from './helpers/ip'
 import { ExisResponse } from './response'
 import { executionContext, cleanupContext } from './context'
 import { runHandlers } from '../router/router'
@@ -14,6 +16,7 @@ const noop = () => {
 export class RequestHandler {
   private _compiledPipeline?: Handler[]
   public static activeRequests = 0
+  private proxyChecked = false
 
   constructor(private app: App<any>) {}
 
@@ -103,7 +106,24 @@ export class RequestHandler {
           const chunks: Buffer[] = []
           res.on('data', (chunk) => chunks.push(chunk))
           res.on('end', () => {
-            const bodyBuffer = Buffer.concat(chunks)
+            let bodyBuffer = Buffer.concat(chunks)
+            // Decode like a browser, so tests can send Accept-Encoding and read the body
+            const encoding = res.headers['content-encoding']
+            const decode =
+              encoding === 'gzip'
+                ? zlib.gunzipSync
+                : encoding === 'br'
+                  ? zlib.brotliDecompressSync
+                  : encoding === 'deflate'
+                    ? zlib.inflateSync
+                    : null
+            if (decode && bodyBuffer.length > 0) {
+              try {
+                bodyBuffer = decode(bodyBuffer)
+              } catch {
+                // Not really encoded (a test fixture): keep the bytes as sent
+              }
+            }
             const text = bodyBuffer.toString('utf8')
             let parsedBody: any = text
             try {
@@ -190,6 +210,28 @@ export class RequestHandler {
     }
   }
 
+  /**
+   * Behind a proxy with trustProxy off, req.ip is the proxy's address, so
+   * every client shares one rate-limit bucket. Says so once, in production.
+   */
+  private warnIfUntrustedProxy(rawReq: IncomingMessage): void {
+    if (
+      process.env.NODE_ENV !== 'production' ||
+      isProxyTrusted(this.app.options.trustProxy ?? false)
+    ) {
+      this.proxyChecked = true
+      return
+    }
+    const h = rawReq.headers
+    if (!h['x-forwarded-for'] && !h['cf-connecting-ip']) return
+    this.proxyChecked = true
+    this.app.log.warn(
+      'Requests come through a proxy (X-Forwarded-For or CF-Connecting-IP is set), but trustProxy is off: ' +
+        "req.ip is the proxy's address, so rate limits and logs treat every client as one. " +
+        "Set trustProxy in exis.config ('cloudflare', or the number of proxies in front)."
+    )
+  }
+
   public handle(rawReq: IncomingMessage, rawRes: ServerResponse): void {
     RequestHandler.activeRequests++
 
@@ -208,6 +250,7 @@ export class RequestHandler {
     res.req = req
     res.etagEnabled = this.app.options.etag === true
     req.log = this.app.log
+    if (!this.proxyChecked) this.warnIfUntrustedProxy(rawReq)
 
     // Fired by res.end()'s completion callback, or by 'close' when the
     // client disconnects before the response finished.

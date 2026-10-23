@@ -139,7 +139,7 @@ export default defineConfig({
 | `ssl` | `{ key: string \| Buffer, cert: string \| Buffer }` | `undefined` | SSL certificate credentials for native HTTPS. |
 | `http2` | `boolean` | `true` | Enables HTTP/2 (active when SSL is configured). |
 | `redirectHttp` | `boolean \| number` | `false` | Automatically redirects plaintext HTTP traffic to HTTPS. |
-| `trustProxy` | `boolean \| number` | `false` | Trust proxy headers. `true` trusts every hop (including CDN headers); a number `N` trusts the N closest hops, counting the socket peer. |
+| `trustProxy` | `boolean \| number \| 'cloudflare' \| { header }` | `false` | Trust proxy headers. A number `N` trusts the N closest hops, counting the socket peer; `'cloudflare'` trusts `CF-Connecting-IP` from Cloudflare addresses only; `{ header }` reads one named header; `true` trusts every hop. See [Proxy & IP Address Resolution](/docs/requests#proxy--ip-address-resolution). |
 | `keepAlive` | `boolean \| KeepAliveConfig` | `false` | Configures socket keep-alive (`timeoutMs`, `headersTimeoutMs`, `maxRequests`). |
 
 ### Middleware Defaults & Security
@@ -161,11 +161,11 @@ export default defineConfig({
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `logger` | `boolean \| LoggerConfig` | `false` | Pino logger settings (`level`, `pretty`, `redact`). |
+| `logger` | `boolean \| LoggerConfig` | `false` | Pino logger settings (`level`, `pretty`, `redact`), and `quietPaths`: paths whose successful requests log at `debug`, like the built-in health probes (`/health`, `/_health`, `/_ready`). A `/_ready` `503` during shutdown logs at `info`, because it is intended. |
 | `debugRouting` | `boolean` | `false` | Outputs detailed route resolution logs per request in development. |
 | `asyncContext` | `boolean` | `false` | Enables `AsyncLocalStorage` context tracking (`getContext()`). |
 | `docs` / `swagger` | `boolean \| SwaggerConfig` | `{ enabled: false }` | OpenAPI 3.1 specification and Swagger UI endpoint generation. Served in every environment when enabled; the project template uses `enabled: process.env.NODE_ENV !== 'production'` so published API docs do not help attackers. |
-| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. `drainMs` (5000 in production, else 0): on shutdown, how long `/_ready` answers `503` before the server stops accepting connections. |
+| `healthcheck` | `boolean \| HealthCheckConfig` | `{ enabled: false }` | `path` (`/_health`): liveness, runs `checks`. `readyPath` (`/_ready`, `false` to disable): readiness, `503` unless `checks` pass, registered databases are healthy and the app is not shutting down. `drainMs` (2000 in production, else 0): on shutdown, how long `/_ready` answers `503` before the server stops accepting connections. |
 | `metrics` | `boolean \| MetricsConfig` | `{ enabled: false }` | Prometheus metrics endpoint (`path: '/metrics'`). See [Prometheus Metrics](#prometheus-metrics). |
 | `telemetry` | `boolean \| TelemetryConfig` | `{ enabled: false }` | OpenTelemetry tracing and metrics export. |
 

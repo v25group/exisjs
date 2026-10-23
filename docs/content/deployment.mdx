@@ -21,8 +21,6 @@ The Dockerfile below was tested end to end with an app created by `npm create ex
 ## The Dockerfile
 
 ```dockerfile filename="Dockerfile"
-# syntax=docker/dockerfile:1
-
 # ── Build: full toolchain ────────────────────────────────────────────────────
 FROM node:24-slim AS build
 WORKDIR /app
@@ -41,16 +39,20 @@ RUN npm ci --omit=dev --omit=optional && npm cache clean --force
 COPY --from=build /app/.exis ./.exis
 USER node
 EXPOSE 3000
+# Liveness only: restarting the app doesn't fix a database outage
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-  CMD node -e "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
-CMD ["node_modules/.bin/exisjs", "start"]
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/_health').then(r => { process.exitCode = r.ok ? 0 : 1 }, () => { process.exitCode = 1 })"
+# One Node process that receives SIGTERM directly; needs no npm or command link
+CMD ["node", ".exis/server/main.js"]
 ```
+
+There is no `# syntax=docker/dockerfile:1` line: nothing here needs a newer Dockerfile frontend, and the line makes every build pull an image first (one build hung there for 25 minutes).
 
 `exisjs build` writes everything the server needs into `.exis/`: the compiled code, the route manifest, the compiled `exis.config` and `main.js`, the entry that starts the server. The runtime image needs only `.exis/`, `package.json` and the production dependencies; it contains no source files.
 
 - **`--omit=optional`** keeps the CLI out of the image. Until 0.11, `exisjs` lists `@exisjs/cli` as an optional dependency so that projects created before 0.10 keep working. If you use the uWebSockets.js engine (`server: 'uws'`), install it in the project (`npm install https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz`): `exisjs` doesn't install it. uWebSockets.js is not published on npm; this URL is its GitHub release, which needs no `git` in the image. Its Linux binary needs glibc 2.38 or later, which `node:24-slim` (Debian 12, glibc 2.36) doesn't have: use `node:24-trixie-slim` in both stages instead. On `node:24-slim`, the server logs `uWebSockets.js failed to load` and runs on Node.
 - **`npm ci`** in the build stage installs `devDependencies`, which include `@exisjs/cli` and `typescript`.
-- **Use a clean `npm ci --omit=...`, not `npm prune`.** Both `exisjs` and `@exisjs/cli` provide the `exisjs` command. When `npm prune --omit=dev --omit=optional` removes the CLI, npm also removes the command and doesn't link the runtime's, so `exisjs start` is not found. If your build prunes, run `npm rebuild exisjs` after it, or start with `node .exis/server/main.js`, which needs no command.
+- **`node .exis/server/main.js`** starts the server without the `exisjs` command. Both `exisjs` and `@exisjs/cli` provide that command, and when `npm prune --omit=dev --omit=optional` removes the CLI, npm removes the command too and doesn't link the runtime's. If you start with `exisjs start` and your build prunes, run `npm rebuild exisjs` after the prune.
 
 Add a `.dockerignore`, so local files never reach the image. **`.env` must be in it**, or your local secrets are copied into every image layer:
 
@@ -95,13 +97,13 @@ In the `CMD`, call the binary itself rather than `npm start`: with npm in betwee
 
 On `docker stop`:
 
-1. If readiness probes are on (`healthcheck: { enabled: true }`), `/_ready` answers `503` while the server keeps accepting requests for `healthcheck.drainMs` (default 5 seconds in production). That gives the load balancer time to stop sending traffic here. Ctrl+C in a terminal skips this wait.
+1. If readiness probes are on (`healthcheck: { enabled: true }`), `/_ready` answers `503` while the server keeps accepting requests for `healthcheck.drainMs` (default 2 seconds in production). That gives the load balancer time to stop sending traffic here. Ctrl+C in a terminal skips this wait.
 2. The server stops accepting new connections.
 3. Requests in progress get up to 5 seconds to finish.
 4. `onClose` hooks run and registered databases disconnect.
 5. The process exits with code 0.
 
-Docker waits 10 seconds by default before it kills the container. With readiness probes on, the drain and the requests can take up to 10 seconds together, so give the container more time: `docker stop -t 30` / `stop_grace_period: 30s` in Compose, and the platform's equivalent (`terminationGracePeriodSeconds` in Kubernetes).
+Docker waits 10 seconds by default before it kills the container. The default drain (2 seconds) plus requests (up to 5) fits inside that. A longer `drainMs` helps where a load balancer polls `/_ready` (Kubernetes, an AWS target group): raise the stop period with it, with `docker stop -t 30` / `stop_grace_period: 30s` in Compose, or `terminationGracePeriodSeconds` in Kubernetes. Traefik on Docker Swarm (Dokploy) stops routing to a container as soon as it starts stopping, so the default is enough there.
 
 With `cluster: { workers }` set, that process is the cluster primary and forks the workers itself.
 
@@ -109,9 +111,7 @@ With `cluster: { workers }` set, that process is the cluster primary and forks t
 
 ## Health checks
 
-The project template has a `GET /health` route, which the `HEALTHCHECK` above calls. `node:24-slim` has no `curl`, so the check uses Node's `fetch`.
-
-For a load balancer or Kubernetes, turn on the built-in probes instead:
+The project template turns on the built-in probes, which the `HEALTHCHECK` above calls on the port in `PORT`. `node:24-slim` has no `curl`, so the check uses Node's `fetch`. It sets `process.exitCode` instead of calling `process.exit()`, which can abort with a libuv assertion while the connection is closing (seen on Windows with Node 26).
 
 ```typescript filename="exis.config.ts"
 export default defineConfig({
@@ -119,7 +119,8 @@ export default defineConfig({
 })
 ```
 
-Point the load balancer, or the Kubernetes `readinessProbe`, at `/_ready`: it answers `503` while a registered database is down and during shutdown. Use `/_health` only to decide whether to restart the container.
+- **`/_health` (liveness)** answers `200` while the process can serve requests. Docker's `HEALTHCHECK` and the Kubernetes `livenessProbe` use it to decide whether to restart the container.
+- **`/_ready` (readiness)** answers `503` while a registered database is down and during shutdown. Point the load balancer, the Kubernetes `readinessProbe` and uptime monitors at it. Don't use it for Docker's check: restarting the container doesn't fix a database outage.
 
 On shutdown, `/_ready` answers `503` for `drainMs` before the server stops accepting connections. Set it to at least the probe's interval, so the load balancer notices before requests are refused:
 
@@ -156,6 +157,47 @@ Run `npx exisjs migrate` once. It adds `@exisjs/cli` to `devDependencies` and li
 - **Builds on the host.** Platforms that build without a Dockerfile must install `devDependencies` for the build (`npm install --include=dev`), because `exisjs build` comes from `@exisjs/cli`.
 - **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD`, enter `npx exisjs start` or `npm start`.
 - **Long requests behind a CDN.** A proxy such as Cloudflare ends requests after about 100 seconds, whatever the server allows. Serve long-running endpoints from a hostname that is not proxied.
+
+---
+
+## Going to production
+
+A checklist of what a real deployment needed, beyond the Dockerfile.
+
+**Dokploy (Docker Swarm with Traefik)**
+
+- Build Type *Dockerfile*. Leave Build Stage empty, so the last stage (the small runtime image) is used.
+- Set the domain's container port to the app's `PORT`.
+- Don't set `NODE_ENV` in the environment: the image sets it.
+
+**Environment values**
+
+- Docker's `--env-file`, Compose `env_file` and Dokploy's environment editor keep quotes: `KEY="value"` becomes `"value"`, quotes included. Write `KEY=value` there. Only `.env` files read by ExisJS remove the quotes.
+
+**Behind Cloudflare (proxied)**
+
+- Set `trustProxy: 'cloudflare'`, so `req.ip` is the visitor and rate limits count per visitor. With `trustProxy` off, every visitor shares the proxy's address and one bucket; ExisJS logs a warning when it sees that. See [Proxy & IP Address Resolution](/docs/requests#proxy--ip-address-resolution).
+- Let only Cloudflare's addresses reach the server (a firewall on the [published ranges](https://www.cloudflare.com/ips/)), so nobody can bypass it.
+
+**Authentication** (ExisJS checks access, it doesn't sign users in)
+
+- Set `authorization: { defaultPolicy: 'authenticated' }` and mark open routes `public`. A forgotten check then closes a route instead of opening it. Access is checked before input is validated, so anonymous callers get `401`, never a `400` that lists your fields.
+- Pin the JWT algorithm when verifying tokens.
+- Load the account on each request, so deactivation and role changes apply at once.
+- Keep a token version on the account that logout and password changes increase, so old tokens stop working.
+- For an unknown email, still compare against a dummy password hash, so response time doesn't reveal which accounts exist.
+- Rate-limit login per IP with `rateLimit()`, and per account with [`consume()`](/docs/security#login-lockout-keyed-on-the-email-consume-assertnotlimited).
+- Behind a proxy, set `trustProxy` so `csrf()` compares the browser's `Origin` with the public host.
+
+**Seed scripts**
+
+- Never hard-code an admin password; read it from the environment.
+- Refuse to wipe a database unless its name is confirmed (`--confirm=<name>`), because a local `.env` often points at production.
+
+**Health**
+
+- Docker's `HEALTHCHECK` on `/_health` (liveness), as in the Dockerfile above.
+- An external uptime monitor on `/_ready` (readiness), which also notices a database that is down.
 
 ---
 

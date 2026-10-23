@@ -74,7 +74,7 @@ describe('Users API Integration', () => {
 
     expect(res.status).toBe(400)
     expect(res.body.success).toBe(false)
-    expect(res.body.error).toBe('Validation failed')
+    expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 })
 ```
@@ -275,9 +275,32 @@ npx exisjs test tests/users.test.ts
 # Run tests in watch mode
 npx exisjs test --watch
 
-# Run with test coverage
-npx exisjs test --coverage
+# End each test file as soon as its tests finish, even with handles still open
+npx exisjs test --force-exit
 ```
+
+Coverage is turned on with `test.coverage` in `exis.config.ts` (below).
+
+### A test file that doesn't exit
+
+Each test file runs in its own process, which has to exit when its tests are done. Something left open (a database client, a server, a timer) keeps it alive. Five seconds after the file's last test, `exisjs test` fails that file and names what is still open:
+
+```text
+ FAIL  exis tests/users.test.ts
+   √ creates a user (12 ms)
+   │ Tests finished but the process did not exit after 5 s. Still open: TCPSocketWrap. Close clients and servers in after(), or run exisjs test --force-exit.
+```
+
+Close it in an `after()` hook:
+
+```typescript filename="tests/users.test.ts"
+import { after } from 'exisjs/testing'
+import { client } from '../src/database/db'
+
+after(() => client.close())
+```
+
+`--force-exit` ends each file as soon as its tests finish instead (Node's `--test-force-exit`). Set `EXIS_TEST_EXIT_GRACE_MS` to change the five seconds.
 
 ### `package.json` Configuration
 

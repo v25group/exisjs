@@ -213,6 +213,25 @@ describe('create-exis scaffolding', () => {
           .includes("docs: { enabled: process.env.NODE_ENV !== 'production' }")
       ).toBe(true)
     }
+
+    // 12. Deny by default, with the routes meant to be open marked public,
+    // and a guard that can't silently allow everyone
+    for (const ts of [true, false]) {
+      const config = templates.exisConfigTemplate(ts)
+      expect(config.includes("defaultPolicy: 'authenticated'")).toBe(true)
+      expect(config.includes('healthcheck: { enabled: true }')).toBe(true)
+    }
+    for (const paradigm of ['oop', 'functional']) {
+      const open = paradigm === 'oop' ? '@Public()' : 'public: true'
+      expect(templates.healthRouteTemplate(paradigm).includes(open)).toBe(true)
+      expect(templates.rootRouteTemplate(paradigm).includes(open)).toBe(true)
+      expect(templates.userRouteTemplate(paradigm, true).includes(open)).toBe(
+        true
+      )
+      const guard = templates.commonAuthGuardTemplate(paradigm, true)
+      expect(guard.includes('return Boolean(token)')).toBe(false)
+      expect(guard.includes('is not implemented')).toBe(true)
+    }
   })
 
   // Found building examples/05-tasks-api: the sample service echoed the

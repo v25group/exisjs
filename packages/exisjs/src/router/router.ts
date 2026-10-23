@@ -371,6 +371,18 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       beforeHandler.unshift(uploadHandler)
     }
 
+    // Access depends only on req.user and the route's rule, so it is decided
+    // before any input is read: an anonymous caller gets 401, not a 400 that
+    // lists the expected fields
+    const authorize = (schema as any)?.authorize as
+      ((user: unknown) => void) | undefined
+    if (authorize && beforeHandler.length > 0) {
+      beforeHandler.unshift((req, _res, next) => {
+        authorize(req.user)
+        next()
+      })
+    }
+
     if (beforeHandler.length > 0) {
       actualHandlers.splice(
         Math.max(0, actualHandlers.length - 1),

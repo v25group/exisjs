@@ -170,14 +170,19 @@ Choose the value that matches your deployment:
 | :--- | :--- | :--- |
 | `false` (default) | Nothing; `req.ip` is the socket address | The app is reached directly |
 | `N` (number) | The `N` closest hops, counting the socket peer. With `X-Forwarded-For: a, b` and `trustProxy: 1`, `req.ip` is `b`, the address your proxy saw. Values a client prepends are ignored. | You run behind a known number of proxies |
-| `true` | Every hop, plus CDN headers (`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, `X-Client-IP`) | Every request passes through a CDN or proxy that overwrites these headers |
+| `'cloudflare'` | `CF-Connecting-IP`, only when the request came from a [Cloudflare address](https://www.cloudflare.com/ips/): directly, or through a proxy on a private address (Traefik, nginx) whose last `X-Forwarded-For` hop is Cloudflare. Otherwise the socket address | The app is behind Cloudflare (proxied) |
+| `{ header: 'x-real-ip' }` | That one header, else the socket address | Your own proxy sets a header such as `X-Real-IP` |
+| `true` | Every hop: `CF-Connecting-IP`, else the left-most `X-Forwarded-For` entry | Every request passes through a proxy that overwrites these headers |
 
-> **Warning:** with `trustProxy: true`, any client that can reach the app directly can set these headers and spoof `req.ip`, and with it rate limits and IP filters. Prefer a hop count unless the app is only reachable through your proxy.
+> **Warning:** with `trustProxy: true`, any client that can reach the app directly can set these headers and spoof `req.ip`, and with it rate limits and IP filters. Prefer a hop count or `'cloudflare'`. In every mode, a firewall should only let the proxy reach the app.
+
+`True-Client-IP`, `X-Real-IP` and `X-Client-IP` are never read unless named with `{ header }`, because any client can send them.
 
 When enabled:
 - `req.ip` automatically resolves the client IP, normalizes IPv6 loopback (`::1` $\to$ `127.0.0.1`), and strips IPv4-mapped IPv6 prefixes (`::ffff:192.168.1.1` $\to$ `192.168.1.1`).
 - `req.ips` provides the complete upstream proxy chain.
 - `req.protocol` resolves to `'https'` when `X-Forwarded-Proto: https` is present.
+- `req.host` and `req.hostname` use `X-Forwarded-Host`, so `csrf()` compares the browser's `Origin` with the public site, not the upstream host.
 
 ---
 

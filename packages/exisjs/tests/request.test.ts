@@ -1,4 +1,5 @@
 import { IncomingMessage } from 'node:http'
+import type { TrustProxy } from '../src/server/helpers/ip'
 import { Socket } from 'node:net'
 import { Readable } from 'node:stream'
 import { ExisRequest } from '../src/server/request'
@@ -41,7 +42,7 @@ function buildRawRequest(options: {
 
 function createRequest(
   raw: IncomingMessage,
-  trustProxy?: boolean | number,
+  trustProxy?: TrustProxy,
   bodyLimit?: number
 ): ExisRequest {
   const req = new ExisRequest(
@@ -215,6 +216,60 @@ describe('createRequest()', () => {
         1
       )
       expect(req.ip).toBe('203.0.113.7')
+    })
+
+    it('trusts only CF-Connecting-IP from a Cloudflare address with trustProxy: cloudflare', () => {
+      const cf = { 'cf-connecting-ip': '203.0.113.9' }
+      const ipOf = (headers: Record<string, string>, remoteAddress: string) =>
+        createRequest(buildRawRequest({ headers, remoteAddress }), 'cloudflare')
+          .ip
+
+      // Cloudflare connects directly
+      expect(ipOf(cf, '172.70.1.2')).toBe('203.0.113.9')
+      // Through a local proxy (Traefik) whose last hop is Cloudflare
+      expect(ipOf({ ...cf, 'x-forwarded-for': '172.70.1.2' }, '10.0.1.5')).toBe(
+        '203.0.113.9'
+      )
+      // A client connecting directly can't choose its IP, whatever it sends
+      expect(
+        ipOf({ ...cf, 'x-forwarded-for': '172.70.1.2' }, '198.51.100.7')
+      ).toBe('198.51.100.7')
+      // A local proxy whose last hop isn't Cloudflare
+      expect(
+        ipOf({ ...cf, 'x-forwarded-for': '198.51.100.7' }, '10.0.1.5')
+      ).toBe('10.0.1.5')
+      // IPv6 Cloudflare edge
+      expect(ipOf(cf, '2606:4700::1')).toBe('203.0.113.9')
+    })
+
+    it('reads one named header with trustProxy: { header }', () => {
+      const raw = () =>
+        buildRawRequest({
+          headers: {
+            'x-real-ip': '198.51.100.42',
+            'cf-connecting-ip': '6.6.6.6',
+          },
+        })
+      expect(createRequest(raw(), { header: 'X-Real-IP' }).ip).toBe(
+        '198.51.100.42'
+      )
+      expect(
+        createRequest(buildRawRequest({}), { header: 'x-real-ip' }).ip
+      ).toBe('192.168.1.1')
+    })
+
+    it('does not read client-settable IP headers with trustProxy: true', () => {
+      const req = createRequest(
+        buildRawRequest({
+          headers: {
+            'x-real-ip': '6.6.6.6',
+            'true-client-ip': '6.6.6.6',
+            'x-client-ip': '6.6.6.6',
+          },
+        }),
+        true
+      )
+      expect(req.ip).toBe('192.168.1.1')
     })
 
     it('handles proxy protocols gracefully', () => {

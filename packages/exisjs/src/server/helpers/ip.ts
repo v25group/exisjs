@@ -1,4 +1,14 @@
 import type { IncomingMessage } from 'node:http'
+import { BlockList, isIPv6 } from 'node:net'
+
+/**
+ * - `false`: socket address only.
+ * - `true`: every hop is a proxy that overwrites forwarding headers.
+ * - `N`: the N closest hops are proxies.
+ * - `'cloudflare'`: `CF-Connecting-IP`, only from a Cloudflare address.
+ * - `{ header }`: one named header set by your own proxy, e.g. `x-real-ip`.
+ */
+export type TrustProxy = boolean | number | 'cloudflare' | { header: string }
 
 export function normalizeIp(ip: string): string {
   if (ip.startsWith('::ffff:')) {
@@ -21,7 +31,7 @@ function envTrustsProxy(): boolean {
   return envTrust
 }
 
-function isProxyTrusted(trustProxy: boolean | number): boolean {
+export function isProxyTrusted(trustProxy: TrustProxy): boolean {
   return Boolean(trustProxy) || envTrustsProxy()
 }
 
@@ -32,22 +42,99 @@ function firstHeader(val: string | string[] | undefined): string | undefined {
   return t === '' ? undefined : t
 }
 
+// Cloudflare's published ranges (https://www.cloudflare.com/ips/), checked
+// 2026-10-22. shortcut: fixed list, fetch it at start if Cloudflare changes it often
+const CLOUDFLARE_RANGES = [
+  '173.245.48.0/20',
+  '103.21.244.0/22',
+  '103.22.200.0/22',
+  '103.31.4.0/22',
+  '141.101.64.0/18',
+  '108.162.192.0/18',
+  '190.93.240.0/20',
+  '188.114.96.0/20',
+  '197.234.240.0/22',
+  '198.41.128.0/17',
+  '162.158.0.0/15',
+  '104.16.0.0/13',
+  '104.24.0.0/14',
+  '172.64.0.0/13',
+  '131.0.72.0/22',
+  '2400:cb00::/32',
+  '2606:4700::/32',
+  '2803:f800::/32',
+  '2405:b500::/32',
+  '2405:8100::/32',
+  '2a06:98c0::/29',
+  '2c0f:f248::/32',
+]
+// A proxy on the same machine or network (Traefik, nginx, a load balancer)
+const PRIVATE_RANGES = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '127.0.0.0/8',
+  '100.64.0.0/10',
+  'fc00::/7',
+  '::1/128',
+]
+
+function blockListOf(ranges: string[]): BlockList {
+  const list = new BlockList()
+  for (const range of ranges) {
+    const [net, bits] = range.split('/')
+    list.addSubnet(net, Number(bits), isIPv6(net) ? 'ipv6' : 'ipv4')
+  }
+  return list
+}
+
+let cloudflare: BlockList | undefined
+let privateNets: BlockList | undefined
+function inList(list: BlockList, ip: string): boolean {
+  try {
+    return list.check(ip, isIPv6(ip) ? 'ipv6' : 'ipv4')
+  } catch {
+    return false // not an IP address
+  }
+}
+
+/**
+ * True when the request reached us from Cloudflare: directly, or through a
+ * local proxy (a private socket peer) whose last X-Forwarded-For hop is
+ * Cloudflare. A client connecting directly can't pass, whatever it sends.
+ */
+function fromCloudflare(
+  peer: string,
+  xForwardedFor: string | string[] | undefined
+): boolean {
+  cloudflare ??= blockListOf(CLOUDFLARE_RANGES)
+  if (inList(cloudflare, peer)) return true
+  privateNets ??= blockListOf(PRIVATE_RANGES)
+  if (!xForwardedFor || !inList(privateNets, peer)) return false
+  const hops = (
+    Array.isArray(xForwardedFor) ? xForwardedFor.join(',') : xForwardedFor
+  ).split(',')
+  return inList(cloudflare, normalizeIp(hops[hops.length - 1].trim()))
+}
+
 /**
  * Resolves the client IP.
  *
  * - `trustProxy: false` -> socket address only.
- * - `trustProxy: true`  -> trust every hop: CDN headers (CF-Connecting-IP,
- *   True-Client-IP, X-Real-IP, X-Client-IP), else the left-most
- *   X-Forwarded-For entry. Only safe when every request passes through a
- *   proxy that overwrites these headers.
+ * - `trustProxy: true`  -> trust every hop: CF-Connecting-IP, else the
+ *   left-most X-Forwarded-For entry. Only safe when every request passes
+ *   through a proxy that overwrites these headers.
  * - `trustProxy: N`     -> trust the N closest hops, counting the socket peer
  *   (Express semantics). The client is the entry N steps back from the
  *   socket, so values a client prepends to X-Forwarded-For are ignored.
  *   CDN headers are not consulted, since any client can send them.
+ * - `trustProxy: 'cloudflare'` -> CF-Connecting-IP, only when the request
+ *   came from a Cloudflare address; otherwise the socket address.
+ * - `trustProxy: { header }` -> that header, else the socket address.
  */
 export function resolveIps(
   raw: IncomingMessage,
-  trustProxy: boolean | number
+  trustProxy: TrustProxy
 ): { ips: string[]; ip: string } {
   const rawRemote = raw.socket?.remoteAddress ?? '127.0.0.1'
   const remoteAddress = normalizeIp(rawRemote)
@@ -56,16 +143,27 @@ export function resolveIps(
     return { ips: [], ip: remoteAddress }
   }
 
+  if (trustProxy === 'cloudflare' || typeof trustProxy === 'object') {
+    let value: string | undefined
+    if (trustProxy === 'cloudflare') {
+      if (fromCloudflare(remoteAddress, raw.headers['x-forwarded-for'])) {
+        value = firstHeader(raw.headers['cf-connecting-ip'])
+      }
+    } else {
+      value = firstHeader(raw.headers[trustProxy.header.toLowerCase()])
+    }
+    if (!value) return { ips: [], ip: remoteAddress }
+    const ip = normalizeIp(value)
+    return { ips: [ip], ip }
+  }
+
   const hops =
     typeof trustProxy === 'number' && trustProxy > 0 ? trustProxy : Infinity
 
   if (hops === Infinity) {
-    const h = raw.headers
-    const direct =
-      firstHeader(h['cf-connecting-ip']) ||
-      firstHeader(h['true-client-ip']) ||
-      firstHeader(h['x-real-ip']) ||
-      firstHeader(h['x-client-ip'])
+    // True-Client-IP, X-Real-IP and X-Client-IP are not read: any client can
+    // send them, and only { header } says your proxy sets one
+    const direct = firstHeader(raw.headers['cf-connecting-ip'])
     if (direct) {
       const ip = normalizeIp(direct)
       return { ips: [ip], ip }
@@ -99,7 +197,7 @@ export function resolveIps(
 
 export function resolveProtocol(
   raw: IncomingMessage,
-  trustProxy: boolean | number
+  trustProxy: TrustProxy
 ): string {
   const isTrusted = isProxyTrusted(trustProxy)
 
@@ -131,17 +229,23 @@ export function resolveProtocol(
   return protocol
 }
 
+/** The host the client asked for, with its port: X-Forwarded-Host behind a trusted proxy. */
+export function resolveHost(
+  raw: IncomingMessage,
+  trustProxy: TrustProxy
+): string {
+  const forwarded = isProxyTrusted(trustProxy)
+    ? firstHeader(raw.headers['x-forwarded-host'])
+    : undefined
+  // A chain of proxies can list several hosts; the first is the client's
+  return forwarded ? forwarded.split(',')[0].trim() : raw.headers.host || ''
+}
+
 export function resolveHostname(
   raw: IncomingMessage,
-  trustProxy: boolean | number
+  trustProxy: TrustProxy
 ): string {
-  const isTrusted = isProxyTrusted(trustProxy)
-
-  let host = raw.headers['x-forwarded-host']
-  if (!host || !isTrusted) {
-    host = raw.headers.host || ''
-  }
-  if (Array.isArray(host)) host = host[0]
+  const host = resolveHost(raw, trustProxy)
 
   // IPv6 can have colons, so look for port after bracket or last colon
   const offset = host[0] === '[' ? host.indexOf(']') + 1 : 0

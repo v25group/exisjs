@@ -1,4 +1,11 @@
-export { normalizeIp, resolveIps, resolveProtocol, resolveHostname } from './ip'
+export {
+  normalizeIp,
+  resolveIps,
+  resolveProtocol,
+  resolveHost,
+  resolveHostname,
+  type TrustProxy,
+} from './ip'
 
 export {
   parseRawBody,

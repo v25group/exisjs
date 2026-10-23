@@ -340,6 +340,15 @@ export default exis({
 })
 ```
 
+**When a database can't connect at start:**
+
+| Started by | What happens | Why |
+| --- | --- | --- |
+| `exisjs start`, `node .exis/server/main.js` | The error is logged and the server starts. `/_ready` answers `503` until `healthCheck` passes; `/_health` stays `200` | A database that is briefly down (a restart, a failover) shouldn't take the API down with it, and a platform that restarts on liveness would restart in a loop |
+| `createTestContext()` / `app.boot()` (tests, scripts, benchmarks) | `boot()` rejects with the connection error | A test against a missing database should fail at once, with the cause, not with `503`s later |
+
+Watch the log or `/_ready` after a deploy: a wrong `MONGODB_URI` shows up there, not as a crashed container.
+
 ### 2. Universal Transaction Runner (`withTransaction`)
 
 `withTransaction` provides a unified transaction wrapper compatible with **Mongoose**, **Prisma**, **Drizzle**, and generic SQL connection clients:

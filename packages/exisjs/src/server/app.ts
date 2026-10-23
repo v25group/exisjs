@@ -596,9 +596,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
               ...(hc.readyPath === false ? [] : [hc.readyPath ?? '/_ready']),
             ]
           : []
-      // `/health` is the project template's route, which the documented Dockerfile probes
+      const quietPaths =
+        (typeof logOpt === 'object' && logOpt?.quietPaths) || []
+      // `/health` is the project template's route
       this.globalMiddleware.push(
-        requestLogger(this.log, ['/health', ...builtInProbes])
+        requestLogger(this.log, ['/health', ...builtInProbes, ...quietPaths])
       )
     }
 
@@ -710,8 +712,11 @@ export class App<TRoutes extends Record<string, any> = {}> {
       // Readiness (Kubernetes readinessProbe, load balancer target health)
       const readyPath = this.options.healthcheck.readyPath ?? '/_ready'
       if (readyPath) {
-        this.get(readyPath as any, async (_req, res) => {
+        this.get(readyPath as any, async (req, res) => {
           if (this._shuttingDown) {
+            // Intended: tells the load balancer to stop sending traffic, so
+            // it isn't logged as an error on every deploy
+            ;(req as any)._expectedStatus = true
             return res.status(503).json({ status: 'shutting_down' })
           }
           try {
@@ -920,7 +925,8 @@ export class App<TRoutes extends Record<string, any> = {}> {
     const hc = this.options.healthcheck
     if (!hc || typeof hc !== 'object' || !hc.enabled || hc.readyPath === false)
       return 0
-    return hc.drainMs ?? (process.env.NODE_ENV === 'production' ? 5000 : 0)
+    // 2 s drain + 5 s for requests stays inside Docker's default 10 s stop period
+    return hc.drainMs ?? (process.env.NODE_ENV === 'production' ? 2000 : 0)
   }
 
   // ─── Expose internals ─────────────────────────────────────────────────────────

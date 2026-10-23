@@ -9,6 +9,8 @@ import {
   resolveIps,
   resolveProtocol,
   resolveHostname,
+  resolveHost,
+  type TrustProxy,
   parseRawBody,
   parseMultipartFormData,
   streamMultipartUpload,
@@ -54,6 +56,8 @@ export class ExisRequest<
     this._rawBuffer = undefined
   }
   public user!: import('../types').ExisUser & Record<string, any>
+  /** Set by `csrf()`: the token the client sends back in the CSRF header */
+  public csrfToken?: string
   private _baseLog?: Logger
   private _log?: Logger
 
@@ -132,7 +136,7 @@ export class ExisRequest<
   constructor(
     public raw: IncomingMessage,
     public res: ExisResponse,
-    private trustProxy: boolean | number = false,
+    private trustProxy: TrustProxy = false,
     private bodyLimit = 10485760 // 10MB
   ) {
     this._urlStr = raw.url ?? '/'
@@ -218,6 +222,11 @@ export class ExisRequest<
 
   get secure(): boolean {
     return this.protocol === 'https'
+  }
+
+  /** The host the client asked for, with its port (X-Forwarded-Host behind a trusted proxy) */
+  get host(): string {
+    return resolveHost(this.raw, this.trustProxy)
   }
 
   get hostname(): string {

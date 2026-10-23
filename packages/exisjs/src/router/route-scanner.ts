@@ -15,6 +15,7 @@ import {
   mountCronJobsFromEntries,
   mountErrorHandler,
   mountErrorHandlerFromModule,
+  importFile,
 } from './scanner'
 
 /** Which controller style a route module exports, if any. */
@@ -185,10 +186,8 @@ export class RouteScanner {
       try {
         const stat = await fs.stat(manifestPath)
         if (stat.isFile()) {
-          let url = pathToFileURL(manifestPath).href
-          if (!isProd) url += '?t=' + Date.now() // cache bust for dev
-
-          const mod: any = await importModule(url)
+          // Only read in production, where the built manifest never changes
+          const mod: any = await importModule(pathToFileURL(manifestPath).href)
           manifest = mod.manifest
           manifestErrorHandler = mod.errorHandler
           manifestCronJobs = mod.cronJobs
@@ -410,19 +409,7 @@ export class RouteScanner {
     // The production manifest hands over modules it already imported
     let mod: any = preloaded
     if (mod === undefined) {
-      try {
-        const url =
-          process.env.VITEST || process.env.NODE_ENV === 'test'
-            ? pathToFileURL(filePath).href
-            : pathToFileURL(filePath).href + '?t=' + Date.now()
-
-        // A real import(): tsc turns `import()` into require() for CommonJS,
-        // which loads a second copy of modules a test imports as ESM
-        mod = await importModule(url)
-      } catch {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        mod = require(filePath)
-      }
+      mod = await importFile(filePath)
     }
 
     const {

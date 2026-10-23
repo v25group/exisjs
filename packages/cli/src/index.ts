@@ -146,6 +146,10 @@ program
   .option('--watch', 'Watch for file changes and re-run tests')
   .option('-u, --update', 'Update test snapshots')
   .option('-e, --entry <file>', 'Custom entry file path')
+  .option(
+    '--force-exit',
+    'End each test file once its tests finish, even if handles are still open'
+  )
   .action(async (files, options) => {
     const { testCommand } = await import('./commands/test')
     await testCommand({ ...options, files })

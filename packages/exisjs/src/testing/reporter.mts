@@ -47,6 +47,7 @@ interface TestEvent {
     | 'test:stdout'
     | 'test:stderr'
     | 'test:start'
+    | 'test:summary'
   data: TestEventData
 }
 
@@ -128,9 +129,10 @@ export default async function* customReporter(
   const failures: FailedTestRecord[] = []
 
   const filesMap = new Map<string, FileData>()
+  const fileKey = (file: string): string =>
+    (path.isAbsolute(file) ? file : path.resolve(process.cwd(), file)).replace(/\\/g, '/')
   const getFileData = (file: string): FileData => {
-    const absFile = path.isAbsolute(file) ? file : path.resolve(process.cwd(), file)
-    const normalized = absFile.replace(/\\/g, '/')
+    const normalized = fileKey(file)
     let fd = filesMap.get(normalized)
     if (!fd) {
       fd = {
@@ -145,18 +147,47 @@ export default async function* customReporter(
     return fd
   }
 
+  const printedFiles = new Set<string>()
+  // Prints a finished file: its badge, then the lines buffered for it
+  function* printFile(activeFile: string): Generator<string> {
+    const fileData = getFileData(activeFile)
+    const key = fileKey(activeFile)
+    if (!printedFiles.has(key)) {
+      const badge = fileData.failed
+        ? `${RED_BG}${BOLD} FAIL ${RESET}`
+        : `${GREEN_BG}${BOLD} PASS ${RESET}`
+      yield `\n ${badge} ${DIM}exis${RESET} ${relFile(activeFile)}\n`
+      printedFiles.add(key)
+      if (fileData.failed) failedSuites++
+      else passedSuites++
+    }
+    for (const line of fileData.output) yield line
+    fileData.output.length = 0 // Clear it so it doesn't print twice
+  }
   try {
     let currentFile = ''
-    const printedFiles = new Set<string>()
     for await (const event of source) {
       const { type, data } = event
       if (!data) continue
       const { name, nesting, details, file, skip, todo } = data
 
+      // A file that exited cleanly ends with its own summary; the run's
+      // overall summary has no file
+      if (type === 'test:summary') {
+        if (file) yield* printFile(file)
+        continue
+      }
+
       // Track the actual test file since wrapped tests report `index.ts`
       const safeName = name || ''
       const normalizedName = safeName.replace(/\\/g, '/')
-      const isFileSuite = ((type as any) === 'test:enqueue' || (type as any) === 'test:start') && (safeName === file || normalizedName === relFile(file || '') || (file && file.replace(/\\/g, '/').endsWith(normalizedName)))
+      const namesFile =
+        nesting === 0 &&
+        !!file &&
+        (safeName === file ||
+          normalizedName === relFile(file) ||
+          file.replace(/\\/g, '/').endsWith(normalizedName))
+      const isFileSuite = ((type as any) === 'test:enqueue' || (type as any) === 'test:start') && namesFile
       if (isFileSuite) {
         currentFile = file || safeName
       }
@@ -168,34 +199,23 @@ export default async function* customReporter(
       const isSuite = details?.type === 'suite'
       const indent = '  '.repeat(Math.max(nesting, 0))
 
-      // ─── File-level suite completion ─────────────────────────
-      const isTopLevelCompletion = (type === 'test:pass' || type === 'test:fail') && nesting === 0
-      
-      if (isTopLevelCompletion) {
-        // A file that fails at the top level crashed before or outside its
-        // tests (import error, thrown at module scope). That is a failure,
-        // even though no individual test reported one.
-        if (type === 'test:fail' && !fileData.failed) {
+      // ─── File-level failure ──────────────────────────────────
+      // The file's own result (process isolation): it crashed, or didn't exit,
+      // outside its tests. A top-level describe() or it() also has nesting 0
+      // but is an ordinary suite or test
+      if (namesFile && (type === 'test:start' || type === 'test:fail')) {
+        if (type === 'test:fail') {
+          if (!fileData.failed) {
+            const err = details?.error
+            const errMsg =
+              err?.cause?.message || err?.message || 'Test file failed to run'
+            fileData.output.push(
+              `   ${RED}${CROSS} ${errMsg.split('\n')[0]}${RESET}\n`
+            )
+          }
           fileData.failed = true
-          const err = details?.error
-          const errMsg =
-            err?.cause?.message || err?.message || 'Test file failed to run'
-          fileData.output.push(
-            `   ${RED}${CROSS} ${errMsg.split('\n')[0]}${RESET}\n`
-          )
+          yield* printFile(activeFile)
         }
-        if (!printedFiles.has(activeFile)) {
-          const relPath = relFile(activeFile)
-          const badge = fileData.failed
-            ? `${RED_BG}${BOLD} FAIL ${RESET}`
-            : `${GREEN_BG}${BOLD} PASS ${RESET}`
-
-          yield `\n ${badge} ${DIM}exis${RESET} ${relPath}\n`
-          printedFiles.add(activeFile)
-          if (fileData.failed) failedSuites++; else passedSuites++;
-        }
-        for (const line of fileData.output) yield line
-        fileData.output.length = 0 // Clear it so it doesn't print twice
         continue
       }
 
@@ -295,6 +315,10 @@ export default async function* customReporter(
           stack,
         })
       }
+    }
+    // Lines of a file whose end event never came, so they aren't lost
+    for (const [f, fd] of filesMap) {
+      if (fd.output.length > 0) yield* printFile(f)
     }
   } catch (reporterErr) {
     // Never let the reporter itself crash the test run silently.

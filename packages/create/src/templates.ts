@@ -125,6 +125,13 @@ const config: ExisConfig = {
   asyncContext: true,
   compression: true,
 
+  // Deny by default: a route needs a signed-in req.user unless it is marked
+  // public, so a forgotten check closes a route instead of opening it
+  authorization: { defaultPolicy: 'authenticated' },
+
+  // /_health (liveness, for Docker) and /_ready (readiness, for load balancers)
+  healthcheck: { enabled: true },
+
   // Swagger UI at /docs, development only: published API docs help attackers
   docs: { enabled: process.env.NODE_ENV !== 'production' },
 
@@ -157,6 +164,13 @@ const config = {
   helmet: { enabled: true },
   asyncContext: true,
   compression: true,
+
+  // Deny by default: a route needs a signed-in req.user unless it is marked
+  // public, so a forgotten check closes a route instead of opening it
+  authorization: { defaultPolicy: 'authenticated' },
+
+  // /_health (liveness, for Docker) and /_ready (readiness, for load balancers)
+  healthcheck: { enabled: true },
 
   // Swagger UI at /docs, development only: published API docs help attackers
   docs: { enabled: process.env.NODE_ENV !== 'production' },
@@ -247,11 +261,12 @@ export default exis({
 
 export function healthRouteTemplate(paradigm: string): string {
   if (paradigm === 'oop') {
-    return `import { Controller, Get } from 'exisjs/decorators'
+    return `import { Controller, Get, Public } from 'exisjs/decorators'
 
 @Controller()
 export default class HealthController {
   @Get('/')
+  @Public()
   check() {
     return { 
       status: 'ok',
@@ -266,6 +281,7 @@ export default class HealthController {
 
 export default controller({
   check: route.get('/', {
+    public: true,
     handle() {
       return { 
         status: 'ok',
@@ -279,11 +295,12 @@ export default controller({
 
 export function rootRouteTemplate(paradigm: string): string {
   if (paradigm === 'oop') {
-    return `import { Controller, Get } from 'exisjs/decorators'
+    return `import { Controller, Get, Public } from 'exisjs/decorators'
 
 @Controller()
 export default class RootController {
   @Get('/')
+  @Public()
   welcome() {
     return { message: 'Welcome to Exis JS!' }
   }
@@ -295,6 +312,7 @@ export default class RootController {
 
 export default controller({
   welcome: route.get('/', {
+    public: true,
     handle() {
       return { message: 'Welcome to Exis JS!' }
     }
@@ -503,20 +521,22 @@ export function commonAuthGuardTemplate(
 @Injectable()
 export class AuthGuard {
   async canActivate(${ctxParam}) {
-    // PLACEHOLDER: this only checks that the header exists, so any value is
-    // accepted. Verify the token (signature and expiry) before using this.
+    // Replace with a real check (verify the token's signature and expiry).
+    // Until then it refuses, so it can't reach production allowing everyone
     const token = context.switchToHttp().getRequest().headers.authorization
-    return Boolean(token)
+    if (!token) return false
+    throw new Error('AuthGuard is not implemented: verify the token first')
   }
 }
 `
   }
   return `${typeImport}// Functional Guard Example
-// PLACEHOLDER: this only checks that the header exists, so any value is
-// accepted. Verify the token (signature and expiry) before using this.
+// Replace with a real check (verify the token's signature and expiry).
+// Until then it refuses, so it can't reach production allowing everyone
 export const authGuard = async (${ctxParam}) => {
   const token = context.switchToHttp().getRequest().headers.authorization
-  return Boolean(token)
+  if (!token) return false
+  throw new Error('authGuard is not implemented: verify the token first')
 }
 `
 }
@@ -722,12 +742,15 @@ export function userRouteTemplate(
   const tsType = useTypeScript ? ': CreateUserDto' : ''
 
   if (paradigm === 'oop') {
-    return `import { Controller, Get, Post, Body, Param } from 'exisjs/decorators'
+    return `import { Controller, Get, Post, Body, Param, Public } from 'exisjs/decorators'
 import { Inject } from 'exisjs/di'
 import { UserService } from './service'
 import { createUserSchema, userParamsSchema } from './schema'
 ${useTypeScript ? "import type { CreateUserDto } from './schema'\n" : ''}
+// Example only: public so it works before sign-in exists. Remove @Public()
+// once req.user is set, and every route here requires a signed-in user
 @Controller()
+@Public()
 export default class UsersController {
   // Dependencies are injected by token: @Inject(Class) on the parameter
   constructor(
@@ -756,14 +779,18 @@ export default class UsersController {
 import * as userService from './service'
 import { createUserSchema, userParamsSchema } from './schema'
 
+// Example only: public so it works before sign-in exists. Remove the
+// \`public: true\` lines once req.user is set
 export default controller({
   getUsers: route.get('/', {
+    public: true,
     async handle() {
       return userService.getUsers()
     }
   }),
 
   getUserById: route.get('/:id', {
+    public: true,
     params: userParamsSchema,
     async handle({ params }) {
       return userService.getUserById(params.id)
@@ -771,6 +798,7 @@ export default controller({
   }),
 
   createUser: route.post('/', {
+    public: true,
     body: createUserSchema,
     async handle({ body }) {
       return userService.createUser(body)

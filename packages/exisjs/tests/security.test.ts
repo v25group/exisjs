@@ -184,6 +184,52 @@ describe('Security Middlewares', () => {
     })
   })
 
+  describe('CSRF behind a proxy', () => {
+    const secret = 'a-very-long-and-secure-secret-key-that-is-at-least-32-bytes'
+    async function post(
+      appOptions: any,
+      csrfOptions: any,
+      headers: Record<string, string>
+    ) {
+      const app = new App(appOptions)
+      app.use(csrf({ secret, ...csrfOptions }))
+      app.get('/form', (req: any, res) => res.send(req.csrfToken))
+      app.post('/submit', (_req, res) => res.send('Success'))
+      const client = createTestApp(app)
+      const form = await client.get('/form')
+      const cookie = String(form.headers['set-cookie']).split(';')[0]
+      let req = client
+        .post('/submit')
+        .set('Cookie', cookie)
+        .set('x-csrf-token', form.text)
+      for (const [k, v] of Object.entries(headers)) req = req.set(k, v)
+      return req
+    }
+    const site = {
+      Origin: 'https://crm.example.com',
+      Host: 'api.internal:4000',
+    }
+
+    it('compares with X-Forwarded-Host when trustProxy is set', async () => {
+      const forwarded = { ...site, 'X-Forwarded-Host': 'crm.example.com' }
+      expect((await post({ trustProxy: 1 }, {}, forwarded)).status).toBe(200)
+      // Without trustProxy the header is ignored: Host decides
+      const refused = await post({}, {}, forwarded)
+      expect(refused.status).toBe(403)
+      expect(refused.body.error.details).toEqual({
+        expectedHost: 'api.internal:4000',
+        receivedOrigin: 'https://crm.example.com',
+      })
+    })
+
+    it('accepts allowedOrigins for an API on another host', async () => {
+      const allowed = { allowedOrigins: ['https://crm.example.com/'] }
+      expect((await post({}, allowed, site)).status).toBe(200)
+      const other = { ...site, Origin: 'https://evil.example.com' }
+      expect((await post({}, allowed, other)).status).toBe(403)
+    })
+  })
+
   describe('Helmet (Security Headers)', () => {
     it('sets default security headers and hides X-Powered-By', async () => {
       const app = new App()
@@ -269,5 +315,66 @@ describe('Security Middlewares', () => {
       expect(nextCalled).toBe(true)
       expect(req.body).toEqual({ username: 'john' })
     })
+  })
+})
+
+describe('Proxy without trustProxy', () => {
+  it('warns once in production when requests carry proxy headers', async () => {
+    const prev = process.env.NODE_ENV
+    process.env.NODE_ENV = 'production'
+    try {
+      const warns: string[] = []
+      const app = new App()
+      app.get('/', () => 'ok')
+      await app.create()
+      app.log.warn = ((msg: string) => warns.push(String(msg))) as any
+      const client = createTestApp(app)
+      await client.get('/')
+      expect(warns.length).toBe(0)
+      await client.get('/').set('x-forwarded-for', '203.0.113.7')
+      await client.get('/').set('x-forwarded-for', '203.0.113.8')
+      expect(warns.length).toBe(1)
+      expect(warns[0]).toContain('trustProxy is off')
+
+      const trusted = new App({ trustProxy: 1 })
+      trusted.get('/', () => 'ok')
+      await trusted.create()
+      let trustedWarned = false
+      trusted.log.warn = (() => (trustedWarned = true)) as any
+      await createTestApp(trusted)
+        .get('/')
+        .set('x-forwarded-for', '203.0.113.7')
+      expect(trustedWarned).toBe(false)
+    } finally {
+      process.env.NODE_ENV = prev
+    }
+  })
+})
+
+describe('Rate limit helpers for lockouts', () => {
+  it('counts failures, refuses while locked without counting, and resets', async () => {
+    const { MemoryRateLimitStore, consume, assertNotLimited } =
+      await import('../src/middleware/rate-limit')
+    const store = new MemoryRateLimitStore()
+    const opts = { max: 2, windowMs: 60_000 }
+    const key = 'login:a@example.com'
+
+    await assertNotLimited(store, key, opts)
+    await consume(store, key, opts)
+    await consume(store, key, opts)
+    expect(store.get(key)?.count).toBe(2)
+
+    const locked = await assertNotLimited(store, key, opts).catch((e) => e)
+    expect(locked.statusCode).toBe(429)
+    expect(locked.code).toBe('RATE_LIMIT_EXCEEDED')
+    expect(locked.details.retryAfter).toBeGreaterThan(0)
+    expect(store.get(key)?.count).toBe(2) // checking didn't count a hit
+
+    const over = await consume(store, key, opts).catch((e) => e)
+    expect(over.statusCode).toBe(429)
+
+    store.reset(key)
+    expect(store.get(key)).toBeUndefined()
+    await assertNotLimited(store, key, opts)
   })
 })

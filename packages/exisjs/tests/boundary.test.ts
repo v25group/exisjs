@@ -5,6 +5,7 @@ import fs from 'node:fs/promises'
 import { createTestApp, startTestServer } from '../src/testing/client'
 import { describe, it, expect, beforeEach, afterEach, ex } from '../src/testing'
 import os from 'node:os'
+import { pathToFileURL } from 'node:url'
 
 describe('Boundary & Enhanced Pipeline', () => {
   let app: App
@@ -381,5 +382,55 @@ describe('Boundary wrapper keeps the route response', () => {
     const res = await client.get('/obj')
     expect(res.headers['content-type']).toBe('application/octet-stream')
     expect(res.text).toBe('replaced')
+  })
+})
+
+describe('Boundary module loading', () => {
+  it('shares one copy of a module between a boundary and its route under NODE_ENV=test', async () => {
+    const prevEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'test'
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'exis-boundary-esm-'))
+    try {
+      const httpDir = path.join(tmp, 'http')
+      await fs.mkdir(path.join(httpDir, 'items'), { recursive: true })
+      await fs.writeFile(path.join(tmp, 'package.json'), '{ "type": "module" }')
+      await fs.writeFile(
+        path.join(tmp, 'counter.js'),
+        `globalThis.__exisEvalCount = (globalThis.__exisEvalCount ?? 0) + 1
+        export const hits = []`
+      )
+      await fs.writeFile(
+        path.join(httpDir, 'boundary.js'),
+        `import { hits } from '../counter.js'
+        export function track(req, res, next) { hits.push(1); next() }`
+      )
+      const routerUrl = pathToFileURL(
+        path.join(__dirname, '../src/router/index.ts')
+      ).href
+      await fs.writeFile(
+        path.join(httpDir, 'items', 'route.js'),
+        `import { controller, route } from '${routerUrl}'
+        import { hits } from '../../counter.js'
+        export default controller({ list: route.get('/', { handle: () => ({ hits: hits.length }) }) })`
+      )
+
+      const app = new App({ env: 'production', server: 'node' })
+      app.apiDir = httpDir
+      const routes = await (app as any).routeScanner.scanDirectory(httpDir)
+      for (const { filePath, routePath } of routes) {
+        if (filePath.endsWith('route.js')) {
+          await (app as any).routeScanner.mountRouteFile(filePath, routePath)
+        }
+      }
+      const res = await createTestApp(app).get('/items')
+
+      expect(res.status).toBe(200)
+      expect(res.body.hits).toBe(1)
+      expect((globalThis as any).__exisEvalCount).toBe(1)
+    } finally {
+      process.env.NODE_ENV = prevEnv
+      delete (globalThis as any).__exisEvalCount
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
   })
 })

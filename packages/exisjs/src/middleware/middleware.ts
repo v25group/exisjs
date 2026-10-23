@@ -313,7 +313,9 @@ export function requestLogger(
       // Use child if already created, otherwise use parent with inline context
       const logger = _childLog || parentLog
 
-      if (res.statusCode >= 500) {
+      if ((req as any)._expectedStatus) {
+        logger.info(logData, `${req.method} ${req.path}`)
+      } else if (res.statusCode >= 500) {
         logger.error(logData, `${req.method} ${req.path}`)
       } else if (res.statusCode >= 400) {
         // Silently ignore favicon 404s and probe noise to reduce log clutter

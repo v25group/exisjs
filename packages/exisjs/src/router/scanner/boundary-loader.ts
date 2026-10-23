@@ -1,6 +1,6 @@
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
-import { pathToFileURL } from 'node:url'
+import { importFile } from './import-file'
 import type { App } from '../../server/app'
 import { HttpError } from '../../error/errors'
 import { isResponseStarted, sendResult } from '../send-result'
@@ -91,26 +91,7 @@ export async function loadActiveBoundaries(
       if (targetBoundary) {
         activeBoundaries.push(targetBoundary)
         hasBoundaries = true
-        const boundaryUrl =
-          process.env.VITEST || process.env.NODE_ENV === 'test'
-            ? pathToFileURL(targetBoundary).href
-            : pathToFileURL(targetBoundary).href + '?t=' + Date.now()
-
-        let boundaryMod: any
-        try {
-          if (process.env.VITEST || process.env.NODE_ENV === 'test') {
-            boundaryMod = await import(boundaryUrl)
-          } else {
-            const dynamicImportBoundary = new Function(
-              'specifier',
-              'return import(specifier)'
-            )
-            boundaryMod = await dynamicImportBoundary(boundaryUrl)
-          }
-        } catch {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          boundaryMod = require(targetBoundary)
-        }
+        const boundaryMod: any = await importFile(targetBoundary)
 
         // Extract config: check boundaryMod.config, boundaryMod.default, or boundaryMod itself
         let boundaryConfig: any = null

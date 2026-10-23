@@ -664,3 +664,68 @@ describe('compression & pre-compressed static assets', () => {
     cleanupTempDir(tmp)
   })
 })
+
+describe('compression through the router', () => {
+  it('sends a compressed handler result with its status and body', async () => {
+    const { App } = await import('../src/server/app')
+    const { createTestApp } = await import('../src/testing')
+    const app = new App({ compression: true } as any)
+    const items = Array.from({ length: 100 }, (_, i) => ({
+      id: i,
+      name: `item ${i}`,
+    }))
+    app.get('/items', () => ({ items }))
+    app.post('/items', (_req: any, res: any) => {
+      res.status(201)
+      return { items }
+    })
+    const { controller, route } = await import('../src/router/route-builder')
+    app.registerFunctionalController(
+      controller({
+        list: route.get('/route-items', { handle: () => ({ items }) }),
+      })
+    )
+    const client = createTestApp(app)
+
+    for (const [encoding, url] of [
+      ['gzip', '/items'],
+      ['br', '/items'],
+      ['gzip', '/route-items'],
+      ['br', '/route-items'],
+    ]) {
+      const res = await client.get(url).set('accept-encoding', encoding)
+      expect(res.status).toBe(200)
+      expect(res.headers['content-encoding']).toBe(encoding)
+      expect(res.body.items.length).toBe(100)
+    }
+    const created = await client.post('/items').set('accept-encoding', 'gzip')
+    expect(created.status).toBe(201)
+  })
+})
+
+describe('request log levels for probes', () => {
+  it('quiets logger.quietPaths and logs the shutdown 503 from /_ready at info', async () => {
+    const { App } = await import('../src/server/app')
+    const { createTestApp } = await import('../src/testing')
+    const app = new App({
+      healthcheck: { enabled: true },
+      logger: { quietPaths: ['/api/health'] },
+    } as any)
+    app.get('/api/health', () => ({ ok: true }))
+    await app.create() // creates the logger the request logger writes to
+    const calls: string[] = []
+    for (const level of ['debug', 'info', 'warn', 'error'] as const) {
+      ;(app.log as any)[level] = (_obj: unknown, msg: string) =>
+        calls.push(`${level} ${msg}`)
+    }
+    const client = createTestApp(app)
+
+    await client.get('/api/health')
+    expect(calls).toEqual(['debug GET /api/health'])
+
+    calls.length = 0
+    ;(app as any)._shuttingDown = true
+    expect((await client.get('/_ready')).status).toBe(503)
+    expect(calls).toEqual(['info GET /_ready'])
+  })
+})

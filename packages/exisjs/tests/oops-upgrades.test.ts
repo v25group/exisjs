@@ -471,8 +471,10 @@ describe('ExisJS Enterprise OOP Architecture Upgrades', () => {
     expect(cfRes.body.protocol).toBe('https')
     expect(cfRes.body.hostname).toBe('api.example.com')
 
-    // 2. NGINX X-Real-IP
-    const nginxRes = await client.get('/ip-check', {
+    // 2. NGINX X-Real-IP: only when named, since any client can send it
+    const nginxApp = new App({ trustProxy: { header: 'x-real-ip' } })
+    nginxApp.registerControllers([IpController])
+    const nginxRes = await createTestApp(nginxApp).get('/ip-check', {
       headers: {
         'x-real-ip': '198.51.100.42',
       },

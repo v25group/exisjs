@@ -670,6 +670,9 @@ export class ControllerRegistrar {
         schema = schema || {}
         // Shown by `exisjs routes`
         schema.access = accessRule
+        // Lets the router refuse access before it validates any input
+        schema.authorize = (user: unknown) =>
+          checkAccess(user, accessRule, this.app.options.authorization)
         schema.paramMetadata = paramMetadata
         if (finalHost) schema.host = finalHost
 

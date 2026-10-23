@@ -9,6 +9,7 @@ export interface TestOptions {
   update?: boolean
   entry?: string
   files?: string[]
+  forceExit?: boolean
 }
 
 function resolveEntry(cwd: string, custom?: string): string {
@@ -36,9 +37,16 @@ export async function testCommand(options: TestOptions): Promise<void> {
     args: [require.resolve('tsx/cli')],
   }
 
-  const { TEST_REPORTER_PATH } = await import('exisjs/internal')
+  const { TEST_REPORTER_PATH, TEST_EXIT_WATCH_PATH } =
+    await import('exisjs/internal')
   const reporterPath = pathToFileURL(TEST_REPORTER_PATH).href
   const testArgs = ['--test', '--test-reporter', reporterPath]
+  if (options.forceExit) {
+    testArgs.push('--test-force-exit')
+  } else if (TEST_EXIT_WATCH_PATH && !options.watch) {
+    // Fails a file that never exits instead of hanging the run without output
+    testArgs.push('--import', pathToFileURL(TEST_EXIT_WATCH_PATH).href)
+  }
 
   process.env.NODE_ENV = 'test'
   const { loadEnv } = await import('exisjs/internal')

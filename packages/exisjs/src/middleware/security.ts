@@ -102,6 +102,12 @@ export interface CsrfOptions {
   secret: string
   cookieName?: string
   headerName?: string
+  /**
+   * Origins allowed besides the request's own host, for an API served from a
+   * different host than the site (`['https://crm.example.com']`). Behind a
+   * proxy, set `trustProxy` instead so the host is read from X-Forwarded-Host
+   */
+  allowedOrigins?: string[]
   cookieOptions?: {
     httpOnly?: boolean
     secure?: boolean
@@ -150,6 +156,9 @@ export function csrf(options: CsrfOptions): Handler {
   const headerName = (options.headerName || 'x-csrf-token').toLowerCase()
 
   const generateToken = () => crypto.randomUUID()
+  const allowedOrigins = new Set(
+    (options.allowedOrigins ?? []).map((o) => new URL(o).origin)
+  )
 
   return (req: Request, res: Response, next: NextFunction) => {
     const rawCookie = req.cookies[cookieName]
@@ -174,7 +183,7 @@ export function csrf(options: CsrfOptions): Handler {
     }
 
     // Pass token to request object for templates if needed
-    ;(req as Request & { csrfToken?: string }).csrfToken = token
+    req.csrfToken = token
 
     // Safe methods don't need CSRF validation
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
@@ -190,14 +199,25 @@ export function csrf(options: CsrfOptions): Handler {
     // Additional security layer: Verify Origin or Referer matches the Host
     const origin = req.get('origin')
     const referer = req.get('referer')
-    const host = req.get('host')
+    // X-Forwarded-Host behind a trusted proxy, where Host is the upstream's
+    const host = (req as any).host ?? req.get('host')
 
     if (origin || referer) {
       const source = origin || referer || ''
       try {
-        const sourceHost = new URL(source).host
-        if (sourceHost !== host) {
-          return next(new HttpError('CSRF Origin mismatch', 403, 'CSRF_FAILED'))
+        const sourceUrl = new URL(source)
+        if (sourceUrl.host !== host && !allowedOrigins.has(sourceUrl.origin)) {
+          return next(
+            new HttpError(
+              'CSRF Origin mismatch',
+              403,
+              'CSRF_FAILED',
+              // Outside production only: the hosts describe the deployment
+              process.env.NODE_ENV === 'production'
+                ? undefined
+                : { expectedHost: host, receivedOrigin: sourceUrl.origin }
+            )
+          )
         }
       } catch {
         return next(
@@ -334,38 +354,52 @@ export function routeTimeout(msOrOptions: number | TimeoutOptions): Handler {
 
 // ─── HTTP Parameter Pollution (HPP) ───────────────────────────────────────────
 
-export function hpp(): Handler {
+export interface HppOptions {
+  /** Query and form keys allowed to repeat, e.g. `['tags']` for `?tags=a&tags=b` */
+  whitelist?: string[]
+}
+
+function contentTypeOf(req: Request): string {
+  return String(req.headers?.['content-type'] ?? '')
+}
+
+/** A urlencoded body that hasn't been read yet, so middleware can't inspect it. */
+function isUnreadForm(req: Request): boolean {
+  return (
+    req.body === undefined &&
+    contentTypeOf(req).includes('application/x-www-form-urlencoded') &&
+    typeof (req as any).formData === 'function'
+  )
+}
+
+async function readForm(req: Request): Promise<void> {
+  try {
+    await (req as any).formData()
+  } catch {
+    /* let validation report a bad body */
+  }
+}
+
+export function hpp(options: HppOptions = {}): Handler {
+  const allowed = new Set(options.whitelist)
+  const lastValues = (obj: Record<string, unknown>) => {
+    for (const [key, val] of Object.entries(obj)) {
+      if (Array.isArray(val) && !allowed.has(key))
+        obj[key] = val[val.length - 1]
+    }
+  }
   return async (req: Request, res: Response, next: NextFunction) => {
-    // If a query parameter is an array (multiple values), take only the last one
-    if (req.query && typeof req.query === 'object') {
-      for (const [key, val] of Object.entries(req.query)) {
-        if (Array.isArray(val)) {
-          req.query[key] = val[val.length - 1]
-        }
-      }
-    }
+    if (req.query && typeof req.query === 'object') lastValues(req.query)
 
-    // Automatically synchronize body if incoming request has body but hasn't been parsed
+    // Only forms can repeat a key; arrays in a JSON body are real data
+    const type = contentTypeOf(req)
     if (
-      req.body === undefined &&
-      ['POST', 'PUT', 'PATCH'].includes(req.method) &&
-      typeof (req as any).json === 'function'
+      type.includes('application/x-www-form-urlencoded') ||
+      type.includes('multipart/form-data')
     ) {
-      try {
-        await (req as any).json()
-      } catch {
-        /* let subsequent validation catch invalid JSON */
-      }
-    }
-
-    // Do the same for body if it's form-urlencoded array
-    if (req.body && typeof req.body === 'object') {
-      for (const [key, val] of Object.entries(
-        req.body as Record<string, unknown>
-      )) {
-        if (Array.isArray(val)) {
-          ;(req.body as Record<string, unknown>)[key] = val[val.length - 1]
-        }
+      if (isUnreadForm(req)) await readForm(req)
+      if (req.body && typeof req.body === 'object') {
+        lastValues(req.body as Record<string, unknown>)
       }
     }
     next()
@@ -374,26 +408,46 @@ export function hpp(): Handler {
 
 // ─── NoSQL Injection Protection ───────────────────────────────────────────────
 
-function sanitizeMongo(obj: unknown): unknown {
-  if (Array.isArray(obj)) return obj.map(sanitizeMongo)
+export interface MongoSanitizeOptions {
+  /**
+   * Keep keys that contain a dot (`hub.mode`, `settings.theme`). Only `$` keys
+   * are query operators; dotted keys matter when the object is used as an update
+   */
+  allowDots?: boolean
+  /** Paths to leave untouched, such as a webhook that receives dotted query keys */
+  exclude?: (string | RegExp)[]
+}
+
+function sanitizeMongo(obj: unknown, allowDots: boolean): unknown {
+  if (Array.isArray(obj)) return obj.map((v) => sanitizeMongo(v, allowDots))
   if (obj && typeof obj === 'object') {
     const sanitized: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(obj)) {
-      if (k.startsWith('$') || k.includes('.')) {
+      if (k.startsWith('$') || (!allowDots && k.includes('.'))) {
         continue // Strip dangerous keys
       }
-      sanitized[k] = sanitizeMongo(v)
+      sanitized[k] = sanitizeMongo(v, allowDots)
     }
     return sanitized
   }
   return obj
 }
 
-export function mongoSanitize(): Handler {
+export function mongoSanitize(options: MongoSanitizeOptions = {}): Handler {
+  const allowDots = options.allowDots === true
+  const exclude = options.exclude ?? []
   return async (req: Request, res: Response, next: NextFunction) => {
+    const path = req.path ?? req.url ?? ''
+    if (
+      exclude.some((p) => (typeof p === 'string' ? p === path : p.test(path)))
+    ) {
+      return next()
+    }
+
     if (
       req.body === undefined &&
       ['POST', 'PUT', 'PATCH'].includes(req.method) &&
+      contentTypeOf(req).includes('json') &&
       typeof (req as any).json === 'function'
     ) {
       try {
@@ -402,21 +456,25 @@ export function mongoSanitize(): Handler {
         /* ignore */
       }
     }
+    if (isUnreadForm(req)) await readForm(req)
 
-    if (req.body) req.body = sanitizeMongo(req.body)
+    if (req.body) req.body = sanitizeMongo(req.body, allowDots)
     if (
       req.query &&
       typeof req.query === 'object' &&
       Object.keys(req.query).length > 0
     ) {
-      req.query = sanitizeMongo(req.query) as Record<string, string>
+      req.query = sanitizeMongo(req.query, allowDots) as Record<string, string>
     }
     if (
       req.params &&
       typeof req.params === 'object' &&
       Object.keys(req.params).length > 0
     ) {
-      req.params = sanitizeMongo(req.params) as Record<string, string>
+      req.params = sanitizeMongo(req.params, allowDots) as Record<
+        string,
+        string
+      >
     }
     next()
   }
@@ -424,14 +482,14 @@ export function mongoSanitize(): Handler {
 
 // ─── Universal Database Sanitizer ──────────────────────────────────────────────
 
-export interface DbSanitizeOptions {
+export interface DbSanitizeOptions extends MongoSanitizeOptions {
   mongo?: boolean
 }
 
 export function dbSanitize(
   options: DbSanitizeOptions = { mongo: true }
 ): Handler {
-  return options.mongo ? mongoSanitize() : (_req, _res, next) => next()
+  return options.mongo ? mongoSanitize(options) : (_req, _res, next) => next()
 }
 
 // ─── Security Scanner Noise Suppression & Blackhole Handler ────────────────────

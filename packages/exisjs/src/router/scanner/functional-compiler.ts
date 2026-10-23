@@ -475,8 +475,13 @@ export function compileFunctionalController(config: any, app: App): Router {
     // Mount to router
     const method = rc.method.toLowerCase()
 
-    // access is shown by `exisjs routes`
-    const schema: any = { access: accessRule }
+    // access is shown by `exisjs routes`; authorize lets the router refuse
+    // access before it validates any input
+    const schema: any = {
+      access: accessRule,
+      authorize: (user: unknown) =>
+        checkAccess(user, accessRule, app.options.authorization),
+    }
 
     const isValidatorOrPipe = (v: any) =>
       v &&
