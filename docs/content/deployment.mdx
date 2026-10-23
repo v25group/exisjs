@@ -91,9 +91,9 @@ Pass the secrets when you run the container (`docker run -e DATABASE_URL=...`, o
 
 ## One process, graceful shutdown
 
-`exisjs start` comes with the `exisjs` runtime, so the image needs no CLI, and it runs the server in its own process: Node is PID 1 in the container and receives `SIGTERM` directly. (`node .exis/server/main.js`, written by `exisjs build`, does the same.)
+`node .exis/server/main.js`, written by `exisjs build`, runs the server in that process: Node is PID 1 in the container and receives `SIGTERM` directly, and it needs neither the CLI nor the `exisjs` command link. New projects use it as their `start` script. (`exisjs start` does the same, but needs the link.)
 
-In the `CMD`, call the binary itself rather than `npm start`: with npm in between, a redeploy's `SIGTERM` shows up as `npm error signal SIGTERM`, and some platforms stop the container early when they detach its input. `npm start` with `"start": "exisjs start"` works too, for platforms that only run npm scripts.
+In the `CMD`, run Node itself rather than `npm start`: with npm in between, a redeploy's `SIGTERM` shows up as `npm error signal SIGTERM`, and some platforms stop the container early when they detach its input. `npm start` works too, for platforms that only run npm scripts.
 
 On `docker stop`:
 
@@ -147,7 +147,7 @@ Run it as a separate step of your deployment, before the new version starts.
 
 ## Projects created before 0.10
 
-Run `npx exisjs migrate` once. It adds `@exisjs/cli` to `devDependencies` and lists the Dockerfile lines to change (`--omit=optional`, and a `CMD` that goes through `npm start`). `"start": "exisjs start"` stays as it is: it now runs the server in its own process, without the CLI.
+Run `npx exisjs migrate` once. It adds `@exisjs/cli` to `devDependencies`, changes `"start": "exisjs start"` to `"start": "node .exis/server/main.js"` (a custom start script stays), and lists the Dockerfile, `nixpacks.toml` and `Procfile` lines to change: `--omit=optional`, `--skip-env-check`, and a start that goes through `npm` or the `exisjs` link.
 
 ---
 
@@ -155,7 +155,7 @@ Run `npx exisjs migrate` once. It adds `@exisjs/cli` to `devDependencies` and li
 
 - **Pin the Node.js version.** Use an explicit image (`node:24-slim`). Builders that pick Node for you, such as Nixpacks, may default to an older version than your dependencies need; set it explicitly (for Nixpacks, `nodejs_22` or later in `nixpacks.toml`).
 - **Builds on the host.** Platforms that build without a Dockerfile must install `devDependencies` for the build (`npm install --include=dev`), because `exisjs build` comes from `@exisjs/cli`.
-- **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD`, enter `npx exisjs start` or `npm start`.
+- **Start command.** On platforms that ask for a start command instead of a Dockerfile `CMD` (Nixpacks, a Procfile), enter `node .exis/server/main.js`.
 - **Long requests behind a CDN.** A proxy such as Cloudflare ends requests after about 100 seconds, whatever the server allows. Serve long-running endpoints from a hostname that is not proxied.
 
 ---

@@ -261,7 +261,7 @@ export function timeout(msOrOptions?: number | TimeoutOptions): Handler {
         return next()
       }
       if (Array.isArray(options.exclude)) {
-        const path = req.path || req.url || '/'
+        const path = req.path || '/'
         const isExcluded = options.exclude.some((pattern) =>
           typeof pattern === 'string'
             ? path.startsWith(pattern)
@@ -437,7 +437,7 @@ export function mongoSanitize(options: MongoSanitizeOptions = {}): Handler {
   const allowDots = options.allowDots === true
   const exclude = options.exclude ?? []
   return async (req: Request, res: Response, next: NextFunction) => {
-    const path = req.path ?? req.url ?? ''
+    const path = req.path ?? ''
     if (
       exclude.some((p) => (typeof p === 'string' ? p === path : p.test(path)))
     ) {
@@ -582,7 +582,7 @@ export function blockSuspiciousProbes(
   ]
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const rawPath = req.path || req.url || '/'
+    const rawPath = req.path || '/'
     const decodedPath = decodePathSafely(rawPath)
 
     // Check whitelist/exclusions

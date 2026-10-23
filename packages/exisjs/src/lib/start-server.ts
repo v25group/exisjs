@@ -162,13 +162,11 @@ async function start() {
         await app.onStartHook(app)
       }
 
-      // Auto-connect any databases registered in onStartHook or plugins before listening.
-      // A failed connection is logged, not fatal: the server starts and `/_ready`
-      // answers 503 until the database is healthy, so the platform can tell the difference.
+      // Databases registered in onStartHook or plugins connect before listening.
+      // A required one that fails stops the start (the error is printed below);
+      // an optional one is logged and `/_ready` answers 503 until it connects
       if (DatabaseManager.size > 0) {
-        await DatabaseManager.connectAll().catch((err) =>
-          app.log.error(err.message)
-        )
+        await DatabaseManager.connectAll(app.log)
       }
 
       await app.listen()

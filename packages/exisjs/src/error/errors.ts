@@ -480,7 +480,7 @@ export function createErrorHandler(
         : ''
       const routeLoc = (err as any).routePath
         ? `${(err as any).routeMethod || req.method} ${(err as any).routePath}`
-        : `${req.method} ${req.url || req.path || ''}`
+        : `${req.method} ${req.path || ''}`
 
       const receivedSource =
         (err as any).received !== undefined

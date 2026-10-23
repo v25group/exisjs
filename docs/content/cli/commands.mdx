@@ -87,7 +87,7 @@ npx exisjs cl [options]
 
 Starts the built server in the current process (the same as `node .exis/server/main.js`), with `NODE_ENV=production`. The server receives `SIGINT` / `SIGTERM` itself and shuts down gracefully.
 
-`exisjs start` is part of the `exisjs` runtime package, not of `@exisjs/cli`: it works in production installs that leave out development dependencies (`npm ci --omit=dev`), so `"start": "exisjs start"` and `npm start` work on every platform. The other commands need `@exisjs/cli`.
+`exisjs start` is part of the `exisjs` runtime package, not of `@exisjs/cli`, so it works in production installs that leave out development dependencies (`npm ci --omit=dev`). For production, prefer `node .exis/server/main.js`, the `start` script of new projects: `npm prune` removes the `exisjs` command link together with the CLI, and then `exisjs start` is not found. The other commands need `@exisjs/cli`.
 
 ```bash
 npx exisjs start [options]

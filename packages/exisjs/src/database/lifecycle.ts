@@ -22,6 +22,13 @@ export interface DatabaseRegistration {
    * unresponsive database cannot hang `/_ready`. Default: 5000 ms.
    */
   healthTimeoutMs?: number
+  /**
+   * Whether the app can't run without this database. Default `true`: a
+   * failed connection at start stops the start, with the error. `false`:
+   * the failure is logged, the server starts, `/_ready` answers 503 and each
+   * readiness check tries to connect again until it succeeds.
+   */
+  required?: boolean
 }
 
 const DEFAULT_HEALTH_TIMEOUT_MS = 5000
@@ -53,6 +60,7 @@ export class DatabaseManager {
     DatabaseRegistration & {
       _connected?: boolean
       _disconnecting?: Promise<void>
+      _connecting?: Promise<void>
     }
   >()
   private static isShutdownHookRegistered = false
@@ -83,10 +91,14 @@ export class DatabaseManager {
   /**
    * Connects all registered databases that are not already connected, in
    * parallel: boot waits for the slowest database, not for the sum of all.
-   * If any fail, the error names every database that failed; the ones that
-   * connected stay connected, and a later call retries only the failed ones.
+   * If a required database fails, the error names every required database
+   * that failed; the ones that connected stay connected, and a later call
+   * retries only the failed ones. Optional ones (`required: false`) that
+   * fail are logged with `log` and retried by readiness checks.
    */
-  static async connectAll(): Promise<void> {
+  static async connectAll(log?: {
+    warn: (msg: string) => void
+  }): Promise<void> {
     const pending = [...this.databases.entries()].filter(
       ([, db]) => !db._connected
     )
@@ -99,8 +111,15 @@ export class DatabaseManager {
     )
     const failures: [string, any][] = []
     results.forEach((result, i) => {
-      if (result.status === 'rejected') {
-        failures.push([pending[i][0], result.reason])
+      if (result.status !== 'rejected') return
+      const [name, db] = pending[i]
+      if (db.required === false) {
+        const reason = result.reason?.message ?? String(result.reason)
+        const msg = `[ExisJS Database] "${name}" failed to connect: ${reason}. It is not required, so the server starts; /_ready answers 503 until it connects`
+        if (log) log.warn(msg)
+        else console.warn(msg)
+      } else {
+        failures.push([name, result.reason])
       }
     })
     if (failures.length === 0) return
@@ -169,7 +188,31 @@ export class DatabaseManager {
     databases: Record<string, DatabaseHealthInfo>
   }> {
     const entries = await Promise.all(
-      [...this.databases].map(([name, db]) => this.checkOne(name, db))
+      [...this.databases].map(async ([name, db]) => {
+        // An optional database that failed at start reconnects here
+        if (db.required === false && !db._connected && !db._disconnecting) {
+          try {
+            await withTimeout(
+              (db._connecting ??= Promise.resolve(db.connect()).finally(() => {
+                db._connecting = undefined
+              })),
+              db.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
+              'Connection timed out'
+            )
+            db._connected = true
+          } catch (err: any) {
+            return {
+              key: name,
+              result: {
+                name,
+                status: 'disconnected' as const,
+                error: err?.message ?? String(err),
+              },
+            }
+          }
+        }
+        return this.checkOne(name, db)
+      })
     )
     const databases: Record<string, DatabaseHealthInfo> = {}
     let healthy = true

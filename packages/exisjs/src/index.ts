@@ -69,4 +69,5 @@ export type {
  * }
  * ```
  */
-export type { ExisUser } from './router/types'
+export type { ExisUser, ExisTypeOptions, RequestUser } from './router/types'
+export { requireUser } from './router/authorize'

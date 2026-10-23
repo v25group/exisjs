@@ -4,11 +4,43 @@ import type { ExisResponse } from '../server/response'
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface ExisUser {}
 
+/**
+ * Type options, set with module augmentation:
+ *
+ * ```ts
+ * declare module 'exisjs' {
+ *   interface ExisTypeOptions { strict: true }
+ * }
+ * ```
+ *
+ * `strict: true` types `req.user` as `ExisUser | undefined` (it is undefined
+ * on public routes and before authentication; use `requireUser(req)`), and a
+ * request property nobody declared is a compile error.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface ExisTypeOptions {}
+
+type IsStrict = ExisTypeOptions extends { strict: true } ? true : false
+
+/**
+ * The user's type: exactly your `ExisUser` once you declare one, so a
+ * misspelled or removed field is a compile error. Until then, any field.
+ */
+export type RequestUser = keyof ExisUser extends never
+  ? ExisUser & Record<string, any>
+  : ExisUser
+
+/** `req.user`: possibly undefined with `strict: true` */
+export type RequestUserField = IsStrict extends true
+  ? RequestUser | undefined
+  : RequestUser
+
 export type Request<
   TBody = unknown,
   TQuery = Record<string, string>,
   TParams = Record<string, string>,
-  TContext = Record<string, any>,
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  TContext = IsStrict extends true ? {} : Record<string, any>,
 > = ExisRequest<TBody, TQuery, TParams> & TContext
 
 export type Response<TResponse = any> = ExisResponse<TResponse>

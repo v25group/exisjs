@@ -33,11 +33,57 @@ ExisJS wraps the standard Node.js `IncomingMessage` in an `ExisRequest` instance
 | `req.signal` | `AbortSignal` | Standard `AbortSignal` triggered when client cancels connection |
 | `req.fresh` | `boolean` | `true` if client cache matches current `ETag` or `Last-Modified` |
 | `req.stale` | `boolean` | Inverse of `req.fresh` |
-| `req.user` | `ExisUser` | Authenticated user set by your auth middleware or guard. Type it once with `declare module 'exisjs' { interface ExisUser { id: string; roles: string[]; permissions: string[] } }` |
+| `req.user` | `ExisUser` | Authenticated user set by your auth middleware or guard. See [Typing `req.user`](#typing-requser) |
 | `req.session` | `Record<string, any>` | Session data store when session middleware is enabled |
 | `req.log` | `Logger` | Request-scoped Pino logger; every line carries `requestId` |
 | `req.requestId` | `string` | Unique request identifier header |
 | `req.raw` | `IncomingMessage` | Underlying Node.js `IncomingMessage` stream |
+
+---
+
+## Typing `req.user`
+
+Declare your user once, in any file the compiler sees:
+
+```typescript filename="src/common/auth/user.ts"
+declare module 'exisjs' {
+  interface ExisUser {
+    id: string
+    sessionId: string
+    permissions: string[]
+  }
+}
+export {}
+```
+
+From then on `req.user` has exactly these fields: reading one that doesn't exist (a typo, or a field you removed) is a compile error. Until you declare `ExisUser`, `req.user` accepts any field, as in earlier versions.
+
+`req.user` is `undefined` on public routes and in middleware that runs before authentication. To have the compiler check that too, turn on strict request types:
+
+```typescript filename="src/common/auth/user.ts"
+declare module 'exisjs' {
+  interface ExisTypeOptions {
+    strict: true
+  }
+}
+```
+
+With `strict: true`, `req.user` is `ExisUser | undefined`, and a request property nobody declared (`req.orgId` that some middleware was supposed to set) is a compile error; declare such properties with `defineMiddleware<TContext>()` or `createRouter<AppContext>()`. In handlers that need a user, `requireUser` returns it typed, or answers `401`:
+
+```typescript
+import { requireUser } from 'exisjs/router'
+
+export default controller({
+  list: route.get('/', {
+    async handle({ req }) {
+      const me = requireUser(req) // ExisUser, never undefined
+      return listOrders(me.id)
+    },
+  }),
+})
+```
+
+Turning `strict` on in an existing app means replacing each `req.user` that is passed on as `ExisUser` with `requireUser(req)`; the compiler lists every place.
 
 ---
 

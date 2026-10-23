@@ -33,21 +33,22 @@ const OLD_PKG = JSON.stringify(
 )
 
 describe('exisjs migrate', () => {
-  it('adds @exisjs/cli and TypeScript, and keeps exisjs start', () => {
+  it('adds @exisjs/cli and TypeScript, and starts the built entry directly', () => {
     const dir = app({ 'package.json': OLD_PKG, 'tsconfig.json': '{}' })
     try {
       const changes = migratePackageJson(dir, true)
-      expect(changes).toHaveLength(2)
+      expect(changes).toHaveLength(4)
       const pkg = JSON.parse(
         fs.readFileSync(path.join(dir, 'package.json'), 'utf8')
       )
       expect(pkg.devDependencies['@exisjs/cli']).toMatch(/^\^\d+\.\d+\.\d+/)
       expect(pkg.devDependencies.typescript).toMatch(/^\^\d/)
-      // The runtime runs `exisjs start` without the CLI, so it stays
-      expect(pkg.scripts.start).toBe('exisjs start')
+      // No command link needed, so `npm prune` can't break it
+      expect(pkg.scripts.start).toBe('node .exis/server/main.js')
       // dev, build and test keep working through the CLI's own binary
       expect(pkg.scripts.dev).toBe('exisjs dev')
-      expect(pkg.dependencies.exisjs).toBe('^0.9.2')
+      // Moved to the CLI's release, or the install fails on the peer dependency
+      expect(pkg.dependencies.exisjs).toBe(pkg.devDependencies['@exisjs/cli'])
       // Running it again changes nothing
       expect(migratePackageJson(dir, true)).toHaveLength(0)
     } finally {
@@ -105,11 +106,9 @@ describe('exisjs migrate', () => {
       expect(advice).toHaveLength(3)
       expect(advice[0]).toMatch(/^Dockerfile:1: add --skip-env-check/)
       expect(advice[1]).toContain(
-        'nixpacks.toml:2: cmd = "node_modules/.bin/exisjs start"'
+        'nixpacks.toml:2: cmd = "node .exis/server/main.js"'
       )
-      expect(advice[2]).toContain(
-        'Procfile:1: web: node_modules/.bin/exisjs start'
-      )
+      expect(advice[2]).toContain('Procfile:1: web: node .exis/server/main.js')
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
     }

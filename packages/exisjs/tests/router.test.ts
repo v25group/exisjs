@@ -434,6 +434,7 @@ describe('runHandlers()', () => {
       unknown,
       Record<string, string>,
       Record<string, string>,
+      undefined,
       AuthContext
     >('/profile', {
       handle({ req, user, tenantId }) {

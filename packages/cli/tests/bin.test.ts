@@ -66,6 +66,27 @@ describe('exisjs binary', () => {
     expect(res.stderr).toContain('npm install -D @exisjs/cli@0.10.0-alpha.1')
   })
 
+  it('stops when exisjs and @exisjs/cli are different versions (W2)', () => {
+    const cwd = project(
+      { exisjs: '0.10.0' },
+      {
+        'node_modules/exisjs/package.json':
+          '{"name":"exisjs","version":"0.9.2"}',
+      }
+    )
+    // This CLI, installed in the project (as pnpm or --legacy-peer-deps allow)
+    fs.mkdirSync(path.join(cwd, 'node_modules', '@exisjs'))
+    fs.symlinkSync(
+      path.resolve(__dirname, '..'),
+      path.join(cwd, 'node_modules', '@exisjs', 'cli'),
+      'junction'
+    )
+    const res = run(cwd, '--version')
+    expect(res.status).toBe(1)
+    expect(res.stderr).toContain('exisjs 0.9.2 and @exisjs/cli')
+    expect(res.stderr).toContain('npm install -D @exisjs/cli@0.9.2')
+  })
+
   it('suggests migrate when package.json lists exisjs but not @exisjs/cli', () => {
     const res = run(project({ exisjs: '0.10.0' }), '--version')
     expect(res.status).toBe(0)

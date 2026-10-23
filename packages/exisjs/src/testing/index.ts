@@ -253,13 +253,11 @@ export function createTestContext(
       app.cron.startAll()
     }
 
-    try {
-      const { DatabaseManager } = await import('../database/lifecycle')
-      if (DatabaseManager.size > 0) {
-        await DatabaseManager.connectAll()
-      }
-    } catch {
-      // ignore
+    // Same rule as the server: a required database that can't connect fails
+    // the tests with its error, instead of failing them later one by one
+    const { DatabaseManager } = await import('../database/lifecycle')
+    if (DatabaseManager.size > 0) {
+      await DatabaseManager.connectAll(app?.log)
     }
 
     // Wait for Mongoose to finish connecting to prevent node:test race conditions

@@ -378,3 +378,20 @@ describe('Rate limit helpers for lockouts', () => {
     await assertNotLimited(store, key, opts)
   })
 })
+
+describe('requireUser', () => {
+  it('returns the signed-in user, or throws 401 when there is none', async () => {
+    const { requireUser } = await import('../src/router')
+    const me = { id: 'u1' }
+    expect(requireUser({ user: me })).toBe(me)
+    const err = (() => {
+      try {
+        requireUser({ user: undefined })
+      } catch (e) {
+        return e as any
+      }
+    })()
+    expect(err.statusCode).toBe(401)
+    expect(err.code).toBe('UNAUTHORIZED')
+  })
+})

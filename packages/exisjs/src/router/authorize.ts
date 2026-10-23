@@ -31,6 +31,27 @@ export interface AuthorizationConfig {
   defaultPolicy?: 'public' | 'authenticated'
 }
 
+/**
+ * The signed-in user, or a 401 when there is none. Use it in handlers that
+ * need a user, so the type is never `undefined` and no `!` is needed.
+ *
+ * @example
+ * ```ts
+ * handle({ req }) {
+ *   const me = requireUser(req)
+ *   return listOrders(me.id)
+ * }
+ * ```
+ */
+export function requireUser(req: {
+  user?: unknown
+}): import('./types').RequestUser {
+  if (req.user === undefined || req.user === null) {
+    throw new HttpError('Authentication required', 401, 'UNAUTHORIZED')
+  }
+  return req.user as import('./types').RequestUser
+}
+
 /** One-line description of a rule, e.g. `roles: admin|editor` */
 export function describeAccess(rule: AccessRule | undefined): string {
   if (!rule) return '-'

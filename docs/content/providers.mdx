@@ -340,14 +340,24 @@ export default exis({
 })
 ```
 
-**When a database can't connect at start:**
+**When a database can't connect at start.** The same rule applies to `exisjs start`, `node .exis/server/main.js`, `app.boot()` and `createTestContext()`:
 
-| Started by | What happens | Why |
-| --- | --- | --- |
-| `exisjs start`, `node .exis/server/main.js` | The error is logged and the server starts. `/_ready` answers `503` until `healthCheck` passes; `/_health` stays `200` | A database that is briefly down (a restart, a failover) shouldn't take the API down with it, and a platform that restarts on liveness would restart in a loop |
-| `createTestContext()` / `app.boot()` (tests, scripts, benchmarks) | `boot()` rejects with the connection error | A test against a missing database should fail at once, with the cause, not with `503`s later |
+| `required` | What happens |
+| --- | --- |
+| `true` (default) | The start stops with an error naming the database: `[ExisJS Database] Failed to connect database "mongodb": ...`. The process exits with code 1, and the platform restarts it or shows the deploy as failed. A test run fails at once with the same message |
+| `false` | A warning is logged and the server starts. `/_ready` answers `503` with the reason in `databases`, while `/_health` stays `200`. Each `/_ready` request tries to connect again, so the app recovers when the database comes back |
 
-Watch the log or `/_ready` after a deploy: a wrong `MONGODB_URI` shows up there, not as a crashed container.
+Use `required: false` for a database the app can serve requests without, such as a cache or a search index:
+
+```typescript
+registerDatabase(app, {
+  name: 'redis-cache',
+  required: false,
+  connect: () => redis.connect(),
+  disconnect: () => redis.quit(),
+  healthCheck: () => redis.isReady,
+})
+```
 
 ### 2. Universal Transaction Runner (`withTransaction`)
 

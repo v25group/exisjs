@@ -122,7 +122,7 @@ describe('create-exis scaffolding', () => {
     // B8: the CLI is a development tool; production starts main.js
     expect(pkgJson.devDependencies['@exisjs/cli']).toBe('^0.10.0')
     expect(pkgJson.dependencies['@exisjs/cli']).toBeUndefined()
-    expect(pkgJson.scripts.start).toBe('exisjs start')
+    expect(pkgJson.scripts.start).toBe('node .exis/server/main.js')
     expect(pkgJson.devDependencies.typescript).toBeDefined()
     expect(pkgJson.devDependencies.eslint).toBeDefined()
 

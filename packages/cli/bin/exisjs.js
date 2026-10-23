@@ -33,6 +33,31 @@ if (runtimePkg) {
   process.exit(1)
 }
 
+// The CLI drives exisjs internals, so the two must be the same release.
+// npm refuses a mismatch (exact peer dependency), but pnpm only warns and
+// `npm install --legacy-peer-deps` skips the check
+const usedRuntime =
+  resolveFromProject('exisjs/package.json') ||
+  (() => {
+    try {
+      return require.resolve('exisjs/package.json', { paths: [__dirname] })
+    } catch {
+      return null
+    }
+  })()
+if (usedRuntime) {
+  const runtime = JSON.parse(fs.readFileSync(usedRuntime, 'utf8')).version
+  const cli = require('../package.json').version
+  if (runtime !== cli && !process.env.EXIS_SKIP_VERSION_CHECK) {
+    console.error(
+      `\n  exisjs ${runtime} and @exisjs/cli ${cli} must be the same version.\n` +
+        '  Install the matching CLI:\n\n' +
+        `    npm install -D @exisjs/cli@${runtime}\n`
+    )
+    process.exit(1)
+  }
+}
+
 // Projects that get the CLI only through exisjs's optional dependency,
 // which exisjs 0.11 drops
 try {

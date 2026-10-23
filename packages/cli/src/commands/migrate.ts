@@ -11,8 +11,10 @@ export interface MigrationChange {
   description: string
 }
 
-// What a container should run: the binary itself, with no npm in between
-export const START_CMD = 'CMD ["node_modules/.bin/exisjs", "start"]'
+// What production should run: Node itself, with no npm in between and no
+// dependency on the `exisjs` link that `npm prune` removes with the CLI
+export const START_CMD = 'CMD ["node", ".exis/server/main.js"]'
+export const START_SCRIPT = 'node .exis/server/main.js'
 
 function cliVersion(): string {
   try {
@@ -34,8 +36,8 @@ function installedTypeScript(cwd: string): string | null {
 
 /**
  * Updates package.json for the 0.10 layout: the CLI as a development
- * dependency, and TypeScript listed by the project itself. `exisjs start`
- * keeps working: the runtime runs it without the CLI. Returns what changed.
+ * dependency, TypeScript listed by the project itself, and a start script
+ * that runs the built entry directly. Returns what changed.
  */
 export function migratePackageJson(
   cwd: string,
@@ -47,6 +49,25 @@ export function migratePackageJson(
   const changes: MigrationChange[] = []
   const has = (name: string) =>
     Boolean(pkg.dependencies?.[name] || pkg.devDependencies?.[name])
+
+  // The CLI needs exisjs at its own release (exact peer dependency); a 0.8 or
+  // 0.9 range would make the install fail
+  const version = cliVersion()
+  const runtimeRange: string | undefined =
+    pkg.dependencies?.exisjs ?? pkg.devDependencies?.exisjs
+  const minorOf = (v: string) => /(\d+)\.(\d+)/.exec(v)?.slice(1, 3).join('.')
+  if (
+    version !== 'latest' &&
+    runtimeRange &&
+    minorOf(runtimeRange) !== minorOf(version)
+  ) {
+    const where = pkg.dependencies?.exisjs ? 'dependencies' : 'devDependencies'
+    pkg[where].exisjs = `^${version}`
+    changes.push({
+      file: 'package.json',
+      description: `${where}: "exisjs": "^${version}" (was "${runtimeRange}")`,
+    })
+  }
 
   if (!has('@exisjs/cli')) {
     const range = cliVersion() === 'latest' ? 'latest' : `^${cliVersion()}`
@@ -68,6 +89,16 @@ export function migratePackageJson(
     })
   }
 
+  // `exisjs start` fails once `npm prune` removes the CLI and its link; a
+  // custom start script is the project's own choice and stays
+  if (pkg.scripts?.start === 'exisjs start') {
+    pkg.scripts.start = START_SCRIPT
+    changes.push({
+      file: 'package.json',
+      description: `scripts.start: "${START_SCRIPT}" (was "exisjs start")`,
+    })
+  }
+
   if (write && changes.length > 0) {
     const indent = /^[ \t]+(?=")/m.exec(text)?.[0] ?? '  '
     const eol = text.includes('\r\n') ? '\r\n' : '\n'
@@ -77,7 +108,7 @@ export function migratePackageJson(
   return changes
 }
 
-const START_BIN = 'node_modules/.bin/exisjs start'
+const START_BIN = START_SCRIPT
 
 /** Deployment-file lines that should change; the files are not edited */
 export function dockerfileAdvice(cwd: string): string[] {
@@ -117,7 +148,10 @@ export function dockerfileAdvice(cwd: string): string[] {
     `${at}: add --skip-env-check (npm run build -- --skip-env-check); secrets are not set while the image builds   (was: ${line.trim()})`
 
   check('Dockerfile', (line, at) => {
-    if (/^\s*CMD\b/i.test(line) && npmStart.test(line)) {
+    if (
+      /^\s*CMD\b/i.test(line) &&
+      (npmStart.test(line) || /\.bin\/exisjs\b/.test(line))
+    ) {
       advice.push(`${at}: ${START_CMD}   (was: ${line.trim()})`)
     }
     if (

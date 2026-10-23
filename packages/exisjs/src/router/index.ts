@@ -14,6 +14,7 @@ export type {
   SuperContext,
 } from './route-builder'
 export { validate } from '../middleware/middleware'
+export { requireUser } from './authorize'
 export {
   createErrorHandler,
   HttpError,

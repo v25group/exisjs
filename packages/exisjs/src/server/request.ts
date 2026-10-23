@@ -55,7 +55,7 @@ export class ExisRequest<
     this._rawText = text
     this._rawBuffer = undefined
   }
-  public user!: import('../types').ExisUser & Record<string, any>
+  public user!: import('../router/types').RequestUserField
   /** Set by `csrf()`: the token the client sends back in the CSRF header */
   public csrfToken?: string
   private _baseLog?: Logger

@@ -868,7 +868,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
     // Auto-connect registered databases during startup
     const { DatabaseManager } = await import('../database/lifecycle')
     if (DatabaseManager.size > 0) {
-      await DatabaseManager.connectAll()
+      await DatabaseManager.connectAll(this.log)
     }
 
     this._routesMounted = true

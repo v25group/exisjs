@@ -849,7 +849,12 @@ export const controller: ControllerFactory = Object.assign(
  */
 export function createRouter<TContext = Record<string, any>>() {
   return {
-    route: route as unknown as typeof route & {
+    // Omit first: an intersection would keep the untyped methods as the first
+    // overload, and the router's context would never reach the handler
+    route: route as unknown as Omit<
+      typeof route,
+      'get' | 'post' | 'put' | 'patch' | 'delete' | 'all'
+    > & {
       get: <
         TPath extends string = string,
         B = any,

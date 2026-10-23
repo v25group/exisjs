@@ -6,7 +6,8 @@ export function packageJsonTemplate(
   const scripts: Record<string, string> = {
     dev: 'exisjs dev',
     build: 'exisjs build',
-    start: 'exisjs start',
+    // Needs no command link, which `npm prune` removes with the CLI
+    start: 'node .exis/server/main.js',
     test: 'exisjs test',
   }
 

@@ -493,3 +493,59 @@ describe('@Transactional isolation', () => {
     expect(service.db.label).toBe('replaced')
   })
 })
+
+describe('A database that fails to connect at start', () => {
+  it('stops boot() when it is required (the default)', async () => {
+    DatabaseManager.clear()
+    const { defineApp } = await import('../src/server/define')
+    const def = defineApp({
+      onStart() {
+        registerDatabase({
+          name: 'main',
+          connect: () => {
+            throw new Error('bad MONGODB_URI')
+          },
+          disconnect: () => {},
+        })
+      },
+    })
+    await expect(def.boot()).rejects.toThrow('"main": bad MONGODB_URI')
+    DatabaseManager.clear()
+  })
+
+  it('starts without an optional one, answers 503 on /_ready, and recovers', async () => {
+    DatabaseManager.clear()
+    const { App } = await import('../src/server/app')
+    const { createTestApp } = await import('../src/testing')
+    let up = false
+    const warnings: string[] = []
+    registerDatabase({
+      name: 'cache',
+      required: false,
+      connect: () => {
+        if (!up) throw new Error('ECONNREFUSED')
+      },
+      disconnect: () => {},
+      healthCheck: () => up,
+    })
+    const app = new App({ healthcheck: { enabled: true } })
+    // A logger whose methods need `this`, like pino's
+    const log = {
+      out: warnings,
+      warn(msg: string) {
+        this.out.push(msg)
+      },
+    }
+    await DatabaseManager.connectAll(log)
+    expect(warnings[0]).toContain('"cache" failed to connect: ECONNREFUSED')
+
+    const client = createTestApp(app)
+    const down = await client.get('/_ready')
+    expect(down.status).toBe(503)
+    expect(down.body.databases.cache.status).toBe('disconnected')
+
+    up = true
+    expect((await client.get('/_ready')).status).toBe(200)
+    DatabaseManager.clear()
+  })
+})
