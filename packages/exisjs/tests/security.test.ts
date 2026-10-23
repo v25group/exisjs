@@ -81,6 +81,21 @@ describe('Security Middlewares', () => {
       expect(res2.headers['retry-after']).toBe('5')
       expect(res2.headers['ratelimit-remaining']).toBe('0')
     })
+
+    // Was flaky on CI: the clock was read before the store answered
+    it('reports the full window, not one second more, with a slow store', async () => {
+      const slowStore = {
+        async increment(_key: string, windowMs: number) {
+          await new Promise((r) => setTimeout(r, 20))
+          return { count: 1, resetTime: Date.now() + windowMs }
+        },
+      }
+      const app = new App()
+      app.use(rateLimit({ windowMs: 5000, max: 1, store: slowStore }))
+      app.get('/', (_req, res) => res.send('OK'))
+      const res = await createTestApp(app).get('/').expect(200)
+      expect(res.headers['ratelimit-reset']).toBe('5')
+    })
   })
 
   describe('CSRF Protection', () => {

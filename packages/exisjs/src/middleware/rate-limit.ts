@@ -157,10 +157,11 @@ export function rateLimit(options: RateLimitOptions = {}): Handler {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const key = keyGenerator(req)
-      const now = Date.now()
-
       const record = await store.increment(key, windowMs)
       const currentHits = record.count
+      // Read after the store: it set resetTime from its own clock, so an
+      // earlier reading would report one second too many on a slow store
+      const now = Date.now()
 
       // Report when this key's window actually ends, not a full window from now
       const resetSeconds = Math.max(

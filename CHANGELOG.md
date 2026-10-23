@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Input was validated before the access check, so anonymous callers got `400`s that described the API.
 - `csrf()` failed every state-changing request behind a reverse proxy.
 - `trustProxy: true` trusted IP headers any client can set.
+- `RateLimit-Reset` and `Retry-After` could say one second too many with a slow rate-limit store.
 - `createRouter<Context>()` didn't pass its context to handlers.
 - `npm prune` removed the `exisjs` command, so `npm start` failed.
 
