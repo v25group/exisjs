@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
+| **`v0.10.1`** | 2026-10-23 | Patch: Bug Fixes & Security | Compressed responses no longer sent as `204` with no body; `hpp()` keeps JSON arrays; one copy of each module in tests; `exisjs test` fails a file that doesn't exit; access checked before validation; `trustProxy: 'cloudflare'`; CSRF behind proxies; one rule for databases that can't connect (`required`); exact `ExisUser` types; `start` runs `node .exis/server/main.js` | [**Read v0.10.1 Notes →**](./changelog/v0.10/v0.10.1.md) |
 | **`v0.10.0`** | 2026-10-21 | Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; readiness drain on shutdown; settings that did nothing fail at start-up; `migrate` checks Dockerfile, `nixpacks.toml` and `Procfile`; health probes log at `debug` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-beta.0`** | 2026-10-20 | Prerelease (`beta` tag) | Ctrl+C in a terminal skips the readiness drain; deployment guide: use a clean `npm ci --omit=...` instead of `npm prune` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-alpha.2`** | 2026-10-20 | Prerelease (`alpha` tag) | Fixes from testing alpha.1: `server` in `exis.config.ts` takes effect and the uWS fallback warning prints, "install the CLI" hints name the matching version, start errors no longer show framework code on Windows | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -39,7 +40,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Current Release: [0.10.0] - 2026-10-21
+## Current Release: [0.10.1] - 2026-10-23
+
+> Fixes found building a new backend on 0.10.0 and deploying behind Cloudflare and Traefik. **Upgrade if you use `compression: true`**: compressed responses reached browsers as `204` with no body. Upgrade with `npm install exisjs@0.10.1` and `npm install -D @exisjs/cli@0.10.1`, then `npx exisjs migrate`. Check the behaviour changes first: `trustProxy: true` no longer reads `X-Real-IP`, a database that can't connect stops the start unless it is `required: false`, and `exisjs test` fails a test file whose process doesn't exit. Details in [**`changelog/v0.10/v0.10.1.md`**](./changelog/v0.10/v0.10.1.md).
+
+### Fixed
+- Compressed responses were sent as `204` with no body.
+- `hpp()` turned arrays in JSON bodies into their last element.
+- Boundary files loaded a second copy of every module they import under `NODE_ENV=test`.
+- `exisjs test` hung without output when a test process didn't exit.
+- Input was validated before the access check, so anonymous callers got `400`s that described the API.
+- `csrf()` failed every state-changing request behind a reverse proxy.
+- `trustProxy: true` trusted IP headers any client can set.
+- `createRouter<Context>()` didn't pass its context to handlers.
+- `npm prune` removed the `exisjs` command, so `npm start` failed.
+
+### Added
+- `trustProxy: 'cloudflare'` and `{ header }`; `csrf({ allowedOrigins })`; `mongoSanitize({ allowDots, exclude })`; `hpp({ whitelist })`; `logger.quietPaths`; `registerDatabase({ required: false })`; `requireUser()`; opt-in strict request types; `consume()` / `assertNotLimited()` for lockouts; `exisjs test --force-exit`.
+
+## Previous Release: [0.10.0] - 2026-10-21
 
 > The CLI moves to `@exisjs/cli`, production installs are about 10x smaller, and settings that did nothing now work or stop the start. Includes everything from the prereleases below. Upgrade with `npm install exisjs@latest` and `npm install -D @exisjs/cli@latest`, then `npx exisjs migrate`. Details and upgrade steps in [**`changelog/v0.10/v0.10.0.md`**](./changelog/v0.10/v0.10.0.md).
 

@@ -12,11 +12,11 @@
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
-    "exisjs": "^0.10.0"
+    "exisjs": "^0.10.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@exisjs/cli": "^0.10.0",
+    "@exisjs/cli": "^0.10.1",
     "@types/node": "^20.0.0",
     "eslint": "^10.0.1",
     "eslint-config-prettier": "^10.0.0",

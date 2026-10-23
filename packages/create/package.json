@@ -1,6 +1,6 @@
 {
   "name": "create-exisjs",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Scaffold a new ExisJS application with one command: npm create exisjs@latest",
   "keywords": [
     "exisjs",
