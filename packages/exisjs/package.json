@@ -265,7 +265,7 @@
     "@types/content-disposition": "^0.5.9",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.4.0",
-    "fast-json-stringify": "^7.1.2",
+    "fast-json-stringify": "^7.2.0",
     "zod": "^4.6.7"
   },
   "publishConfig": {
