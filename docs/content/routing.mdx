@@ -30,6 +30,13 @@ ExisJS uses file-system routing to map directory structures directly to HTTP end
 | `src/http/docs/[...slug]/route.ts` | `/docs/*slug` | Catch-all wildcard route |
 | `src/http/(admin)/dashboard/route.ts` | `/dashboard` | Route group (parentheses are omitted from the URL path) |
 
+A file is a route file only when it is named exactly `route.ts` or `<name>.route.ts`, so a helper called `reroute.ts` stays a plain module.
+
+The server refuses to start, naming the files involved, when:
+
+- a folder holds more than one route file; a second resource belongs in a sub-folder.
+- two routes answer the same method and path. Parameter names don't make routes different, so `users/[id]` and `users/[slug]` collide when both handle `GET /`.
+
 ---
 
 ## Route Definitions

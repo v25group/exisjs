@@ -7,7 +7,7 @@ nextTitle: 'Validation & Schemas'
 
 # Boundaries & Middleware Cascading (`boundary.ts`)
 
-A `boundary.ts` (or `<name>.boundary.ts`) file defines a folder-scoped request pipeline and configuration module in the ExisJS file-system routing hierarchy.
+A `boundary.ts` (or `<name>.boundary.ts`) file defines a folder-scoped request pipeline and configuration module in the ExisJS file-system routing hierarchy. A folder can hold only one; the server refuses to start with two, naming both.
 
 Any `boundary.ts` automatically applies to every route within its directory and all descendant subdirectories recursively, providing scoped **CORS policies**, **custom headers**, **security guards**, **lifecycle hooks**, **route exclusions**, and **dependency injection scoping**.
 

@@ -2,7 +2,11 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { fork } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
-import { loadConfig, registerPathAliasLoader } from 'exisjs/internal'
+import {
+  loadConfig,
+  registerPathAliasLoader,
+  ROUTE_CONFLICT,
+} from 'exisjs/internal'
 
 interface RoutesCommandOptions {
   entry?: string
@@ -124,8 +128,11 @@ export async function routesCommand(
         if (app.routeScanner?.loadAllRoutes) {
           await app.routeScanner.loadAllRoutes()
         }
-      } catch {
-        /* ignore */
+      } catch (err: any) {
+        if (err?.code === ROUTE_CONFLICT) {
+          console.error(`\x1b[31m[Exis CLI Error]\x1b[0m ${err.message}`)
+          process.exit(1)
+        }
       }
 
       routes = app.getRoutes().map((r: any) => ({
@@ -358,6 +365,9 @@ async function extractRoutesViaSubprocess(
         resolve(capturedRoutes)
       } else if (code === 0) {
         resolve([])
+      } else if (code === 3) {
+        // inspect-routes printed a route conflict
+        process.exit(1)
       } else {
         reject(
           new Error(

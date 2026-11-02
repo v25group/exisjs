@@ -97,20 +97,12 @@ export async function getFilesRecursively(dir: string): Promise<string[]> {
  * Determines whether a file path represents a boundary definition.
  */
 export function isBoundaryFile(filePath: string): boolean {
-  return (
-    filePath.endsWith('boundary.ts') ||
-    filePath.endsWith('boundary.js') ||
-    /\.boundary\.[jt]s$/.test(filePath)
-  )
+  return /(^|[\\/.])boundary\.[jt]s$/.test(filePath)
 }
 
 /**
  * Determines whether a file path represents a route definition.
  */
 export function isRouteFile(filePath: string): boolean {
-  return (
-    filePath.endsWith('route.ts') ||
-    filePath.endsWith('route.js') ||
-    /\.route\.[jt]s$/.test(filePath)
-  )
+  return /(^|[\\/.])route\.[jt]s$/.test(filePath)
 }

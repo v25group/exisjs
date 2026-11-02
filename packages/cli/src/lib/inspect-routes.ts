@@ -1,7 +1,10 @@
 import { pathToFileURL } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
-import { describeAccess } from 'exisjs/internal'
+import { describeAccess, ROUTE_CONFLICT } from 'exisjs/internal'
+
+// Tells the parent the problem is already printed
+const ROUTE_CONFLICT_EXIT = 3
 
 async function inspect() {
   const entryFile = process.env.EXIS_ENTRY_FILE
@@ -99,8 +102,12 @@ async function inspect() {
       if (app.routeScanner?.loadAllRoutes) {
         await app.routeScanner.loadAllRoutes()
       }
-    } catch {
-      /* ignore if already created */
+    } catch (err: any) {
+      // Anything else (a database that is down, say) still leaves a table to print
+      if (err?.code === ROUTE_CONFLICT) {
+        console.error(`\x1b[31m[Exis CLI Error]\x1b[0m ${err.message}`)
+        process.exit(ROUTE_CONFLICT_EXIT)
+      }
     }
 
     const routes = app.getRoutes().map((r: any) => ({

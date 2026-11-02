@@ -4,6 +4,8 @@ import { importFile } from './import-file'
 import type { App } from '../../server/app'
 import { HttpError } from '../../error/errors'
 import { isResponseStarted, sendResult } from '../send-result'
+import { isBoundaryFile } from './fs-scanner'
+import { assertOneBoundaryFilePerFolder } from './route-conflicts'
 
 export interface LoadedBoundaryPipeline {
   activeBoundaries: string[]
@@ -57,6 +59,12 @@ export async function loadActiveBoundaries(
   }
 
   for (const dir of dirsToCheck) {
+    // Outside the try below: this is a layout mistake, not a failed load
+    const boundaryFiles = (await fs.readdir(dir).catch(() => []))
+      .filter((f: string) => isBoundaryFile(f))
+      .map((f: string) => path.join(dir, f))
+    assertOneBoundaryFilePerFolder(boundaryFiles)
+
     try {
       // Detect deprecated gateway.ts / gateway.js
       const gatewayPathTs = path.join(dir, 'gateway.ts')
@@ -70,23 +78,7 @@ export async function loadActiveBoundaries(
         )
       }
 
-      const boundaryPathTs = path.join(dir, 'boundary.ts')
-      const boundaryPathJs = path.join(dir, 'boundary.js')
-      let targetBoundary = ''
-      if (await fs.stat(boundaryPathTs).catch(() => null)) {
-        targetBoundary = boundaryPathTs
-      } else if (await fs.stat(boundaryPathJs).catch(() => null)) {
-        targetBoundary = boundaryPathJs
-      } else {
-        // Check for named boundaries like user.boundary.ts
-        const dirFiles = await fs.readdir(dir).catch(() => [])
-        const namedBoundary = dirFiles.find((f: string) =>
-          /\.boundary\.[jt]s$/.test(f)
-        )
-        if (namedBoundary) {
-          targetBoundary = path.join(dir, namedBoundary)
-        }
-      }
+      const targetBoundary = boundaryFiles[0]
 
       if (targetBoundary) {
         activeBoundaries.push(targetBoundary)
