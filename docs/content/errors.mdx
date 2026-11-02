@@ -60,6 +60,35 @@ ExisJS exports dedicated error classes alongside standard `*Exception` aliases f
 
 ---
 
+## Choosing a Status and a Code
+
+Clients branch on `error.code`, so give an error its own code whenever a client needs to react to that case. Every error class and factory takes one:
+
+```typescript
+import { ConflictError, NotFoundError, UnprocessableError } from 'exisjs/error'
+
+throw new ConflictError('Invoice was changed by someone else', {
+  code: 'STALE_RECORD',
+})
+throw new UnprocessableError('A paid invoice cannot be edited', {
+  code: 'INVOICE_PAID',
+  details: { invoiceId },
+})
+throw new NotFoundError('Lead', { code: 'LEAD_NOT_FOUND' })
+```
+
+Use the status that says what went wrong:
+
+| Status | Use it when | Example |
+| :--- | :--- | :--- |
+| **`400`** | The request has the wrong shape. Validation does this for you. | A required field is missing |
+| **`403`** | The caller may not do this, and may know the record exists. | A role without the permission |
+| **`404`** | The record doesn't exist, or the caller may not know it does. Answering `403` would confirm it exists. | Another team's lead |
+| **`409`** | The request is fine, but the record's current state conflicts with it. Retrying may work. | A stale update, a duplicate |
+| **`422`** | The request is fine, but it breaks a business rule. Retrying won't help. | Editing a paid invoice |
+
+---
+
 ## Throwing Errors in Handlers
 
 You can throw errors directly in controllers, route definitions, or services using either static factory methods, direct instantiation of error classes, or exception aliases.

@@ -52,6 +52,7 @@ ExisJS provides type-safe primitives that accept modifier options and configurat
 | `tex.url()` | `tex.url(options?)` | Validates absolute URLs. Only `http` and `https` unless `{ protocols: ['https'] }` says otherwise, so `javascript:` links are rejected. Supports `{ trim, min, max, pattern, default }`. |
 | `tex.uuid()` | `tex.uuid(options?)` | Validates UUID strings. Supports `{ version: 1 \| 4, default }`. |
 | `tex.cuid()` | `tex.cuid(options?)` | Validates CUID identifiers. Supports `{ default }`. |
+| `tex.objectId()` | `tex.objectId(options?)` | Validates a MongoDB ObjectId: a 24-character hex string. The value stays a string; convert it where you use the driver. |
 | `tex.password()` | `tex.password(options?)` | Validates password complexity. Supports `{ min, max, requireNumbers, requireSymbols, requireUppercase, requireLowercase }`. |
 | `tex.creditCard()` | `tex.creditCard(options?)` | Validates credit card numbers using the Luhn algorithm. Supports `{ mask: true }`. |
 | `tex.date()` | `tex.date(options?)` | Validates a `Date`, a date string or a timestamp, with `{ coerce, minDate, maxDate, default }`. An unparsable value is rejected, and the parsed value is always a `Date` (`coerce` is accepted but no longer needed). |

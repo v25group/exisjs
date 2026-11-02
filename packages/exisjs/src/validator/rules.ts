@@ -548,6 +548,9 @@ export function compileRule(rule: string, raw?: any): FieldRule {
       case 'cuid':
         field.base = patternCheck(CUID, 'must be a valid CUID')
         break
+      case 'objectid':
+        field.base = patternCheck(OBJECT_ID, 'must be a valid ObjectId')
+        break
       case 'creditcard':
         field.base = creditCardCheck(m)
         break
@@ -909,6 +912,7 @@ function uuidCheck(version: number | undefined): Check {
 }
 
 const CUID = /^c[^\s-]{8,}$/i
+const OBJECT_ID = /^[0-9a-f]{24}$/i
 
 function patternCheck(pattern: RegExp, constraint: string): Check {
   return (v) => {

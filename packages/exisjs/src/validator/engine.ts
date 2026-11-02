@@ -550,6 +550,7 @@ export class TexEngine<T = any> {
         baseType.startsWith('url') ||
         baseType.startsWith('uuid') ||
         baseType.startsWith('cuid') ||
+        baseType.startsWith('objectid') ||
         baseType.startsWith('password')
       ) {
         field.type = String
@@ -596,6 +597,9 @@ export class TexEngine<T = any> {
           baseType.startsWith('password')
         ) {
           prop.type = 'string'
+        } else if (baseType.startsWith('objectid')) {
+          prop.type = 'string'
+          prop.pattern = '^[0-9a-fA-F]{24}$'
         } else if (baseType.startsWith('email')) {
           prop.type = 'string'
           prop.format = 'email'
