@@ -151,6 +151,8 @@ export class TexType<IsOpt extends boolean = false> {
       schema = { type: 'string', format: 'uuid' }
     } else if (base === 'cuid') {
       schema = { type: 'string' }
+    } else if (base === 'objectid') {
+      schema = { type: 'string', pattern: '^[0-9a-fA-F]{24}$' }
     } else if (base === 'password') {
       schema = { type: 'string', format: 'password' }
     } else if (base.startsWith('literal:')) {

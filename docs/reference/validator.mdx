@@ -64,6 +64,7 @@ The `tex` instance exposes factory functions for all standard primitives, comple
 | `tex.email(options?)` | `TexType<string>` | `TexStringOptions` | Standard RFC 5322 email format validation. |
 | `tex.uuid(options?)` | `TexType<string>` | `{ version?: 1 \| 4 }` | Validates UUID strings (v1 or v4). |
 | `tex.cuid(options?)` | `TexType<string>` | `TexBaseOptions` | Validates CUID identifiers. |
+| `tex.objectId(options?)` | `TexType<string>` | `TexBaseOptions` | Validates a MongoDB ObjectId (24 hex characters). The value stays a string. |
 | `tex.date(options?)` | `TexType<Date>` | `TexDateOptions` | Validates `Date` objects, ISO 8601 strings, or numeric timestamps (`minDate`, `maxDate`). |
 | `tex.password(options?)` | `TexType<string>` | `TexPasswordOptions` | Enforces password complexity (uppercase, lowercase, numbers, symbols). |
 | `tex.creditCard(options?)` | `TexType<string>` | `{ mask?: boolean }` | Luhn-validated credit card numbers with optional masking. |

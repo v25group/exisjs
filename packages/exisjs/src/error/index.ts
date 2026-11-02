@@ -9,6 +9,8 @@ export {
   UnprocessableError,
   RateLimitError,
   InternalError,
+  ServiceUnavailableError,
+  GatewayTimeoutError,
   createErrorHandler,
   asyncHandler,
 
@@ -23,7 +25,10 @@ export {
   UnprocessableException,
   RateLimitException,
   InternalException,
+  ServiceUnavailableException,
+  GatewayTimeoutException,
 } from './errors'
+export type { HttpErrorOptions } from './errors'
 
 export {
   stripInternalStackFrames,

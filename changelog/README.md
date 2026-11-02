@@ -8,6 +8,8 @@ This directory contains the detailed release notes for every version of ExisJS, 
 changelog/
 ├── README.md               # This navigation guide
 ├── v0.10/                  # 0.10.x Release Series
+│   ├── v0.10.2.md          # Unreleased: exact route and boundary file names, route conflicts stop the start
+│   ├── v0.10.1.md          # Compression fix, proxies and trustProxy, test runner, one rule for databases
 │   └── v0.10.0.md          # @exisjs/cli, one-process start, metrics, queue, report B1-B9
 ├── v0.9/                   # 0.9.x Release Series
 │   ├── v0.9.2.md           # Dev server fixes, production default env, validator & sanitizer overhaul
@@ -42,6 +44,6 @@ changelog/
 
 ## Quick Links
 
-- [Latest Release (v0.9.2)](./v0.9/v0.9.2.md)
+- [Latest Release (v0.10.1)](./v0.10/v0.10.1.md)
 - [Root Changelog](../CHANGELOG.md)
 - [Documentation](../docs/)

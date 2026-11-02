@@ -14,6 +14,26 @@ function notFoundMessage(resource: string): string {
     : `${resource} not found`
 }
 
+/** A domain code clients can branch on, and data to send with it. */
+export interface HttpErrorOptions {
+  code?: string
+  details?: unknown
+}
+
+// Three classes already take `details` second, so `{ code }` has to be told
+// apart from details: only an object holding nothing but these two keys counts
+function errorOptions(value: unknown): HttpErrorOptions {
+  if (value === null || typeof value !== 'object') return { details: value }
+  const proto = Object.getPrototypeOf(value)
+  const keys = Object.keys(value)
+  const isOptions =
+    (proto === Object.prototype || proto === null) &&
+    keys.length > 0 &&
+    keys.every((k) => k === 'code' || k === 'details') &&
+    (!('code' in value) || typeof value.code === 'string')
+  return isOptions ? (value as HttpErrorOptions) : { details: value }
+}
+
 export class HttpError extends Error {
   public readonly statusCode: number
   public readonly code: string
@@ -39,51 +59,72 @@ export class HttpError extends Error {
 
   // ─── Factory methods ─────────────────────────────────────────────────────────
 
-  static badRequest(message: string, details?: unknown): HttpError {
-    return new HttpError(message, 400, 'BAD_REQUEST', details)
+  static badRequest(message: string, detailsOrOptions?: unknown): HttpError {
+    return new BadRequestError(message, detailsOrOptions)
   }
 
-  static unauthorized(message = 'Unauthorized'): HttpError {
-    return new HttpError(message, 401, 'UNAUTHORIZED')
+  static unauthorized(
+    message = 'Unauthorized',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new UnauthorizedError(message, options)
   }
 
-  static forbidden(message = 'Forbidden'): HttpError {
-    return new HttpError(message, 403, 'FORBIDDEN')
+  static forbidden(
+    message = 'Forbidden',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new ForbiddenError(message, options)
   }
 
-  static notFound(resource = 'Resource'): HttpError {
-    return new HttpError(notFoundMessage(resource), 404, 'NOT_FOUND')
+  static notFound(
+    resource = 'Resource',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new NotFoundError(resource, options)
   }
 
-  static conflict(message: string): HttpError {
-    return new HttpError(message, 409, 'CONFLICT')
+  static conflict(message: string, options?: HttpErrorOptions): HttpError {
+    return new ConflictError(message, options)
   }
 
-  static unprocessable(message: string, details?: unknown): HttpError {
-    return new HttpError(message, 422, 'UNPROCESSABLE_ENTITY', details)
+  static unprocessable(message: string, detailsOrOptions?: unknown): HttpError {
+    return new UnprocessableError(message, detailsOrOptions)
   }
 
   static payloadTooLarge(
     message = 'Payload too large',
-    details?: unknown
+    detailsOrOptions?: unknown
   ): HttpError {
-    return new HttpError(message, 413, 'PAYLOAD_TOO_LARGE', details)
+    return new PayloadTooLargeError(message, detailsOrOptions)
   }
 
-  static tooManyRequests(message = 'Too many requests'): HttpError {
-    return new HttpError(message, 429, 'RATE_LIMITED')
+  static tooManyRequests(
+    message = 'Too many requests',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new RateLimitError(message, options)
   }
 
-  static internal(message = 'Internal server error'): HttpError {
-    return new HttpError(message, 500, 'INTERNAL_ERROR')
+  static internal(
+    message = 'Internal server error',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new InternalError(message, options)
   }
 
-  static serviceUnavailable(message = 'Service unavailable'): HttpError {
-    return new HttpError(message, 503, 'SERVICE_UNAVAILABLE')
+  static serviceUnavailable(
+    message = 'Service unavailable',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new ServiceUnavailableError(message, options)
   }
 
-  static gatewayTimeout(message = 'Gateway timeout'): HttpError {
-    return new HttpError(message, 504, 'GATEWAY_TIMEOUT')
+  static gatewayTimeout(
+    message = 'Gateway timeout',
+    options?: HttpErrorOptions
+  ): HttpError {
+    return new GatewayTimeoutError(message, options)
   }
 
   // Every error response shares this core:
@@ -102,78 +143,91 @@ export class HttpError extends Error {
 }
 
 export class BadRequestError extends HttpError {
-  constructor(message = 'Bad Request', details?: unknown) {
-    super(message, 400, 'BAD_REQUEST', details)
+  constructor(message = 'Bad Request', detailsOrOptions?: unknown) {
+    const { code, details } = errorOptions(detailsOrOptions)
+    super(message, 400, code ?? 'BAD_REQUEST', details)
     this.name = 'BadRequestError'
   }
 }
 
 export class UnauthorizedError extends HttpError {
-  constructor(message = 'Unauthorized') {
-    super(message, 401, 'UNAUTHORIZED')
+  constructor(message = 'Unauthorized', options?: HttpErrorOptions) {
+    super(message, 401, options?.code ?? 'UNAUTHORIZED', options?.details)
     this.name = 'UnauthorizedError'
   }
 }
 
 export class ForbiddenError extends HttpError {
-  constructor(message = 'Forbidden') {
-    super(message, 403, 'FORBIDDEN')
+  constructor(message = 'Forbidden', options?: HttpErrorOptions) {
+    super(message, 403, options?.code ?? 'FORBIDDEN', options?.details)
     this.name = 'ForbiddenError'
   }
 }
 
 export class NotFoundError extends HttpError {
-  constructor(resource = 'Resource') {
-    super(notFoundMessage(resource), 404, 'NOT_FOUND')
+  constructor(resource = 'Resource', options?: HttpErrorOptions) {
+    super(
+      notFoundMessage(resource),
+      404,
+      options?.code ?? 'NOT_FOUND',
+      options?.details
+    )
     this.name = 'NotFoundError'
   }
 }
 
 export class ConflictError extends HttpError {
-  constructor(message = 'Conflict') {
-    super(message, 409, 'CONFLICT')
+  constructor(message = 'Conflict', options?: HttpErrorOptions) {
+    super(message, 409, options?.code ?? 'CONFLICT', options?.details)
     this.name = 'ConflictError'
   }
 }
 
 export class UnprocessableError extends HttpError {
-  constructor(message = 'Unprocessable Entity', details?: unknown) {
-    super(message, 422, 'UNPROCESSABLE_ENTITY', details)
+  constructor(message = 'Unprocessable Entity', detailsOrOptions?: unknown) {
+    const { code, details } = errorOptions(detailsOrOptions)
+    super(message, 422, code ?? 'UNPROCESSABLE_ENTITY', details)
     this.name = 'UnprocessableError'
   }
 }
 
 export class PayloadTooLargeError extends HttpError {
-  constructor(message = 'Payload Too Large', details?: unknown) {
-    super(message, 413, 'PAYLOAD_TOO_LARGE', details)
+  constructor(message = 'Payload Too Large', detailsOrOptions?: unknown) {
+    const { code, details } = errorOptions(detailsOrOptions)
+    super(message, 413, code ?? 'PAYLOAD_TOO_LARGE', details)
     this.name = 'PayloadTooLargeError'
   }
 }
 
 export class RateLimitError extends HttpError {
-  constructor(message = 'Too many requests') {
-    super(message, 429, 'RATE_LIMITED')
+  constructor(message = 'Too many requests', options?: HttpErrorOptions) {
+    super(message, 429, options?.code ?? 'RATE_LIMITED', options?.details)
     this.name = 'RateLimitError'
   }
 }
 
 export class InternalError extends HttpError {
-  constructor(message = 'Internal server error') {
-    super(message, 500, 'INTERNAL_ERROR')
+  constructor(message = 'Internal server error', options?: HttpErrorOptions) {
+    super(message, 500, options?.code ?? 'INTERNAL_ERROR', options?.details)
     this.name = 'InternalError'
   }
 }
 
 export class ServiceUnavailableError extends HttpError {
-  constructor(message = 'Service unavailable') {
-    super(message, 503, 'SERVICE_UNAVAILABLE')
+  constructor(message = 'Service unavailable', options?: HttpErrorOptions) {
+    super(
+      message,
+      503,
+      options?.code ?? 'SERVICE_UNAVAILABLE',
+      options?.details
+    )
     this.name = 'ServiceUnavailableError'
   }
 }
 
 export class GatewayTimeoutError extends HttpError {
-  constructor(message = 'Gateway timeout') {
-    super(message, 504, 'GATEWAY_TIMEOUT')
+  constructor(message = 'Gateway timeout', options?: HttpErrorOptions) {
+    super(message, 504, options?.code ?? 'GATEWAY_TIMEOUT', options?.details)
     this.name = 'GatewayTimeoutError'
   }
 }

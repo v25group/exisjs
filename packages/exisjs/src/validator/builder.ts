@@ -244,6 +244,27 @@ export class TexBuilder {
   }
 
   /**
+   * Defines a MongoDB ObjectId schema: a 24-character hex string.
+   *
+   * The value stays a string, so this needs no database driver. Convert it
+   * where the driver is used, or with `.transform()`.
+   *
+   * @example
+   * ```ts
+   * const params = tex.object({ id: tex.objectId() })
+   * ```
+   */
+  objectId<O extends TexStringOptions = TexStringOptions>(
+    opts?: O
+  ): WithDefault<TexString<O['optional'] extends true ? true : false>, O> {
+    let base = 'objectid'
+    if (opts?.optional || opts?.default !== undefined) base += '?'
+    if (opts?.nullable) base += ' | nullable'
+    if (opts?.nullish) base += ' | nullish'
+    return new TexType(base, opts?.default) as any
+  }
+
+  /**
    * Defines a Credit Card schema validated via the Luhn checksum algorithm.
    */
   creditCard<O extends TexStringOptions = TexStringOptions>(
