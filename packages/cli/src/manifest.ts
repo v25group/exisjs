@@ -2,6 +2,11 @@ import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import * as fsSync from 'node:fs'
 import * as crypto from 'node:crypto'
+import {
+  assertOneBoundaryFilePerFolder,
+  assertOneRouteFilePerFolder,
+  isRouteFile,
+} from 'exisjs/internal'
 
 export async function atomicWriteFile(
   filePath: string,
@@ -63,14 +68,14 @@ export async function generateManifest(
   const validRoutes: { filePath: string; routePath: string }[] = []
   if (apiDir) {
     const routes = await scanDirectory(apiDir, '/')
+    // A build fails here; the dev server reports these itself when it starts
+    if (!isDev) {
+      const files = routes.map((r) => r.filePath)
+      assertOneRouteFilePerFolder(files)
+      assertOneBoundaryFilePerFolder(files)
+    }
     for (const r of routes) {
-      if (
-        r.filePath.endsWith('route.ts') ||
-        r.filePath.endsWith('route.js') ||
-        /\.route\.[jt]s$/.test(r.filePath)
-      ) {
-        validRoutes.push(r)
-      }
+      if (isRouteFile(r.filePath)) validRoutes.push(r)
     }
   }
 

@@ -14,6 +14,13 @@ export {
   routeParadigm,
   mixedParadigmMessage,
 } from './router/route-scanner'
+export {
+  ROUTE_CONFLICT,
+  assertOneBoundaryFilePerFolder,
+  assertOneRouteFilePerFolder,
+  isBoundaryFile,
+  isRouteFile,
+} from './router/scanner'
 export { describeAccess } from './router/authorize'
 export { formatCliError, formatDevError } from './error/overlay'
 export {

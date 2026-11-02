@@ -16,6 +16,9 @@ import {
   mountErrorHandler,
   mountErrorHandlerFromModule,
   importFile,
+  ROUTE_CONFLICT,
+  assertNoRouteConflicts,
+  assertOneRouteFilePerFolder,
 } from './scanner'
 
 /** Which controller style a route module exports, if any. */
@@ -122,6 +125,8 @@ export class RouteScanner {
       try {
         await this.loadLazyRoute(entry)
       } catch (e) {
+        // Retrying can't help a conflict; the files themselves have to change
+        if ((e as { code?: string }).code === ROUTE_CONFLICT) throw e
         // The placeholder stays, so the first request retries and reports the error
         this.app.log.error(
           { err: e, file: entry.filePath },
@@ -144,6 +149,7 @@ export class RouteScanner {
           this.routeMap.get(entry.filePath)!,
           preloaded
         )
+        assertNoRouteConflicts(router.getRoutes(), entry.filePath)
       } catch (err) {
         router.removeRoutesBySource(entry.filePath) // drop a partial mount
         entry.loading = undefined // the next request tries again
@@ -245,6 +251,7 @@ export class RouteScanner {
         }
       }
 
+      assertNoRouteConflicts(this.app.getRouter().getRoutes())
       await this.mountDocs()
       return
     }
@@ -287,6 +294,7 @@ export class RouteScanner {
     for (const appDir of appDirs) {
       await this.mountErrorHandler(appDir)
       const routes = await this.scanDirectory(appDir)
+      assertOneRouteFilePerFolder(routes.map((r) => r.filePath))
 
       for (const { filePath, routePath } of routes) {
         if (isBoundaryFile(filePath)) {
@@ -330,6 +338,9 @@ export class RouteScanner {
         }
       }
     }
+
+    // Development checks each file as it loads (see loadLazyRoute)
+    if (!isDev) assertNoRouteConflicts(this.app.getRouter().getRoutes())
 
     await this.mountCronJobs(root)
 
@@ -601,7 +612,12 @@ export class RouteScanner {
         process.exit(1)
       }
       this.globalParadigm = 'oop'
+      const router = this.app.getRouter()
+      const mounted = router.getRoutes().length
       this.app.registerControllers([unwrappedMod], routePath, prefixMiddlewares)
+      for (const r of router.getRoutes().slice(mounted)) {
+        r.sourceFile = filePath
+      }
     } else if (unwrappedMod && isRouter(unwrappedMod)) {
       this.mountRouteWithSource(
         routePath,

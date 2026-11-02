@@ -6,6 +6,14 @@ export {
 } from './fs-scanner'
 export type { ScannedRoute } from './fs-scanner'
 
+export {
+  ROUTE_CONFLICT,
+  RouteConflictError,
+  assertNoRouteConflicts,
+  assertOneBoundaryFilePerFolder,
+  assertOneRouteFilePerFolder,
+} from './route-conflicts'
+
 export { loadActiveBoundaries } from './boundary-loader'
 export type { LoadedBoundaryPipeline } from './boundary-loader'
 

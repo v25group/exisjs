@@ -1,5 +1,11 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import {
+  assertOneBoundaryFilePerFolder,
+  assertOneRouteFilePerFolder,
+  isBoundaryFile,
+  isRouteFile,
+} from 'exisjs/internal'
 import { c, banner } from '../utils'
 
 interface CheckResult {
@@ -163,24 +169,14 @@ export async function doctorCommand(
     }
 
     const allFiles = walk(activeHttpDir)
-    const routeFiles = allFiles.filter(
-      (f) =>
-        f.endsWith('route.ts') ||
-        f.endsWith('route.js') ||
-        /\.route\.[jt]s$/.test(f)
-    )
+    const routeFiles = allFiles.filter((f) => isRouteFile(f))
     const schemaFiles = allFiles.filter(
       (f) =>
         f.endsWith('schema.ts') ||
         f.endsWith('schema.js') ||
         /\.schema\.[jt]s$/.test(f)
     )
-    const boundaryFiles = allFiles.filter(
-      (f) =>
-        f.endsWith('boundary.ts') ||
-        f.endsWith('boundary.js') ||
-        /\.boundary\.[jt]s$/.test(f)
-    )
+    const boundaryFiles = allFiles.filter((f) => isBoundaryFile(f))
     const errorFiles = allFiles.filter(
       (f) =>
         f.endsWith('error.ts') ||
@@ -202,7 +198,11 @@ export async function doctorCommand(
         base === 'routes.ts' ||
         base === 'routes.js' ||
         base === 'controller.ts' ||
-        base === 'controllers.ts'
+        base === 'controllers.ts' ||
+        // Named like a route or boundary, but the scanner doesn't load it
+        (/(route|boundary)\.[jt]s$/.test(base) &&
+          !isRouteFile(base) &&
+          !isBoundaryFile(base))
       )
     })
 
@@ -215,8 +215,25 @@ export async function doctorCommand(
         name: 'Naming Conventions',
         status: 'warn',
         message: `Found non-standard file names: ${rels}`,
-        hint: 'ExisJS detects route.ts, <name>.route.ts, schema.ts, boundary.ts, or error.ts. Plural "routes.ts" will not be mounted automatically.',
+        hint: 'ExisJS detects route.ts, <name>.route.ts, schema.ts, boundary.ts, or error.ts. Plural "routes.ts" and names like "reroute.ts" will not be mounted automatically.',
       })
+    }
+
+    // The server refuses to start on these, so doctor reports them as failures
+    for (const check of [
+      assertOneRouteFilePerFolder,
+      assertOneBoundaryFilePerFolder,
+    ]) {
+      try {
+        check(allFiles)
+      } catch (err: any) {
+        results.push({
+          category: 'Routes & Pipeline',
+          name: 'One File Per Folder',
+          status: 'fail',
+          message: err.message,
+        })
+      }
     }
   }
 
