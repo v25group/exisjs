@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **`v0.10.2`** | Unreleased | Patch: Bug Fixes | Route and boundary files must be named exactly; two route files in a folder, two boundaries in a folder, or the same method and path twice stop the start and name the files; `exisjs routes` reports conflicts instead of hiding them; every error class takes a domain code; `tex.objectId()` | [**Read v0.10.2 Notes →**](./changelog/v0.10/v0.10.2.md) |
+| **`v0.10.2`** | Unreleased | Patch: Bug Fixes | Route and boundary files must be named exactly; two route files in a folder, two boundaries in a folder, or the same method and path twice stop the start and name the files; `exisjs routes` reports conflicts instead of hiding them; every error class takes a domain code; `tex.objectId()`; `api.browser()`, `auditRoutes()` and `exisjs routes --audit` | [**Read v0.10.2 Notes →**](./changelog/v0.10/v0.10.2.md) |
 | **`v0.10.1`** | 2026-10-23 | Patch: Bug Fixes & Security | Compressed responses no longer sent as `204` with no body; `hpp()` keeps JSON arrays; one copy of each module in tests; `exisjs test` fails a file that doesn't exit; access checked before validation; `trustProxy: 'cloudflare'`; CSRF behind proxies; one rule for databases that can't connect (`required`); exact `ExisUser` types; `start` runs `node .exis/server/main.js` | [**Read v0.10.1 Notes →**](./changelog/v0.10/v0.10.1.md) |
 | **`v0.10.0`** | 2026-10-21 | Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; readiness drain on shutdown; settings that did nothing fail at start-up; `migrate` checks Dockerfile, `nixpacks.toml` and `Procfile`; health probes log at `debug` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-beta.0`** | 2026-10-20 | Prerelease (`beta` tag) | Ctrl+C in a terminal skips the readiness drain; deployment guide: use a clean `npm ci --omit=...` instead of `npm prune` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -55,6 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Every error class and factory takes a domain code: `new ConflictError(message, { code, details })`.
 - `tex.objectId()` validates a MongoDB ObjectId and keeps it a string.
+- `api.browser()`, `getRoutes()` and `auditRoutes()` in `exisjs/testing`; `exisjs routes --audit`.
+- `exisjs doctor` checks `domain/` imports, mixed route file names and large services; the docs define where code goes and how to name feature files.
 - `exisjs build` fails on two route or boundary files in a folder; `exisjs doctor` reports them and warns about names like `reroute.ts`.
 
 ## Current Release: [0.10.1] - 2026-10-23

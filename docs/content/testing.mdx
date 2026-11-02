@@ -26,6 +26,8 @@ The `exisjs/testing` module re-exports test runner primitives, assertions, mocki
 | `createMockResponse()` | ExisJS mock helper | Creates a synthetic `ExisResponse` capturing status codes and output buffers. |
 | `ex` | ExisJS mocking suite | Mock functions (`ex.fn`), method spies (`ex.spyOn`), module mocks (`ex.mock`), and fake timers (`ex.useFakeTimers`). |
 | `registerCleanup(fn)` | ExisJS cleanup | Registers a teardown callback invoked after test context completion. |
+| `getRoutes(app)` | ExisJS route table | Lists every route with its method, path, access and source file. |
+| `auditRoutes(app, options?)` | ExisJS route audit | Checks that open routes are reviewed, and that the rest refuse anonymous callers. |
 
 ---
 
@@ -133,6 +135,99 @@ export interface TestResponse {
   body: any                            // Parsed JSON payload or raw buffer/string
   text: string                         // Raw response string representation
 }
+```
+
+---
+
+## Testing Cookie Sessions (`browser()`)
+
+`api.browser()` returns a client that behaves like one browser: it keeps cookies, drops the ones the server expires, and sends the `csrf()` token on state-changing requests. Each call is a separate browser, so two of them act as two users.
+
+```typescript filename="tests/session.test.ts"
+import { describe, it, expect, createTestContext } from 'exisjs/testing'
+import app from '../src/http/server'
+
+describe('sessions', () => {
+  const api = createTestContext(app)
+
+  it('keeps the user signed in', async () => {
+    const browser = api.browser({ csrfPath: '/auth/csrf' })
+
+    await browser.post('/auth/login').send({ email, password }).expect(200)
+
+    await browser.get('/auth/me').expect(200)
+    expect(browser.cookie('session')).toBeDefined()
+  })
+})
+```
+
+| Option | Default | Description |
+| :--- | :--- | :--- |
+| `csrfPath` | none | A route to GET first when a state-changing request has no token yet. Without it, make a GET request yourself first. |
+| `csrfCookie` | `csrf-token` | The cookie `csrf()` sets. |
+| `csrfHeader` | `x-csrf-token` | The header `csrf()` reads. |
+
+---
+
+## Proving Routes Deny by Default (`auditRoutes`)
+
+`auditRoutes(app)` fails on two mistakes that are easy to miss in review: a route left open by accident, and a route that declares a rule but still answers anonymous callers.
+
+```typescript filename="tests/security.test.ts"
+import { describe, it, expect, createTestContext, auditRoutes } from 'exisjs/testing'
+import app from '../src/http/server'
+
+describe('route access', () => {
+  createTestContext(app)
+
+  it('denies by default', async () => {
+    expect(await auditRoutes(app)).toEqual({
+      unreviewed: [], // open routes missing from routes-audit.json
+      stale: [], // entries in routes-audit.json with no route
+      unprotected: [], // closed routes that answered without 401 or 403
+    })
+  })
+})
+```
+
+List the routes that are meant to be open in `routes-audit.json`, at the project root:
+
+```json filename="routes-audit.json"
+{ "open": ["GET /health", "POST /auth/login"] }
+```
+
+A route counts as open when it is `public`, or when it has no `permissions` or `roles`, which means any signed-in user or, without `defaultPolicy: 'authenticated'`, anyone.
+
+> **Warning:** `auditRoutes` really calls each closed route without credentials, so run it against a test database. A route that turns out to be unprotected runs its handler.
+
+`exisjs routes --audit` runs the same list check without starting a test or calling any route, which suits CI.
+
+---
+
+## Using a Database in Tests (`setupFiles`)
+
+Put the database in a file listed in `test.setupFiles`, so every test file gets it without importing anything. Set the environment first, because the server and its `tex.env` read it as soon as they load.
+
+```typescript filename="tests/setup.ts"
+import { after } from 'exisjs/testing'
+import { MongoMemoryReplSet } from 'mongodb-memory-server'
+
+// 1. The environment, before anything imports the server
+process.env.NODE_ENV = 'test'
+process.env.JWT_SECRET = 'a-test-secret-that-is-long-enough'
+
+// 2. The database
+const mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } })
+process.env.MONGODB_URI = mongo.getUri()
+
+// 3. Teardown. createTestContext already closes databases from registerDatabase
+after(() => mongo.stop())
+```
+
+```typescript filename="exis.config.ts"
+export default defineConfig({
+  test: { setupFiles: ['./tests/setup.ts'] },
+})
 ```
 
 ---
