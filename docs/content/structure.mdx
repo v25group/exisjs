@@ -42,11 +42,19 @@ my-api/
 │   ├── database/                # Persistent storage configuration and lifecycle
 │   │   ├── db.ts                # Database connection client and lifecycle registration
 │   │   └── models/              # Database models, schemas, and entity definitions
+│   ├── domain/                  # Business rules: pure functions, no database or HTTP imports
+│   │   └── invoice-totals.ts
+│   ├── integrations/            # One file per outside service, with a dev fake
+│   │   └── mail.ts
+│   ├── jobs/                    # The work itself; cron/ and routes only call it
+│   │   └── send-reminders.ts
 │   ├── common/                  # Shared cross-cutting components
 │   │   └── guards/
 │   │       └── auth.guard.ts    # Reusable route guards
 │   └── config/
-│       └── env.ts               # Environment variable validation schema (tex.env)
+│       ├── env.ts               # Environment variable validation schema (tex.env)
+│       ├── permissions.ts       # The permission list and default roles
+│       └── constants.ts         # Enums and limits
 ├── tests/                       # Automated test suites (*.test.ts, *.e2e-spec.ts)
 ├── .env                         # Local environment variables
 ├── .gitignore
@@ -71,6 +79,42 @@ Within `src/http/`, each file name denotes a specific role in the HTTP lifecycle
 | `boundary.ts` / `*.boundary.ts` | Scoped Pipeline | Folder-level configuration (CORS, headers, rate limits, authentication guards, and error handling) cascading down directory trees. |
 | `server.ts` | Server Lifecycle | Exports `onStart` and `onClose` hooks for database connections and plugin initialization. |
 | `error.ts` / `*.error.ts` | Exception Handling | Centralized error interceptor exporting `onError(err, req, res)`. |
+
+---
+
+## Where Code Goes
+
+`domain/`, `integrations/` and `jobs/` aren't auto-discovered. They are conventions, so every ExisJS project is laid out the same way.
+
+| Folder | Holds | Rule |
+| :--- | :--- | :--- |
+| `src/domain/` | Business rules: money totals, stage rules, numbering | Pure functions with no database or HTTP imports. `exisjs doctor` warns when one imports `database/` or `http/`. |
+| `src/integrations/` | Clients for outside services: mail, storage, messaging | One file per service, with a fake for development and tests. Refuse to start in production without the real one. |
+| `src/jobs/` | The bodies of background work | Plain functions. Files in `cron/` only schedule them, so tests and routes can call the same code. |
+| `src/config/` | App-wide catalogues: `env.ts`, `permissions.ts`, `constants.ts` | Data, not behaviour. |
+
+---
+
+## Naming Feature Files
+
+Name files after their feature, so editor tabs and search results say which feature a file belongs to. Plain `route.ts` still works, but use one style across a project; `exisjs doctor` warns when a project mixes them. `exisjs generate` needs `--named` for this style today.
+
+```text
+src/http/projects/
+├── projects.route.ts            # The folder name + role
+├── projects.schema.ts           # tex schemas shared by more than one route
+├── projects.service.ts          # The main service
+├── project-detail.service.ts    # A large service split by topic
+└── [id]/proposals/proposals.route.ts
+src/http/service/
+└── service.shared.ts            # Helpers shared by the sub-folders
+```
+
+- **One route file per folder.** The server refuses to start with two; a second resource belongs in a sub-folder.
+- **Schemas:** inline is fine for a schema only one route uses. Move it to `<name>.schema.ts` once two routes share it.
+- **Services:** split a service by topic once it nears 400 lines. `exisjs doctor` warns above that.
+- **`*.shared.ts`** holds helpers for a folder and its sub-folders. The router ignores it.
+- **`boundary.ts`** and **`server.ts`** keep their plain names, because they describe the folder, not a feature.
 
 ---
 

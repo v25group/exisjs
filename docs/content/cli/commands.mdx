@@ -176,6 +176,7 @@ npx exisjs routes [options]
 | `-m, --method <method>` | `string` | None | Filter endpoints by HTTP method (e.g. `GET`, `POST`). |
 | `-f, --filter <keyword>` | `string` | None | Filter endpoints by path, method, or source file keyword. |
 | `--json` | `boolean` | `false` | Output routes and middleware metadata in JSON format. |
+| `--audit` | `boolean` | `false` | Exit with code 1 when a route is open to anyone or to any signed-in user without being listed in `routes-audit.json`, or when the file lists a route that no longer exists. See [Testing](/docs/testing). |
 
 ---
 

@@ -219,6 +219,62 @@ export async function doctorCommand(
       })
     }
 
+    // One naming style, so editor tabs and search results read the same everywhere
+    const plainRoutes = routeFiles.filter((f) =>
+      /^route\.[jt]s$/.test(path.basename(f))
+    )
+    if (plainRoutes.length > 0 && plainRoutes.length < routeFiles.length) {
+      results.push({
+        category: 'Project Layout',
+        name: 'Route File Names',
+        status: 'warn',
+        message: `${plainRoutes.length} plain route file(s) and ${routeFiles.length - plainRoutes.length} named ones`,
+        hint: 'Pick one style. Named files (users/users.route.ts) are recommended.',
+      })
+    }
+
+    const SERVICE_LINE_LIMIT = 400
+    const largeServices = allFiles.filter((f) => {
+      if (!/(^|[\\/.])service\.[jt]s$/.test(f)) return false
+      const lines = fs.readFileSync(f, 'utf8').split('\n').length
+      return lines > SERVICE_LINE_LIMIT
+    })
+    if (largeServices.length > 0) {
+      results.push({
+        category: 'Project Layout',
+        name: 'Service File Size',
+        status: 'warn',
+        message: `Over ${SERVICE_LINE_LIMIT} lines: ${largeServices
+          .map((f) => path.relative(cwd, f).replace(/\\/g, '/'))
+          .join(', ')}`,
+        hint: 'Split by topic in the same folder: <topic>.service.ts.',
+      })
+    }
+
+    // Business rules stay free of HTTP and storage, so anything can reuse and test them
+    const domainDir = path.join(path.dirname(activeHttpDir), 'domain')
+    const IMPORT_SPEC =
+      /(?:\bfrom\s+|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g
+    const LAYER_IMPORT = /^(\.{1,2}\/|@\/|~\/|src\/).*?\b(database|http)(\/|$)/
+    const impureDomain = walk(domainDir).filter((f) => {
+      if (!/\.[jt]s$/.test(f)) return false
+      const source = fs.readFileSync(f, 'utf8')
+      return [...source.matchAll(IMPORT_SPEC)].some((m) =>
+        LAYER_IMPORT.test(m[1])
+      )
+    })
+    if (impureDomain.length > 0) {
+      results.push({
+        category: 'Project Layout',
+        name: 'Pure Domain Code',
+        status: 'warn',
+        message: `Importing database/ or http/: ${impureDomain
+          .map((f) => path.relative(cwd, f).replace(/\\/g, '/'))
+          .join(', ')}`,
+        hint: 'src/domain/ holds pure functions. Pass the data in from the service.',
+      })
+    }
+
     // The server refuses to start on these, so doctor reports them as failures
     for (const check of [
       assertOneRouteFilePerFolder,

@@ -22,6 +22,11 @@ export {
   isRouteFile,
 } from './router/scanner'
 export { describeAccess } from './router/authorize'
+export {
+  ROUTE_AUDIT_FILE,
+  auditRouteTable,
+  loadRouteAudit,
+} from './router/route-audit'
 export { formatCliError, formatDevError } from './error/overlay'
 export {
   registerPathAliasLoader,

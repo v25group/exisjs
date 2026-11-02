@@ -101,6 +101,10 @@ program
     'Filter endpoints by path, method, or source'
   )
   .option('--json', 'Output routes as JSON')
+  .option(
+    '--audit',
+    'Fail on open routes not reviewed in routes-audit.json (exit code 1)'
+  )
   .action(async (options) => {
     const { routesCommand } = await import('./routes')
     await routesCommand(process.cwd(), options)

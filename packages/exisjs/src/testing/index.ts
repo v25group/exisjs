@@ -1,6 +1,20 @@
 export * from './mocks'
-export type { TestResponse, TestApp } from './client'
-export { TestRequest, createTestApp, startTestServer } from './client'
+export type {
+  TestResponse,
+  TestApp,
+  TestBrowser,
+  TestBrowserOptions,
+  TestRoute,
+  RouteAuditOptions,
+  FullRouteAuditResult,
+} from './client'
+export {
+  TestRequest,
+  createTestApp,
+  startTestServer,
+  getRoutes,
+  auditRoutes,
+} from './client'
 export type { TestServer } from './client'
 
 import * as _nodeTest from 'node:test'

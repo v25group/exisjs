@@ -3,8 +3,12 @@ import fs from 'node:fs'
 import { fork } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import {
+  auditRouteTable,
+  describeAccess,
   loadConfig,
+  loadRouteAudit,
   registerPathAliasLoader,
+  ROUTE_AUDIT_FILE,
   ROUTE_CONFLICT,
 } from 'exisjs/internal'
 
@@ -13,6 +17,7 @@ interface RoutesCommandOptions {
   json?: boolean
   method?: string
   filter?: string
+  audit?: boolean
 }
 
 export interface ExtractedRoute {
@@ -140,12 +145,15 @@ export async function routesCommand(
         path: r.path,
         handlersCount: r.handlers ? r.handlers.length : 1,
         sourceFile: r.sourceFile || null,
+        access: describeAccess(r.schema?.access),
       }))
     } catch {
       // Fallback to subprocess if in-process import failed
       routes = await extractRoutesViaSubprocess(cwd, appPath)
     }
   }
+
+  if (opts.audit) runAudit(cwd, routes, opts.json)
 
   // Filter by method if specified
   if (opts.method) {
@@ -304,6 +312,50 @@ export async function routesCommand(
 /**
  * Spawns a subprocess with tsx runner to safely import and extract routes from TypeScript applications on Windows and POSIX.
  */
+/** Compares the table with `routes-audit.json`, and exits with the result. */
+function runAudit(
+  cwd: string,
+  routes: ExtractedRoute[],
+  json?: boolean
+): never {
+  let result: ReturnType<typeof auditRouteTable>
+  try {
+    result = auditRouteTable(routes, loadRouteAudit(cwd))
+  } catch (err: any) {
+    console.error(`\x1b[31m[Exis CLI Error]\x1b[0m ${err.message}`)
+    process.exit(1)
+  }
+
+  const passed = result.unreviewed.length === 0 && result.stale.length === 0
+  if (json) {
+    console.log(JSON.stringify(result, null, 2))
+    process.exit(passed ? 0 : 1)
+  }
+
+  if (passed) {
+    console.log(
+      `\x1b[32m✓\x1b[0m All ${routes.length} routes are closed or reviewed in ${ROUTE_AUDIT_FILE}.`
+    )
+    process.exit(0)
+  }
+
+  const list = (items: string[]) => items.map((i) => `    → ${i}`).join('\n')
+  if (result.unreviewed.length > 0) {
+    console.error(
+      `\x1b[31m[Exis CLI Error]\x1b[0m Routes open to anyone or to any signed-in user, not reviewed in ${ROUTE_AUDIT_FILE}:\n\n${list(result.unreviewed)}\n`
+    )
+    console.error(
+      `Fix: Add permissions or roles to the route. If it should be open, add it to ${ROUTE_AUDIT_FILE}: { "open": ["GET /health"] }\n`
+    )
+  }
+  if (result.stale.length > 0) {
+    console.error(
+      `\x1b[31m[Exis CLI Error]\x1b[0m Entries in ${ROUTE_AUDIT_FILE} that no longer match a route:\n\n${list(result.stale)}\n`
+    )
+  }
+  process.exit(1)
+}
+
 async function extractRoutesViaSubprocess(
   cwd: string,
   appPath: string
