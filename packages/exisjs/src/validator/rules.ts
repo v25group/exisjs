@@ -720,6 +720,8 @@ function stringCheck(m: Modifiers): Check {
       v = String(v)
     }
     if (typeof v !== 'string') fail('must be a string')
+    // Databases and C-based tools stop at it or refuse it with an error
+    if (v.indexOf('\0') !== -1) fail('must not contain a null character')
     const s = applyTextModifiers(v, m)
     checkLength(s, m)
     return m.mask ? maskString(s) : s

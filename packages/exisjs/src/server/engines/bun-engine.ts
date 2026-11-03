@@ -22,7 +22,8 @@ export class BunEngine implements HttpEngine {
       this.app.handle.bind(this.app) as any,
       port,
       host,
-      options.ssl ?? this.app.options.ssl
+      options.ssl ?? this.app.options.ssl,
+      this.app.options.bodyLimit
     )
 
     this.serverInstance = this.bunApp.listen(port, host, async () => {

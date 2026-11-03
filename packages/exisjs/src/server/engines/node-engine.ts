@@ -38,6 +38,15 @@ export class NodeEngine implements HttpEngine {
     }
 
     const keepAlive = this.app.options.keepAlive
+
+    // Node.js never closes an idle HTTP/2 session on its own, so each one
+    // would hold a connection for as long as a client leaves it open
+    if (this.app.options.ssl && this.app.options.http2 !== false) {
+      const idleMs =
+        typeof keepAlive === 'object' ? keepAlive.timeoutMs : undefined
+      ;(server as Http2SecureServer).setTimeout(idleMs ?? 120_000)
+    }
+
     if (keepAlive) {
       const kaConfig = keepAlive === true ? {} : keepAlive
       if ('keepAliveTimeout' in server)

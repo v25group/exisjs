@@ -4,6 +4,7 @@ import type { ExisResponse } from './response'
 import { HttpError } from '../error/errors'
 import { secureJsonParse, stripPrototype } from './helpers/json'
 import { parseCookies } from './helpers/cookie'
+import { FORM_URLENCODED, MULTIPART, mediaTypeOf } from './helpers/media-type'
 import { evaluatePreconditions, toHttpTime } from './helpers/conditional'
 import {
   resolveIps,
@@ -327,8 +328,9 @@ export class ExisRequest<
     files: Record<string, any>
   }> {
     const contentType = this.get('content-type') ?? ''
+    const mediaType = mediaTypeOf(contentType)
 
-    if (contentType.includes('application/x-www-form-urlencoded')) {
+    if (mediaType === FORM_URLENCODED) {
       if (!this.rawBody) await this.text()
       const fields = qs.parse(this.rawBody || '')
       this.body = stripPrototype(fields) as unknown as TBody
@@ -338,7 +340,7 @@ export class ExisRequest<
       }
     }
 
-    if (contentType.includes('multipart/form-data')) {
+    if (mediaType === MULTIPART) {
       if (!contentType.includes('boundary=')) {
         throw HttpError.badRequest(
           'Missing multipart boundary. Ensure you are not manually setting the Content-Type header in your client (e.g. Axios) so that the browser can auto-attach the boundary string.'
@@ -413,7 +415,7 @@ export class ExisRequest<
     }[]
   }> {
     const contentType = this.get('content-type') ?? ''
-    if (!contentType.includes('multipart/form-data')) {
+    if (mediaTypeOf(contentType) !== MULTIPART) {
       throw HttpError.badRequest('streamUpload requires multipart/form-data')
     }
     if (!contentType.includes('boundary=')) {

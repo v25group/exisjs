@@ -1,5 +1,11 @@
 import { validationFailed } from '../decorators/pipes'
 import { HttpError } from '../error/errors'
+import {
+  FORM_URLENCODED,
+  MULTIPART,
+  isJsonMediaType,
+  mediaTypeOf,
+} from '../server/helpers/media-type'
 import { checkAccess, toAccessList, type AccessRule } from './authorize'
 import {
   sendResult,
@@ -229,10 +235,13 @@ export class ControllerRegistrar {
                       req.body === undefined &&
                       ['POST', 'PUT', 'PATCH'].includes(req.method!)
                     ) {
-                      const contentType = req.headers['content-type'] || ''
-                      if (contentType.includes('json')) {
+                      const mediaType = mediaTypeOf(req.headers['content-type'])
+                      if (isJsonMediaType(mediaType)) {
                         await req.json()
-                      } else if (contentType.includes('form')) {
+                      } else if (
+                        mediaType === FORM_URLENCODED ||
+                        mediaType === MULTIPART
+                      ) {
                         await req.formData()
                       }
                     }

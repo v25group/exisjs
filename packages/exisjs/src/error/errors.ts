@@ -399,6 +399,32 @@ export interface ErrorHandlerOptions {
   legacyFields?: boolean
 }
 
+/**
+ * Only a real validation failure answers 400 with its message. Having an
+ * `errors` property isn't enough: AggregateError (a failed connection) and
+ * MongoBulkWriteError have one too, and their messages name internal hosts.
+ */
+function isValidationFailure(err: any): boolean {
+  if (!err || typeof err !== 'object') return false
+  if (
+    err.name === 'ZodError' ||
+    err.name === 'ValidationError' ||
+    err.name === 'ValidatorError'
+  ) {
+    return true
+  }
+  if (err.name === 'AggregateError') return false
+  if (Array.isArray(err.issues)) return true
+  // A plain error carrying field messages: { errors: { email: 'Required' } }
+  const errors = err.errors
+  return (
+    Object.getPrototypeOf(err) === Error.prototype &&
+    errors !== null &&
+    typeof errors === 'object' &&
+    !Array.isArray(errors)
+  )
+}
+
 export function createErrorHandler(
   isDev = false,
   options: ErrorHandlerOptions = {}
@@ -422,14 +448,7 @@ export function createErrorHandler(
       return
     }
 
-    if (
-      err.name === 'ZodError' ||
-      err.name === 'ValidationError' ||
-      err.name === 'ValidatorError' ||
-      (err &&
-        typeof err === 'object' &&
-        ('errors' in err || 'issues' in err || 'inner' in err))
-    ) {
+    if (isValidationFailure(err)) {
       let message = err.message
       const errorsMap: Record<string, string> = {}
       const detailsList: {

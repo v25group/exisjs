@@ -20,7 +20,8 @@ export class UwsEngine implements HttpEngine {
 
     this.uwsApp = createUwsApp(
       this.app.handle.bind(this.app) as any,
-      options.ssl ?? this.app.options.ssl
+      options.ssl ?? this.app.options.ssl,
+      this.app.options.bodyLimit
     )
 
     this.uwsApp.listen(port, host, async (tokenInfo: any) => {

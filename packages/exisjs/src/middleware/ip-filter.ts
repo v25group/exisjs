@@ -1,3 +1,4 @@
+import { BlockList, isIP } from 'node:net'
 import type { Handler, Request, Response, NextFunction } from '../types'
 import { HttpError } from '../error/errors'
 
@@ -15,50 +16,40 @@ export interface IpFilterOptions {
   trustProxy?: boolean
 }
 
-/** Parse a CIDR block into network address and mask */
-function parseCidr(cidr: string): { network: number; mask: number } | null {
-  const [ip, prefix] = cidr.split('/')
-  if (!prefix) return null
-  const bits = parseInt(prefix, 10)
-  if (isNaN(bits) || bits < 0 || bits > 32) return null
-  const network = ipToInt(ip)
-  if (network === null) return null
-  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0
-  return { network: (network & mask) >>> 0, mask }
-}
+const family = (ip: string): 'ipv4' | 'ipv6' =>
+  isIP(ip) === 6 ? 'ipv6' : 'ipv4'
 
-/** Convert dotted-decimal IP to 32-bit integer */
-function ipToInt(ip: string): number | null {
-  const parts = ip.split('.')
-  if (parts.length !== 4) return null
-  let val = 0
-  for (const part of parts) {
-    const n = parseInt(part, 10)
-    if (isNaN(n) || n < 0 || n > 255) return null
-    val = (val << 8) | n
+/**
+ * Compiles the rules once. A rule that can't be read stops the start: ignoring
+ * it would silently leave a deny list open or an allow list wrong.
+ */
+function compileRules(rules: string[]): BlockList {
+  const list = new BlockList()
+  for (const rule of rules) {
+    const [address, prefix] = rule.split('/')
+    const version = isIP(address)
+    const bits = Number(prefix)
+    const validPrefix =
+      prefix === undefined ||
+      (/^\d+$/.test(prefix) && bits <= (version === 6 ? 128 : 32))
+    if (version === 0 || !validPrefix) {
+      throw new Error(
+        `[ExisJS] ipFilter: '${rule}' is not an IP address or CIDR block`
+      )
+    }
+    if (prefix === undefined) list.addAddress(address, family(address))
+    else list.addSubnet(address, bits, family(address))
   }
-  return val >>> 0
+  return list
 }
 
-/** Check if an IP matches a rule (exact string or CIDR) */
-function ipMatchesRule(ip: string, rule: string): boolean {
-  if (rule.includes('/')) {
-    const cidr = parseCidr(rule)
-    if (!cidr) return false
-    const ipInt = ipToInt(ip)
-    if (ipInt === null) return false
-    return (ipInt & cidr.mask) >>> 0 === cidr.network
-  }
-  return ip === rule
-}
-
-function ipMatchesAny(ip: string, rules: string[]): boolean {
-  return rules.some((rule) => ipMatchesRule(ip, rule))
+function matches(list: BlockList, ip: string): boolean {
+  return isIP(ip) !== 0 && list.check(ip, family(ip))
 }
 
 export function ipFilterMiddleware(options: IpFilterOptions = {}): Handler {
-  const allowRules = options.allow ?? null
-  const denyRules = options.deny ?? null
+  const allowRules = options.allow ? compileRules(options.allow) : null
+  const denyRules = options.deny ? compileRules(options.deny) : null
   const message = options.message ?? 'Access Denied'
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -68,17 +59,13 @@ export function ipFilterMiddleware(options: IpFilterOptions = {}): Handler {
     const ip = req.ip || ''
 
     // If allowlist is defined, IP MUST match at least one rule
-    if (allowRules !== null) {
-      if (!ipMatchesAny(ip, allowRules)) {
-        return next(HttpError.forbidden(message))
-      }
+    if (allowRules !== null && !matches(allowRules, ip)) {
+      return next(HttpError.forbidden(message))
     }
 
     // If denylist is defined, IP MUST NOT match any rule
-    if (denyRules !== null) {
-      if (ipMatchesAny(ip, denyRules)) {
-        return next(HttpError.forbidden(message))
-      }
+    if (denyRules !== null && matches(denyRules, ip)) {
+      return next(HttpError.forbidden(message))
     }
 
     next()

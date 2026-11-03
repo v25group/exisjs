@@ -11,6 +11,15 @@ export interface HelmetOptions {
   xssFilter?: boolean
   hidePoweredBy?: boolean
   frameguard?: boolean | { action: 'DENY' | 'SAMEORIGIN' }
+  /** Default `'same-origin'`; `false` sends none. */
+  crossOriginOpenerPolicy?:
+    false | 'same-origin' | 'same-origin-allow-popups' | 'unsafe-none'
+  /**
+   * Default `'same-site'`, so `api.example.com` can serve `app.example.com`.
+   * Use `'cross-origin'` for files other sites embed; `false` sends none.
+   */
+  crossOriginResourcePolicy?:
+    false | 'same-origin' | 'same-site' | 'cross-origin'
 }
 
 /**
@@ -51,6 +60,18 @@ export function helmet(options: HelmetOptions = {}): Handler {
         ? options.frameguard.action
         : 'DENY'
     staticHeaders['X-Frame-Options'] = action
+  }
+
+  if (options.crossOriginOpenerPolicy !== false) {
+    staticHeaders['Cross-Origin-Opener-Policy'] =
+      options.crossOriginOpenerPolicy ?? 'same-origin'
+  }
+
+  // Stops another site embedding a signed-in user's response with a no-cors
+  // request, such as a script tag. CORS requests aren't affected
+  if (options.crossOriginResourcePolicy !== false) {
+    staticHeaders['Cross-Origin-Resource-Policy'] =
+      options.crossOriginResourcePolicy ?? 'same-site'
   }
 
   // Not in staticHeaders: a policy set earlier (another helmet(), a route)
@@ -192,7 +213,7 @@ export function csrf(options: CsrfOptions): Handler {
 
     // For state-changing methods, validate the header token matches the unsigned cookie token
     const headerToken = req.get(headerName)
-    if (!headerToken || headerToken !== token) {
+    if (!headerToken || !timingSafeEqual(headerToken, token)) {
       return next(new HttpError('Invalid CSRF token', 403, 'CSRF_FAILED'))
     }
 

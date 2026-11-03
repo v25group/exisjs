@@ -15,7 +15,7 @@
     "exisjs": "*"
   },
   "devDependencies": {
-    "@types/node": "^20.19.43",
+    "@types/node": "^24.19.2",
     "typescript": "^5.9.3",
     "@exisjs/cli": "^0.10.1"
   }

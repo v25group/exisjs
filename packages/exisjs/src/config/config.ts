@@ -64,10 +64,9 @@ export const defaultConfig: ResolvedConfig = {
       'Auto-generated API documentation with native schema validation',
   },
   swagger: undefined as any,
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  },
+  // Off until an app lists its origins: '*' would let any site read whatever a
+  // visitor's network can reach, such as an API limited by ipFilter or a VPN
+  cors: false,
   logger: false,
   helmet: { enabled: true },
   trustProxy: false,

@@ -207,12 +207,12 @@ export function resolveProtocol(
   const isTls = connection?.encrypted || false
   let protocol = isTls ? 'https' : 'http'
 
-  if (isTrusted) {
+  if (isTrusted && forwardedHeadersAllowed(raw, trustProxy)) {
     const cfVisitor = raw.headers['cf-visitor']
     if (typeof cfVisitor === 'string') {
       try {
-        const parsed = JSON.parse(cfVisitor)
-        if (parsed.scheme) return parsed.scheme
+        const scheme = JSON.parse(cfVisitor).scheme
+        if (KNOWN_PROTOCOL.test(scheme)) return scheme
       } catch {
         // ignore
       }
@@ -223,10 +223,25 @@ export function resolveProtocol(
       const rawProto = Array.isArray(xForwardedProto)
         ? xForwardedProto.join(',')
         : xForwardedProto
-      protocol = rawProto.split(',')[0].trim()
+      const forwarded = rawProto.split(',')[0].trim().toLowerCase()
+      if (KNOWN_PROTOCOL.test(forwarded)) protocol = forwarded
     }
   }
   return protocol
+}
+
+const KNOWN_PROTOCOL = /^(https?|wss?)$/
+const HOST_VALUE = /^[a-z0-9.\-_]+(:\d+)?$|^\[[0-9a-f:.]+\](:\d+)?$/i
+
+// 'cloudflare' promises only that Cloudflare is trusted: a client connecting
+// directly must not be able to choose the host or protocol the app sees
+function forwardedHeadersAllowed(
+  raw: IncomingMessage,
+  trustProxy: TrustProxy
+): boolean {
+  if (trustProxy !== 'cloudflare') return true
+  const peer = normalizeIp(raw.socket?.remoteAddress ?? '127.0.0.1')
+  return fromCloudflare(peer, raw.headers['x-forwarded-for'])
 }
 
 /** The host the client asked for, with its port: X-Forwarded-Host behind a trusted proxy. */
@@ -234,11 +249,16 @@ export function resolveHost(
   raw: IncomingMessage,
   trustProxy: TrustProxy
 ): string {
-  const forwarded = isProxyTrusted(trustProxy)
-    ? firstHeader(raw.headers['x-forwarded-host'])
-    : undefined
+  const forwarded =
+    isProxyTrusted(trustProxy) && forwardedHeadersAllowed(raw, trustProxy)
+      ? firstHeader(raw.headers['x-forwarded-host'])
+      : undefined
   // A chain of proxies can list several hosts; the first is the client's
-  return forwarded ? forwarded.split(',')[0].trim() : raw.headers.host || ''
+  const first = forwarded?.split(',')[0].trim()
+  // Apps build links and redirects from this, so it must look like a host
+  if (first && HOST_VALUE.test(first)) return first
+  // HTTP/2 names the host in :authority, and a client can add its own Host
+  return (raw.headers[':authority'] as string) || raw.headers.host || ''
 }
 
 export function resolveHostname(

@@ -3,11 +3,41 @@ import { HttpError } from '../../error/errors'
 import { stripPrototype } from './json'
 import type { ExisFile } from '../../types'
 import { safeUploadPath, DEFAULT_UPLOAD_LIMITS } from './upload-name'
+import { MULTIPART, mediaTypeOf } from './media-type'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
 
 const EMPTY = Buffer.alloc(0)
+
+/**
+ * Sends the request body into the multipart parser. Engines without Node
+ * streams (uWS, Bun) hand over the body at once through readBody().
+ */
+export function feedMultipart(
+  raw: any,
+  parser: any,
+  bodyLimit: number,
+  onError: (err: Error) => void
+): void {
+  if (typeof raw.readBody === 'function') {
+    const body = raw.readBody(bodyLimit)
+    if (body && typeof body.then === 'function') {
+      body.then((data: Buffer) => parser.end(data), onError)
+    } else {
+      parser.end(body ?? undefined)
+    }
+    return
+  }
+  raw.pipe(parser)
+}
+
+/** A malformed multipart body is the client's mistake, not a server error. */
+export function multipartError(err: unknown): Error {
+  if (err instanceof HttpError) return err
+  const message = err instanceof Error ? err.message : String(err)
+  return HttpError.badRequest(`Malformed multipart body: ${message}`)
+}
 
 export async function parseRawBody(
   raw: IncomingMessage,
@@ -19,9 +49,17 @@ export async function parseRawBody(
     method === 'GET' ||
     method === 'HEAD' ||
     method === 'OPTIONS' ||
-    contentType.includes('multipart/form-data')
+    mediaTypeOf(contentType) === MULTIPART
   ) {
     return EMPTY
+  }
+
+  // Before any engine reads it, so an oversized body is refused unread
+  const declared = parseInt(String(raw.headers['content-length'] ?? ''), 10)
+  if (!isNaN(declared) && declared > bodyLimit) {
+    throw HttpError.payloadTooLarge(
+      `Request body exceeds limit of ${bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+    )
   }
 
   if (typeof (raw as any).readBody === 'function') {
@@ -78,19 +116,6 @@ export async function parseRawBody(
       cleanup()
       if (err) reject(err)
       else resolve(result ?? EMPTY)
-    }
-
-    const contentLengthStr = raw.headers['content-length']
-    if (contentLengthStr) {
-      const contentLength = parseInt(contentLengthStr, 10)
-      if (!isNaN(contentLength) && contentLength > bodyLimit) {
-        done(
-          HttpError.payloadTooLarge(
-            `Request body exceeds limit of ${bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
-          )
-        )
-        return
-      }
     }
 
     raw.on('data', onData)
@@ -174,7 +199,13 @@ export function parseMultipartFormData(
       raw.once('close', onRawClose)
       raw.once('aborted', onRawClose)
 
-      bb.on('field', (name: string, val: string) => {
+      bb.on('field', (name: string, val: string, info?: any) => {
+        // Fields are held in memory like files, so they share the same limit
+        totalSize += name.length + Buffer.byteLength(val)
+        if (info?.valueTruncated || totalSize > bodyLimit) {
+          tooLarge('Multipart body')
+          return
+        }
         fields[name] = val
       })
 
@@ -232,9 +263,9 @@ export function parseMultipartFormData(
         })
       })
 
-      bb.on('error', (err: any) => fail(err))
+      bb.on('error', (err: any) => fail(multipartError(err)))
 
-      raw.pipe(bb)
+      feedMultipart(raw, bb, bodyLimit, fail)
     } catch (err: any) {
       reject(
         HttpError.badRequest(err.message || 'Failed to parse multipart data')
@@ -308,7 +339,12 @@ export async function streamMultipartUpload(
       return
     }
 
-    bb.on('field', (name: string, val: string) => {
+    bb.on('field', (name: string, val: string, info?: any) => {
+      totalSize += name.length + Buffer.byteLength(val)
+      if (info?.valueTruncated || totalSize > bodyLimit) {
+        tooLarge('Multipart body')
+        return
+      }
       fields[name] = val
     })
     bb.on('filesLimit', () =>
@@ -380,13 +416,8 @@ export async function streamMultipartUpload(
       )
     })
 
-    bb.on('error', (err: any) => fail(err))
+    bb.on('error', (err: any) => fail(multipartError(err)))
 
-    if (typeof raw.pipe === 'function') {
-      raw.pipe(bb)
-    } else {
-      ;(raw as any).on('data', (chunk: any) => bb.write(chunk))
-      ;(raw as any).on('end', () => bb.end())
-    }
+    feedMultipart(raw, bb, bodyLimit, fail)
   })
 }

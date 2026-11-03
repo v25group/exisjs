@@ -8,6 +8,12 @@ updates:
       prefix: "fix"
       include: "scope"
     open-pull-requests-limit: 10
+    # Most malicious releases are caught within days of publishing
+    cooldown:
+      default-days: 7
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]

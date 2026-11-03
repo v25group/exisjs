@@ -6,6 +6,9 @@ import type {
   ExisFile,
 } from '../types'
 import { HttpError } from '../error/errors'
+import { feedMultipart } from '../server/helpers/body-parser'
+import { MULTIPART, mediaTypeOf } from '../server/helpers/media-type'
+import { stripPrototype } from '../server/helpers/json'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const busboy = require('busboy')
 import {
@@ -123,7 +126,7 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
 
   return (req: Request, res: Response, next: NextFunction) => {
     const contentType = req.get('content-type') || ''
-    if (!contentType.includes('multipart/form-data')) {
+    if (mediaTypeOf(contentType) !== MULTIPART) {
       return next()
     }
 
@@ -170,7 +173,17 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
           limits: bbLimits,
         })
 
-        bb.on('field', (name: string, val: string) => {
+        // Fields stay in memory whatever the file limits are, so they get
+        // the request's body limit: 100 fields of 1 MB is 100 MB otherwise
+        const fieldLimit = (req as any).bodyLimit || 10 * 1024 * 1024
+        let fieldBytes = 0
+        bb.on('field', (name: string, val: string, info?: any) => {
+          fieldBytes += name.length + Buffer.byteLength(val)
+          if (info?.valueTruncated || fieldBytes > fieldLimit) {
+            hasLimitError = true
+            limitErrorMessage = `Form fields exceed the limit of ${fieldLimit} bytes`
+            return
+          }
           fieldsMap[name] = val
         })
 
@@ -337,7 +350,10 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
             }
           }
 
-          req.body = { ...((req.body as any) || {}), ...fieldsMap }
+          req.body = stripPrototype({
+            ...((req.body as any) || {}),
+            ...fieldsMap,
+          })
           done()
         })
 
@@ -349,7 +365,12 @@ export function fileUpload(rawOptions: FileUploadOptions = {}): Handler {
           )
         })
 
-        req.raw.pipe(bb)
+        feedMultipart(
+          req.raw,
+          bb,
+          bbLimits.fileSize * (bbLimits.files || 1),
+          done
+        )
       } catch (err) {
         done(err)
       }

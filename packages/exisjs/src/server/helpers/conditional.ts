@@ -21,7 +21,7 @@ export interface Validators {
  */
 export type PreconditionOutcome = 'ok' | 'not-modified' | 'failed'
 
-// Node 20.12+ has a one-shot hash that skips the Hash object (about 35%
+// Node has a one-shot hash that skips the Hash object (about 35%
 // faster for typical response sizes) and hashes strings without a copy
 const oneShotHash:
   ((alg: string, data: string | Buffer, enc: 'base64') => string) | undefined =

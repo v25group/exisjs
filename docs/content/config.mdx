@@ -146,7 +146,7 @@ export default defineConfig({
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `cors` | `boolean \| CorsConfig` | `{ origin: '*' }` | Global CORS policy. Can be overridden in boundaries or routes. `credentials: true` requires explicit origins: with `origin: '*'` it is ignored and a warning is logged, because browsers reject that combination. |
+| `cors` | `boolean \| CorsConfig` | `false` | Global CORS policy, off until you set it: `{ origin: ['https://app.example.com'] }` lists the sites that may call the API, and `true` allows any site (`origin: '*'`). Can be overridden in boundaries or routes. `credentials: true` requires explicit origins: with `origin: '*'` it is ignored and a warning is logged, because browsers reject that combination. |
 | `helmet` | `boolean \| HelmetConfig` | `{ enabled: true }` | Security headers, including a same-origin `Content-Security-Policy`. `contentSecurityPolicy: false` sends no CSP; a string replaces the default. |
 | `authorization` | `AuthorizationConfig` | `{}` | `defaultPolicy: 'authenticated'` closes controller routes that declare no rule unless they are `@Public()`. `superUser: (user) => boolean` lets matching users pass every `@Roles` / `@Permissions` rule. |
 | `errors` | `{ legacyFields?: boolean }` | `{}` | `legacyFields: true` adds the pre-0.9 duplicate fields to error bodies. Deprecated. |

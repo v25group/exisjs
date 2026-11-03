@@ -11,6 +11,12 @@ import type {
 import { RadixTree } from './radix'
 import { sendResult, toError } from './send-result'
 import { HttpError } from '../error/errors'
+import {
+  FORM_URLENCODED,
+  MULTIPART,
+  isJsonMediaType,
+  mediaTypeOf,
+} from '../server/helpers/media-type'
 import { fileUpload, parseSizeToBytes } from '../middleware/upload'
 import { routeTimeout } from '../middleware/security'
 import { cors } from '../middleware/middleware'
@@ -246,17 +252,22 @@ export class Router<TRoutes extends Record<string, any> = {}> {
       beforeHandler.unshift(async (req, res, next) => {
         let body: any
         try {
-          const contentType = req.header('content-type') || ''
+          const mediaType = mediaTypeOf(req.header('content-type'))
           if (req.body !== undefined) {
             body = req.body
-          } else if (
-            contentType.includes('application/x-www-form-urlencoded') ||
-            contentType.includes('multipart/form-data')
-          ) {
+          } else if (mediaType === FORM_URLENCODED || mediaType === MULTIPART) {
             await req.formData()
             body = req.body
-          } else {
+          } else if (mediaType === '' || isJsonMediaType(mediaType)) {
             body = await req.json()
+          } else {
+            // A browser sends text/plain cross-site with no preflight, so a
+            // JSON API that accepts it can be driven from another site
+            throw new HttpError(
+              `Content-Type '${mediaType}' is not supported here. Send application/json.`,
+              415,
+              'UNSUPPORTED_MEDIA_TYPE'
+            )
           }
           if (compiledBody === undefined) {
             compiledBody = compileValidator(this, bodyValidator, 'body')

@@ -196,10 +196,10 @@ const config: ExisConfig = {
   host: '0.0.0.0',
 
   // Credentialed requests need explicit origins (comma-separated CORS_ORIGIN).
-  // Without it, any origin may call the API, but without cookies.
+  // Without it, other sites can't read the API's responses.
   cors: process.env.CORS_ORIGIN
     ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
-    : { origin: '*' },
+    : false,
 
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',

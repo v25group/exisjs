@@ -14,6 +14,12 @@ export {
 } from './body-parser'
 
 export { serializeCookie, serializeClearCookie, parseCookies } from './cookie'
+export {
+  mediaTypeOf,
+  isJsonMediaType,
+  FORM_URLENCODED,
+  MULTIPART,
+} from './media-type'
 
 export { nativeStringify } from './etag'
 export * from './conditional'

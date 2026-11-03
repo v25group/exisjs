@@ -38,7 +38,7 @@ Search existing issues and discussions first; the problem may already be known o
 
 ## Development Setup
 
-**Requirements:** Node.js 20 or newer (the version in [`.node-version`](./.node-version) is the one CI uses) and npm. ExisJS has no native add-ons, so you do not need Rust, Python or a C++ toolchain.
+**Requirements:** Node.js 24 or newer (the version in [`.node-version`](./.node-version) is the one CI uses) and npm. ExisJS has no native add-ons, so you do not need Rust, Python or a C++ toolchain.
 
 ```bash
 # 1. Fork the repository on GitHub, then clone your fork
