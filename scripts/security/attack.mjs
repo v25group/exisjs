@@ -6,11 +6,22 @@
 //
 //   node scripts/security/attack.mjs http://127.0.0.1:4706
 //
-// Only run this against a local server you own. Exit code 1 when a hole is found.
+// Only run this against a server you own. It refuses anything but this machine
+// unless you pass --i-own-this-target. Exit code 1 when a hole is found.
 import http from 'node:http'
 import net from 'node:net'
 
 const base = new URL(process.argv[2] ?? 'http://127.0.0.1:4706')
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+if (
+  !LOCAL_HOSTS.has(base.hostname) &&
+  !process.argv.includes('--i-own-this-target')
+) {
+  console.error(
+    `Refusing to attack ${base.hostname}: it isn't this machine. Testing a server you don't own is illegal in most countries. If you own it, add --i-own-this-target.`
+  )
+  process.exit(2)
+}
 const HOST = base.hostname
 const PORT = Number(base.port)
 const ADMIN = {
