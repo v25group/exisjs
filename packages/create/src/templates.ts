@@ -40,7 +40,7 @@ export function packageJsonTemplate(
   if (useTypeScript) {
     pkg.devDependencies = {
       '@exisjs/cli': '^0.10.1',
-      '@types/node': '^20.0.0',
+      '@types/node': '^24.0.0',
       prettier: '^3.9.9',
       typescript: '^5.9.3',
     }
@@ -115,7 +115,7 @@ const config: ExisConfig = {
   // the API, but without cookies.
   cors: process.env.CORS_ORIGIN
     ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
-    : { origin: '*' },
+    : false,
 
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
@@ -155,7 +155,7 @@ const config = {
   // the API, but without cookies.
   cors: process.env.CORS_ORIGIN
     ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
-    : { origin: '*' },
+    : false,
 
   logger: {
     level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',

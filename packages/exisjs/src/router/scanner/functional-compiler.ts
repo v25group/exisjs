@@ -1,4 +1,9 @@
 import { Router } from '../router'
+import {
+  FORM_URLENCODED,
+  isJsonMediaType,
+  mediaTypeOf,
+} from '../../server/helpers/media-type'
 import { cors } from '../../middleware/middleware'
 import { tex } from '../../validator/index'
 import { executionContext } from '../../server/context'
@@ -157,16 +162,11 @@ export function compileFunctionalController(config: any, app: App): Router {
         }
 
         if (req.body === undefined && typeof req.json === 'function') {
-          const ct = req.headers?.['content-type'] || ''
-          if (
-            ct.includes('application/json') ||
-            ct.includes('application/x-www-form-urlencoded')
-          ) {
-            if (ct.includes('application/json')) {
-              req.body = await req.json()
-            } else {
-              await req.formData()
-            }
+          const mediaType = mediaTypeOf(req.headers?.['content-type'])
+          if (isJsonMediaType(mediaType)) {
+            req.body = await req.json()
+          } else if (mediaType === FORM_URLENCODED) {
+            await req.formData()
           }
         }
 

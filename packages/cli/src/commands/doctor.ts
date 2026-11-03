@@ -30,7 +30,7 @@ export async function doctorCommand(
   const nodeVer = process.version
   const majorNode = parseInt(nodeVer.replace(/^v/, '').split('.')[0], 10)
 
-  if (majorNode >= 20) {
+  if (majorNode >= 24) {
     results.push({
       category: 'Runtime',
       name: 'Node.js Version',
@@ -42,8 +42,8 @@ export async function doctorCommand(
       category: 'Runtime',
       name: 'Node.js Version',
       status: 'fail',
-      message: `${nodeVer} is below minimum supported v20.0.0`,
-      hint: 'Upgrade Node.js to v20 or newer (an active LTS release is recommended).',
+      message: `${nodeVer} is below minimum supported v24.0.0`,
+      hint: 'Upgrade Node.js to v24 or newer (an active LTS release is recommended).',
     })
   }
 

@@ -14,14 +14,14 @@
     "bcryptjs": "^3.0.3",
     "exisjs": "*",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^8.24.5"
+    "mongoose": "^9.11.4"
   },
   "devDependencies": {
-    "@eslint/js": "^8.57.1",
-    "@types/node": "^20.19.43",
-    "eslint": "^8.57.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.13.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.72.1",
     "tsx": "^4.23.15",
     "@types/jsonwebtoken": "^9.0.10",
     "@exisjs/cli": "^0.10.1"

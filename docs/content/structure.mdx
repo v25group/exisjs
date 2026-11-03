@@ -23,20 +23,20 @@ my-api/
 │   ├── http/                    # File-system routing and HTTP request pipeline (auto-discovered)
 │   │   ├── server.ts            # Server lifecycle hooks (onStart, onClose)
 │   │   ├── boundary.ts          # Root boundary (CORS, security headers, global error handling)
-│   │   ├── route.ts             # Root route handler (GET /)
+│   │   ├── root.route.ts        # Root route handler (GET /)
 │   │   ├── error.ts             # Global exception and validation error handler (onError)
 │   │   ├── health/
-│   │   │   └── route.ts         # GET /health endpoint
+│   │   │   └── health.route.ts  # GET /health endpoint
 │   │   ├── users/
-│   │   │   ├── route.ts         # Route endpoints for /users
-│   │   │   ├── schema.ts        # Input validation schemas (tex.*)
-│   │   │   └── service.ts       # Feature business logic and data access
+│   │   │   ├── users.route.ts   # Route endpoints for /users
+│   │   │   ├── users.schema.ts  # Input validation schemas (tex.*)
+│   │   │   └── users.service.ts # Feature business logic and data access
 │   │   └── admin/
 │   │       ├── boundary.ts      # Scoped boundary applying to /admin and nested routes
 │   │       └── posts/
-│   │           ├── route.ts     # Route endpoints for /admin/posts
-│   │           ├── schema.ts    # Validation schemas for /admin/posts
-│   │           └── service.ts   # Service logic for /admin/posts
+│   │           ├── posts.route.ts   # Route endpoints for /admin/posts
+│   │           ├── posts.schema.ts  # Validation schemas for /admin/posts
+│   │           └── posts.service.ts # Service logic for /admin/posts
 │   ├── cron/                    # Scheduled background tasks (auto-discovered)
 │   │   └── cleanup.ts           # Cron task definitions
 │   ├── database/                # Persistent storage configuration and lifecycle
@@ -73,9 +73,9 @@ Within `src/http/`, each file name denotes a specific role in the HTTP lifecycle
 
 | File Pattern | Role | Description |
 | :--- | :--- | :--- |
-| `route.ts` / `*.route.ts` | Endpoint Definition | Binds HTTP methods (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) to URL paths. |
-| `schema.ts` / `*.schema.ts` | Request Validation | Defines `tex` schemas for request body, query parameters, URL path parameters, and headers. |
-| `service.ts` / `*.service.ts` | Business Logic | Handles database operations and domain logic. Injected via Dependency Injection or called as pure functions. |
+| `*.route.ts` / `route.ts` | Endpoint Definition | Binds HTTP methods (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`) to URL paths. |
+| `*.schema.ts` / `schema.ts` | Request Validation | Defines `tex` schemas for request body, query parameters, URL path parameters, and headers. |
+| `*.service.ts` / `service.ts` | Business Logic | Handles database operations and domain logic. Injected via Dependency Injection or called as pure functions. |
 | `boundary.ts` / `*.boundary.ts` | Scoped Pipeline | Folder-level configuration (CORS, headers, rate limits, authentication guards, and error handling) cascading down directory trees. |
 | `server.ts` | Server Lifecycle | Exports `onStart` and `onClose` hooks for database connections and plugin initialization. |
 | `error.ts` / `*.error.ts` | Exception Handling | Centralized error interceptor exporting `onError(err, req, res)`. |
@@ -98,6 +98,8 @@ Within `src/http/`, each file name denotes a specific role in the HTTP lifecycle
 ## Naming Feature Files
 
 Name files after their feature, so editor tabs and search results say which feature a file belongs to. Plain `route.ts` still works, but use one style across a project; `exisjs doctor` warns when a project mixes them. `exisjs generate` needs `--named` for this style today.
+
+The router only cares about the end of a name: `*.route.ts` and `*.boundary.ts` are loaded automatically, and must be named exactly that way. `*.schema.ts`, `*.service.ts` and `*.shared.ts` are conventions the router never loads; you import them yourself.
 
 ```text
 src/http/projects/
@@ -124,10 +126,10 @@ src/http/service/
 
 Every folder inside `src/http/` maps directly to an HTTP endpoint path:
 
-- `src/http/route.ts` → `/`
-- `src/http/users/route.ts` → `/users`
-- `src/http/users/[id]/route.ts` → `/users/:id`
-- `src/http/(admin)/dashboard/route.ts` → `/dashboard` (parenthesized route groups do not affect the URL path)
+- `src/http/root.route.ts` → `/`
+- `src/http/users/users.route.ts` → `/users`
+- `src/http/users/[id]/user.route.ts` → `/users/:id`
+- `src/http/(admin)/dashboard/dashboard.route.ts` → `/dashboard` (parenthesized route groups do not affect the URL path)
 
 #### Paradigm Examples
 
@@ -334,7 +336,7 @@ export const env = tex
     NODE_ENV: tex.enum(['development', 'production', 'test'] as const, {
       default: 'development',
     }),
-    CORS_ORIGIN: tex.string({ default: '*' }),
+    CORS_ORIGIN: tex.string({ optional: true }),
   })
   .parse(process.env)
 ```

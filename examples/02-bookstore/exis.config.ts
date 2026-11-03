@@ -7,10 +7,10 @@ const config: ExisConfig = {
   host: '0.0.0.0',
 
   // Browsers only accept credentialed requests from explicit origins, so list
-  // them. With no CORS_ORIGIN set, any origin may call the API without cookies.
+  // them. With no CORS_ORIGIN set, other sites can't read the API's responses.
   cors: process.env.CORS_ORIGIN
     ? { origin: process.env.CORS_ORIGIN.split(','), credentials: true }
-    : { origin: '*' },
+    : false,
 
   helmet: { enabled: true },
   compression: true,

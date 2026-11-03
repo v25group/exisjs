@@ -183,7 +183,7 @@ CORS configuration follows a 4-tier hierarchy:
 | 1 | **Route Override** | `route.get('/', { cors: ... })` or `@Cors(...)` | Specific to a single endpoint; overrides all boundaries and global configs |
 | 2 | **Innermost Boundary** | `src/http/admin/boundary.ts` | Scoped to subfolder tree; overrides parent boundaries |
 | 3 | **Parent / Root Boundary** | `src/http/boundary.ts` | Scoped to all routes in `src/http/`; overrides global defaults |
-| 4 | **Global Configuration** | `exis.config.ts` (`cors`) | Fallback baseline for endpoints without boundary or route CORS |
+| 4 | **Global Configuration** | `exis.config.ts` (`cors`) | Fallback baseline for endpoints without boundary or route CORS. Off by default |
 
 > [!NOTE]
 > If a sub-boundary omits `cors`, it inherits the CORS settings of the nearest ancestor boundary (or `exis.config.ts`). Setting `cors: false` on a boundary explicitly disables CORS for that entire subtree.

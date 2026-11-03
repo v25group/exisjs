@@ -290,3 +290,10 @@ export default exis({
 ```
 
 `serveStatic` handles MIME detection and serves a pre-compressed `.br` or `.gz` file when one exists and the client accepts that encoding (`br;q=0` counts as a refusal). Every file gets an `ETag` (from its size and modification time; each encoded file has its own) and `Last-Modified`, and conditional requests are answered with `304` or `412` as described in [Caching & Conditional Requests](/docs/responses#caching--conditional-requests-etag-304-412). `Vary: Accept-Encoding` is always sent so shared caches keep the variants apart.
+
+---
+
+## Static Files and Dotfiles
+
+`serveStatic(root, options)` answers as if files and folders starting with a dot aren't there, so a `.env` or `.git` folder left in `root` stays private. `/.well-known/` is still served. Set `dotfiles: 'allow'` to serve them all.
+

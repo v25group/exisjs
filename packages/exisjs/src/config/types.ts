@@ -59,6 +59,15 @@ export interface HelmetConfig {
   noSniff?: boolean
   xssFilter?: boolean
   hidePoweredBy?: boolean
+  /** Default `'same-origin'`; `false` sends none. */
+  crossOriginOpenerPolicy?:
+    false | 'same-origin' | 'same-origin-allow-popups' | 'unsafe-none'
+  /**
+   * Default `'same-site'`. Use `'cross-origin'` for files other sites embed;
+   * `false` sends none.
+   */
+  crossOriginResourcePolicy?:
+    false | 'same-origin' | 'same-site' | 'cross-origin'
 }
 
 export interface KeepAliveConfig {

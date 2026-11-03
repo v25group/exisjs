@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **`v0.10.2`** | Unreleased | Patch: Bug Fixes | Route and boundary files must be named exactly; two route files in a folder, two boundaries in a folder, or the same method and path twice stop the start and name the files; `exisjs routes` reports conflicts instead of hiding them; every error class takes a domain code; `tex.objectId()`; `api.browser()`, `auditRoutes()` and `exisjs routes --audit` | [**Read v0.10.2 Notes →**](./changelog/v0.10/v0.10.2.md) |
+| **`v0.10.2`** | Unreleased | Patch: Security & Bug Fixes | **Security audit:** CORS off until set, Bun crash and address fixes, `serveStatic` hides dotfiles, `ipFilter` applies IPv6 rules, errors stop showing internals, exact `Content-Type` matching, uWS crash and body limit fixes; Route and boundary files must be named exactly; two route files in a folder, two boundaries in a folder, or the same method and path twice stop the start and name the files; `exisjs routes` reports conflicts instead of hiding them; every error class takes a domain code; `tex.objectId()`; `api.browser()`, `auditRoutes()` and `exisjs routes --audit` | [**Read v0.10.2 Notes →**](./changelog/v0.10/v0.10.2.md) |
 | **`v0.10.1`** | 2026-10-23 | Patch: Bug Fixes & Security | Compressed responses no longer sent as `204` with no body; `hpp()` keeps JSON arrays; one copy of each module in tests; `exisjs test` fails a file that doesn't exit; access checked before validation; `trustProxy: 'cloudflare'`; CSRF behind proxies; one rule for databases that can't connect (`required`); exact `ExisUser` types; `start` runs `node .exis/server/main.js` | [**Read v0.10.1 Notes →**](./changelog/v0.10/v0.10.1.md) |
 | **`v0.10.0`** | 2026-10-21 | Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; readiness drain on shutdown; settings that did nothing fail at start-up; `migrate` checks Dockerfile, `nixpacks.toml` and `Procfile`; health probes log at `debug` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
 | **`v0.10.0-beta.0`** | 2026-10-20 | Prerelease (`beta` tag) | Ctrl+C in a terminal skips the readiness drain; deployment guide: use a clean `npm ci --omit=...` instead of `npm prune` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -43,9 +43,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased: [0.10.2]
 
+> **Upgrade if you use `serveStatic`, `ipFilter`, `server: 'uws'` or run on Bun:** an audit found `serveStatic` served dotfiles such as `.env`, `ipFilter` ignored IPv6 CIDR rules, and on uWebSockets.js and Bun one request could crash the server. Check the behaviour changes first: a route with a body schema now answers `415` for `text/plain`, so a client must send `content-type: application/json`.
+>
 > A copied route file used to register the same path twice with no warning. The server now refuses to start on these mistakes and names the files. Check the behaviour changes first: a file like `users-route.ts` no longer loads, so its URLs answer `404`; run `npx exisjs doctor` to find them. Details in [**`changelog/v0.10/v0.10.2.md`**](./changelog/v0.10/v0.10.2.md).
 
+### Security
+- `serveStatic` served dotfiles such as `.env`; it now hides them by default.
+- `ipFilter` ignored IPv6 CIDR rules, and now stops the start on a rule it can't read.
+- Errors with an `errors` property, such as a failed connection, answered `400` with their message in production.
+- `Content-Type` was matched as a substring, and JSON was accepted as `text/plain`.
+- `X-Forwarded-Host` and `X-Forwarded-Proto` were trusted from anyone under `trustProxy: 'cloudflare'`.
+- Multipart fields ignored `bodyLimit`.
+- Server-sent events could be forged through `\r`, `event`, `id` or `retry`.
+- Over HTTP/2, idle sessions stayed open forever, and `req.host` was empty, so `csrf()` refused every same-origin `POST`.
+- The docs page loaded CDN scripts with no integrity check.
+- `csrf()` compared tokens in non-constant time.
+- On `server: 'uws'`: one large request could crash the server, `bodyLimit` was ignored, a client disconnecting could crash the process, and response headers weren't checked for CRLF.
+- On Bun: one request for a static file crashed the server, every client's address was `127.0.0.1`, `ssl` and `bodyLimit` were ignored, and response headers weren't checked for CRLF.
+- CORS is off until an app sets it. It allowed every site by default.
+- The docs page's policy no longer allows any inline script, and `helmet` now sends `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`.
+- Workflows use `npm ci`, pin actions to commits and stop putting the tag name into a script.
+
 ### Fixed
+- On `server: 'uws'`: uploads and streamed responses hung, chunked bodies arrived empty, and cookies were merged.
+- A malformed multipart body answered `500`.
+- `tex.string()` accepted null bytes, which reached the database as a server error.
 - Any file name ending in `route.ts` or `boundary.ts` was loaded as a route or boundary file.
 - Two route files in a folder, or the same method and path twice, registered silently and load order picked the handler.
 - A second boundary file in a folder was silently ignored, so its guards never ran.
@@ -55,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Every error class and factory takes a domain code: `new ConflictError(message, { code, details })`.
 - `tex.objectId()` validates a MongoDB ObjectId and keeps it a string.
+- `examples/06-secure-functional`, `examples/07-secure-oop` and `scripts/security/attack.mjs`, 389 attacks based on real vulnerabilities in other frameworks.
 - `api.browser()`, `getRoutes()` and `auditRoutes()` in `exisjs/testing`; `exisjs routes --audit`.
 - `exisjs doctor` checks `domain/` imports, mixed route file names and large services; the docs define where code goes and how to name feature files.
 - `exisjs build` fails on two route or boundary files in a folder; `exisjs doctor` reports them and warns about names like `reroute.ts`.

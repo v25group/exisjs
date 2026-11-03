@@ -1,0 +1,5 @@
+.exis/
+node_modules/
+uploads/
+exis.d.ts
+.env

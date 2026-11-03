@@ -627,7 +627,7 @@ export class App<TRoutes extends Record<string, any> = {}> {
       )
     }
 
-    if (corsOpt !== false) {
+    if (corsOpt) {
       this.globalMiddleware.push(cors(corsOpt === true ? {} : corsOpt))
     }
 

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import type { SwaggerConfig } from './types'
 
 /**
@@ -30,7 +31,9 @@ export function renderDocumentationHtml(config: SwaggerConfig): string {
     id="api-reference"
     data-url="${escapeHtml(specPath)}"
     data-configuration='{"theme":"purple","layout":"modern"}'
-    src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.25.105/dist/browser/standalone.min.js">
+    src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.25.105/dist/browser/standalone.min.js"
+    integrity="sha384-UZf7fc1/NKwSqRk0uq+yzWUic85qpD72hvL+j5mMOPGc62BkeDjD9+anKQrrxH0G"
+    crossorigin="anonymous">
   </script>
 </body>
 </html>`
@@ -44,7 +47,7 @@ export function renderDocumentationHtml(config: SwaggerConfig): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)}</title>
   <link rel="icon" type="image/png" href="${escapeHtml(customFavicon)}">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui.css" integrity="sha384-rcbEi6xgdPk0iWkAQzT2F3FeBJXdG+ydrawGlfHAFIZG7wU6aKbQaRewysYpmrlW" crossorigin="anonymous">
   <style>
     html {
       box-sizing: border-box;
@@ -82,9 +85,15 @@ export function renderDocumentationHtml(config: SwaggerConfig): string {
 </head>
 <body>
   <div id="swagger-ui"></div>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui-bundle.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui-standalone-preset.js"></script>
-  <script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui-bundle.js" integrity="sha384-NXtFPpN61oWCuN4D42K6Zd5Rt2+uxeIT36R7kpXBuY9tLnZorzrJ4ykpqwJfgjpZ" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.18.2/swagger-ui-standalone-preset.js" integrity="sha384-qr68CD0cvHa88PmVu7e1a58Ego4qvKtcvcLdS2a8Mo5zILI01gyIV9jVwJk7X2NU" crossorigin="anonymous"></script>
+  <script>${swaggerInitScript(specPath)}</script>
+</body>
+</html>`
+}
+
+function swaggerInitScript(specPath: string): string {
+  return `
     window.onload = function() {
       window.ui = SwaggerUIBundle({
         url: "${escapeHtml(specPath)}",
@@ -105,9 +114,35 @@ export function renderDocumentationHtml(config: SwaggerConfig): string {
         showCommonExtensions: true
       });
     };
-  </script>
-</body>
-</html>`
+  `
+}
+
+/**
+ * The docs page's policy. Scripts are limited to the CDN and, for Swagger UI,
+ * the hash of its one inline script, so an injected script wouldn't run.
+ */
+export function documentationCsp(config: SwaggerConfig): string {
+  const scripts = ["'self'", 'https://cdn.jsdelivr.net']
+  if ((config.ui || 'swagger-ui') !== 'scalar') {
+    const hash = crypto
+      .createHash('sha256')
+      .update(swaggerInitScript(config.specPath || '/docs/json'))
+      .digest('base64')
+    scripts.push(`'sha256-${hash}'`)
+  }
+  return [
+    "default-src 'self'",
+    `script-src ${scripts.join(' ')}`,
+    // Both UIs set style attributes as they render
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "img-src 'self' data: https:",
+    "font-src 'self' data: https://cdn.jsdelivr.net",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+  ].join('; ')
 }
 
 function escapeHtml(str: string): string {

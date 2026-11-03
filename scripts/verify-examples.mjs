@@ -8,7 +8,7 @@
 //   npm run verify:examples
 //
 // Requires `npm run build` first. 02-bookstore needs MongoDB on
-// localhost:27017 (set SKIP_MONGO=1 to skip it).
+// localhost:27017 (set SKIP_MONGO=1 to skip it), as do the two security targets.
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -192,6 +192,24 @@ if (process.env.SKIP_MONGO === '1') {
       ['GET', '/docs/json', 404],
     ],
   })
+}
+
+if (process.env.SKIP_MONGO !== '1') {
+  for (const [name, port] of [
+    ['06-secure-functional', 4706],
+    ['07-secure-oop', 4707],
+  ]) {
+    await verifyExample(name, {
+      port,
+      env: { NODE_ENV: 'production' },
+      checks: [
+        ['GET', '/health', 200],
+        ['GET', '/auth/me', 401],
+        ['GET', '/.secret', 404],
+        ['GET', '/index.html', 200],
+      ],
+    })
+  }
 }
 
 await verifyExample('05-tasks-api', {

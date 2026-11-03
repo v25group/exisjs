@@ -19,7 +19,7 @@
     "examples/*/*"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "build": "npm run build --workspace=packages/fetch --workspace=packages/exisjs --workspace=packages/cli --workspace=packages/create",
@@ -53,24 +53,24 @@
     "@hono/node-server": "^2.1.5",
     "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.71.1",
-    "@typescript-eslint/parser": "^8.71.1",
+    "@types/node": "^24.19.2",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "@typescript-eslint/parser": "^8.72.1",
     "autocannon": "^8.0.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.9.1",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "express": "^5.3.0",
     "fastify": "^5.12.7",
     "find-my-way": "^9.10.0",
-    "hono": "^4.13.13",
+    "hono": "^4.13.14",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "mitata": "^1.0.34",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.72.1",
     "uWebSockets.js": "https://github.com/uNetworking/uWebSockets.js/archive/refs/tags/v20.71.0.tar.gz"
   },
   "overrides": {

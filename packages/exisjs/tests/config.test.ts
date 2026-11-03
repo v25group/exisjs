@@ -21,7 +21,7 @@ describe('defaultConfig', () => {
     expect(defaultConfig.host).toBe('0.0.0.0')
     expect(defaultConfig.bodyLimit).toBe(10 * 1024 * 1024)
     expect(defaultConfig.trustProxy).toBe(false)
-    expect(defaultConfig.cors).toBeDefined()
+    expect(defaultConfig.cors).toBe(false)
     expect(defaultConfig.logger).toBeDefined()
     expect(defaultConfig.helmet).toBeDefined()
   })
@@ -46,9 +46,8 @@ describe('mergeConfig()', () => {
     })
 
     // Should have credentials from override AND origin from default
-    const corsConfig = result.cors as { origin: string; credentials: boolean }
+    const corsConfig = result.cors as { credentials: boolean }
     expect(corsConfig.credentials).toBe(true)
-    expect(corsConfig.origin).toBe('*') // kept from default
   })
 
   it('disables features with false', () => {
@@ -71,9 +70,7 @@ describe('mergeConfig()', () => {
   })
 
   it('handles boolean true for features', () => {
-    // When user sets cors: true (not an object), it should become true
-    const result = mergeConfig(defaultConfig, {} as ExisConfig)
-    // Default cors is an object, so it should remain
-    expect(typeof result.cors).toBe('object')
+    const result = mergeConfig(defaultConfig, { cors: true } as ExisConfig)
+    expect(result.cors).toBe(true)
   })
 })

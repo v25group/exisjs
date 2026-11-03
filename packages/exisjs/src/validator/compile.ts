@@ -261,6 +261,7 @@ class Generator {
       code += `if(typeof ${v}==="number"||typeof ${v}==="boolean")${v}=String(${v});`
     }
     code += `if(typeof ${v}!=="string")${this.fail('must be a string', path)};`
+    code += `if(${v}.indexOf("\\0")!==-1)${this.fail('must not contain a null character', path)};`
     if (m.trim) code += `${v}=${v}.trim();`
     if (m.lowercase) code += `${v}=${v}.toLowerCase();`
     if (m.uppercase) code += `${v}=${v}.toUpperCase();`

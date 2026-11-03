@@ -462,11 +462,37 @@ What a new app sends and hides without extra code:
 
 | Area | Default |
 | :--- | :--- |
-| Headers (`helmet: { enabled: true }`) | `Content-Security-Policy: default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`; no `X-Powered-By`. Set `contentSecurityPolicy` to a string to change the policy or to `false` to send none. A policy set earlier by your own middleware is kept |
+| Headers (`helmet: { enabled: true }`) | `Content-Security-Policy: default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; form-action 'self'`, `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-XSS-Protection: 0`, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-site`; no `X-Powered-By`. Set `crossOriginResourcePolicy: 'cross-origin'` for files other sites embed, such as public images. CORS requests aren't affected by it. Set `contentSecurityPolicy` to a string to change the policy or to `false` to send none. A policy set earlier by your own middleware is kept |
 | `/docs` | Sends its own policy allowing the Swagger UI assets from jsDelivr. The project template enables `/docs` outside production only |
 | Errors | Unexpected errors answer `INTERNAL_ERROR` without message or stack outside development |
 | Logs and validation errors | Credentials and connection strings are redacted (see [Errors](/docs/errors)) |
 | Request bodies | Malformed JSON is `400 INVALID_JSON`; `__proto__` / `constructor` keys are stripped |
 
 `tex.string({ preventSql: true, escapeHtml: true })` is input hygiene, not an injection defence: always use parameterised queries, and encode output for the context it is written to (HTML, SQL, shell).
+
+---
+
+## Testing Your App Like an Attacker
+
+`scripts/security/attack.mjs` in the ExisJS repository runs about 390 attacks against a running server, based on real vulnerabilities in other frameworks. `examples/06-secure-functional` and `examples/07-secure-oop` are the targets it runs against on every change.
+
+| Attack | Inspired by | What ExisJS does |
+| :--- | :--- | :--- |
+| A trailing slash, `//` or an encoded path that skips auth | NestJS CVE-2026-54281, Fastify CVE-2026-33808 | Boundaries and rules belong to the matched route, not to a path prefix, so no spelling of a URL reaches a route without them. |
+| An internal header that skips middleware | Next.js CVE-2025-29927 | No header can skip a boundary. |
+| A `Content-Type` trick that skips validation | Fastify CVE-2026-25223 | The media type is compared exactly. A body schema accepts JSON or a form; anything else answers `415`. |
+| `Host` and `X-Forwarded-Host` poisoning | Next.js CVE-2026-64649 | Forwarded values are read only behind a trusted proxy, and only when they look like a host. |
+| A `__proto__` header or key | Node.js CVE-2026-21710 | Prototype keys are dropped from bodies and forms. Keep Node.js patched for the header crash. |
+
+---
+
+## Keeping a Deployment Safe
+
+The framework can't patch what runs around it. Before going to production:
+
+- **Run a supported, patched Node.js.** ExisJS needs Node.js 24 or newer. Security releases keep fixing HTTP/2 and header crashes, so use the latest release of your line and rebuild your image when a security release ships.
+- **Keep MongoDB off the public internet, and patched.** MongoBleed (CVE-2025-14847) let anyone who could reach a server read its memory without logging in. If a server was exposed before you patched it, rotate its credentials too, because patching doesn't undo a leak.
+- **Install exactly what you reviewed.** Use `npm ci`, not `npm install`, in CI and Docker, so a new malicious release of a dependency can't reach your build. Prefer `npm ci --ignore-scripts` where your dependencies allow it, because install scripts run code on your build machine.
+- **Run `npx exisjs routes --audit` in CI**, so no route becomes public by accident.
+- **Never keep secrets in a static folder.** `serveStatic` hides dotfiles by default, but it serves everything else in the folder.
 

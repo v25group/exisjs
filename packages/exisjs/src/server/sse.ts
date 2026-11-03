@@ -118,7 +118,7 @@ export class SSEStream {
    */
   comment(text: string): boolean {
     if (this.isClosed) return false
-    const line = text ? `: ${text.replace(/\r?\n/g, ' ')}\n\n` : `:\n\n`
+    const line = text ? `: ${text.replace(/[\r\n]+/g, ' ')}\n\n` : `:\n\n`
     try {
       return this._raw.write(line)
     } catch {
@@ -219,14 +219,16 @@ export function formatSSEEvent(message: SSEMessage | unknown): string {
   ) {
     const msg = message as SSEMessage
 
+    // The SSE format treats CR, LF and CRLF all as line ends, so a value
+    // holding any of them could start a new field or a whole new event
     if (msg.id !== undefined && msg.id !== null) {
-      output += `id: ${msg.id}\n`
+      output += `id: ${oneLine(msg.id)}\n`
     }
     if (msg.event) {
-      output += `event: ${msg.event}\n`
+      output += `event: ${oneLine(msg.event)}\n`
     }
     if (msg.retry !== undefined && msg.retry !== null) {
-      output += `retry: ${msg.retry}\n`
+      output += `retry: ${oneLine(msg.retry)}\n`
     }
 
     const dataPayload = msg.data
@@ -237,6 +239,10 @@ export function formatSSEEvent(message: SSEMessage | unknown): string {
   }
 
   return `${output}\n`
+}
+
+function oneLine(value: unknown): string {
+  return String(value).replace(/[\r\n]+/g, ' ')
 }
 
 function formatDataPayload(data: unknown): string {
@@ -262,6 +268,6 @@ function formatDataPayload(data: unknown): string {
   }
 
   // Multi-line data requires each line to be prefixed with `data: `
-  const lines = serialized.split(/\r?\n/)
+  const lines = serialized.split(/\r\n|\r|\n/)
   return lines.map((line) => `data: ${line}`).join('\n') + '\n'
 }

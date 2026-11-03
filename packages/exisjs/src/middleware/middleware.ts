@@ -390,6 +390,12 @@ export function serveStatic(
     etag?: boolean
     brotli?: boolean
     gzip?: boolean
+    /**
+     * `ignore` (default) answers as if a file or folder starting with a dot
+     * isn't there, so `.env` or `.git` left in the folder stays private.
+     * `/.well-known/` is always served. `allow` serves them all.
+     */
+    dotfiles?: 'ignore' | 'allow'
   } = {}
 ): Handler {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -430,6 +436,15 @@ export function serveStatic(
       // The separator matters: "/app/public-private" also starts with "/app/public"
       if (!filePath.startsWith(rootPath + path.sep)) {
         return next()
+      }
+
+      if (options.dotfiles !== 'allow') {
+        const parts = path.relative(rootPath, filePath).split(path.sep)
+        const hidden = parts.some(
+          (part: string, i: number) =>
+            part.startsWith('.') && !(i === 0 && part === '.well-known')
+        )
+        if (hidden) return next()
       }
 
       // Precompressed siblings (file.br, file.gz) the client accepts, best first

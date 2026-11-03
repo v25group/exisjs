@@ -1,7 +1,7 @@
 import type { App } from '../server/app'
 import type { SwaggerConfig, OpenApiSpec } from './types'
 import { generateOpenApiSpec } from './generator'
-import { renderDocumentationHtml } from './ui'
+import { documentationCsp, renderDocumentationHtml } from './ui'
 
 /**
  * Mounts interactive Swagger/Scalar documentation UI and OpenAPI 3.1 JSON endpoints onto an ExisJS App.
@@ -60,10 +60,7 @@ export function mountDocumentation(
   const htmlHandler = (_req: any, res: any) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8')
     // The UI is loaded from jsDelivr and configured by an inline script
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https:; font-src 'self' data: https://cdn.jsdelivr.net; connect-src 'self'; frame-ancestors 'none'; object-src 'none'"
-    )
+    res.setHeader('Content-Security-Policy', documentationCsp(resolvedConfig))
     return res.send(getHtml())
   }
 

@@ -1,3 +1,6 @@
+import { validateHeaderName, validateHeaderValue } from 'node:http'
+import { HttpError } from '../../error/errors'
+
 let uWS: any
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -140,7 +143,8 @@ export class UwsIncomingMessage {
     return true
   }
 
-  readBody(): Promise<Buffer> | undefined {
+  // The limit is enforced while the body arrives; see createUwsApp
+  readBody(_limit?: number): Promise<Buffer> | undefined {
     return this._readBodyPromise
   }
 
@@ -165,8 +169,9 @@ export class UwsServerResponse {
   public statusCode = 200
   public headersSent = false
 
-  private _headers: Record<string, string> = Object.create(null)
+  private _headers: Record<string, string | string[]> = Object.create(null)
   public _aborted = false
+  private _ended = false
 
   private _listeners: Record<string, ((...args: any[]) => void)[]> = {}
 
@@ -177,6 +182,7 @@ export class UwsServerResponse {
     this.statusCode = 200
     this.headersSent = false
     this._aborted = false
+    this._ended = false
     // Reset headers — wipe all existing keys
     const h = this._headers
     for (const k in h) delete h[k]
@@ -185,11 +191,33 @@ export class UwsServerResponse {
   }
 
   setHeader(name: string, value: string | number | readonly string[]): void {
-    this._headers[name.toLowerCase()] = String(value)
+    // uWS writes header bytes as given. Node's own checks stop a CRLF in a
+    // value from starting a new header (response splitting)
+    validateHeaderName(name)
+    const values = Array.isArray(value)
+      ? value.map(String)
+      : [String(value as string | number)]
+    for (const v of values) validateHeaderValue(name, v)
+    this._headers[name.toLowerCase()] = Array.isArray(value)
+      ? values
+      : values[0]
   }
 
-  getHeader(name: string): string | undefined {
+  getHeader(name: string): string | string[] | undefined {
     return this._headers[name.toLowerCase()]
+  }
+
+  private writeHeaders(skipLength: boolean): void {
+    this._uwsRes.writeStatus(String(this.statusCode))
+    for (const key in this._headers) {
+      // uWebSockets automatically adds Content-Length for data
+      if (skipLength && key === 'content-length') continue
+      const value = this._headers[key]
+      // Each Set-Cookie must stay its own header line
+      for (const v of Array.isArray(value) ? value : [value]) {
+        this._uwsRes.writeHeader(key, v)
+      }
+    }
   }
 
   hasHeader(name: string): boolean {
@@ -207,10 +235,7 @@ export class UwsServerResponse {
     this._uwsRes.cork(() => {
       if (!this.headersSent) {
         this.headersSent = true
-        this._uwsRes.writeStatus(String(this.statusCode))
-        for (const key in this._headers) {
-          this._uwsRes.writeHeader(key, this._headers[key])
-        }
+        this.writeHeaders(true)
       }
       result = this._uwsRes.write(chunk)
     })
@@ -224,23 +249,17 @@ export class UwsServerResponse {
       data = undefined
     }
 
-    if (this._aborted || this.headersSent) {
+    if (this._aborted || this._ended) {
       if (callback) callback()
       return
     }
+    this._ended = true
+    const streaming = this.headersSent
     this.headersSent = true
 
     this._uwsRes.cork(() => {
-      // Write status
-      this._uwsRes.writeStatus(String(this.statusCode))
-
-      // Write all headers
-      for (const key in this._headers) {
-        if (key === 'content-length' && data !== undefined && data !== null) {
-          continue // uWebSockets automatically adds Content-Length for data
-        }
-        this._uwsRes.writeHeader(key, this._headers[key])
-      }
+      // A stream has already written its status and headers
+      if (!streaming) this.writeHeaders(data !== undefined && data !== null)
 
       // Write body and end
       if (data !== undefined && data !== null) {
@@ -261,14 +280,14 @@ export class UwsServerResponse {
   }
 
   get writableEnded(): boolean {
-    return this.headersSent || this._aborted
+    return this._ended || this._aborted
   }
 
   get destroyed(): boolean {
     return this._aborted
   }
 
-  getHeaders(): Record<string, string> {
+  getHeaders(): Record<string, string | string[]> {
     return { ...this._headers }
   }
 
@@ -424,7 +443,8 @@ export interface UwsListenToken {
  */
 export function createUwsApp(
   handler: (req: UwsIncomingMessage, res: UwsServerResponse) => void,
-  ssl?: { key: string | Buffer; cert: string | Buffer }
+  ssl?: { key: string | Buffer; cert: string | Buffer },
+  bodyLimit = 10485760
 ) {
   if (!uWS) {
     throw new Error(
@@ -445,11 +465,13 @@ export function createUwsApp(
   // Register a catch-all HTTP handler
   app.any('/*', (uwsRes: any, uwsReq: any) => {
     let aborted = false
+    let rejectBody: ((err: Error) => void) | undefined
     const shimReq = new UwsIncomingMessage(uwsReq, uwsRes)
     const shimRes = new UwsServerResponse(uwsRes)
 
     uwsRes.onAborted(() => {
       aborted = true
+      rejectBody?.(new Error('Request aborted by client'))
       shimReq._aborted = true
       shimRes._aborted = true
       shimReq.emit('aborted')
@@ -458,16 +480,36 @@ export function createUwsApp(
     })
 
     const contentLength = shimReq.headers['content-length']
-    if (contentLength && parseInt(contentLength, 10) > 0) {
+    const hasBody =
+      (contentLength && parseInt(contentLength, 10) > 0) ||
+      shimReq.headers['transfer-encoding'] !== undefined
+    if (hasBody) {
       shimReq._readBodyPromise = new Promise((resolve, reject) => {
         const chunks: Buffer[] = []
+        let size = 0
+        let refused = false
+        rejectBody = reject
         uwsRes.onData((chunk: ArrayBuffer, isLast: boolean) => {
           if (aborted) {
             reject(new Error('aborted'))
             return
           }
-          // Buffer.from(ArrayBuffer) already copies the data
-          const copy = Buffer.from(chunk)
+          if (refused) return
+          // Enforced here: uWS buffers nothing, so nothing else would stop it
+          size += chunk.byteLength
+          if (size > bodyLimit) {
+            refused = true
+            chunks.length = 0
+            reject(
+              HttpError.payloadTooLarge(
+                `Request body exceeds limit of ${bodyLimit} bytes. Configure 'bodyLimit' in 'exis.config.ts' to allow larger payloads.`
+              )
+            )
+            return
+          }
+          // uWS detaches this ArrayBuffer when the callback returns, and
+          // Buffer.from(arrayBuffer) only wraps it, so the bytes must be copied
+          const copy = Buffer.from(new Uint8Array(chunk))
           chunks.push(copy)
 
           shimReq.emit('data', copy)
@@ -480,6 +522,9 @@ export function createUwsApp(
           }
         })
       })
+      // A route that never reads the body must not crash the process when the
+      // client disconnects: an unhandled rejection stops Node by default
+      shimReq._readBodyPromise.catch(() => undefined)
     } else {
       shimReq.complete = true
       shimReq.emit('end')
