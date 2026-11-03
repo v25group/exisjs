@@ -23,12 +23,16 @@ export function packageJsonTemplate(
     scripts: Record<string, string>
     dependencies: Record<string, string>
     type?: string
+    engines: Record<string, string>
     devDependencies?: Record<string, string>
   } = {
     name,
     version: '0.1.0',
     private: true,
     type: 'module',
+    engines: {
+      node: '>=24.0.0',
+    },
 
     scripts,
     dependencies: {
@@ -40,26 +44,26 @@ export function packageJsonTemplate(
   if (useTypeScript) {
     pkg.devDependencies = {
       '@exisjs/cli': '^0.10.2',
-      '@types/node': '^24.0.0',
-      prettier: '^3.9.9',
+      '@types/node': '^24.19.2',
+      prettier: '^3.9.10',
       typescript: '^5.9.3',
     }
   } else {
     pkg.devDependencies = {
       '@exisjs/cli': '^0.10.2',
-      prettier: '^3.9.9',
+      prettier: '^3.9.10',
     }
   }
 
   if (useEslint) {
     pkg.devDependencies = {
       ...(pkg.devDependencies || {}),
-      eslint: '^10.0.1',
+      eslint: '^10.13.0',
       '@eslint/js': '^10.0.1',
-      'eslint-config-prettier': '^10.0.0',
+      'eslint-config-prettier': '^10.1.8',
     }
     if (useTypeScript) {
-      pkg.devDependencies['typescript-eslint'] = '^8.0.0'
+      pkg.devDependencies['typescript-eslint'] = '^8.72.1'
     }
   }
 
