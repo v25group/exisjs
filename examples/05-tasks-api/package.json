@@ -18,7 +18,7 @@
     "@eslint/js": "^10.0.1",
     "@exisjs/cli": "^0.10.2",
     "@types/node": "^24.19.2",
-    "eslint": "^10.13.0",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
