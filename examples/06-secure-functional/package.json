@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "exisjs": "^0.10.2",
-    "mongodb": "^7.7.0"
+    "mongodb": "^7.8.0"
   },
   "devDependencies": {
     "@exisjs/cli": "^0.10.2",
