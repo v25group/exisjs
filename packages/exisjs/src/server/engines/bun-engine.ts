@@ -23,7 +23,8 @@ export class BunEngine implements HttpEngine {
       port,
       host,
       options.ssl ?? this.app.options.ssl,
-      this.app.options.bodyLimit
+      this.app.options.bodyLimit,
+      this.app.options.requestTimeout
     )
 
     this.serverInstance = this.bunApp.listen(port, host, async () => {

@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import { validateHeaderName, validateHeaderValue } from 'node:http'
+import { HttpError } from '../../error/errors'
 
 // Only present under the Bun runtime; typed locally so the file compiles without @types/bun
 declare const Bun: any
@@ -63,7 +64,7 @@ export class BunIncomingMessage extends Emitter {
   private _bodyEnded = false
 
   /** @param remoteAddress The client's address; '' when Bun can't tell, never a guess */
-  constructor(req: any, remoteAddress = '') {
+  constructor(req: any, remoteAddress = '', requestTimeout = 60_000) {
     super()
     this.rawReq = req
     this.method = req.method
@@ -81,7 +82,7 @@ export class BunIncomingMessage extends Emitter {
     this.socket = { remoteAddress }
 
     if (req.body && !['GET', 'HEAD', 'OPTIONS'].includes(this.method)) {
-      this.consumeBody(req)
+      this.consumeBody(req, requestTimeout)
     } else {
       this._bodyEnded = true
       this.complete = true
@@ -98,8 +99,25 @@ export class BunIncomingMessage extends Emitter {
 
   private _readBodyPromise?: Promise<Buffer>
 
-  private consumeBody(req: any): void {
+  private consumeBody(req: any, requestTimeout: number): void {
     this._readBodyPromise = new Promise((resolve, reject) => {
+      // Bun only closes idle connections, so a body sent a few bytes at a
+      // time would never end: answer 408 when time is up
+      const deadline =
+        requestTimeout > 0
+          ? setTimeout(
+              () =>
+                reject(
+                  new HttpError(
+                    'The request body took too long to arrive',
+                    408,
+                    'REQUEST_TIMEOUT'
+                  )
+                ),
+              requestTimeout
+            )
+          : undefined
+      deadline?.unref?.()
       req
         .arrayBuffer()
         .then((arrayBuffer: ArrayBuffer) => {
@@ -115,6 +133,7 @@ export class BunIncomingMessage extends Emitter {
           reject(e)
         })
         .finally(() => {
+          if (deadline) clearTimeout(deadline)
           this._bodyEnded = true
           this.complete = true
           this.emit('end')
@@ -315,7 +334,8 @@ export function createBunApp(
   port: number,
   host?: string,
   ssl?: { key: string | Buffer; cert: string | Buffer },
-  bodyLimit = 10485760
+  bodyLimit = 10485760,
+  requestTimeout = 60_000
 ) {
   if (typeof Bun === 'undefined') {
     throw new Error(
@@ -333,7 +353,7 @@ export function createBunApp(
     fetch(req: any, bunServer: any) {
       return new Promise<any>((resolve) => {
         const address = bunServer.requestIP(req)?.address ?? ''
-        const bunReq = new BunIncomingMessage(req, address)
+        const bunReq = new BunIncomingMessage(req, address, requestTimeout)
         const bunRes = new BunServerResponse(resolve)
         req.signal?.addEventListener?.('abort', () => {
           bunReq.emit('aborted')

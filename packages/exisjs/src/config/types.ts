@@ -166,6 +166,13 @@ export interface ExisConfig {
   /** Error response options */
   errors?: import('../error/errors').ErrorHandlerOptions
   bodyLimit?: number // bytes, default 10mb
+  /**
+   * Milliseconds a client has to send the whole request, headers and body.
+   * Default `60_000`. A client that sends a body a few bytes at a time is
+   * cut off after this, instead of holding a connection for Node's default
+   * 5 minutes. Raise it for large uploads over slow links; `0` turns it off.
+   */
+  requestTimeout?: number
   env?: 'development' | 'production' | 'test'
   compression?: boolean
   blockProbes?: boolean | import('../middleware/security').BlockProbesOptions

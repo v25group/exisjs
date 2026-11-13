@@ -71,6 +71,7 @@ export const defaultConfig: ResolvedConfig = {
   helmet: { enabled: true },
   trustProxy: false,
   bodyLimit: 10 * 1024 * 1024,
+  requestTimeout: 60_000,
   // Only an explicit NODE_ENV=development exposes error details; `exisjs dev` sets it
   env: (process.env.NODE_ENV as ExisConfig['env']) ?? 'production',
   compression: false,

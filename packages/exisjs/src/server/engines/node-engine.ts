@@ -17,6 +17,19 @@ export class NodeEngine implements HttpEngine {
 
   private _initServer(): HttpServer | HttpsServer | Http2SecureServer {
     let server: HttpServer | HttpsServer | Http2SecureServer
+    // Time to receive a whole request. Node checks it every
+    // connectionsCheckingInterval, so that is kept well below it
+    const requestTimeout = this.app.options.requestTimeout ?? 60_000
+    const timeouts =
+      requestTimeout > 0
+        ? {
+            requestTimeout,
+            connectionsCheckingInterval: Math.min(
+              30_000,
+              Math.max(1000, Math.floor(requestTimeout / 4))
+            ),
+          }
+        : { requestTimeout: 0 }
 
     if (this.app.options.ssl) {
       if (this.app.options.http2 !== false) {
@@ -29,12 +42,12 @@ export class NodeEngine implements HttpEngine {
         )
       } else {
         server = createHttpsServer(
-          this.app.options.ssl,
+          { ...this.app.options.ssl, ...timeouts },
           this.app.handle.bind(this.app)
         )
       }
     } else {
-      server = createHttpServer(this.app.handle.bind(this.app))
+      server = createHttpServer(timeouts, this.app.handle.bind(this.app))
     }
 
     const keepAlive = this.app.options.keepAlive
@@ -51,8 +64,13 @@ export class NodeEngine implements HttpEngine {
       const kaConfig = keepAlive === true ? {} : keepAlive
       if ('keepAliveTimeout' in server)
         server.keepAliveTimeout = kaConfig.timeoutMs ?? 5000
-      if ('headersTimeout' in server)
-        server.headersTimeout = kaConfig.headersTimeoutMs ?? 60000
+      if ('headersTimeout' in server) {
+        let headersTimeout = kaConfig.headersTimeoutMs ?? 60000
+        // Headers are part of the request, so they can't get longer
+        if (requestTimeout > 0)
+          headersTimeout = Math.min(headersTimeout, requestTimeout)
+        server.headersTimeout = headersTimeout
+      }
       if (
         kaConfig.maxRequests !== undefined &&
         'maxRequestsPerSocket' in server

@@ -132,10 +132,18 @@ export class RequestHandler {
               // Ignore
             }
 
-            const resHeaders: Record<string, string> = {}
+            // Repeated headers are joined, except Set-Cookie: a comma also
+            // appears inside a cookie's Expires date, so joined cookies
+            // can't be split again. It stays an array, as in node:http (B27)
+            const resHeaders: http.IncomingHttpHeaders = {}
             for (const k in res.headers) {
               const val = res.headers[k]
-              if (val) resHeaders[k] = Array.isArray(val) ? val.join(',') : val
+              if (!val) continue
+              if (k === 'set-cookie') {
+                resHeaders[k] = Array.isArray(val) ? val : [val]
+              } else {
+                resHeaders[k] = Array.isArray(val) ? val.join(',') : val
+              }
             }
 
             server.close(() => {

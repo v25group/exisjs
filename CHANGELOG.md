@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Release Date | Type | Key Highlights | Detailed Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **`v0.10.3`** | Unreleased | Patch: Bug Fixes | Cron jobs more than 24.8 days away no longer run in a loop; monthly, yearly and weekly jobs no longer skip a period; failed jobs log their error; `exisjs dev` no longer restarts right after starting on Windows, reloads source folders named `reports` or `uploads`, waits for the port on restart, and writes errors to `dev-status.json` | [**Read v0.10.3 Notes →**](./changelog/v0.10/v0.10.3.md) |
+| **`v0.10.3`** | 2026-11-13 | Patch: Bug Fixes & Security | `requestTimeout` (60 s) cuts off slow request bodies on Node.js, uWS and Bun; `inject()` returns `set-cookie` as an array; cron jobs more than 24.8 days away no longer run in a loop; monthly, yearly and weekly jobs no longer skip a period; failed jobs log their error; `exisjs dev` no longer restarts right after starting on Windows, reloads source folders named `reports` or `uploads`, waits for the port on restart, and writes errors to `dev-status.json` | [**Read v0.10.3 Notes →**](./changelog/v0.10/v0.10.3.md) |
 | **`v0.10.2`** | 2026-11-03 | Patch: Security & Bug Fixes | **Security audit:** CORS off until set, Bun crash and address fixes, `serveStatic` hides dotfiles, `ipFilter` applies IPv6 rules, errors stop showing internals, exact `Content-Type` matching, uWS crash and body limit fixes; Route and boundary files must be named exactly; two route files in a folder, two boundaries in a folder, or the same method and path twice stop the start and name the files; `exisjs routes` reports conflicts instead of hiding them; every error class takes a domain code; `tex.objectId()`; `api.browser()`, `auditRoutes()` and `exisjs routes --audit` | [**Read v0.10.2 Notes →**](./changelog/v0.10/v0.10.2.md) |
 | **`v0.10.1`** | 2026-10-23 | Patch: Bug Fixes & Security | Compressed responses no longer sent as `204` with no body; `hpp()` keeps JSON arrays; one copy of each module in tests; `exisjs test` fails a file that doesn't exit; access checked before validation; `trustProxy: 'cloudflare'`; CSRF behind proxies; one rule for databases that can't connect (`required`); exact `ExisUser` types; `start` runs `node .exis/server/main.js` | [**Read v0.10.1 Notes →**](./changelog/v0.10/v0.10.1.md) |
 | **`v0.10.0`** | 2026-10-21 | Minor, breaking | CLI moved to `@exisjs/cli`, one-process `exisjs start` without the CLI, production install 45 MB → 4.5 MB; `/metrics`; `queue` limits; readiness drain on shutdown; settings that did nothing fail at start-up; `migrate` checks Dockerfile, `nixpacks.toml` and `Procfile`; health probes log at `debug` | [**Read v0.10.0 Notes →**](./changelog/v0.10/v0.10.0.md) |
@@ -42,16 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Unreleased: [0.10.3]
+## Current Release: [0.10.3] - 2026-11-13
 
-> **Upgrade if you have a monthly, quarterly, yearly or weekly cron job, or an interval longer than 24 days.** Such a job could run many times a second, or skip a period. Details in [**`changelog/v0.10/v0.10.3.md`**](./changelog/v0.10/v0.10.3.md).
+> **Upgrade if you have a monthly, quarterly, yearly or weekly cron job, or an interval longer than 24 days.** Such a job could run many times a second, or skip a period. A client sending a body a few bytes at a time could also hold a connection for 5 minutes (Node.js) or indefinitely (uWS, Bun); `requestTimeout` now cuts it off after 60 seconds. Details in [**`changelog/v0.10/v0.10.3.md`**](./changelog/v0.10/v0.10.3.md).
+
+### Behaviour changes
+- `requestTimeout` (default 60 s) bounds the time to receive a request; raise it for large uploads over slow links, `0` turns it off.
+- `inject()` returns `set-cookie` as an array, one entry per cookie.
+- `exisjs dev` polls for file changes only with `dev.usePolling: true`.
 
 ### Fixed
+- Security: slow request bodies held connections (no `requestTimeout`).
 - Cron: a next run more than 24.8 days away ran in a loop (`setTimeout` overflow); day-restricted patterns could skip a month, year or week, in any time zone; failed jobs were logged without their error.
 - Logging: pretty logs hid the error on lines that weren't requests.
 - `exisjs dev`: restarted right after starting on Windows (polling, now opt-in); never reloaded source folders named `reports`, `uploads`, `logs`, `data`, `public` and others; a restart could fail with "port already in use"; `dev-status.json` now records crashes, type errors and restarts.
 
-## Current Release: [0.10.2] - 2026-11-03
+## Previous Release: [0.10.2] - 2026-11-03
 
 > **Upgrade if you use `serveStatic`, `ipFilter`, `server: 'uws'` or run on Bun:** an audit found `serveStatic` served dotfiles such as `.env`, `ipFilter` ignored IPv6 CIDR rules, and on uWebSockets.js and Bun one request could crash the server. Check the behaviour changes first: a route with a body schema now answers `415` for `text/plain`, so a client must send `content-type: application/json`.
 >
@@ -92,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `exisjs doctor` checks `domain/` imports, mixed route file names and large services; the docs define where code goes and how to name feature files.
 - `exisjs build` fails on two route or boundary files in a folder; `exisjs doctor` reports them and warns about names like `reroute.ts`.
 
-## Previous Release: [0.10.1] - 2026-10-23
+## [0.10.1] - 2026-10-23
 
 > Fixes found building a new backend on 0.10.0 and deploying behind Cloudflare and Traefik. **Upgrade if you use `compression: true`**: compressed responses reached browsers as `204` with no body. Upgrade with `npm install exisjs@0.10.1` and `npm install -D @exisjs/cli@0.10.1`, then `npx exisjs migrate`. Check the behaviour changes first: `trustProxy: true` no longer reads `X-Real-IP`, a database that can't connect stops the start unless it is `required: false`, and `exisjs test` fails a test file whose process doesn't exit. Details in [**`changelog/v0.10/v0.10.1.md`**](./changelog/v0.10/v0.10.1.md).
 

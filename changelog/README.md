@@ -8,7 +8,7 @@ This directory contains the detailed release notes for every version of ExisJS, 
 changelog/
 ├── README.md               # This navigation guide
 ├── v0.10/                  # 0.10.x Release Series
-│   ├── v0.10.3.md          # Unreleased: cron long delays and skipped periods, dev server reloads and restarts
+│   ├── v0.10.3.md          # Cron long delays and skipped periods, dev server reloads, requestTimeout
 │   ├── v0.10.2.md          # Security audit fixes, exact route and boundary file names, route conflicts stop the start
 │   ├── v0.10.1.md          # Compression fix, proxies and trustProxy, test runner, one rule for databases
 │   └── v0.10.0.md          # @exisjs/cli, one-process start, metrics, queue, report B1-B9
@@ -45,6 +45,6 @@ changelog/
 
 ## Quick Links
 
-- [Latest Release (v0.10.2)](./v0.10/v0.10.2.md)
+- [Latest Release (v0.10.3)](./v0.10/v0.10.3.md)
 - [Root Changelog](../CHANGELOG.md)
 - [Documentation](../docs/)

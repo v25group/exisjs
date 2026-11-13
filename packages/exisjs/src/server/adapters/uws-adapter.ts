@@ -444,7 +444,8 @@ export interface UwsListenToken {
 export function createUwsApp(
   handler: (req: UwsIncomingMessage, res: UwsServerResponse) => void,
   ssl?: { key: string | Buffer; cert: string | Buffer },
-  bodyLimit = 10485760
+  bodyLimit = 10485760,
+  requestTimeout = 60_000
 ) {
   if (!uWS) {
     throw new Error(
@@ -489,6 +490,32 @@ export function createUwsApp(
         let size = 0
         let refused = false
         rejectBody = reject
+        // uWS only closes idle connections, so a body sent a few bytes at a
+        // time would never end: close the connection when time is up
+        const deadline =
+          requestTimeout > 0
+            ? setTimeout(() => {
+                if (aborted || shimReq.complete) return
+                refused = true
+                chunks.length = 0
+                reject(
+                  new HttpError(
+                    'The request body took too long to arrive',
+                    408,
+                    'REQUEST_TIMEOUT'
+                  )
+                )
+                aborted = true
+                shimReq._aborted = true
+                shimRes._aborted = true
+                try {
+                  uwsRes.close()
+                } catch {
+                  /* already closed */
+                }
+              }, requestTimeout)
+            : undefined
+        deadline?.unref?.()
         uwsRes.onData((chunk: ArrayBuffer, isLast: boolean) => {
           if (aborted) {
             reject(new Error('aborted'))
@@ -498,6 +525,7 @@ export function createUwsApp(
           // Enforced here: uWS buffers nothing, so nothing else would stop it
           size += chunk.byteLength
           if (size > bodyLimit) {
+            if (deadline) clearTimeout(deadline)
             refused = true
             chunks.length = 0
             reject(
@@ -515,6 +543,7 @@ export function createUwsApp(
           shimReq.emit('data', copy)
 
           if (isLast) {
+            if (deadline) clearTimeout(deadline)
             shimReq.complete = true
             const finalBody = Buffer.concat(chunks)
             shimReq.emit('end')

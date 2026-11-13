@@ -141,6 +141,8 @@ export interface TestResponse {
 
 ## Testing Cookie Sessions (`browser()`)
 
+A response's `headers['set-cookie']` is an array with one entry per cookie, as in `node:http`. `.expect('set-cookie', value)` passes when any one cookie matches.
+
 `api.browser()` returns a client that behaves like one browser: it keeps cookies, drops the ones the server expires, and sends the `csrf()` token on state-changing requests. Each call is a separate browser, so two of them act as two users.
 
 ```typescript filename="tests/session.test.ts"

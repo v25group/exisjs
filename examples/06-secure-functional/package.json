@@ -10,11 +10,11 @@
     "test": "exisjs test"
   },
   "dependencies": {
-    "exisjs": "^0.10.2",
+    "exisjs": "^0.10.3",
     "mongodb": "^7.8.0"
   },
   "devDependencies": {
-    "@exisjs/cli": "^0.10.2",
+    "@exisjs/cli": "^0.10.3",
     "@types/node": "^24.19.2",
     "typescript": "^5.9.3"
   }

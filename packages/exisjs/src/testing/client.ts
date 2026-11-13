@@ -267,14 +267,16 @@ export class TestRequest {
 
     for (const [key, expectedVal] of Object.entries(this._expectedHeaders)) {
       const actualVal = res.headers[key]
+      // Set-Cookie is an array: the expectation matches any one cookie
+      const values = Array.isArray(actualVal) ? actualVal : [actualVal]
       if (expectedVal instanceof RegExp) {
-        if (!actualVal || !expectedVal.test(String(actualVal))) {
+        if (!values.some((v) => v !== undefined && expectedVal.test(v))) {
           throw new Error(
             `Expected header ${key} to match ${expectedVal}, got ${actualVal}`
           )
         }
       } else {
-        if (actualVal !== expectedVal) {
+        if (!values.includes(expectedVal)) {
           throw new Error(
             `Expected header ${key} to be ${expectedVal}, got ${actualVal}`
           )
