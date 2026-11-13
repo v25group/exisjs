@@ -271,29 +271,38 @@ export function getNextCronDate(
 
   const stepMs = parsed.hasSeconds ? 1000 : 60 * 1000
   const maxIterations = 5 * 365 * 24 * 60 // 5 years
+  const HOUR = 60 * 60 * 1000
 
   for (let i = 0; i < maxIterations; i++) {
     const parts = getDatePartsInTimezone(current, timezone)
 
-    if (!parsed.months.has(parts.month)) {
-      current.setTime(current.getTime() + 12 * 60 * 60 * 1000)
-      continue
-    }
-
-    const domMatch = parsed.daysOfMonth.has(parts.day)
-    const dowMatch = parsed.daysOfWeek.has(parts.dayOfWeek)
-    if (!domMatch || !dowMatch) {
-      current.setTime(current.getTime() + 12 * 60 * 60 * 1000)
+    // Wrong day: go to the start of the next local day. Jumping a fixed
+    // number of hours instead can land past the matching hour of the right
+    // day and skip it (a monthly job then waits a month longer).
+    if (
+      !parsed.months.has(parts.month) ||
+      !parsed.daysOfMonth.has(parts.day) ||
+      !parsed.daysOfWeek.has(parts.dayOfWeek)
+    ) {
+      const intoDay =
+        (parts.hour * 3600 + parts.minute * 60 + parts.second) * 1000
+      current.setTime(current.getTime() - intoDay + 24 * HOUR)
+      // A daylight-saving change in between leaves us at 23:00 the same day
+      // (the next pass moves on) or at 01:00 the next day (step back to 00:00).
+      const landed = getDatePartsInTimezone(current, timezone)
+      if (landed.day !== parts.day && (landed.hour || landed.minute)) {
+        current.setTime(
+          current.getTime() - (landed.hour * 60 + landed.minute) * 60 * 1000
+        )
+      }
       continue
     }
 
     if (!parsed.hours.has(parts.hour)) {
-      current.setTime(current.getTime() + 60 * 60 * 1000)
-      // Align to start of hour in current timezone
-      const hourPart = getDatePartsInTimezone(current, timezone)
-      if (hourPart.minute !== 0) {
-        current.setTime(current.getTime() - hourPart.minute * 60 * 1000)
-      }
+      // Go to the start of the next local hour
+      current.setTime(
+        current.getTime() + HOUR - (parts.minute * 60 + parts.second) * 1000
+      )
       continue
     }
 

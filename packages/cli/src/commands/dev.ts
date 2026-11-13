@@ -43,22 +43,26 @@ export const DEFAULT_WATCH_IGNORED: (string | RegExp)[] = [
   /(^|[/\\])\.(?!env)/,
   /(^|[/\\])node_modules([/\\]|$)/,
   /(^|[/\\])\.exis([/\\]|$)/,
-  /(^|[/\\])dist([/\\]|$)/,
-  /(^|[/\\])build([/\\]|$)/,
-  /(^|[/\\])out([/\\]|$)/,
   /(^|[/\\])\.turbo([/\\]|$)/,
   /(^|[/\\])\.next([/\\]|$)/,
   /(^|[/\\])\.cache([/\\]|$)/,
   // Lock files
   /(^|[/\\])(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|bun\.lock)$/i,
   // Tests & Coverage
-  /(^|[/\\])(tests?|coverage|__tests__|\.nyc_output)([/\\]|$)/i,
+  /(^|[/\\])(__tests__|\.nyc_output)([/\\]|$)/i,
   /\.(test|spec)\.[tj]sx?$/i,
   // Generated types
   /exis\.d\.ts$/,
   /\.d\.ts$/,
-  // Runtime data, storage, downloads, artifacts, uploads, logs, temp dirs
-  /(^|[/\\])(downloads|storage|uploads|tmp|temp|logs|data|fixtures|reports|artifacts|public)([/\\]|$)/i,
+  // Build output, tests and runtime data folders, at the project root only
+  // (paths are relative to it). Matched anywhere, they also hid source
+  // folders such as src/http/api/reports or src/http/api/uploads, whose
+  // edits then never reloaded (B56). Data files inside src are still
+  // ignored by their extension.
+  /^(dist|build|out|tests?|coverage|downloads|storage|uploads|logs|data|fixtures|reports|artifacts|public)([/\\]|$)/i,
+  // Temp folders anywhere, and one-off scripts (tmp-fix.ts, scratch-import.ts)
+  /(^|[/\\])(tmp|temp)([/\\]|$)/i,
+  /(^|[/\\])(tmp|scratch)-[^/\\]*$/i,
   // Non-source & runtime artifact file extensions
   /\.(rar|zip|7z|tar|gz|tgz|bz2|xz|iso)$/i, // compressed archives
   /\.(bak|tmp|temp|swp|swo|lock|pid)$/i, // temporary and lock files
@@ -180,6 +184,153 @@ interface DevOptions {
   /** Start even if another dev server appears to use the same port */
   force?: boolean
   _disableWatch?: boolean
+}
+
+/**
+ * True when the file was written at or after `since` (ms). A file that can't
+ * be read counts as changed, so a reload is never lost.
+ */
+export async function modifiedSince(
+  file: string,
+  since: number
+): Promise<boolean> {
+  try {
+    const { mtimeMs } = await fs.promises.stat(file)
+    return mtimeMs >= since - 2
+  } catch {
+    return true
+  }
+}
+
+const CHANGE_VERBS: Record<string, string> = {
+  add: 'added',
+  change: 'changed',
+  unlink: 'deleted',
+}
+
+/** "src/a.ts changed (+2 other files: 1 added, 1 deleted)" */
+export function describeChanges(changes: [string, string][]): string {
+  if (changes.length === 0) return 'file changes'
+  const [[first, firstEvent], ...rest] = changes
+  let out = `${first} ${CHANGE_VERBS[firstEvent] ?? firstEvent}`
+  if (rest.length > 0) {
+    const counts = new Map<string, number>()
+    for (const [, e] of rest) {
+      const verb = CHANGE_VERBS[e] ?? e
+      counts.set(verb, (counts.get(verb) ?? 0) + 1)
+    }
+    const detail = [...counts].map(([v, n]) => `${n} ${v}`).join(', ')
+    out += ` (+${rest.length} other file${rest.length === 1 ? '' : 's'}: ${detail})`
+  }
+  return out
+}
+
+/** True when this process could listen on the port now. */
+function canListen(port: number, host?: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer()
+    server.once('error', () => resolve(false))
+    server.listen(port, host, () => server.close(() => resolve(true)))
+  })
+}
+
+/** Waits up to `timeoutMs` for the port to be free; false if it never is. */
+export async function waitForPortFree(
+  port: number,
+  host: string | undefined,
+  timeoutMs: number
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    if (await canListen(port, host)) return true
+    if (Date.now() >= deadline) return false
+    await new Promise((r) => setTimeout(r, 100))
+  }
+}
+
+/** The PID listening on a TCP port, or null when it can't be found. */
+export function findPortOwner(port: number): number | null {
+  try {
+    if (process.platform === 'win32') {
+      const out = spawnSync('netstat', ['-ano'], { encoding: 'utf8' }).stdout
+      for (const line of String(out).split(/\r?\n/)) {
+        const cols = line.trim().split(/\s+/)
+        if (
+          cols[0] === 'TCP' &&
+          cols[3] === 'LISTENING' &&
+          cols[1]?.endsWith(`:${port}`)
+        ) {
+          return Number(cols[4]) || null
+        }
+      }
+      return null
+    }
+    const out = spawnSync(
+      'lsof',
+      ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'],
+      { encoding: 'utf8' }
+    ).stdout
+    const pid = parseInt(String(out), 10)
+    return Number.isFinite(pid) ? pid : null
+  } catch {
+    return null
+  }
+}
+
+/** Says who holds the port, so our own processes and another program can be told apart. */
+function describePortOwner(port: number, previousAppPid: number | null) {
+  const pid = findPortOwner(port)
+  if (pid === null) return 'owner unknown'
+  if (pid === process.pid) return "this dev server's error page"
+  if (pid === previousAppPid)
+    return `the previous app process, PID ${pid}, still stopping`
+  return `PID ${pid}, another program`
+}
+
+/**
+ * Adds the server's state to `.exis/dev-status.json`: restarts, the last
+ * crash and current type errors, with `status: 'error'` while either exists.
+ * Other tools working in the project can read it; they can't see the terminal.
+ */
+export function writeDevStatusFile(
+  exisDir: string,
+  state: {
+    port: number
+    pid: number | null
+    startedAt: string | null
+    restarts: number
+    serverError: string | null
+    typeErrors: string[]
+  }
+): void {
+  const file = path.join(exisDir, 'dev-status.json')
+  let current: Record<string, unknown> = {}
+  try {
+    current = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    /* first write, or the manifest is rewriting it */
+  }
+  const next = {
+    ...current,
+    status: state.serverError || state.typeErrors.length ? 'error' : 'ok',
+    server: {
+      port: state.port,
+      pid: state.pid,
+      startedAt: state.startedAt,
+      restarts: state.restarts,
+    },
+    serverError: state.serverError,
+    typeErrors: state.typeErrors,
+    updatedAt: new Date().toISOString(),
+  }
+  try {
+    fs.mkdirSync(exisDir, { recursive: true })
+    const tmp = `${file}.${process.pid}.tmp`
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2))
+    fs.renameSync(tmp, file)
+  } catch {
+    /* status is a convenience; never stop the dev server over it */
+  }
 }
 
 /** True when something accepts connections on the port. */
@@ -456,15 +607,19 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
   let fallbackServer: http.Server | null = null
 
-  function closeFallbackServer() {
-    if (fallbackServer) {
+  /** Resolves once the fallback has released the port. */
+  function closeFallbackServer(): Promise<void> {
+    const server = fallbackServer
+    fallbackServer = null
+    if (!server) return Promise.resolve()
+    return new Promise((resolve) => {
       try {
-        fallbackServer.close()
+        server.close(() => resolve())
+        server.closeAllConnections?.()
       } catch {
-        /* ignore */
+        resolve()
       }
-      fallbackServer = null
-    }
+    })
   }
 
   let configuredPort: number | null = null
@@ -487,18 +642,26 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     /* ignore */
   }
 
+  let fallbackMessage = ''
+
   function startFallbackServer(errorMessage: string, customPort?: number) {
-    closeFallbackServer()
+    // While the app runs it owns the port: a fallback started now would take
+    // the port the moment the app restarts, and the new app process then
+    // fails with "port already in use" (B54)
+    if (isChildAlive()) return
+    // ANSI colour codes belong to the terminal, not to a response
+    fallbackMessage = errorMessage.replace(
+      new RegExp(String.fromCharCode(27) + '\\[[0-9;]*[A-Za-z]', 'g'),
+      ''
+    )
+    // Already serving: it shows the new message from the next request
+    if (fallbackServer) return
     const port =
       customPort ??
       (process.env.PORT ? parseInt(process.env.PORT, 10) : configuredPort) ??
       4000
-    // ANSI colour codes belong to the terminal, not to a response
-    const plainMessage = errorMessage.replace(
-      new RegExp(String.fromCharCode(27) + '\\[[0-9;]*[A-Za-z]', 'g'),
-      ''
-    )
     fallbackServer = http.createServer((req, res) => {
+      const plainMessage = fallbackMessage
       // API clients, curl and health checks get the standard JSON error;
       // only browsers asking for HTML get the page
       if (!String(req.headers.accept || '').includes('text/html')) {
@@ -546,21 +709,54 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     // Same interface as the app itself, never wider
     const host =
       options.host || process.env.HOST || userConfig.host || 'localhost'
-    fallbackServer
+    const server = fallbackServer
+    server
       .listen(port, host, () => {
         console.log(
           `\n${c.red}[exis] Serving build error on port ${port}${c.reset}`
         )
       })
       .on('error', () => {
-        // Port might still be in use by zombie process, just ignore
+        // The port is still taken (an app process that hasn't exited yet):
+        // no page this time, and the next error tries again
+        if (fallbackServer === server) fallbackServer = null
       })
+  }
+
+  /** The app process has been spawned and hasn't exited. */
+  function isChildAlive(): boolean {
+    return !!child && child.exitCode === null && child.signalCode === null
+  }
+
+  // What other tools (editors, AI agents, scripts) read to see whether the
+  // server is up to date, without access to this terminal
+  const devState: {
+    port: number
+    pid: number | null
+    startedAt: string | null
+    restarts: number
+    serverError: string | null
+    typeErrors: string[]
+  } = {
+    port: actualPort,
+    pid: null,
+    startedAt: null,
+    restarts: 0,
+    serverError: null,
+    typeErrors: [],
+  }
+
+  function writeDevStatus(): void {
+    writeDevStatusFile(exisDir, devState)
   }
 
   let isRestarting = false
   let pendingRestart = false
+  let portRetries = 0
   let reloadDebounceTimer: NodeJS.Timeout | null = null
-  const queuedChangedFiles = new Set<string>()
+  const queuedChangedFiles = new Map<string, string>()
+  const appHost =
+    options.host || process.env.HOST || userConfig.host || 'localhost'
   const watchConfig = (userConfig as any).watch || {}
   const devConfig = userConfig.dev || {}
   const userIgnored = [
@@ -573,7 +769,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   const RELOAD_TIMEOUT_MS = 3000
 
   async function killChildGracefully(): Promise<void> {
-    if (!child || child.killed) return
+    // Already exited (a crash): waiting for its exit would only time out
+    if (!child || child.killed || !isChildAlive()) return
 
     // 1. Send IPC shutdown message so the child can run app.close() / onClose hooks
     try {
@@ -652,9 +849,17 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       return
     }
     isRestarting = true
-    closeFallbackServer()
+    const previousPid = child?.pid ?? null
+    await closeFallbackServer()
 
     await killChildGracefully()
+
+    // An old process can hold the port for a moment after it exits
+    if (!(await waitForPortFree(actualPort, appHost, RELOAD_TIMEOUT_MS))) {
+      warn(
+        `Port ${actualPort} is still in use (${describePortOwner(actualPort, previousPid)}); starting anyway.`
+      )
+    }
 
     child = spawn(runner!.bin, [...runner!.args, startServerPath], {
       cwd,
@@ -668,7 +873,12 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
       shell: runner!.bin === process.execPath ? false : true,
     })
 
+    if ((global as any)._hasStartedBefore) devState.restarts++
     ;(global as any)._hasStartedBefore = true
+    devState.pid = child.pid ?? null
+    devState.startedAt = new Date().toISOString()
+    devState.serverError = null
+    writeDevStatus()
 
     let stderrBuffer = ''
     const currentSpawnedChild = child
@@ -708,7 +918,22 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           // Normal sigterm exits
           return
         }
+        if (
+          /already in use|EADDRINUSE/i.test(stderrBuffer) &&
+          portRetries < 3
+        ) {
+          portRetries++
+          warn(
+            `Port ${actualPort} was taken (${describePortOwner(actualPort, currentSpawnedChild?.pid ?? null)}); trying again (${portRetries}/3).`
+          )
+          setTimeout(() => startProcess(), 500)
+          return
+        }
         error(`Process crashed with code ${code}`)
+        devState.serverError =
+          stderrBuffer.trim().split('\n').slice(-20).join('\n') ||
+          `Process crashed with code ${code}`
+        writeDevStatus()
         // Start the fallback server so the browser doesn't hang or get "Connection Refused"
         startFallbackServer(
           stderrBuffer || 'Process crashed with no error output.'
@@ -725,9 +950,9 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
     }
   }
 
-  function scheduleReload(file?: string) {
+  function scheduleReload(file?: string, eventName = 'change') {
     if (file) {
-      queuedChangedFiles.add(file)
+      queuedChangedFiles.set(file, eventName)
     }
 
     if (reloadDebounceTimer) {
@@ -736,23 +961,21 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
 
     reloadDebounceTimer = setTimeout(async () => {
       reloadDebounceTimer = null
-      const files = Array.from(queuedChangedFiles)
+      const changes = Array.from(queuedChangedFiles)
       queuedChangedFiles.clear()
+      portRetries = 0
 
       const time = getFormattedTime()
       const primary = '\x1b[38;2;160;70;255m'
-      const fileLabel =
-        files.length === 1
-          ? files[0]
-          : files.length > 1
-            ? `${files[0]} (+${files.length - 1} other files)`
-            : 'file changes'
-
       console.log(
-        `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading due to change in ${fileLabel}${c.reset}`
+        `${c.dim}${time}${c.reset} ${primary}[exis]${c.reset} ${c.dim}reloading: ${describeChanges(changes)}${c.reset}`
       )
 
-      await generateManifest(cwd, '', true)
+      try {
+        await generateManifest(cwd, '', true)
+      } catch (err: any) {
+        error(`Could not update .exis: ${err?.message ?? err}`)
+      }
       startProcess()
     }, RELOAD_DEBOUNCE_MS)
   }
@@ -800,10 +1023,13 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         )
       )
 
+      const watchStartedAt = Date.now()
       watcher = chokidar.watch(watchPaths, {
         cwd,
         ignoreInitial: true,
-        usePolling: devConfig.usePolling ?? process.platform === 'win32',
+        // Native events work on local disks, Windows included. Polling is
+        // for network drives, WSL mounts and Docker volumes: `dev.usePolling`
+        usePolling: devConfig.usePolling ?? false,
         interval: devConfig.interval ?? 100,
         binaryInterval: devConfig.binaryInterval ?? 300,
         ignored: watchIgnore(cwd, userIgnored),
@@ -827,11 +1053,19 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         )
       })
 
-      watcher.on('all', async (_eventName: string, file: string) => {
+      watcher.on('all', async (eventName: string, file: string) => {
         if (!shouldReloadOnFile(file, userIgnored, customExtensions)) {
           return
         }
-        scheduleReload(file)
+        // Polling reports every file as changed on its first pass (B52):
+        // a file not written since the watcher started hasn't changed
+        if (
+          eventName === 'change' &&
+          !(await modifiedSince(path.resolve(cwd, file), watchStartedAt))
+        ) {
+          return
+        }
+        scheduleReload(file, eventName)
       })
     }
   }
@@ -870,8 +1104,13 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
         if (!line) continue
         if (line.includes('Found 0 errors')) {
           tscErrors = []
+          devState.typeErrors = []
+          writeDevStatus()
           // Type errors are cleared — close the fallback so the real server can serve
           closeFallbackServer()
+        } else if (line.includes('File change detected')) {
+          // A new check: its errors replace the previous ones
+          tscErrors = []
         } else if (line.includes('error TS')) {
           const time = getTime()
           console.error(`\n${c.red}${time} ERROR:${c.reset} ${line}`)
@@ -880,6 +1119,8 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
           // "Found X errors." summary line
           const time = getTime()
           console.error(`\n${c.yellow}${time} INFO:${c.reset} ${line}`)
+          devState.typeErrors = tscErrors.slice(0, 50)
+          writeDevStatus()
           if (tscErrors.length > 0) {
             startFallbackServer(
               `TypeScript Compilation Errors\n${'─'.repeat(50)}\n\n` +

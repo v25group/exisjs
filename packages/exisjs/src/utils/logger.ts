@@ -112,6 +112,26 @@ export function extractValidationSummary(val: any): string {
   return typeof val === 'object' ? JSON.stringify(val) : String(val)
 }
 
+/**
+ * The error line under a non-request log in pretty mode: the message, then
+ * the first few stack frames. Without it, `log.error({ err }, '...')` showed
+ * only the message text, because `err` and `error` are hidden fields.
+ */
+export function formatLoggedError(err: any, frames = 4): string {
+  const message = extractErrorMessage(err)
+  if (!message) return ''
+  let out = `\n   \x1b[31m└─ ✖ Error:\x1b[0m \x1b[90m${message}\x1b[0m`
+  const stack =
+    typeof err === 'object' && typeof err.stack === 'string' ? err.stack : ''
+  const lines = stack
+    .split('\n')
+    .map((l: string) => l.trim())
+    .filter((l: string) => l.startsWith('at '))
+    .slice(0, frames)
+  for (const l of lines) out += `\n      \x1b[90m${l}\x1b[0m`
+  return out
+}
+
 export function extractErrorMessage(err: any): string {
   if (!err) return ''
   if (typeof err === 'string') return err
@@ -261,7 +281,9 @@ export function createLogger(config: LoggerConfig = {}): Logger {
           }
           return out
         }
-        return log[messageKey] || ''
+        const message = log[messageKey] || ''
+        const err = log.err ?? log.error
+        return err ? message + formatLoggedError(err) : message
       },
       destination: stripColonStream,
     })

@@ -218,7 +218,7 @@ export default defineConfig({
   },
 
   dev: {
-    usePolling: false, // Set to true for network mounts or WSL
+    usePolling: false, // The default. Set to true for network drives, WSL mounts and Docker volumes
     interval: 100,
     lazyRoutes: true // false loads every route at startup, as in production
   }
@@ -228,8 +228,29 @@ export default defineConfig({
 ### Automatically Excluded Artifacts
 
 ExisJS automatically excludes build output and temp folders from triggering watcher reloads:
-- **Folders**: `node_modules`, `.git`, `.exis`, `dist`, `build`, `out`, `.turbo`, `.next`, `.cache`, `logs`, `tmp`, `temp`, `tests`, `coverage`.
-- **Files**: `.log`, `.sqlite`, `.db`, `.png`, `.jpg`, `.svg`, `package-lock.json`, `*.d.ts`.
+- **Anywhere**: `node_modules`, dot-folders such as `.git`, `.exis` and `.cache` (not `.env` files), `tmp` and `temp` folders, `__tests__`, `*.test.ts` and `*.spec.ts`, and one-off scripts named `tmp-*` or `scratch-*`.
+- **At the project root only**: `dist`, `build`, `out`, `test`, `tests`, `coverage`, `downloads`, `storage`, `uploads`, `logs`, `data`, `fixtures`, `reports`, `artifacts`, `public`. A source folder with one of these names, such as `src/http/api/reports`, still reloads.
+- **Files**: `.log`, `.sqlite`, `.db`, images, media, archives, documents, `.csv`, `.md`, `package-lock.json`, `*.d.ts`.
+
+Every reload prints the file and what happened to it, for example `reloading: src/http/api/reports/service.ts changed`. With polling on, a file whose modification time is older than the start of `exisjs dev` doesn't count as changed.
+
+### Server status for other tools
+
+`exisjs dev` keeps `.exis/dev-status.json` up to date, so an editor, a script or an AI agent working in the project can see what the terminal shows:
+
+```json filename=".exis/dev-status.json"
+{
+  "status": "error",
+  "server": { "port": 4000, "pid": 21308, "startedAt": "2026-11-13T09:46:58.455Z", "restarts": 2 },
+  "serverError": null,
+  "typeErrors": ["src/http/api/reports/service.ts(1,40): error TS2322: ..."],
+  "updatedAt": "2026-11-13T09:47:03.120Z"
+}
+```
+
+`status` is `error` while the app process has crashed (`serverError` holds the end of its output) or TypeScript reports errors. `server.startedAt` changes on every reload, so a tool can check that its edit was picked up. The file also lists routes and cron files.
+
+On a restart, the new app process waits until the old one has released the port. If the port is still taken, the message names who holds it (the previous app process, the error page, or another program's PID) and the start is tried again up to three times.
 
 ---
 

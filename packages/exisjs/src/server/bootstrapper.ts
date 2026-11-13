@@ -253,10 +253,7 @@ export class ServerBootstrapper {
             try {
               await Promise.race([Promise.resolve(hook()), timeoutPromise])
             } catch (err: any) {
-              this.app.log.error(
-                { err: err?.message || err },
-                `Error executing ${hookName}`
-              )
+              this.app.log.error({ err }, `Error executing ${hookName}`)
             } finally {
               if (timer) clearTimeout(timer)
             }

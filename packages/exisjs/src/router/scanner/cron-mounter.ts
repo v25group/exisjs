@@ -122,10 +122,7 @@ export async function mountCronJobs(
       }
       entries.push({ filePath: file, module: mod })
     } catch (err: any) {
-      app.log.error(
-        { err: err.message, file },
-        `Failed to load cron file: ${file}`
-      )
+      app.log.error({ err, file }, `Failed to load cron file: ${file}`)
     }
   }
 
@@ -244,10 +241,7 @@ export function mountCronJobsFromEntries(
         }
       }
     } catch (err: any) {
-      app.log.error(
-        { err: err.message, file },
-        `Failed to load cron file: ${file}`
-      )
+      app.log.error({ err, file }, `Failed to load cron file: ${file}`)
     }
   }
 }

@@ -12,6 +12,9 @@ import {
   type ParsedCronPattern,
 } from './parser'
 
+/** The longest delay `setTimeout` accepts; Node turns anything longer into 1 ms. */
+const MAX_TIMER_MS = 2_147_483_647
+
 export class CronJob {
   public readonly name: string
   public readonly schedule?: string
@@ -154,23 +157,21 @@ export class CronJob {
 
     if (this.timeoutMs !== undefined) {
       this.nextRun = new Date(Date.now() + this.timeoutMs)
-      this.timer = setTimeout(async () => {
+      this.runAt(this.nextRun, async () => {
         await this.execute('timeout')
         this.status = 'stopped'
-      }, this.timeoutMs)
-      this.timer.unref?.()
+      })
       return
     }
 
     if (this.intervalMs !== undefined) {
       this.nextRun = new Date(Date.now() + this.intervalMs)
-      this.timer = setTimeout(async () => {
+      this.runAt(this.nextRun, async () => {
         await this.execute('interval')
         if (this.status !== 'stopped' && this.status !== 'paused') {
           this.scheduleNextRun()
         }
-      }, this.intervalMs)
-      this.timer.unref?.()
+      })
       return
     }
 
@@ -182,22 +183,37 @@ export class CronJob {
           this.timezone
         )
         this.nextRun = nextDate
-        const delayMs = Math.max(0, nextDate.getTime() - Date.now())
-
-        this.timer = setTimeout(async () => {
+        this.runAt(nextDate, async () => {
           await this.execute('cron')
           if (this.status !== 'stopped' && this.status !== 'paused') {
             this.scheduleNextRun()
           }
-        }, delayMs)
-        this.timer.unref?.()
+        })
       } catch (err: any) {
         this.app.log?.error(
-          { err: err.message, job: this.name },
+          { err, job: this.name },
           `[exis:cron] Failed to compute next execution date for "${this.name}"`
         )
       }
     }
+  }
+
+  /**
+   * Calls `fire` at `when`, never earlier. A delay longer than a timer can
+   * hold (about 24.8 days) is waited out in steps.
+   */
+  private runAt(when: Date, fire: () => Promise<void>): void {
+    const remaining = when.getTime() - Date.now()
+    if (remaining > 0) {
+      this.timer = setTimeout(
+        () => this.runAt(when, fire),
+        Math.min(remaining, MAX_TIMER_MS)
+      )
+      this.timer.unref?.()
+      return
+    }
+    this.timer = null
+    void fire()
   }
 
   /**
@@ -223,7 +239,7 @@ export class CronJob {
         acquired = await lock.acquire(this.name, ttlMs)
       } catch (err: any) {
         this.app.log?.error(
-          { err: err?.message, job: this.name },
+          { err, job: this.name },
           `[exis:cron] Could not acquire the lock for "${this.name}"; skipped`
         )
         return
@@ -238,7 +254,7 @@ export class CronJob {
           await lock.release(this.name)
         } catch (err: any) {
           this.app.log?.error(
-            { err: err?.message, job: this.name },
+            { err, job: this.name },
             `[exis:cron] Could not release the lock for "${this.name}"`
           )
         }
@@ -298,7 +314,7 @@ export class CronJob {
 
       this.app.log?.error(
         {
-          err: this.lastError,
+          err,
           job: this.name,
           durationMs: this.lastDurationMs,
         },
@@ -310,7 +326,7 @@ export class CronJob {
           await this.onErrorHook(err as Error, context)
         } catch (hookErr: any) {
           this.app.log?.error(
-            { err: hookErr.message, job: this.name },
+            { err: hookErr, job: this.name },
             `[exis:cron] Error in onError hook for "${this.name}"`
           )
         }
