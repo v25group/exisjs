@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "exisjs": "^0.10.3",
-    "mongoose": "^9.11.4"
+    "mongoose": "^9.12.0"
   },
   "devDependencies": {
     "@exisjs/cli": "^0.10.3",
