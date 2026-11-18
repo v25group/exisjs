@@ -46,11 +46,11 @@
   },
   "dependencies": {
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.71.0",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.6",
     "@types/autocannon": "^7.12.7",
     "@types/express": "^5.0.6",
     "@types/node": "^24.19.2",
@@ -61,9 +61,9 @@
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "express": "^5.3.0",
-    "fastify": "^5.12.7",
+    "fastify": "^5.12.8",
     "find-my-way": "^9.10.0",
-    "hono": "^4.13.14",
+    "hono": "^4.13.17",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
     "mitata": "^1.0.34",
